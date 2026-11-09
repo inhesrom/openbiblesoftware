@@ -74,8 +74,7 @@ rounds of #258), it runs the loaders themselves:
    sets, is put back.
 3. `Session::unkept_records` compares what that Session holds with what the Backup held: every
    Favorite and Visit (by id, each location kept), every Reading plan and each of its Readings
-   (by position), every Tab of every Layout (by id, each as stored, but those of Resources not
-   in the library, which a launch leaves out too), and every setting a loader reads
+   (by position), every Layout whole (below), and every setting a loader reads
    (`held_settings`: the value the app would write for it now). A setting is kept when its
    value now holds every value the stored one holds (`holds`): the same number (as written or
    as the app keeps it, `f32`), text and flag, each field of an object (one missing now only if
@@ -87,6 +86,17 @@ rounds of #258), it runs the loaders themselves:
    `verse_numbers`, a Text size saved while it was the default; `KeyBindings::upgrade_record`:
    old Selection key ids, unless the record holds the new id too, when the loader would keep
    only one).
+   A Layout is compared twice with the same rule: its stored JSON against what
+   `WorkspaceSnapshot::from_json` read of it (so a field this version does not know, anywhere
+   in it, counts as lost), then what was read against the Workspace `layout.restore` gave
+   (every Tab by id with all its fields, the arrangement and its shares, Floating windows,
+   remembered Panels; a remembered Panel under a Tab kind this version does not know is
+   dropped by the restore, so lost). Two exceptions, as at launch: Tabs of Resources not in
+   the library are left out (`without_missing`), and a focused Tab, remembered Panel or last
+   Panel naming one the Layout does not have falls back (`without_dangling`; the app writes
+   remembered Panels it has since closed). Tabs the arrangement does not place (all of them
+   in a Layout saved without the UI) get a Panel of their own on the right, which the
+   arrangement may hold besides the stored one.
 4. A panic while loading (a record no loader expected) is caught (`catch_unwind`) and refuses
    the Backup as damaged ("it is damaged (the app stopped reading it: …)"). The loaders the
    reviews found panicking now refuse instead: `PlanDate::parse` reads only years 1–9999 and
@@ -175,7 +185,9 @@ uses):
   and Export everything refusing the User database; a refused restore keeping undo; Export
   everything's files, remembered Resource names of a removed Resource included; a Backup with
   an unreadable Layout, Favorite, Visit or setting refused naming each, a Layout with two
-  Tabs of one id, a Reading plan with an unreadable start day or Reading, dates far outside
+  Tabs of one id, a Layout with a field this version does not know (in a Tab's Reading layout
+  or on the Layout) or a remembered Panel of an unknown Tab kind refused while one with a Tab
+  of a missing Resource and dangling Panel references restores as stored, a Reading plan with an unreadable start day or Reading, dates far outside
   the calendar and a Reading at position `u32::MAX` refused naming each, settings whose loaders
   would default, drop, clamp or cut a field refused while older records still restore, a
   loader's panic refused as damaged, and one of everything the app writes passing;
@@ -184,7 +196,8 @@ uses):
   impossible dates, repeated items and ids, a shortcut under its old and new id, text that is
   not JSON) and checks each is refused by preview and restore alike with the live data and
   kept Backups unchanged, or restored with nothing changed by the restore and every loader of
-  the live Session keeping all of it, and that nothing panics; every `*_PREF` constant compared
+  the live Session keeping all of it (the Layout also checked apart from the trial: its stored
+  JSON itself against the Workspace `layout.restore` gives), and that nothing panics; every `*_PREF` constant compared
   by the trial; open Notes
   searches run again after a restore and after Undo restore.
 - `crates/store/tests/user_db.rs` (`a_refused_database_is_not_changed`): a newer or foreign

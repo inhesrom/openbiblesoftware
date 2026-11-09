@@ -927,6 +927,100 @@ fn a_backup_with_a_layout_of_two_tabs_with_one_id_is_refused_naming_it() {
     s.run("data.restore", &path(&good)).unwrap();
 }
 
+/// #258: a Layout is compared whole, its stored JSON first: a field this version does not
+/// know inside a Tab or on the Layout itself (which reading would drop) and a remembered
+/// Panel under a Tab kind it does not know (which restoring would drop) are refused, naming
+/// the Layout. What a launch leaves out is not: a Tab of a Resource not in the library, and a
+/// focused Tab or remembered or last Panel the Layout does not have, which fall back.
+#[test]
+fn a_backup_with_a_layout_the_app_would_not_keep_whole_is_refused_naming_it() {
+    let f = Fixture::new("layout-whole");
+    let mut s = f.session();
+    for id in ["kjv", "web"] {
+        s.run("resource.open", &json!({ "id": id })).unwrap();
+    }
+    s.run("layout.save", &json!({ "name": "Study" })).unwrap();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    // The Layout as the app arranges it: both Tabs in Panel 5, remembered for Resources.
+    let mut arranged =
+        WorkspaceSnapshot::from_json(&s.user.as_ref().unwrap().layout("Study").unwrap().unwrap())
+            .unwrap();
+    let tabs: Vec<u64> = arranged.tabs.iter().map(|t| t.id).collect();
+    arranged.layout = Some(LayoutNode::Panel {
+        panel: 5,
+        tabs: tabs.clone(),
+        active: Some(tabs[0]),
+    });
+    arranged.remembered = vec![("\"Resource\"".into(), 5)];
+    arranged.last_reading_panel = Some(5);
+    arranged.focused = Some(tabs[0]);
+
+    let changed_layout = |name: &str, layout: String| {
+        let backup = f.file(&format!("{name}.obsbackup"));
+        damaged_copy(&f, &good, &backup, |db| {
+            db.save_layout("Study", &layout).unwrap();
+        });
+        backup
+    };
+    let raw = serde_json::to_value(&arranged).unwrap();
+    let mut refused_cases: Vec<(&str, Value)> = Vec::new();
+    let mut v = raw.clone();
+    v["tabs"][0]["reading_layout"]["zz_later_field"] = json!(7);
+    refused_cases.push(("a later field of a Tab's Reading layout", v));
+    let mut v = raw.clone();
+    v["zz_later_field"] = json!(7);
+    refused_cases.push(("a later field of the Layout", v));
+    let mut v = raw.clone();
+    v["remembered"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(["\"ZzLaterKind\"", 5]));
+    refused_cases.push(("a Panel remembered for a later Tab kind", v));
+    for (what, layout) in refused_cases {
+        assert!(
+            WorkspaceSnapshot::from_json(&layout.to_string()).is_some(),
+            "{what}: reads"
+        );
+        let backup = changed_layout("refused", layout.to_string());
+        let before = dump(&s);
+        let refused = s.restore_preview(&backup).unwrap_err();
+        for named in ["the Layout “Study”", "Nothing was changed"] {
+            assert!(refused.contains(named), "{what}: {named}: {refused}");
+        }
+        let err = s.run("data.restore", &path(&backup)).unwrap_err();
+        assert!(
+            err.to_string().contains("the Layout “Study”"),
+            "{what}: {err}"
+        );
+        assert_eq!(dump(&s), before, "{what}");
+        assert!(s.last_restore().is_none(), "{what}");
+    }
+
+    // As arranged, and with what a launch leaves out, it restores, the Layout as stored.
+    let mut fallback = arranged.clone();
+    let mut gone = fallback.tabs[0].clone();
+    gone.id = 900;
+    gone.kind = TabKind::Resource("gone".into());
+    fallback.tabs.push(gone);
+    if let Some(LayoutNode::Panel { tabs, .. }) = fallback.layout.as_mut() {
+        tabs.push(900);
+    }
+    fallback.focused = Some(901);
+    fallback.remembered.push(("\"Library\"".into(), 902));
+    fallback.last_other_panel = Some(902);
+    for layout in [arranged.to_json(), fallback.to_json()] {
+        let backup = changed_layout("restores", layout.clone());
+        s.restore_preview(&backup).unwrap();
+        s.run("data.restore", &path(&backup)).unwrap();
+        let user = s.user.as_ref().unwrap();
+        assert_eq!(user.layout("Study").unwrap().unwrap(), layout);
+        s.run("layout.restore", &json!({ "name": "Study" }))
+            .unwrap();
+        assert_eq!(s.workspace.snapshot().layout, arranged.layout, "{layout}");
+    }
+}
+
 /// What the trial restore would not keep of the Backup `good` with the setting `key` set to
 /// `value` (written to a copy beside it): the lines a refusal names.
 fn unkept_setting(
@@ -1529,6 +1623,73 @@ fn quoted(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
+/// Every Panel id in a Layout's JSON `layout` tree.
+fn panel_ids(layout: &Value, out: &mut Vec<Value>) {
+    if layout["kind"] == "panel" {
+        out.push(layout["panel"].clone());
+    }
+    for child in layout["children"].as_array().into_iter().flatten() {
+        panel_ids(&child[0], out);
+    }
+}
+
+/// The oracle of `every_change_to_a_backup_is_refused_cleanly_or_restored_whole` for the
+/// Layout “Study” of a restored Backup `written`, apart from the trial restore's own check:
+/// its stored JSON itself, but what names a Tab or Panel it does not have, is held by the
+/// Workspace `layout.restore` gives. A Layout with a Tab of a Resource not in the library
+/// (which a launch leaves out) is left to the trial's check.
+fn assert_layout_restored_whole(s: &mut Session, written: &obs_store::UserStore, what: &str) {
+    let stored = written.layout("Study").unwrap().unwrap();
+    let read = WorkspaceSnapshot::from_json(&stored).unwrap();
+    if read.tabs.iter().any(|t| {
+        t.kind
+            .resource_id()
+            .is_some_and(|id| s.library.get(id).is_none())
+    }) {
+        return;
+    }
+    let mut expected: Value = serde_json::from_str(&stored).unwrap();
+    let mut panels = Vec::new();
+    panel_ids(&expected["layout"], &mut panels);
+    for w in expected["windows"].as_array().into_iter().flatten() {
+        panel_ids(&w["layout"], &mut panels);
+    }
+    let tabs: Vec<Value> = expected["tabs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].clone())
+        .collect();
+    // What names no Tab or Panel of the Layout falls back; the restore may name one it made.
+    let fields = expected.as_object_mut().unwrap();
+    if !tabs.contains(&fields["focused"]) {
+        fields.remove("focused");
+    }
+    for last in ["last_reading_panel", "last_other_panel"] {
+        if !panels.contains(&fields[last]) {
+            fields.remove(last);
+        }
+    }
+    expected["remembered"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|r| panels.contains(&r[1]));
+    s.run("layout.restore", &json!({ "name": "Study" }))
+        .unwrap_or_else(|e| panic!("{what}: {e}"));
+    let mut now = serde_json::to_value(s.workspace.snapshot()).unwrap();
+    // Tabs the stored arrangement does not place get a Panel of their own on the right.
+    let stored_arrangement = expected.as_object_mut().unwrap().remove("layout").unwrap();
+    let arrangement = now.as_object_mut().unwrap().remove("layout").unwrap();
+    let holds = crate::backup_check::holds;
+    let beside =
+        arrangement["kind"] == "row" && holds(&stored_arrangement, &arrangement["children"][0][0]);
+    assert!(
+        holds(&expected, &now)
+            && (stored_arrangement.is_null() || holds(&stored_arrangement, &arrangement) || beside),
+        "the Layout was not restored whole: {what}\nstored {stored}\nnow {now} {arrangement}"
+    );
+}
+
 /// #258 proof: every value of a Backup the app wrote, changed to one no loader expects (huge
 /// and negative numbers, wrong types, unknown ids, impossible dates, repeated items and ids,
 /// old and new ids of one shortcut, text that is not JSON), is either refused, by the preview
@@ -1655,6 +1816,7 @@ fn every_change_to_a_backup_is_refused_cleanly_or_restored_whole() {
             Vec::<String>::new(),
             "a loader did not keep all of it: {what}"
         );
+        assert_layout_restored_whole(&mut s, &written, what);
         s.undo_restore().unwrap();
     }
     assert!(

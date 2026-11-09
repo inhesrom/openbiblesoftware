@@ -15,8 +15,12 @@
 //!    Layout is restored with `layout.restore`, and what is read on demand (recent searches,
 //!    Command box entries, Word forms, kept Attributions) is read.
 //! 2. What that Session then holds is compared with what the Backup holds
-//!    ([`Session::unkept_records`]): every Favorite, Visit, Reading plan, Reading and Layout
-//!    Tab must be there, each location as stored, and each setting the loaders read must be
+//!    ([`Session::unkept_records`]): every Favorite, Visit, Reading plan and Reading must be
+//!    there, each location as stored; every Layout must be read whole (its stored JSON
+//!    against what was read of it) and restored whole (what was read against the Workspace
+//!    restored), but the Tabs of Resources not in the library and what names a Tab or Panel
+//!    the Layout does not have, which a launch leaves out too; and each setting the loaders
+//!    read must be
 //!    what the app would write back for it now, holding every value the stored one holds
 //!    ([`holds`]). A record from an older version is first put in today's shape by the
 //!    loader's own upgrade (`appearance::upgrade_record`, `KeyBindings::upgrade_record`).
@@ -190,15 +194,27 @@ impl Session {
         out
     }
 
-    /// Whether `layout.restore` keeps every Tab of the Layout `name` (its snapshot `json`) as
-    /// stored, but those of Resources not in the library, which it leaves out as a launch does.
+    /// Whether `layout.restore` keeps all of the Layout `name` (its snapshot `json`) as stored:
+    /// every value of the stored JSON is read (none unknown to this version, none read as
+    /// another), and the Workspace it restores holds all of what was read: every Tab, Panel,
+    /// share, Floating window and remembered Panel. Two exceptions, as at launch: the Tabs of
+    /// Resources not in the library are left out ([`WorkspaceSnapshot::without_missing`]), and
+    /// a focused Tab, remembered Panel or last Panel that names one the Layout does not have
+    /// falls back ([`without_dangling`]).
     fn keeps_layout(&mut self, name: &str, json: Option<&str>) -> bool {
-        let Some(stored) = json
-            .and_then(WorkspaceSnapshot::from_json)
-            .map(|s| s.without_missing(|id| self.library.get(id).is_some()))
-        else {
+        let Some(json) = json else {
             return false;
         };
+        let (Ok(raw), Some(read)) = (
+            serde_json::from_str::<Value>(json),
+            WorkspaceSnapshot::from_json(json),
+        ) else {
+            return false;
+        };
+        if !serde_json::to_value(&read).is_ok_and(|v| holds(&raw, &v)) {
+            return false;
+        }
+        let expected = without_dangling(read.without_missing(|id| self.library.get(id).is_some()));
         if self
             .run("layout.restore", &json!({ "name": name }))
             .is_err()
@@ -206,16 +222,13 @@ impl Session {
             return false;
         }
         let restored = self.workspace.snapshot();
-        restored.tabs.len() >= stored.tabs.len()
-            && stored.tabs.iter().all(|t| {
-                restored.tabs.iter().any(|r| {
-                    r.id == t.id
-                        && match (serde_json::to_value(t), serde_json::to_value(r)) {
-                            (Ok(t), Ok(r)) => holds(&t, &r),
-                            _ => false,
-                        }
-                })
-            })
+        match (
+            serde_json::to_value(&expected),
+            serde_json::to_value(&restored),
+        ) {
+            (Ok(expected), Ok(restored)) => restored_whole(expected, restored),
+            _ => false,
+        }
     }
 
     /// Every setting the loaders read, with what the app would write for it now. `stored`
@@ -360,6 +373,52 @@ impl Session {
         ));
         out
     }
+}
+
+/// Whether the Workspace `restored` (as JSON) holds all of the snapshot `expected` it was
+/// restored from ([`holds`]). Its arrangement may also hold more: `Workspace::restore` gives
+/// the Tabs the stored arrangement does not place (all of them, when it has none) a Panel of
+/// their own on the right, in the stored Row or in a new Row holding the stored arrangement
+/// first, and may then remember that Panel or make it the last one.
+fn restored_whole(mut expected: Value, mut restored: Value) -> bool {
+    let (Some(e), Some(r)) = (expected.as_object_mut(), restored.as_object_mut()) else {
+        return false;
+    };
+    let stored = e.remove("layout").unwrap_or(Value::Null);
+    let now = r.remove("layout").unwrap_or(Value::Null);
+    // A Tab or Panel named by none is not one to keep: the restore may name one it made.
+    e.retain(|_, v| !v.is_null());
+    let beside = || {
+        now["kind"] == "row"
+            && now["children"]
+                .as_array()
+                .and_then(|c| c.first())
+                .is_some_and(|first| holds(&stored, &first[0]))
+    };
+    holds(&expected, &restored) && (stored.is_null() || holds(&stored, &now) || beside())
+}
+
+/// `snap` without what names a Tab or Panel it does not have, which `Workspace::restore`
+/// drops, as the app falls back without it: the focused Tab, remembered Panels (by Tab kind)
+/// and the last reading and other Panel. The app writes remembered Panels it has since
+/// closed. A remembered Panel's slot that is not one this version knows is kept, so it counts
+/// as lost.
+fn without_dangling(mut snap: WorkspaceSnapshot) -> WorkspaceSnapshot {
+    let mut panels: Vec<u64> = snap
+        .layout
+        .iter()
+        .chain(snap.windows.iter().map(|w| &w.layout))
+        .flat_map(|l| l.panels())
+        .map(|(panel, _, _)| panel)
+        .collect();
+    panels.sort_unstable();
+    let has_panel = |p: &u64| panels.binary_search(p).is_ok();
+    snap.remembered.retain(|(_, panel)| has_panel(panel));
+    snap.last_reading_panel = snap.last_reading_panel.filter(has_panel);
+    snap.last_other_panel = snap.last_other_panel.filter(has_panel);
+    let tabs: Vec<u64> = snap.tabs.iter().map(|t| t.id).collect();
+    snap.focused = snap.focused.filter(|f| tabs.contains(f));
+    snap
 }
 
 /// Whether `now`, what the app would write for the setting `key` it read, keeps everything
