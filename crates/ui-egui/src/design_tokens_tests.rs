@@ -154,6 +154,12 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "the drawing's width on the icon's 24-unit grid",
     ),
     (
+        "shell/report_problem.rs",
+        "b => format!(\"{:.1} MB\", b as f64 / (1024.0 * 1024.0)),",
+        "1024.0",
+        "bytes in a mebibyte, for a file's size in words",
+    ),
+    (
         "pane.rs",
         "let page = rect.height() * 0.9;",
         "0.9",
