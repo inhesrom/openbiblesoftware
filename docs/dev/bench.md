@@ -18,6 +18,7 @@ Deuteronomy, Tagged words), frame by frame at 60 Hz (`crates/ui-egui/src/bench.r
 | `interlinear` | every pane with interlinear lines (#143), scrolling | ≤ 1% missed, no placeholders |
 | `reading-layout` | every Reading layout option on in every pane (#209: one verse per line, drop numerals, justified and hyphenated, Narrow, no headings), scrolling | ≤ 1% missed, no placeholders |
 | `find` | Find next (#175) through matches far apart | ≤ 1% missed, each step ≤ 1 frame |
+| `resize` | every pane's width dragged a point a frame, to and fro (#255) | ≤ 1% missed |
 
 The feature scenarios (#183) drive the whole Shell (`crates/ui-egui/src/bench/tools.rs`):
 each writes a library of synthetic Resources sized like the real data
@@ -45,8 +46,11 @@ Every feature scenario also has the #19 synchronous-work budget: at most 2 ms a 
 Work that fits in a frame but takes longer than that still fails the gate, though no frame is
 missed at 60 Hz.
 
-- `interlinear`, `reading-layout` and `find` measure the reading panes' UI-thread layout, as the reading
-  scenarios do.
+- `interlinear`, `reading-layout`, `find` and `resize` measure the reading panes' UI-thread
+  layout, as the reading scenarios do. A `resize` frame's new width (every block's height
+  estimated again, the block at the top laid out at once to keep the reader's place) is exempt
+  as a jump is, and held to the missed-frame budget: before #255 it styled every block again,
+  about 720 ms a frame.
 - The Shell-driven scenarios measure the feature Tab's own drawing (its body, egui text
   layout included). Every timed frame must draw it. When an action's result is made off the
   UI thread or drawn afresh (the Atlas following a Link set, a Search view switched, a Guide

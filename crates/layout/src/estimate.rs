@@ -16,46 +16,89 @@ const INTERLINEAR_WIDEN: f32 = 1.6;
 
 /// A height estimate for `para` at `width` px, from character counts and font size.
 pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
-    if para.hidden {
-        return 0.0;
-    }
-    let mut text_width = 0.0f32;
-    let mut line_size = 0.0f32;
-    for r in &para.runs {
-        let per_char = if r.style.face == FaceId::Hebrew || script_of(&r.text) == Script::Hebrew {
-            HEBREW_ADVANCE
-        } else {
-            LATIN_ADVANCE
+    HeightEstimate::of(para).at(width)
+}
+
+/// What a paragraph's estimated height depends on besides the width: measured once, so a new
+/// width (a Panel's edge dragged) is a little arithmetic per block, not the paragraph styled
+/// again (#255).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct HeightEstimate {
+    /// The text's advance on one line, px.
+    text_width: f32,
+    /// One line's height before line spacing, px.
+    line_size: f32,
+    line_spacing: f32,
+    /// Width taken from every line, px.
+    taken: f32,
+    space_before: f32,
+    space_after: f32,
+    /// How much wider interlinear lines make the text, and their height under each line.
+    widen: f32,
+    rows: f32,
+}
+
+impl HeightEstimate {
+    pub fn of(para: &Paragraph) -> Self {
+        // Nothing of a hidden paragraph is drawn (#209): no height at any width.
+        if para.hidden {
+            return Self::default();
+        }
+        let mut text_width = 0.0f32;
+        let mut line_size = 0.0f32;
+        for r in &para.runs {
+            let per_char = if r.style.face == FaceId::Hebrew || script_of(&r.text) == Script::Hebrew
+            {
+                HEBREW_ADVANCE
+            } else {
+                LATIN_ADVANCE
+            };
+            // Marks take no advance; count base characters only.
+            let chars = r
+                .text
+                .chars()
+                .filter(|c| !unicode_normalization_like_mark(*c))
+                .count();
+            text_width += chars as f32 * per_char * r.style.size;
+            let k = if r.style.face == FaceId::Hebrew {
+                para.hebrew_line_height
+            } else {
+                1.0
+            };
+            line_size = line_size.max(r.style.size * 1.46 * k);
+        }
+        if line_size == 0.0 {
+            line_size = 16.0 * 1.46;
+        }
+        // Interlinear lines (#143) widen each Tagged word to its column and add rows under
+        // every line.
+        let (widen, rows) = match &para.interlinear {
+            Some(il) if il.rows > 0 => (
+                INTERLINEAR_WIDEN,
+                il.rows as f32 * il.size * 1.35 + line_size / 1.46 * 0.5,
+            ),
+            _ => (1.0, 0.0),
         };
-        // Marks take no advance; count base characters only.
-        let chars = r
-            .text
-            .chars()
-            .filter(|c| !unicode_normalization_like_mark(*c))
-            .count();
-        text_width += chars as f32 * per_char * r.style.size;
-        let k = if r.style.face == FaceId::Hebrew {
-            para.hebrew_line_height
-        } else {
-            1.0
-        };
-        line_size = line_size.max(r.style.size * 1.46 * k);
+        Self {
+            text_width,
+            line_size,
+            line_spacing: para.line_spacing,
+            taken: para.inset + para.indent * 0.5,
+            space_before: para.space_before,
+            space_after: para.space_after,
+            widen,
+            rows,
+        }
     }
-    if line_size == 0.0 {
-        line_size = 16.0 * 1.46;
+
+    /// The estimated height at `width` px.
+    pub fn at(&self, width: f32) -> f32 {
+        let avail = (width - self.taken).max(1.0);
+        let lines = (self.text_width * self.widen / avail).ceil().max(1.0);
+        self.space_before
+            + lines * (self.line_size * self.line_spacing + self.rows)
+            + self.space_after
     }
-    let avail = (width - para.inset - para.indent * 0.5).max(1.0);
-    // Interlinear lines (#143) widen each Tagged word to its column and add rows under
-    // every line.
-    let (widen, rows) = match &para.interlinear {
-        Some(il) if il.rows > 0 => (
-            INTERLINEAR_WIDEN,
-            il.rows as f32 * il.size * 1.35 + line_size / 1.46 * 0.5,
-        ),
-        _ => (1.0, 0.0),
-    };
-    let lines = (text_width * widen / avail).ceil().max(1.0);
-    para.space_before + lines * (line_size * para.line_spacing + rows) + para.space_after
 }
 
 /// Combining marks (Hebrew points and accents, Greek and Latin diacritics).

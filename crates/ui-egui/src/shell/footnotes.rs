@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_model::{Direction, Span, SpanKind, TextUnit};
 use obs_scripture::{
     Book, Passage, PassageList, RefStyle, Standard, Versification, format_passage,
@@ -697,22 +697,9 @@ impl State {
         let (rect, response) = ui.allocate_exact_size(vec2(WIDTH, height), Sense::hover());
         let text = body.unit.text.clone();
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
-        let quads = self.atlas.atlas.quads(
-            &laid,
-            [rect.left(), rect.top()],
-            ui.ctx().pixels_per_point(),
-        );
-        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                self.palette.color(q.role),
-            );
-        }
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         painter.rect_filled(rect.expand(space::XS), radius::S, self.palette.page);
-        painter.add(Shape::mesh(mesh));
+        self.atlas.paint(&painter, &laid, rect.min, &self.palette);
         let mut go = None;
         let mut drawn = Vec::new();
         let mut focus = LinkFocus::NoLink;

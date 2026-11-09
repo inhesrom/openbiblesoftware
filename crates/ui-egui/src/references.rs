@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Weak};
 
-use egui::{Mesh, Pos2, Rect, Sense, Shape, Ui, vec2};
+use egui::{Rect, Sense, Ui, vec2};
 use obs_engine::cross_references::{self, BiblePreview, ReferenceGroup, TOP_REFERENCES};
 use obs_engine::{JobEventKind, JobId, JobQueue, Library};
 use obs_layout::ColorRole;
@@ -465,22 +465,9 @@ impl State {
         };
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &preview.text));
-        let quads = self.atlas.atlas.quads(
-            &laid,
-            [rect.left(), rect.top()],
-            ui.ctx().pixels_per_point(),
-        );
-        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                self.palette.color(q.role),
-            );
-        }
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         painter.rect_filled(rect, 0.0, self.palette.page);
-        painter.add(Shape::mesh(mesh));
+        self.atlas.paint(&painter, &laid, rect.min, &self.palette);
         if !one_line && (preview.truncated || laid.height > height) {
             ui.small("Preview shortened — click the reference to read");
         }

@@ -24,7 +24,8 @@ max_all_settle_frames = 3
 [budget]
 # UI-thread layout per frame, p99 over all frames.
 max_sync_layout_p99_ms = 2.0
-# Glyph atlas as uploaded (RGBA).
+# Glyph atlas as uploaded (RGBA). The reading pane holds every atlas texture a frame paints
+# with, replaced ones included, to the same 32 MiB (`TEXT_GPU_BUDGET`, #255).
 max_text_gpu_mib = 32.0
 
 # Feature scenarios (#183), each from the #19 targets: at most 1% missed frames while the
@@ -56,6 +57,12 @@ max_settle_frames = 1
 max_missed_pct = 1.0
 max_sync_p99_ms = 2.0
 max_placeholder_frames = 0
+
+[features.resize]           # every pane's width dragged a point a frame (#255)
+# Missed frames catch a new width that styles every block again (717 ms a frame before
+# #255); the synchronous work is the budgeted layout after it, as a jump's is.
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 
 [features.atlas]            # panning, zooming, following chapters of 8-120 places
 max_missed_pct = 1.0

@@ -6,7 +6,7 @@ use egui::{
     vec2,
 };
 use obs_engine::HighlightLook;
-use obs_render::GlyphAtlas;
+use obs_render::{GlyphAtlas, GlyphQuad};
 
 use crate::find::Found;
 use crate::marks::{Mark, MarkKind};
@@ -16,16 +16,50 @@ use crate::selection::{
 };
 use crate::tokens::{alpha, mark, motion, radius, scale, size, space, stroke};
 use crate::view::{FootnoteMarker, MARGIN, ReadingView, SYNC_BUDGET};
-use obs_layout::{InlineObject, UnitPos};
+use obs_layout::{InlineObject, LaidBlock, UnitPos};
 use obs_scripture::Verse;
 
 const SCROLLBAR: f32 = size::SCROLLBAR;
 
+/// GPU memory the atlas's textures may take at once, as a frame is painted: #19's text GPU
+/// budget (`max_text_gpu_mib` in `xtask/bench.toml`).
+pub const TEXT_GPU_BUDGET: usize = 32 * 1024 * 1024;
+
+/// How many times glyphs may be rastered at half the device scale, when more distinct
+/// glyphs are in view than [`TEXT_GPU_BUDGET`] holds at full scale: down to an eighth.
+const MAX_COARSE: u32 = 3;
+
+/// GPU memory of the largest atlas texture.
+const FULL_TEXTURE: usize = obs_render::MAX_SIZE * obs_render::MAX_SIZE * 4;
+
 /// The atlas plus its GPU copy.
+///
+/// Every draw pairs its quads with the texture as it is right after they are made
+/// ([`Self::runs`]): a later draw in the same pass that grows the atlas or starts it over gets
+/// a texture of its own, and the one the earlier quads sample stays until that pass has been
+/// painted (#255). Those textures together stay within [`TEXT_GPU_BUDGET`]: a start-over that
+/// would go past it waits for the next frame. When the glyphs in view need more than the
+/// budget's textures hold, later frames raster them coarser, so every glyph in view is drawn
+/// again within a few frames; once they would fit at the finer scale with room to spare, it
+/// goes back to it.
+///
+/// Passes are counted in the root viewport's, as floating windows are immediate viewports drawn
+/// within its pass with this same atlas.
 pub struct AtlasTexture {
     pub atlas: GlyphAtlas,
-    handle: Option<TextureHandle>,
+    /// The texture the atlas is uploaded to, and the last pass that drew with it.
+    handle: Option<(TextureHandle, u64)>,
     generation: u64,
+    /// Textures replaced in a pass that drew with them, with that pass: its shapes sample them
+    /// until it is painted. In a later pass they are spare, emptied to one pixel (so the GPU
+    /// lets go of them before it paints again) and filled again rather than a texture made.
+    retired: Vec<(u64, TextureHandle)>,
+    /// The root pass in which a draw last left glyphs for a later frame.
+    deferred: Option<u64>,
+    /// The last root pass that drew.
+    last_pass: Option<u64>,
+    /// Glyphs raster at the device scale halved this many times (up to [`MAX_COARSE`]).
+    coarse: u32,
 }
 
 impl Default for AtlasTexture {
@@ -34,8 +68,19 @@ impl Default for AtlasTexture {
             atlas: GlyphAtlas::new(),
             handle: None,
             generation: u64::MAX,
+            retired: Vec::new(),
+            deferred: None,
+            last_pass: None,
+            coarse: 0,
         }
     }
+}
+
+/// Glyph quads and the atlas texture they sample.
+#[derive(Debug, Clone)]
+pub struct GlyphRun {
+    pub texture: egui::TextureId,
+    pub quads: Vec<GlyphQuad>,
 }
 
 fn coverage_image(coverage: &[u8], side: usize, region: [usize; 4]) -> ColorImage {
@@ -50,25 +95,206 @@ fn coverage_image(coverage: &[u8], side: usize, region: [usize; 4]) -> ColorImag
     ColorImage::new([x1 - x0, y1 - y0], pixels)
 }
 
+/// The root viewport's pass: shapes of a pass sample what they were made with until it is
+/// painted, its immediate viewports' shapes included.
+fn root_pass(ctx: &egui::Context) -> u64 {
+    ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT)
+}
+
 impl AtlasTexture {
-    /// Upload what changed and return the texture.
-    pub fn sync(&mut self, ctx: &egui::Context) -> egui::TextureId {
+    /// Upload what changed and return the texture, to draw with in this pass.
+    fn sync(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        let pass = root_pass(ctx);
+        for (at, spare) in &mut self.retired {
+            if *at < pass && spare.size() != [1, 1] {
+                spare.set(
+                    ColorImage::new([1, 1], vec![Color32::TRANSPARENT]),
+                    TextureOptions::NEAREST,
+                );
+            }
+        }
         let side = self.atlas.side();
         let generation = self.atlas.stats().generation;
         if self.handle.is_none() || generation != self.generation {
             let img = coverage_image(self.atlas.coverage(), side, [0, 0, side, side]);
-            self.handle = Some(ctx.load_texture("glyph-atlas", img, TextureOptions::NEAREST));
+            let handle = match self.handle.take() {
+                // Nothing of this pass samples it yet: fill it anew.
+                Some((mut h, drawn)) if drawn < pass => {
+                    h.set(img, TextureOptions::NEAREST);
+                    h
+                }
+                // This pass's shapes sample it until painted: the atlas goes to another.
+                drawn => {
+                    let spare = (self.retired.iter())
+                        .position(|(at, _)| *at < pass)
+                        .map(|i| self.retired.swap_remove(i).1);
+                    let h = match spare {
+                        Some(mut h) => {
+                            h.set(img, TextureOptions::NEAREST);
+                            h
+                        }
+                        None => ctx.load_texture("glyph-atlas", img, TextureOptions::NEAREST),
+                    };
+                    if let Some((old, _)) = drawn {
+                        self.retired.push((pass, old));
+                    }
+                    h
+                }
+            };
+            self.handle = Some((handle, pass));
             self.generation = generation;
             let _ = self.atlas.take_dirty();
         } else if let Some(region) = self.atlas.take_dirty()
-            && let Some(h) = self.handle.as_mut()
+            && let Some((h, _)) = self.handle.as_mut()
         {
             let img = coverage_image(self.atlas.coverage(), side, region);
             h.set_partial([region[0], region[1]], img, TextureOptions::NEAREST);
         }
         self.handle
-            .as_ref()
-            .map_or(egui::TextureId::default(), TextureHandle::id)
+            .as_mut()
+            .map_or(egui::TextureId::default(), |(h, drawn)| {
+                *drawn = pass;
+                h.id()
+            })
+    }
+
+    /// GPU memory of the textures this pass's shapes sample: the atlas's and those it replaced
+    /// in this pass (spares are emptied before it is painted).
+    fn gpu_bytes(&self, pass: u64) -> usize {
+        let retired = (self.retired.iter())
+            .filter(|(at, _)| *at == pass)
+            .map(|(_, h)| h.byte_size());
+        self.handle.as_ref().map_or(0, |(h, _)| h.byte_size()) + retired.sum::<usize>()
+    }
+
+    /// Whether the atlas can start over now: its new texture would be one more until this pass
+    /// is painted.
+    fn room_to_start_over(&self, ctx: &egui::Context) -> bool {
+        let side = self.atlas.side();
+        self.gpu_bytes(root_pass(ctx)) + side * side * 4 <= TEXT_GPU_BUDGET
+    }
+
+    /// Glyphs left for a later frame (once a pass). When the textures this pass samples are
+    /// as many full-size ones as the budget holds, the glyphs in view need more than it: later
+    /// frames raster them coarser, and the next is asked for. Otherwise (the pass grew the
+    /// atlas first), or at the coarsest scale, the next frame is asked for unless the pass
+    /// before left glyphs too (another would leave the same).
+    fn defer(&mut self, ctx: &egui::Context) {
+        let pass = root_pass(ctx);
+        if self.deferred == Some(pass) {
+            return;
+        }
+        let again = self.deferred.is_some_and(|d| d + 1 == pass);
+        self.deferred = Some(pass);
+        let full = (self.retired.iter())
+            .filter(|(at, h)| *at == pass && h.byte_size() == FULL_TEXTURE)
+            .count()
+            + 1;
+        let over = (full + 1) * FULL_TEXTURE > TEXT_GPU_BUDGET;
+        if over && self.coarse < MAX_COARSE {
+            self.coarse += 1;
+        } else if again {
+            return;
+        }
+        ctx.request_repaint();
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+
+    /// At a pass's first draw: back to a finer scale if the last pass's glyphs, rastered at
+    /// it (at most four times the area), would take a quarter of the largest atlas or less.
+    /// That is far from the two full atlases that made it coarser, so it does not go back and
+    /// forth.
+    fn next_pass(&mut self, ctx: &egui::Context, pass: u64) {
+        if self.last_pass == Some(pass) {
+            return;
+        }
+        self.last_pass = Some(pass);
+        let used = self.atlas.take_used_area();
+        if self.coarse > 0 && used * 4 <= obs_render::MAX_SIZE * obs_render::MAX_SIZE / 4 {
+            self.coarse -= 1;
+            ctx.request_repaint();
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
+    }
+
+    /// The glyphs of `laid`, its top-left at `origin`, on the lines that reach into `visible`,
+    /// each run with the texture it samples. More glyphs than the atlas holds at once come in
+    /// more than one run: the atlas starts over between them, as far as [`TEXT_GPU_BUDGET`]
+    /// allows in this pass. The glyphs it does not allow are left to a later frame ([`Self`]).
+    pub fn runs(
+        &mut self,
+        ctx: &egui::Context,
+        laid: &LaidBlock,
+        origin: Pos2,
+        visible: Rect,
+    ) -> Vec<GlyphRun> {
+        self.next_pass(ctx, root_pass(ctx));
+        let scale = ctx.pixels_per_point() / (1u32 << self.coarse) as f32;
+        let (origin, visible) = ([origin.x, origin.y], [visible.top(), visible.bottom()]);
+        let mut runs = Vec::new();
+        let (mut from, mut fresh) = (0, false);
+        loop {
+            let placed = self.atlas.quads_from(laid, origin, scale, visible, from);
+            runs.push(GlyphRun {
+                texture: self.sync(ctx),
+                quads: placed.quads,
+            });
+            // An empty atlas always takes the next glyph, so every run after the first gets
+            // further than the last; one that would not ends the draw.
+            match placed.resume {
+                Some(next) if !(fresh && next == from) => {
+                    if !self.room_to_start_over(ctx) {
+                        self.defer(ctx);
+                        return runs;
+                    }
+                    self.atlas.start_over();
+                    (from, fresh) = (next, true);
+                }
+                _ => return runs,
+            }
+        }
+    }
+
+    /// Paint `laid` with its top-left at `origin`, as far as the painter's clip rect shows
+    /// it, each glyph in its role's colour.
+    pub fn paint(
+        &mut self,
+        painter: &egui::Painter,
+        laid: &LaidBlock,
+        origin: Pos2,
+        palette: &Palette,
+    ) {
+        let runs = self.runs(painter.ctx(), laid, origin, painter.clip_rect());
+        paint_runs(painter, runs, |q| palette.color(q.role));
+    }
+}
+
+/// Paint glyph runs, each glyph in `colour`: one mesh for each texture in a row.
+pub fn paint_runs(
+    painter: &egui::Painter,
+    runs: impl IntoIterator<Item = GlyphRun>,
+    mut colour: impl FnMut(&GlyphQuad) -> Color32,
+) {
+    let mut mesh: Option<Mesh> = None;
+    for run in runs {
+        if mesh.as_ref().is_some_and(|m| m.texture_id != run.texture)
+            && let Some(done) = mesh.take()
+        {
+            painter.add(Shape::mesh(done));
+        }
+        let m = mesh.get_or_insert_with(|| Mesh::with_texture(run.texture));
+        m.reserve_vertices(run.quads.len() * 4);
+        m.reserve_triangles(run.quads.len() * 2);
+        for q in &run.quads {
+            m.add_rect_with_uv(
+                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
+                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
+                colour(q),
+            );
+        }
+    }
+    if let Some(done) = mesh {
+        painter.add(Shape::mesh(done));
     }
 }
 
@@ -280,17 +506,13 @@ pub fn reading_pane(
     out.drag_out = made.drag_out;
     out.user_moved = (view.position().0 - before).abs() > 0.01;
 
-    let ppp = ui.ctx().pixels_per_point();
     let frame = view.frame(rect.height(), Some(SYNC_BUDGET));
-    let mut quads = Vec::new();
+    let mut runs = Vec::new();
     for b in &frame.blocks {
         match &b.laid {
             Some(laid) => {
-                quads.extend(
-                    atlas
-                        .atlas
-                        .quads(laid, [text_rect.left(), rect.top() + b.top], ppp),
-                );
+                let origin = pos2(text_rect.left(), rect.top() + b.top);
+                runs.extend(atlas.runs(ui.ctx(), laid, origin, rect));
             }
             None => {
                 // Placeholder while a worker lays the block out: faint bars where lines go.
@@ -466,14 +688,9 @@ pub fn reading_pane(
         }
     }
     out.hovered_word = hovered_word;
-    let texture = atlas.sync(ui.ctx());
-    let mut mesh = Mesh::with_texture(texture);
-    mesh.reserve_vertices(quads.len() * 4);
-    mesh.reserve_triangles(quads.len() * 2);
-    for q in quads {
-        let glyph = Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max));
-        let at = glyph.center();
-        let color = (recolour.iter().rev())
+    paint_runs(&painter, runs, |q| {
+        let at = Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)).center();
+        (recolour.iter().rev())
             .find(|(r, _)| r.contains(at))
             .map_or_else(
                 || palette.color(q.role),
@@ -483,14 +700,8 @@ pub fn reading_pane(
                         .map_or(palette.page, |(_, g)| *g);
                     palette.text_on(*c, ground)
                 },
-            );
-        mesh.add_rect_with_uv(
-            glyph,
-            Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-            color,
-        );
-    }
-    painter.add(Shape::mesh(mesh));
+            )
+    });
     // Over the glyphs: the red underline, then Note markers at the end of their ranges.
     let rtl = view.doc.direction() == obs_model::Direction::Rtl;
     let hover = response.hover_pos();
@@ -1112,3 +1323,7 @@ pub(crate) fn has_text(view: &ReadingView, sel: &Selection) -> bool {
                 .is_some_and(|t| t.chars().any(|c| !c.is_whitespace()))
         })
 }
+
+#[cfg(test)]
+#[path = "glyph_atlas_tests.rs"]
+mod glyph_atlas_tests;

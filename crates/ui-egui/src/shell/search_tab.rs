@@ -9,7 +9,7 @@
 //! kind of grammar (part of speech, tense, voice, mood …) that writes `@verb aorist
 //! imperative` into the query box.
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, vec2};
+use egui::{Rect, RichText, Sense, Stroke, Ui, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
 use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
 use obs_engine::{MorphCategory, MorphCriteria, ResultsView, SearchTab, TabId};
@@ -816,20 +816,7 @@ impl State {
                                 );
                             }
                         }
-                        let quads = self.atlas.atlas.quads(
-                            &laid,
-                            [origin.x, origin.y],
-                            ui.ctx().pixels_per_point(),
-                        );
-                        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-                        for q in quads {
-                            mesh.add_rect_with_uv(
-                                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                                palette.color(q.role),
-                            );
-                        }
-                        painter.add(Shape::mesh(mesh));
+                        self.atlas.paint(&painter, &laid, origin, &palette);
                     } else {
                         crate::components::text_placeholder(
                             &painter,

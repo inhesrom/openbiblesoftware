@@ -5,7 +5,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Ui, vec2};
+use egui::{RichText, Sense, Ui, vec2};
 use obs_engine::copy_verses::OPTION_CHOICES;
 use obs_engine::{
     CopiedBible, CopiedText, CopyFormat, CopyOptions, ReferencePlacement, TabKind, VerseLayout,
@@ -469,20 +469,8 @@ impl State {
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
             match &laid {
                 Some(laid) if ui.is_rect_visible(rect) => {
-                    let quads = self.atlas.atlas.quads(
-                        laid,
-                        [rect.left(), rect.top()],
-                        ui.ctx().pixels_per_point(),
-                    );
-                    let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-                    for q in quads {
-                        mesh.add_rect_with_uv(
-                            Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                            Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                            self.palette.color(q.role),
-                        );
-                    }
-                    ui.painter().add(Shape::mesh(mesh));
+                    self.atlas
+                        .paint(ui.painter(), laid, rect.min, &self.palette);
                 }
                 Some(_) => {}
                 None => ui.ctx().request_repaint(),

@@ -9,7 +9,7 @@
 //! - **Forms:** each form with its count; a click filters Occurrences (again: clears it).
 //!   The filter is per Tab and resets when the Word Study moves to another number.
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Ui, pos2, vec2};
+use egui::{Rect, RichText, Sense, Ui, pos2, vec2};
 use obs_engine::{Forms, OCCURRENCE_ROWS, OccurrenceList, TabId, TranslatedAs};
 use obs_layout::{ColorRole, TextSettings};
 use obs_model::Key;
@@ -402,20 +402,7 @@ impl State {
                 );
             }
         }
-        let quads = self.atlas.atlas.quads(
-            &laid,
-            [rect.left(), rect.top()],
-            ui.ctx().pixels_per_point(),
-        );
-        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                self.palette.color(q.role),
-            );
-        }
-        painter.add(Shape::mesh(mesh));
+        self.atlas.paint(&painter, &laid, rect.min, &self.palette);
     }
 
     /// One line's placeholder while text is read or laid out.

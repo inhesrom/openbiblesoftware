@@ -23,7 +23,7 @@ mod present;
 mod spans;
 mod style;
 
-pub use estimate::estimate_height;
+pub use estimate::{HeightEstimate, estimate_height};
 pub use interlinear::{
     INTERLINEAR_SCALE, Interlinear, InterlinearWord, add_interlinear, tagged_words,
 };

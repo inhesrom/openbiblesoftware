@@ -4,7 +4,7 @@
 //! Morphology, the first Lexicon's gloss); and prefixes and suffixes under Parts. Original-
 //! script text is drawn by the inline-snippet mode.
 
-use egui::{Mesh, Pos2, Rect, RichText, Shape, Ui, vec2};
+use egui::{RichText, Ui, vec2};
 use obs_engine::word_info::lexicon_excerpt;
 use obs_engine::{LemmaCard, LexiconGloss, ShownWord, TabId};
 use obs_layout::{ColorRole, TextSettings};
@@ -376,20 +376,7 @@ impl State {
             );
             return;
         };
-        let ppp = ui.ctx().pixels_per_point();
-        let quads = self
-            .atlas
-            .atlas
-            .quads(&laid, [rect.left(), rect.top()], ppp);
-        let texture = self.atlas.sync(ui.ctx());
-        let mut mesh = Mesh::with_texture(texture);
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                theme::c().ink,
-            );
-        }
-        ui.painter().add(Shape::mesh(mesh));
+        let runs = (self.atlas).runs(ui.ctx(), &laid, rect.min, ui.clip_rect());
+        crate::pane::paint_runs(ui.painter(), runs, |_| theme::c().ink);
     }
 }
