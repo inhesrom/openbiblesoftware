@@ -150,8 +150,7 @@ impl State {
                 }
             }
             if let Some(is_default) = is_default {
-                let r = ui
-                    .add_enabled(!is_default, egui::Link::new("Reset"))
+                let r = crate::components::link_enabled(ui, !is_default, "Reset")
                     .accessible_name(format!("Reset {}", setting.label))
                     .on_hover_text("Back to the default")
                     .on_disabled_hover_text("Already the default");

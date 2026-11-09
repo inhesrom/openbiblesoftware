@@ -127,6 +127,7 @@ Checked for every command's label and every menu, choice and submenu title
 | Settings | `app.settings` | Ctrl+Comma |
 | — | | |
 | Theme ▸ | `view.theme` (one per choice) | |
+| Theme editor | `view.theme_editor` |  |
 | Page tone ▸ | `view.page_tone` (one per choice) | |
 | Interface size ▸ | `view.interface_size` (one per choice) | |
 | — | | |

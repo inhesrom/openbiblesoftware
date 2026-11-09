@@ -432,8 +432,19 @@ One zoom on the whole app window: menus, Tab bars, headers and dialogs grow or s
 _Avoid_: Zoom, UI scale, DPI
 
 **Theme**:
-The colours of the app's own chrome (menus, Tab bars, headers, dialogs): Light, Dark, or Follow system (the default), which follows the operating system live. View → Theme or Settings.
+The colours of the app's own chrome (menus, Tab bars, headers, dialogs): Light, Dark, Follow system (the default), which follows the operating system live, High contrast light, High contrast dark, or the Custom theme. View → Theme or Settings.
 _Avoid_: Dark mode (as a setting's name), Skin, Colour scheme
+
+**High contrast**:
+A Theme, light or dark, for low vision: every text of the chrome and of the Page tones reads at WCAG AAA (7:1) on what it is drawn on, the keyboard's focus ring is heavy, controls show their edges in a border and links are underlined, so nothing is told by colour alone. In High contrast the Page tones are drawn in their own high-contrast colours (Paper is white with black ink), and Highlight styles are derived to keep AAA.
+_Avoid_: Accessibility mode, Bold theme
+
+**Custom theme**:
+The user's own Theme: a built-in Theme (Light, Dark or High contrast) to start from and the colour roles changed from it (text, secondary text, backgrounds, borders, selection, links and the Link set colours …). It is made in the Theme editor, kept in the User database, and exported or imported as a small JSON file. There is one; importing a file replaces it.
+_Avoid_: Skin, User theme, Palette (that is a Highlight palette)
+
+**Theme editor**:
+The window (View → Theme editor, or Settings → Theme and Page tone) where the Custom theme is made: Start from a built-in Theme, change each colour role with a picker or a hex colour, and see the change at once in the whole window and a preview. Contrast warnings name each pair of colours that does not reach WCAG AA (AAA when it starts from High contrast), with its ratio. Export… and Import… write and read the theme file.
 
 **Page tone**:
 The colour of Resource pages (reading panes, Text Comparison, Guides, Notes cards, reference previews): Auto (the default), Paper, Sepia or Dark. Auto follows the Theme at once: Paper in a light Theme, Dark in a dark one. A tone the user chooses is kept in every Theme; the first time the Theme turns dark over a chosen Paper or Sepia, a one-time hint offers Auto ("Page tone is set to Paper. Use Auto to follow the theme?"). Settings shows the tone the pages are in now.

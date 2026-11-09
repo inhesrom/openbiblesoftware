@@ -74,7 +74,7 @@ fn credit_row(ui: &mut Ui, c: &Credit, library: &Library) {
     field(ui, "Licence", |ui| {
         ui.label(&c.license);
         if let Some(url) = &c.license_url {
-            ui.hyperlink_to("licence deed", url).on_hover_text(url);
+            crate::components::hyperlink_to(ui, "licence deed", url).on_hover_text(url);
         }
     });
     field(ui, "Source", |ui| linked_text(ui, &c.source));
@@ -100,7 +100,7 @@ fn credit_row(ui: &mut Ui, c: &Credit, library: &Library) {
             .and_then(changes_record_url)
             .unwrap_or_else(|| published_changes_url(id));
         field(ui, "Change record", |ui| {
-            ui.hyperlink_to(obs_model::changes_record_file(id), &url)
+            crate::components::hyperlink_to(ui, obs_model::changes_record_file(id), &url)
                 .on_hover_text(&url);
         });
     }
@@ -242,7 +242,7 @@ fn third_party(ui: &mut Ui, t: &ThirdParty) {
                     for c in &t.crates {
                         match &c.repository {
                             Some(r) => {
-                                ui.hyperlink_to(&c.name, r).on_hover_text(r);
+                                crate::components::hyperlink_to(ui, &c.name, r).on_hover_text(r);
                             }
                             None => {
                                 ui.label(&c.name);

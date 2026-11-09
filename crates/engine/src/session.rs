@@ -55,6 +55,8 @@ pub struct Session {
     /// The fonts chosen in View → Fonts (#138), by name. The UI loads them and puts the
     /// reading faces into [`Self::text`].
     pub fonts: crate::appearance::FontChoices,
+    /// The Custom theme made in the Theme editor (#224), an app preference.
+    pub custom_theme: crate::custom_theme::CustomTheme,
     /// Where the toolbar sits and what it shows (#141), an app preference.
     pub toolbar: crate::toolbar_settings::ToolbarSettings,
     /// The user's own keyboard shortcuts (#177), an app preference.
@@ -133,6 +135,7 @@ impl Session {
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
             fonts: crate::appearance::FontChoices::default(),
+            custom_theme: crate::custom_theme::CustomTheme::default(),
             toolbar: crate::toolbar_settings::ToolbarSettings::default(),
             keys: crate::key_bindings::KeyBindings::default(),
             word_info: crate::word_info::WordInfo::default(),
@@ -222,6 +225,7 @@ impl Session {
             }
         }
         self.user = Some(user);
+        self.load_custom_theme();
         if let Some(size) = too_small_text {
             self.reset_too_small_text(size);
         }
@@ -261,6 +265,7 @@ impl Session {
         self.appearance = crate::appearance::Appearance::default();
         self.page_tone_hinted = false;
         self.fonts = crate::appearance::FontChoices::default();
+        self.custom_theme = crate::custom_theme::CustomTheme::default();
         self.toolbar = crate::toolbar_settings::ToolbarSettings::default();
         self.guides.forget_arrangements();
         self.copy_verses = crate::copy_verses::CopyVerses::default();

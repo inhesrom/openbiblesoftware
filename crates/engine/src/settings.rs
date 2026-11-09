@@ -202,9 +202,21 @@ pub const SETTINGS: &[Setting] = &[
         "theme",
         S::ThemeAndPageTone,
         "Theme",
-        "The colours of the app's chrome",
-        "dark mode light colour color appearance night",
+        "The colours of the app's chrome; High contrast reads at WCAG AAA with thick focus \
+         rings, and Custom is the one made in the Theme editor",
+        "dark mode light colour color appearance night high contrast accessibility aaa custom",
         choice("view.theme", "system"),
+    ),
+    setting(
+        "theme_editor",
+        S::ThemeAndPageTone,
+        "Theme editor",
+        "Your Custom theme: its colours, contrast warnings, export and import",
+        "custom theme editor colours colors high contrast export import json palette",
+        SettingKind::Action {
+            command: "view.theme_editor",
+            confirm: false,
+        },
     ),
     setting(
         "page_tone",

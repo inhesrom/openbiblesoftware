@@ -162,7 +162,7 @@ impl State {
         let plans = self.session.home_plans();
         if plans.is_empty() {
             muted(ui, "No Reading plan yet.");
-            if ui.link("Start a Reading plan…").clicked() {
+            if crate::components::link(ui, "Start a Reading plan…").clicked() {
                 *run = Some(("tool.reading_plans", json!({})));
             }
             return;
@@ -272,7 +272,7 @@ impl State {
                 *run = Some(("history.open", json!({ "id": id, "split": split })));
             }
         }
-        if ui.link("All History…").clicked() {
+        if crate::components::link(ui, "All History…").clicked() {
             *run = Some(("tool.history", json!({})));
         }
         ui.add_space(space::S);
@@ -296,21 +296,20 @@ impl State {
                 *run = Some(("favorite.open", json!({ "id": id, "split": split })));
             }
         }
-        if !favorites.is_empty() && ui.link("All Favorites…").clicked() {
+        if !favorites.is_empty() && crate::components::link(ui, "All Favorites…").clicked() {
             *run = Some(("tool.favorites", json!({})));
         }
     }
 
     fn verse_of_the_day_card(&mut self, ui: &mut Ui, run: &mut Run) {
         let votd = self.session.verse_of_the_day();
+        let mut label = crate::components::subtitle_text(&votd.label).color(theme::c().lapis);
+        // Underlined at rest in a High contrast theme (#224), as a Link is.
+        if theme::c().high_contrast {
+            label = label.underline();
+        }
         if ui
-            .add(
-                crate::components::button(
-                    crate::components::subtitle_text(&votd.label)
-                        .color(theme::c().lapis),
-                )
-                .frame(false),
-            )
+            .add(crate::components::button(label).frame(false))
             .on_hover_text(
                 "Read it in the first Bible of your Preferred order (Ctrl/Cmd-click: in a new split)",
             )
@@ -325,7 +324,7 @@ impl State {
             self.preview(ui, votd.passage, false);
         } else {
             muted(ui, "Add a Bible to your library to read it here.");
-            if ui.link("Get Bibles…").clicked() {
+            if crate::components::link(ui, "Get Bibles…").clicked() {
                 *run = Some(("library.get_resources", json!({ "type": "bibles" })));
             }
         }
@@ -367,7 +366,9 @@ impl State {
                         ui.add_space(space::L);
                         match c.get {
                             Some(f) => {
-                                if ui.link(format!("Get {}…", f.label())).clicked() {
+                                if crate::components::link(ui, format!("Get {}…", f.label()))
+                                    .clicked()
+                                {
                                     *run = Some((
                                         "library.get_resources",
                                         json!({ "type": f.id().unwrap_or_default() }),
@@ -375,8 +376,7 @@ impl State {
                                 }
                             }
                             None => {
-                                if ui
-                                    .link("Starter library")
+                                if crate::components::link(ui, "Starter library")
                                     .on_hover_text("These come with the Starter library")
                                     .clicked()
                                 {
@@ -394,7 +394,7 @@ impl State {
         // AccessKit node for its second line.
         if starter.in_library == 0 {
             muted(ui, "The Starter library is not in your library.");
-            if ui.link("Add the Starter library…").clicked() {
+            if crate::components::link(ui, "Add the Starter library…").clicked() {
                 *run = Some(("library.starter", json!({})));
             }
         } else {
@@ -406,11 +406,11 @@ impl State {
                 ui,
                 &format!("Starter library: {}{of} Resources", starter.in_library),
             );
-            if ui.link("Starter library").clicked() {
+            if crate::components::link(ui, "Starter library").clicked() {
                 *run = Some(("library.starter", json!({})));
             }
         }
-        if ui.link("Open the Library").clicked() {
+        if crate::components::link(ui, "Open the Library").clicked() {
             *run = Some(("library.open", json!({})));
         }
     }

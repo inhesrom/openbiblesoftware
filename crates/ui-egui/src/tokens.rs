@@ -81,6 +81,8 @@ pub mod stroke {
     pub const MEDIUM: f32 = 1.5;
     /// Emphasis: a resize handle in use, the current Find match, the keyboard focus ring.
     pub const THICK: f32 = 2.0;
+    /// The keyboard focus ring in a High contrast theme (#224).
+    pub const HEAVY: f32 = 3.0;
 }
 
 /// Opacity factors for washes and tints drawn over a fill (`gamma_multiply`).
@@ -208,6 +210,8 @@ pub mod size {
     pub const DIALOG_LIST: f32 = 640.0;
     /// A dialog window's default size.
     pub const DIALOG: super::Vec2 = super::vec2(600.0, 400.0);
+    /// The Theme editor's preview card (#224).
+    pub const THEME_PREVIEW: f32 = 170.0;
     /// A small dialog window's default size.
     pub const DIALOG_SMALL: super::Vec2 = super::vec2(400.0, 400.0);
 }
@@ -276,6 +280,9 @@ pub fn corner(r: f32) -> CornerRadius {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Chrome {
     pub dark: bool,
+    /// A High contrast theme, or a Custom theme started from one (#224): text reads at WCAG
+    /// AAA, the focus ring is heavy, borders and links show without colour.
+    pub high_contrast: bool,
     pub shell: Color32,
     pub surface: Color32,
     pub field: Color32,
@@ -297,6 +304,7 @@ pub struct Chrome {
 /// Cool linen surfaces, iron ink, lapis and verdigris (the Study desk, #13).
 pub const LIGHT: Chrome = Chrome {
     dark: false,
+    high_contrast: false,
     shell: Color32::from_rgb(232, 236, 235),
     surface: Color32::from_rgb(244, 246, 244),
     field: Color32::from_rgb(255, 255, 253),
@@ -320,6 +328,7 @@ pub const LIGHT: Chrome = Chrome {
 /// The same desk at night: slate surfaces, light ink, brighter accents.
 pub const DARK: Chrome = Chrome {
     dark: true,
+    high_contrast: false,
     shell: Color32::from_rgb(24, 27, 30),
     surface: Color32::from_rgb(33, 37, 41),
     field: Color32::from_rgb(40, 45, 50),
@@ -339,6 +348,50 @@ pub const DARK: Chrome = Chrome {
     hover_rule: Color32::from_rgb(84, 104, 136),
     warn: Color32::from_rgb(232, 140, 100),
     unlinked: Color32::from_rgb(104, 112, 118),
+};
+
+/// High contrast on white (#224): black text, every text colour at 7:1 (WCAG AAA) on every
+/// background, borders and the hover border at 3:1 or more so controls show their edges
+/// without colour.
+pub const HIGH_CONTRAST_LIGHT: Chrome = Chrome {
+    dark: false,
+    high_contrast: true,
+    shell: Color32::from_rgb(242, 242, 242),
+    surface: Color32::from_rgb(255, 255, 255),
+    field: Color32::from_rgb(255, 255, 255),
+    rule: Color32::from_rgb(64, 64, 64),
+    ink: Color32::from_rgb(0, 0, 0),
+    muted: Color32::from_rgb(51, 51, 51),
+    lapis: Color32::from_rgb(0, 51, 153),
+    verdigris: Color32::from_rgb(0, 70, 60),
+    violet: Color32::from_rgb(80, 0, 130),
+    gilt: Color32::from_rgb(110, 80, 0),
+    selection: Color32::from_rgb(210, 228, 255),
+    hover: Color32::from_rgb(230, 240, 255),
+    hover_rule: Color32::from_rgb(0, 0, 0),
+    warn: Color32::from_rgb(130, 20, 0),
+    unlinked: Color32::from_rgb(70, 70, 70),
+};
+
+/// High contrast on black (#224): white text, light accents at 7:1 on every background.
+pub const HIGH_CONTRAST_DARK: Chrome = Chrome {
+    dark: true,
+    high_contrast: true,
+    shell: Color32::from_rgb(0, 0, 0),
+    surface: Color32::from_rgb(18, 18, 18),
+    field: Color32::from_rgb(28, 28, 28),
+    rule: Color32::from_rgb(180, 180, 180),
+    ink: Color32::from_rgb(255, 255, 255),
+    muted: Color32::from_rgb(220, 220, 220),
+    lapis: Color32::from_rgb(160, 200, 255),
+    verdigris: Color32::from_rgb(110, 220, 190),
+    violet: Color32::from_rgb(200, 170, 255),
+    gilt: Color32::from_rgb(240, 200, 80),
+    selection: Color32::from_rgb(20, 40, 100),
+    hover: Color32::from_rgb(40, 48, 64),
+    hover_rule: Color32::from_rgb(255, 255, 255),
+    warn: Color32::from_rgb(255, 170, 140),
+    unlinked: Color32::from_rgb(150, 150, 150),
 };
 
 /// The inks [`crate::theme::text_on`] chooses from for a label on a solid fill (with the

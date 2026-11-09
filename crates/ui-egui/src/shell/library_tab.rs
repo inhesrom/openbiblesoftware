@@ -429,8 +429,12 @@ impl State {
                             ui.label(
                                 RichText::new("Published change record:").color(theme::c().muted),
                             );
-                            ui.hyperlink_to(obs_model::changes_record_file(&m.resource_id), url)
-                                .on_hover_text(url);
+                            crate::components::hyperlink_to(
+                                ui,
+                                obs_model::changes_record_file(&m.resource_id),
+                                url,
+                            )
+                            .on_hover_text(url);
                         });
                     }
                     ui.add_space(space::L);
@@ -536,7 +540,7 @@ fn library_row(
     let c = theme::c();
     let painter = ui.painter_at(rect);
     if selected || dragging {
-        painter.rect_filled(rect, radius::S, c.selection);
+        crate::components::selected_row(&painter, rect, radius::S);
     } else if body.hovered() {
         painter.rect_filled(rect, radius::S, c.hover);
     }

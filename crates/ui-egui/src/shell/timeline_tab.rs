@@ -342,7 +342,10 @@ fn event_row(ui: &mut Ui, e: &TimelineEntry, focus: bool) -> Option<RowAction> {
         ui.label(RichText::new(&e.dates).color(theme::c().muted));
         for p in e.passages.iter().take(4) {
             let label = format_passage(*p, &Standard, RefStyle::Short);
-            if ui.link(label).on_hover_text("Open this Passage").clicked() {
+            if crate::components::link(ui, label)
+                .on_hover_text("Open this Passage")
+                .clicked()
+            {
                 action = Some(RowAction::Passage(*p));
             }
         }

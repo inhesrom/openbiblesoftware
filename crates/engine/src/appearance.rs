@@ -13,6 +13,13 @@ pub enum Theme {
     /// Follow the operating system, live (the default).
     #[default]
     System,
+    /// High contrast (#224): WCAG AAA text, thick focus rings and cues that are not colour
+    /// alone, on a light or a dark ground.
+    HighContrastLight,
+    HighContrastDark,
+    /// The user's own colours, made in the Theme editor from a built-in theme
+    /// ([`crate::custom_theme::CustomTheme`]).
+    Custom,
 }
 
 /// The colour of Resource pages: reading panes, popups, snippets and Guides.
@@ -27,10 +34,29 @@ pub enum PageTone {
 }
 
 impl Theme {
-    pub const ALL: [(Theme, &'static str, &'static str); 3] = [
+    pub const ALL: [(Theme, &'static str, &'static str); 6] = [
         (Theme::System, "system", "Follow system"),
         (Theme::Light, "light", "Light"),
         (Theme::Dark, "dark", "Dark"),
+        (
+            Theme::HighContrastLight,
+            "high_contrast_light",
+            "High contrast light",
+        ),
+        (
+            Theme::HighContrastDark,
+            "high_contrast_dark",
+            "High contrast dark",
+        ),
+        (Theme::Custom, "custom", "Custom"),
+    ];
+
+    /// The themes a Custom theme can start from: those with colours of their own.
+    pub const BUILT_IN: [Theme; 4] = [
+        Theme::Light,
+        Theme::Dark,
+        Theme::HighContrastLight,
+        Theme::HighContrastDark,
     ];
 
     pub fn id(self) -> &'static str {
@@ -42,6 +68,19 @@ impl Theme {
 
     pub fn from_id(id: &str) -> Option<Self> {
         Self::ALL.iter().find(|t| t.1 == id).map(|t| t.0)
+    }
+
+    /// The theme's name in the View menu, Settings and the Theme editor.
+    pub fn label(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|t| t.0 == self)
+            .map_or("Follow system", |t| t.2)
+    }
+
+    /// Whether the theme is one of the High contrast pair.
+    pub fn is_high_contrast(self) -> bool {
+        matches!(self, Theme::HighContrastLight | Theme::HighContrastDark)
     }
 }
 

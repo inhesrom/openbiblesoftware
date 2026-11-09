@@ -133,7 +133,7 @@ pub(super) fn launcher_button(
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let p = ui.painter();
     if open {
-        p.rect_filled(rect, RADIUS, lk.selected);
+        crate::components::selected_row(p, rect, RADIUS);
     } else if resp.hovered() {
         p.rect_filled(rect, RADIUS, lk.hover);
     }
@@ -263,7 +263,7 @@ pub(super) fn overflow_button(ui: &mut Ui, open: bool) -> Response {
     let lk = look();
     let (rect, resp) = ui.allocate_exact_size(overflow_size(), Sense::click());
     if open {
-        ui.painter().rect_filled(rect, RADIUS, lk.selected);
+        crate::components::selected_row(ui.painter(), rect, RADIUS);
     } else if resp.hovered() {
         ui.painter().rect_filled(rect, RADIUS, lk.hover);
     }
@@ -471,10 +471,16 @@ pub(super) fn layout_card(
     };
     p.rect_filled(rect, radius::L, bg);
     let border = if selected { lk.accent } else { lk.rule };
+    // In a High contrast theme (#224) the selected card's border is heavier, not only bluer.
+    let width = if selected && theme::c().high_contrast {
+        stroke::THICK
+    } else {
+        stroke::HAIR
+    };
     p.rect_stroke(
         rect,
         radius::L,
-        Stroke::new(stroke::HAIR, border),
+        Stroke::new(width, border),
         StrokeKind::Inside,
     );
     let thumb = Rect::from_min_size(

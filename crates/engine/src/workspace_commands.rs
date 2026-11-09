@@ -131,6 +131,7 @@ pub const MENUS: &[Menu] = &[
                 title: "Theme",
                 command: "view.theme",
             },
+            C("view.theme_editor"),
             MenuItem::Choice {
                 title: "Page tone",
                 command: "view.page_tone",

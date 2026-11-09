@@ -467,11 +467,13 @@ pub(super) fn menu_label(
     let mut job = egui::text::LayoutJob::default();
     // The swatch sits on the menu, not the page: the style's margin-mark colour for the
     // chrome's theme, strong enough to see against it (#182).
-    let chrome = if crate::theme::c().dark {
-        Palette::DARK
+    let c = crate::theme::c();
+    let tone = if c.dark {
+        obs_engine::PageTone::Dark
     } else {
-        Palette::PAPER
+        obs_engine::PageTone::Paper
     };
+    let chrome = Palette::for_theme(tone, c.high_contrast);
     let paint = chrome.paint(style);
     let swatch = crate::icons::image(ui.ctx(), Icon::Swatch, crate::icons::SMALL, paint.mark);
     let mut text = TextFormat::simple(font, ink);

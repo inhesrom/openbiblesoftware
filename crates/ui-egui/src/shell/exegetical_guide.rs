@@ -207,18 +207,18 @@ impl State {
                         egui::Label::new(RichText::new(t).italics().color(c.ink)).selectable(false),
                     );
                 }
-                let study = ui
-                    .link(RichText::new(row.strongs.to_string()).small())
-                    .on_hover_text("Word Study on this word · Ctrl/Cmd-click opens a new Tab");
+                let study =
+                    crate::components::link(ui, RichText::new(row.strongs.to_string()).small())
+                        .on_hover_text("Word Study on this word · Ctrl/Cmd-click opens a new Tab");
                 if study.clicked() {
                     action = Some(Action::Words(WordsAction::WordStudy(row.strongs, new_tab)));
                 }
-                let lexicon = ui
-                    .link(RichText::new(&row.entry.abbreviation).small())
-                    .on_hover_text(format!(
-                        "Open {} at this entry · Ctrl/Cmd-click opens a new Tab",
-                        row.entry.title
-                    ));
+                let lexicon =
+                    crate::components::link(ui, RichText::new(&row.entry.abbreviation).small())
+                        .on_hover_text(format!(
+                            "Open {} at this entry · Ctrl/Cmd-click opens a new Tab",
+                            row.entry.title
+                        ));
                 if lexicon.clicked() {
                     action = Some(Action::OpenLexicon(row.entry.clone(), new_tab));
                 }

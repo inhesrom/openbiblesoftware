@@ -378,8 +378,7 @@ impl State {
             };
             for row in &group.rows[..count] {
                 let label = format_passage(row.target, &Standard, RefStyle::Short);
-                let r = ui
-                    .link(label)
+                let r = crate::components::link(ui, label)
                     .on_hover_text(format!("{} · {} votes", row.source_title, row.votes));
                 if r.clicked() {
                     navigate = Some(row.target);

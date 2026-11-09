@@ -355,8 +355,7 @@ impl State {
                     if !e.links.is_empty() {
                         ui.label(crate::components::hint_text("See"));
                         for n in &e.links {
-                            if ui
-                                .link(n.to_string())
+                            if crate::components::link(ui, n.to_string())
                                 .on_hover_text("Word Study · Ctrl/Cmd-click opens a new Tab")
                                 .clicked()
                             {

@@ -181,7 +181,7 @@ impl Shell {
                                 }
                                 let painter = ui.painter();
                                 if i == cb.selected {
-                                    painter.rect_filled(rect, radius::S, c.selection);
+                                    crate::components::selected_row(painter, rect, radius::S);
                                 } else if resp.hovered() {
                                     painter.rect_filled(rect, radius::S, c.hover);
                                 }

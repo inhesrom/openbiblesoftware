@@ -595,7 +595,7 @@ fn derived_colours_meet_wcag_aa_for_any_colour_look_and_tone() {
     let steps = [0u8, 51, 102, 153, 204, 255];
     let mut checked = 0;
     for tone in StyleTone::ALL {
-        let palette = Palette::for_style_tone(tone);
+        let palette = Palette::for_style_tone(tone, false);
         for r in steps {
             for g in steps {
                 for b in steps {

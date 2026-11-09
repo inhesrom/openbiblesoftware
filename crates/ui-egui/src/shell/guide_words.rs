@@ -252,12 +252,12 @@ impl State {
                     ui.label(crate::components::hint_text("No Dictionary article"));
                 }
                 for a in &row.articles {
-                    let r = ui
-                        .link(format!("{}: {}", a.abbreviation, a.headword))
-                        .on_hover_text(format!(
-                            "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
-                            a.title, a.headword
-                        ));
+                    let r =
+                        crate::components::link(ui, format!("{}: {}", a.abbreviation, a.headword))
+                            .on_hover_text(format!(
+                                "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
+                                a.title, a.headword
+                            ));
                     if r.clicked() {
                         action = Some(WordsAction::Article(a.clone(), new_tab));
                     }

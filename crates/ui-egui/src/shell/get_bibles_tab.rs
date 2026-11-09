@@ -659,8 +659,12 @@ fn listing_row(
             if let Some(url) = &b.evidence_url {
                 // Open catalogue rows: the archived licence evidence, one click away.
                 ui.horizontal(|ui| {
-                    ui.hyperlink_to(RichText::new("Licence evidence").small(), url)
-                        .on_hover_text(url);
+                    crate::components::hyperlink_to(
+                        ui,
+                        RichText::new("Licence evidence").small(),
+                        url,
+                    )
+                    .on_hover_text(url);
                     ui.add(
                         egui::Label::new(crate::components::hint_text(notes.join(" · ")))
                             .truncate(),

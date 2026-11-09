@@ -42,6 +42,9 @@ pub mod copy_verses;
 mod copy_verses_tests;
 pub mod credits;
 pub mod cross_references;
+pub mod custom_theme;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod custom_theme_tests;
 pub mod diagnostics;
 pub mod drag_drop;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -211,6 +214,9 @@ pub use compare::{
 pub use copy_verses::{
     BookNames, CopiedBible, CopiedBlock, CopiedText, CopiedVerse, CopyFormat, CopyOptions,
     CopyPreset, CopyVerses, ReferencePlacement, VerseLayout, copy_verses, html_document,
+};
+pub use custom_theme::{
+    CUSTOM_THEME_PREF, CustomTheme, THEME_FILE_FORMAT, THEME_FILE_VERSION, ThemeFile, ThemeRole,
 };
 pub use diagnostics::{CrashReport, LogLevel, ZipEntry};
 pub use exegetical_guide::{

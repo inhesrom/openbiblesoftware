@@ -6,7 +6,8 @@
 //! - each surface by keyboard alone: open, use, close, with a visible focus ring on the
 //!   control that has the keyboard;
 //! - every text the chrome paints, in each theme × Page tone, against what it is painted on:
-//!   WCAG AA (4.5:1, 3:1 for large text).
+//!   WCAG AA (4.5:1, 3:1 for large text), and AAA in the High contrast themes (7:1, 4.5:1
+//!   for large text, #224).
 //!
 //! Findings and the gaps left are in `docs/dev/accessibility.md`.
 
@@ -446,6 +447,13 @@ fn every_overlay() -> Vec<Overlay> {
                 h.shell.run("view.highlight_styles", &json!({}));
             },
             |h| h.shell.st.styles_ui.open,
+        ),
+        (
+            "Theme editor",
+            |h| {
+                h.shell.run("view.theme_editor", &json!({}));
+            },
+            |h| h.shell.st.theme_editor.open,
         ),
         (
             "Copy verses",
@@ -1347,11 +1355,16 @@ struct PaintedText {
 }
 
 impl PaintedText {
-    /// WCAG AA: 4.5:1, or 3:1 for large text (18pt, or 14pt bold) and for symbols that are
-    /// not words (icons drawn as glyphs: ★, ≡, ×), which count as graphics.
-    fn required(&self) -> f32 {
+    /// WCAG AA: 4.5:1, or 3:1 for large text (18pt, or 14pt bold); in a High contrast theme
+    /// AAA: 7:1, or 4.5:1 for large text (#224). Symbols that are not words (icons drawn as
+    /// glyphs: ★, ≡, ×) count as graphics: 3:1.
+    fn required(&self, high_contrast: bool) -> f32 {
         let large = self.size >= 24.0 || (self.bold && self.size >= 18.66);
-        if large || !self.text.chars().any(char::is_alphanumeric) {
+        if !self.text.chars().any(char::is_alphanumeric) {
+            3.0
+        } else if high_contrast {
+            if large { 4.5 } else { 7.0 }
+        } else if large {
             3.0
         } else {
             4.5
@@ -1460,22 +1473,39 @@ fn disabled(h: &Harness) -> Vec<egui::Rect> {
         .collect()
 }
 
-/// The text runs of last frame below AA, described.
+/// The bounds of pictures of another theme (the Theme editor's preview, #224): their text is
+/// a sample of colours the user is choosing, which WCAG asks nothing of (part of an image),
+/// and the editor lists the pairs that do not read.
+fn theme_pictures(h: &Harness) -> Vec<egui::Rect> {
+    let nodes = nodes(h);
+    (nodes.values())
+        .filter(|n| n.role() == Role::Image && name_of(&nodes, n).starts_with("Preview of"))
+        .filter_map(Node::bounds)
+        .map(|b| {
+            egui::Rect::from_min_max(
+                pos2(b.x0 as f32, b.y0 as f32),
+                pos2(b.x1 as f32, b.y1 as f32),
+            )
+        })
+        .collect()
+}
+
+/// The text runs of last frame below AA (AAA in High contrast), described.
 fn contrast_failures(h: &Harness) -> Vec<String> {
     let base = crate::theme::c().shell;
-    let disabled = disabled(h);
+    let high_contrast = crate::theme::c().high_contrast;
+    let mut exempt = disabled(h);
+    exempt.extend(theme_pictures(h));
     let mut out: Vec<String> = painted_texts(h, base)
         .into_iter()
-        .filter(|t| !disabled.iter().any(|d| d.contains(t.rect.center())))
+        .filter(|t| !exempt.iter().any(|d| d.contains(t.rect.center())))
         .filter_map(|t| {
             let ratio = crate::palette::contrast(t.color, t.background);
-            (ratio < t.required()).then(|| {
+            let needs = t.required(high_contrast);
+            (ratio < needs).then(|| {
                 format!(
-                    "{:?} {:?} on {:?}: {ratio:.2}:1 (needs {}:1)",
-                    t.text,
-                    t.color,
-                    t.background,
-                    t.required()
+                    "{:?} {:?} on {:?}: {ratio:.2}:1 (needs {needs}:1)",
+                    t.text, t.color, t.background,
                 )
             })
         })
@@ -1487,19 +1517,25 @@ fn contrast_failures(h: &Harness) -> Vec<String> {
 
 /// Every theme × Page tone, applied and drawn: (theme, tone).
 fn each_theme_and_tone(h: &mut Harness, mut check: impl FnMut(&mut Harness, &str, &str)) {
-    for theme in ["light", "dark"] {
+    for theme in ["light", "dark", "high_contrast_light", "high_contrast_dark"] {
         for (_, tone, _) in PageTone::ALL {
             h.shell.run("view.theme", &json!({ "value": theme }));
             h.shell.run("view.page_tone", &json!({ "value": tone }));
             // Past every fade (windows, menus, hover): colours as they settle.
             h.frames(15);
+            assert_eq!(
+                crate::theme::c().high_contrast,
+                theme.starts_with("high_contrast"),
+                "{theme} is drawn"
+            );
             check(h, theme, tone);
         }
     }
 }
 
 /// Acceptance (#182): no text on any Tab kind, toolbar pane, menu or window is below WCAG AA
-/// in Light or Dark with any Page tone.
+/// in Light or Dark with any Page tone. Acceptance (#224): nor below AAA in High contrast
+/// light or dark.
 #[test]
 fn every_surface_meets_wcag_aa_contrast_in_every_theme_and_page_tone() {
     let (mut h, lab) = audit_harness("a11y-contrast");
@@ -1544,47 +1580,35 @@ fn every_surface_meets_wcag_aa_contrast_in_every_theme_and_page_tone() {
 }
 
 /// The chrome's colours themselves, for states the rendered check does not catch (hover, a
-/// selected row): every text colour on every background it can sit on meets AA in both
-/// themes, symbols and the focus ring 3:1.
+/// selected row): every text colour on every background it can sit on meets AA in Light and
+/// Dark and AAA in High contrast (#224), symbols and the focus ring 3:1, chips and badges
+/// their text, and in High contrast the borders 3:1 — the check the Theme editor warns with.
 #[test]
 fn chrome_text_colours_meet_wcag_aa_on_every_chrome_background() {
     use crate::palette::contrast;
-    use crate::theme::{DARK, LIGHT};
-    for ch in [LIGHT, DARK] {
-        let backgrounds = [
-            ("shell", ch.shell),
-            ("surface", ch.surface),
-            ("field", ch.field),
-            ("hover", ch.hover),
-            ("selection", ch.selection),
-        ];
-        for (bg_name, bg) in backgrounds {
-            for (name, ink, needs) in [
-                ("ink", ch.ink, 4.5),
-                ("muted", ch.muted, 4.5),
-                ("lapis", ch.lapis, 4.5),
-                ("verdigris", ch.verdigris, 4.5),
-                ("warn", ch.warn, 4.5),
-                ("gilt (★ only)", ch.gilt, 3.0),
-                ("focus ring", ch.lapis, 3.0),
-            ] {
-                let c = contrast(ink, bg);
-                assert!(
-                    c >= needs,
-                    "{} theme: {name} on {bg_name} is {c:.2}:1, needs {needs}:1",
-                    if ch.dark { "Dark" } else { "Light" }
-                );
-            }
-        }
+    use crate::theme::{DARK, HIGH_CONTRAST_DARK, HIGH_CONTRAST_LIGHT, LIGHT};
+    for (name, ch) in [
+        ("Light", LIGHT),
+        ("Dark", DARK),
+        ("High contrast light", HIGH_CONTRAST_LIGHT),
+        ("High contrast dark", HIGH_CONTRAST_DARK),
+    ] {
+        let shorts = crate::theme::contrast_shorts(&ch);
+        assert!(
+            shorts.is_empty(),
+            "{name} theme:\n{}",
+            (shorts.iter().map(ToString::to_string))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
         // Chips and badges: their text is chosen for their fill.
+        crate::theme::set_for_test(ch);
+        let text = crate::theme::text_contrast(&ch);
         for link in [None, Some('A'), Some('B'), Some('C'), Some('D')] {
-            crate::theme::set_for_test(ch);
             let fill = crate::theme::link_color(link);
             let c = contrast(crate::theme::text_on(fill), fill);
-            assert!(c >= 4.5, "chip {link:?}: {c:.2}:1");
+            assert!(c >= text, "{name}: chip {link:?}: {c:.2}:1");
         }
-        let c = contrast(crate::theme::text_on(ch.gilt), ch.gilt);
-        assert!(c >= 4.5, "badge: {c:.2}:1");
     }
     crate::theme::set_for_test(LIGHT);
     // The heat cells of the Grid view, at every heat.

@@ -578,7 +578,11 @@ impl State {
             .spacing(tokens::ITEM_SPACING)
             .show(ui, |ui| {
                 for tone in StyleTone::ALL {
-                    let palette = Palette::for_style_tone(tone);
+                    // What the page draws in this tone (derived to AAA in High contrast,
+                    // #224); a typed adjustment is checked at AA, as it is stored for every
+                    // theme.
+                    let palette = Palette::for_style_tone(tone, theme::c().high_contrast);
+                    let stored_in = Palette::for_style_tone(tone, false);
                     let paint = palette.paint(&style.appearance);
                     ui.label(tone.label());
                     let (rect, _) = ui.allocate_exact_size(
@@ -616,7 +620,7 @@ impl State {
                                     ));
                                 }
                             } else {
-                                match adjust(&palette, style, &typed) {
+                                match adjust(&stored_in, style, &typed) {
                                     Ok(c) if Some(c) != adjusted => acts.push(Act::Run(
                                         "highlight_style.edit",
                                         json!({ "id": style.id, tone.id(): hex(c) }),
@@ -784,12 +788,19 @@ fn contrast_text(palette: &Palette, look: HighlightLook, color: egui::Color32) -
             .fold(f32::MAX, f32::min),
         HighlightLook::Underline | HighlightLook::Box => contrast(color, palette.page),
     };
-    let ok = if palette.check(look, color).is_ok() {
-        "meets AA"
+    // Text is held to AAA in High contrast (#224); a line or box to 3:1 in every theme.
+    let text = matches!(look, HighlightLook::Background | HighlightLook::TextColor);
+    let level = if palette.high_contrast && text {
+        "AAA"
     } else {
-        "below AA"
+        "AA"
     };
-    format!("{ratio:.1}:1 {ok}")
+    let ok = if palette.check(look, color).is_ok() {
+        "meets"
+    } else {
+        "below"
+    };
+    format!("{ratio:.1}:1 {ok} {level}")
 }
 
 /// A style's colour: its hex field (Enter or leaving it applies) and a menu of presets.

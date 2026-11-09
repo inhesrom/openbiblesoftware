@@ -84,10 +84,32 @@ WCAG exempts inactive components. Each surface is drawn for 15 frames first so f
 settled. Resource text itself (glyph quads, not text shapes) is covered by
 `every_ink_on_every_highlight_meets_wcag_aa_in_every_tone` (#21).
 
+Since #224 the matrix also draws every surface in High contrast light and High contrast dark
+with each Page tone (16 combinations in all) and requires WCAG AAA there: 7:1, or 4.5:1 for
+large text (symbols stay at 3:1). Text inside the Theme editor's preview, a picture of the
+Custom theme's colours named *Preview of the Custom theme*, is exempt as part of an image; the
+editor lists each pair of those colours that does not read.
+
 `chrome_text_colours_meet_wcag_aa_on_every_chrome_background` checks the chrome palette for
 states the rendered check does not reach (hover, a selected row): ink, muted, lapis, verdigris
 and warn on shell, surface, field, hover and selection, the ★ and the focus ring at 3:1, the
-text on every Link set chip and badge, and the Grid view's heat cells at every heat.
+text on every Link set chip and badge, and the Grid view's heat cells at every heat. It runs
+`theme::contrast_shorts`, the same check the Theme editor warns with, on Light, Dark and both
+High contrast themes (AAA, and the borders at 3:1 there).
+
+### High contrast without colour alone (#224)
+
+In High contrast the focus ring is 3 pt (2 pt otherwise); egui's controls have a 1.5 pt border
+in the Borders colour (3:1 or more on every background), so a selected selectable (which egui
+frames only when selected) shows a frame, not only a fill; and every link is underlined at
+rest (`components::link`, and the Verse of the day reference), not only when hovered. States
+the app paints itself are framed too: each Panel's active Tab, and every selected row or open
+button drawn with `components::selected_row` (the Command box's current suggestion, the selected
+Library row, an open Launcher) get a 1.5 pt frame in the Borders colour; selected Search
+results are framed in ink, and the selected Layout card's border is thicker. The Highlight
+styles window reports what the High contrast page draws (AAA). `high_contrast_tests.rs` checks
+these and the Page tones' own High contrast colours (every ink at 7:1 on the page and every overlay, and
+Highlight colours derived to keep 7:1).
 
 ## Findings and fixes
 

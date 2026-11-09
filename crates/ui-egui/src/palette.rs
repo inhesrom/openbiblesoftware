@@ -10,6 +10,8 @@ use obs_layout::ColorRole;
 
 /// WCAG AA for text (#21): ink on a Highlight background, a text-colour style on the page.
 pub const TEXT_CONTRAST: f32 = 4.5;
+/// WCAG AAA for text: what a High contrast theme's text reads at (#224).
+pub const AAA_TEXT_CONTRAST: f32 = 7.0;
 /// WCAG AA for graphics (#21): an underline, a box or a margin mark against the page.
 pub const MARK_CONTRAST: f32 = 3.0;
 
@@ -64,6 +66,9 @@ const DERIVE_STEPS: u16 = 64;
 pub struct Palette {
     /// The tone this is the palette of (Auto resolved).
     pub tone: StyleTone,
+    /// The tone as a High contrast theme draws it (#224): its text reads at WCAG AAA (7:1)
+    /// on the page and every overlay, and Highlight colours are derived to keep it so.
+    pub high_contrast: bool,
     pub page: Color32,
     pub ink: Color32,
     pub verse_number: Color32,
@@ -92,6 +97,7 @@ impl Palette {
     /// Cool linen paper with iron ink (the Study desk page).
     pub const PAPER: Palette = Palette {
         tone: StyleTone::Paper,
+        high_contrast: false,
         page: rgb(250, 251, 248),
         ink: rgb(32, 38, 41),
         verse_number: rgb(110, 82, 26),
@@ -111,6 +117,7 @@ impl Palette {
     /// Warm sepia paper with brown ink.
     pub const SEPIA: Palette = Palette {
         tone: StyleTone::Sepia,
+        high_contrast: false,
         page: rgb(244, 236, 216),
         ink: rgb(56, 44, 30),
         verse_number: rgb(104, 72, 24),
@@ -131,6 +138,7 @@ impl Palette {
     /// lines lighter (#21 decision 3).
     pub const DARK: Palette = Palette {
         tone: StyleTone::Dark,
+        high_contrast: false,
         page: rgb(22, 22, 24),
         ink: rgb(228, 226, 220),
         verse_number: rgb(214, 192, 142),
@@ -147,6 +155,88 @@ impl Palette {
         flash: rgb(72, 60, 26),
     };
 
+    /// White paper with black ink: Paper in a High contrast theme (#224).
+    pub const PAPER_HIGH_CONTRAST: Palette = Palette {
+        tone: StyleTone::Paper,
+        high_contrast: true,
+        page: rgb(255, 255, 255),
+        ink: rgb(0, 0, 0),
+        verse_number: rgb(100, 60, 0),
+        link: rgb(0, 51, 153),
+        note_marker: rgb(0, 80, 70),
+        accent: rgb(120, 40, 0),
+        words_of_jesus: rgb(140, 0, 0),
+        underline: rgb(200, 0, 0),
+        selection: rgb(210, 228, 255),
+        hover: rgb(232, 240, 255),
+        search_hit: rgb(255, 230, 110),
+        find_match: rgb(255, 240, 180),
+        find_current: rgb(150, 80, 0),
+        flash: rgb(250, 225, 150),
+    };
+
+    /// Sepia paper with near-black ink: Sepia in a High contrast theme.
+    pub const SEPIA_HIGH_CONTRAST: Palette = Palette {
+        tone: StyleTone::Sepia,
+        high_contrast: true,
+        page: rgb(250, 240, 215),
+        ink: rgb(30, 20, 0),
+        verse_number: rgb(90, 50, 0),
+        link: rgb(0, 45, 130),
+        note_marker: rgb(0, 70, 55),
+        accent: rgb(100, 40, 0),
+        words_of_jesus: rgb(130, 0, 0),
+        underline: rgb(180, 0, 0),
+        selection: rgb(215, 220, 240),
+        hover: rgb(238, 228, 205),
+        search_hit: rgb(250, 215, 110),
+        find_match: rgb(250, 232, 180),
+        find_current: rgb(140, 70, 0),
+        flash: rgb(240, 220, 160),
+    };
+
+    /// Black page with white ink: Dark in a High contrast theme.
+    pub const DARK_HIGH_CONTRAST: Palette = Palette {
+        tone: StyleTone::Dark,
+        high_contrast: true,
+        page: rgb(0, 0, 0),
+        ink: rgb(255, 255, 255),
+        verse_number: rgb(240, 210, 150),
+        link: rgb(170, 210, 255),
+        note_marker: rgb(150, 230, 180),
+        accent: rgb(255, 200, 160),
+        words_of_jesus: rgb(255, 180, 170),
+        underline: rgb(255, 130, 130),
+        selection: rgb(20, 40, 80),
+        hover: rgb(30, 35, 45),
+        search_hit: rgb(50, 40, 0),
+        find_match: rgb(40, 35, 10),
+        find_current: rgb(255, 200, 90),
+        flash: rgb(60, 50, 10),
+    };
+
+    /// The palette of a resolved tone in a theme that is High contrast or not (#224).
+    pub fn for_theme(tone: PageTone, high_contrast: bool) -> Palette {
+        if !high_contrast {
+            return Self::for_tone(tone);
+        }
+        match tone {
+            PageTone::Sepia => Self::SEPIA_HIGH_CONTRAST,
+            PageTone::Dark => Self::DARK_HIGH_CONTRAST,
+            PageTone::Paper | PageTone::Auto => Self::PAPER_HIGH_CONTRAST,
+        }
+    }
+
+    /// What text needs against what it is drawn on in this palette: WCAG AA, or AAA in a High
+    /// contrast theme.
+    pub fn text_contrast(&self) -> f32 {
+        if self.high_contrast {
+            AAA_TEXT_CONTRAST
+        } else {
+            TEXT_CONTRAST
+        }
+    }
+
     /// The palette of a resolved tone (`Auto` must be resolved first; it reads as Paper).
     pub fn for_tone(tone: PageTone) -> Palette {
         match tone {
@@ -156,18 +246,20 @@ impl Palette {
         }
     }
 
-    /// The palette of a style tone.
-    pub fn for_style_tone(tone: StyleTone) -> Palette {
-        match tone {
-            StyleTone::Paper => Self::PAPER,
-            StyleTone::Sepia => Self::SEPIA,
-            StyleTone::Dark => Self::DARK,
-        }
+    /// The palette of a style tone in a theme that is High contrast or not (#224).
+    pub fn for_style_tone(tone: StyleTone, high_contrast: bool) -> Palette {
+        let tone = match tone {
+            StyleTone::Paper => PageTone::Paper,
+            StyleTone::Sepia => PageTone::Sepia,
+            StyleTone::Dark => PageTone::Dark,
+        };
+        Self::for_theme(tone, high_contrast)
     }
 
     /// Whether `color` can be a style's colour with `look` in this tone (#21): every ink
-    /// reads on it as a background (4.5:1); as a text colour it reads on the page and every
-    /// overlay (4.5:1); as a line or box it shows against the page (3:1).
+    /// reads on it as a background (4.5:1, 7:1 in High contrast); as a text colour it reads
+    /// on the page and every overlay (the same); as a line or box it shows against the page
+    /// (3:1).
     pub fn check(&self, look: HighlightLook, color: Color32) -> Result<(), ContrastShort> {
         let short = |against: &'static str, fg: Color32, bg: Color32, needed: f32| {
             let ratio = contrast(fg, bg);
@@ -177,16 +269,17 @@ impl Palette {
                 needed,
             })
         };
+        let text = self.text_contrast();
         let worst = match look {
             HighlightLook::Background => self
                 .inks()
                 .into_iter()
-                .filter_map(|(role, ink)| short(role_name(role), ink, color, TEXT_CONTRAST))
+                .filter_map(|(role, ink)| short(role_name(role), ink, color, text))
                 .min_by(|a, b| a.ratio.total_cmp(&b.ratio)),
             HighlightLook::TextColor => self
                 .overlays()
                 .into_iter()
-                .filter_map(|(name, bg)| short(name, color, bg, TEXT_CONTRAST))
+                .filter_map(|(name, bg)| short(name, color, bg, text))
                 .min_by(|a, b| a.ratio.total_cmp(&b.ratio)),
             HighlightLook::Underline | HighlightLook::Box => {
                 short("page", color, self.page, MARK_CONTRAST)
@@ -210,12 +303,13 @@ impl Palette {
     }
 
     /// A text-colour Highlight's `color` as drawn on `ground`, the background actually painted
-    /// under the glyph (#21): itself when it reads there (4.5:1), else deepened toward the ink
-    /// just enough. A Highlight background lets every ink read on it, so the ink always does.
+    /// under the glyph (#21): itself when it reads there (4.5:1, 7:1 in High contrast), else
+    /// deepened toward the ink just enough. A Highlight background lets every ink read on it,
+    /// so the ink always does.
     pub fn text_on(&self, color: Color32, ground: Color32) -> Color32 {
         (0..=DERIVE_STEPS)
             .map(|k| mix(color, self.ink, f32::from(k) / f32::from(DERIVE_STEPS)))
-            .find(|c| contrast(*c, ground) >= TEXT_CONTRAST)
+            .find(|c| contrast(*c, ground) >= self.text_contrast())
             .unwrap_or(self.ink)
     }
 
