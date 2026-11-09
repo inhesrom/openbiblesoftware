@@ -88,6 +88,30 @@ The issue names a *status area*: the app has none (messages are toasts that fade
 else is drawn there for F6 to visit, so the menu bar takes that place in the round, giving
 the keyboard a way to the menus.
 
+## The focused Tab follows the keyboard and survives a close (#256)
+
+Every Tab-addressed key acts on the focused Tab (`Workspace::focused`, read per window by
+`Shell::focus_in`), so the focused Tab must always be the one the user sees the keyboard in:
+
+- **Closing it** (`Workspace::close`, Close Panel, or a × / middle click the UI reports through
+  `Workspace::sync_panels`) focuses the Tab its Panel shows next, the one used there most
+  recently; with the Panel gone, the most recently active shown Tab in the same window, else
+  anywhere. Whenever a Panel's active Tab closes or is dragged away the engine queues
+  `Effect::Activate(tab)` so the dock shows the same Tab the engine counts as active (egui_tiles
+  alone would show the Panel's first Tab).
+- **The keyboard moving** onto a widget of another Panel (Tab traversal into its header, its
+  tab bar, a click) focuses that Panel's active Tab: `Shell::follow_keyboard`, run before each
+  window's keys, compares egui's focused widget with the one seen last time and finds the Panel
+  whose rectangle, as last drawn, holds it on the dock's own layer, so a popup or window over a
+  Panel (the Command box's list, the Fonts window) leaves the focus where it was.
+- **The Command box and the Launchers** live in the main window: Ctrl+L, Ctrl+Shift+P or a
+  Launcher key typed in a floating OS window brings the main window to the front with the
+  same `ViewportCommand::Focus` Ctrl+1…9 use.
+
+A Bible Tab loaded with nowhere to start (no Link set location, no other Bible placed) records
+its first Verse as its location at once, so a jump made before it is ever drawn (the Command
+box while Home covers it) has that to go Back to.
+
 ## Tests
 
 - Engine: `keyboard_navigation_tests.rs`: the switcher's order and steps, staying in the
@@ -98,3 +122,8 @@ the keyboard a way to the menus.
   AltGr), Ctrl+Page keys and Alt+arrows, F6 / Shift+F6 round the areas with a ring at each
   stop, and the keys as Help → Keyboard shortcuts names them. The Highlight key tests in
   `annotation_tests.rs` and `highlight_styles_tests.rs` press Alt+digit now.
+- UI: `tab_focus_tests.rs` (#256): Ctrl+W, Ctrl+F, Ctrl+Page Down and Alt+← after closing
+  Home with Ctrl+W or from its tab bar, successive Ctrl+W, Tab traversal into another Panel's
+  header, the Command box's list over a Panel, a jump into a never-drawn Bible, Ctrl+L in a
+  floating OS window, and » at Default and Larger Interface sizes. Engine:
+  `workspace_tests.rs` for the focus after `close`, Close Panel and `sync_panels`.

@@ -73,12 +73,13 @@ impl State {
 }
 
 impl Shell {
-    /// The keyboard was sent to a Tab (Ctrl+1…9, the Tab switcher): when floating windows are
-    /// OS windows of their own, the window showing it is brought to the front and takes the
-    /// keyboard, so the keys typed next reach it. Asked once all of the frame's windows are
-    /// drawn; the main window included, for the way back.
+    /// The keyboard was sent to a Tab (Ctrl+1…9, the Tab switcher), or to the main window's
+    /// Command box or Launchers: when floating windows are OS windows of their own, the window
+    /// showing it is brought to the front and takes the keyboard, so the keys typed next reach
+    /// it. Asked once all of the frame's windows are drawn; the main window included, for the
+    /// way back.
     pub(super) fn focus_os_window(&mut self, ctx: &egui::Context) {
-        let Some(tab) = self.os_focus_to.take() else {
+        let Some(window) = self.os_focus_to.take() else {
             return;
         };
         // Only one OS window (the web, floating windows drawn inside the main one): it has the
@@ -86,7 +87,7 @@ impl Shell {
         if !self.floating.iter().any(|d| d.native) {
             return;
         }
-        let viewport = match self.keys_window(tab) {
+        let viewport = match window {
             None => egui::ViewportId::ROOT,
             Some(w) => match self.floating.iter().find(|d| d.id == w) {
                 Some(d) => d.viewport_id(),
@@ -224,16 +225,54 @@ impl Shell {
     /// The window `panel` is drawn in (none: the main one, or a floating window drawn inside
     /// it) and its rectangle there, as of last frame.
     fn panel_rect(&self, panel: PanelId) -> Option<(Option<WindowId>, Rect)> {
+        self.panel_drawn(panel).map(|(w, _, r)| (w, r))
+    }
+
+    /// Like [`Self::panel_rect`], with the layer the Panel's widgets are on.
+    fn panel_drawn(
+        &self,
+        panel: PanelId,
+    ) -> Option<(Option<WindowId>, Option<egui::LayerId>, Rect)> {
         let tile = |panels: &super::PanelTiles| {
             (panels.iter()).find_map(|(tile, p)| (*p == panel).then_some(*tile))
         };
         if let Some(t) = tile(&self.st.panels) {
-            return Some((None, self.tree.tiles.rect(t)?));
+            return Some((None, self.dock_layer, self.tree.tiles.rect(t)?));
         }
         self.floating.iter().find_map(|d| {
             let rect = d.tree.tiles.rect(tile(&d.panels)?)?;
-            Some((d.native.then_some(d.id), rect))
+            Some((d.native.then_some(d.id), d.layer, rect))
         })
+    }
+
+    /// The keyboard moved onto another widget in `window` (none: the main one), by Tab, a
+    /// click or a shortcut: when it is a Panel's (its tab bar or its active Tab's header or
+    /// text), that Panel's active Tab becomes the focused one, so the keys typed next act on
+    /// the Tab the keyboard is in (#256). A popup or window over a Panel is not in it. Read
+    /// before the window's keys.
+    pub(super) fn follow_keyboard(&mut self, ctx: &egui::Context, window: Option<WindowId>) {
+        let now = ctx.memory(egui::Memory::focused);
+        if self.keyboard_seen.insert(window, now) == Some(now) {
+            return;
+        }
+        let Some(widget) = now.and_then(|id| ctx.read_response(id)) else {
+            return;
+        };
+        let at = widget.rect.center();
+        let ws = &self.st.session.workspace;
+        let panel = (ws.panels_in_order().into_iter())
+            .filter_map(|p| Some((p, self.panel_drawn(p)?)))
+            .filter(|(_, (w, layer, rect))| {
+                *w == window && *layer == Some(widget.layer_id) && rect.contains(at)
+            })
+            .min_by(|a, b| a.1.2.area().total_cmp(&b.1.2.area()))
+            .map(|(p, _)| p);
+        let ws = &mut self.st.session.workspace;
+        if let Some(t) = panel.and_then(|p| ws.active_in(p))
+            && ws.focused() != Some(t)
+        {
+            ws.user_focused(t);
+        }
     }
 
     /// F6's stops in `window`, in order, each with where it was drawn: in the main window the

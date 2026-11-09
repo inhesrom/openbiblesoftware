@@ -3549,6 +3549,8 @@ mod reading_layout;
 mod recently_closed;
 #[path = "settings_tests.rs"]
 mod settings;
+#[path = "tab_focus_tests.rs"]
+mod tab_focus;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]

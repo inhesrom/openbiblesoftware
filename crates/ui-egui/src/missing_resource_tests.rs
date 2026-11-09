@@ -561,6 +561,9 @@ fn untagged_bibles_still_offer_the_starter_library_for_key_words_and_forms() {
         &[(john_3_16, "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον")],
     );
     let (mut h, _lab) = setup("untagged", &[english, greek]);
+    // Tall enough for the Word Study's last section, opened beside the Passage Guide that
+    // keeps the focus once the Starter library Tab closes (#256).
+    h.screen = vec2(1400.0, 1300.0);
     let guide = h
         .shell
         .run(

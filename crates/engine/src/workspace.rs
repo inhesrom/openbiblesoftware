@@ -745,6 +745,9 @@ pub enum Effect {
     },
     Focus(TabId),
     Closed(TabId),
+    /// Show `tab` as its Panel's active Tab: the one the Panel shows now that the Tab it
+    /// showed was closed or moved out (#256).
+    Activate(TabId),
     /// Move a Tab's view to a location (a jump, Back or Forward).
     Navigate {
         tab: TabId,
@@ -1277,15 +1280,33 @@ impl Workspace {
         }
     }
 
+    /// Close a Tab. Its Panel shows the Tab used there most recently; when it was the focused
+    /// Tab, that one is focused now, so the keys go on working without a click (#256).
     pub fn close(&mut self, tab: TabId) -> bool {
+        let refocus = (self.focused == Some(tab))
+            .then(|| Some((self.panel_of(tab)?, self.window_of(tab))))
+            .flatten();
+        if !self.close_without_refocus(tab) {
+            return false;
+        }
+        if let Some((panel, window)) = refocus {
+            self.focus_after_close(panel, window);
+        }
+        true
+    }
+
+    /// Close a Tab, leaving the focus to the caller ([`Self::focus_after_close`]).
+    pub(crate) fn close_without_refocus(&mut self, tab: TabId) -> bool {
         if !self.remove_tab(tab) {
             return false;
         }
         self.activity.remove(&tab);
+        let mut shown = None;
         for (tabs, active) in self.panels.values_mut() {
             tabs.retain(|t| *t != tab);
             if *active == Some(tab) {
-                *active = tabs.last().copied();
+                *active = most_recent_of(tabs, &self.activity);
+                shown = *active;
             }
         }
         self.panels.retain(|_, (tabs, _)| !tabs.is_empty());
@@ -1293,7 +1314,31 @@ impl Workspace {
             self.focused = None;
         }
         self.queue(Effect::Closed(tab));
+        if let Some(t) = shown {
+            self.queue(Effect::Activate(t));
+        }
         true
+    }
+
+    /// The focused Tab was closed out of `panel`, in `window` (none: the main one): focus the
+    /// Tab that Panel shows now, or, the Panel gone with it, the most recently active Tab left
+    /// in the same window, else anywhere (#256).
+    pub(crate) fn focus_after_close(&mut self, panel: PanelId, window: Option<WindowId>) {
+        let recent = self.by_activity();
+        let next = self.active_in(panel).or_else(|| {
+            let shown = |t: &&TabId| {
+                self.panel_of(**t)
+                    .is_some_and(|p| self.active_in(p) == Some(**t))
+            };
+            (recent.iter())
+                .filter(shown)
+                .find(|t| self.window_of(**t) == window)
+                .or_else(|| recent.iter().find(shown))
+                .copied()
+        });
+        if let Some(t) = next {
+            self.focus(t);
+        }
     }
 
     /// What the UI now shows after the user dragged, docked or closed Tabs: each Panel's
@@ -1308,6 +1353,10 @@ impl Workspace {
             .collect();
         // The user closed them (× or a middle click): Reopen closed Tab brings them back (#214).
         self.remember_gone(&gone);
+        let lost_focus = self
+            .focused
+            .filter(|t| gone.contains(t))
+            .and_then(|t| Some((self.panel_of(t)?, self.window_of(t))));
         for t in gone {
             self.remove_tab(t);
             self.activity.remove(&t);
@@ -1324,16 +1373,29 @@ impl Workspace {
             if tabs.is_empty() {
                 continue;
             }
-            let active = self
-                .panels
-                .get(&p)
-                .and_then(|(_, a)| *a)
-                .filter(|a| tabs.contains(a))
-                .or_else(|| tabs.first().copied());
+            let was = self.panels.get(&p).and_then(|(_, a)| *a);
+            let active = was.filter(|a| tabs.contains(a));
+            // Its active Tab closed or dragged away: the Panel shows the one used there most
+            // recently (#256).
+            let active = match active {
+                Some(a) => Some(a),
+                None => {
+                    let shown = most_recent_of(&tabs, &self.activity);
+                    if was.is_some()
+                        && let Some(t) = shown
+                    {
+                        self.queue(Effect::Activate(t));
+                    }
+                    shown
+                }
+            };
             self.next_panel = self.next_panel.max(p.0);
             next.insert(p, (tabs, active));
         }
         self.panels = next;
+        if let Some((panel, window)) = lost_focus {
+            self.focus_after_close(panel, window);
+        }
     }
 
     /// Record a jump in a Tab's history, move its view, and move its Link set (flashing the
@@ -1853,7 +1915,7 @@ impl Workspace {
     pub fn clear(&mut self) {
         let ids: Vec<TabId> = self.tabs.keys().copied().collect();
         for t in ids {
-            self.close(t);
+            self.close_without_refocus(t);
         }
         self.remembered.clear();
         self.last_reading_panel = None;
@@ -1989,4 +2051,11 @@ fn beside_right(arrangement: Option<LayoutNode>, node: LayoutNode) -> LayoutNode
             children: vec![(other, 2.0), (node, 1.0)],
         },
     }
+}
+
+/// Of `tabs`, the one active most recently (the last one, when none has been).
+fn most_recent_of(tabs: &[TabId], activity: &BTreeMap<TabId, u64>) -> Option<TabId> {
+    tabs.iter()
+        .max_by_key(|t| activity.get(t).copied().unwrap_or(0))
+        .copied()
 }

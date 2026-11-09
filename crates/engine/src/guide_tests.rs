@@ -630,9 +630,11 @@ fn an_unlinked_passage_guide_opens_at_the_focused_tabs_passage() {
         .unwrap();
     assert_eq!(guide.link, None);
     assert_eq!(guide.history.current(), Some(john(3, 16)));
-    // With nothing focused it opens empty, waiting for a typed Passage.
-    let focused = s.workspace.focused().unwrap();
-    s.workspace.close(focused);
+    // With nothing focused (every Tab closed) it opens empty, waiting for a typed Passage.
+    let open: Vec<TabId> = s.workspace.tabs().map(|t| t.id).collect();
+    for t in open {
+        s.workspace.close(t);
+    }
     assert_eq!(s.workspace.focused(), None);
     let out = s.run("guide.passage_guide", &json!({})).unwrap();
     let guide = s
