@@ -73,6 +73,13 @@ const STARTER_ID: &str = "e2e-bible";
 const MARKER_PREF: &str = "e2e.marker";
 /// The log line `swap_in` writes once the new files are in place.
 const SWAPPED: &str = "update installed;";
+/// The log lines of an Update check or Update now that failed.
+const UPDATE_FAILED: [&str; 4] = [
+    "update check failed",
+    "update not started",
+    "update failed",
+    "update not installed",
+];
 /// The log line of the launch clean-up once `.openbible-update` is gone.
 const CLEANED_UP: &str = "removed the files the last update replaced";
 
@@ -473,6 +480,15 @@ fn run_until_restart(
         }
         if let Some(status) = child.try_wait()? {
             break status;
+        }
+        // The app keeps running after a failed update; no need to wait for the timeout.
+        let log = log_text(logs);
+        if let Some(line) = log
+            .lines()
+            .find(|l| UPDATE_FAILED.iter().any(|f| l.contains(f)))
+        {
+            let _ = child.kill();
+            bail!("v{from} could not update: {line}\n{log}");
         }
         if started.elapsed() > timeout {
             let _ = child.kill();

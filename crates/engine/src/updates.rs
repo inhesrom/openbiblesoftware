@@ -1344,10 +1344,15 @@ impl Session {
         log::info!("downloading the update {}", archive.name);
         Ok(self.jobs().submit_fn("Update download", move |ctx| {
             let staged = (|| {
+                // What went wrong exactly goes to the log; the notice says it in plain words.
+                let failed = |name: &str, e: FetchError| {
+                    log::warn!("downloading {name}: {e}");
+                    UpdateError::from_fetch(e)
+                };
                 let small = |a: &ReleaseAsset| {
                     fetch
                         .get(&a.url, &mut |_, _| !ctx.is_cancelled())
-                        .map_err(UpdateError::from_fetch)
+                        .map_err(|e| failed(&a.name, e))
                 };
                 let sums_bytes = small(&sums)?;
                 let signature_bytes = signature.as_ref().map(small).transpose()?;
@@ -1357,7 +1362,7 @@ impl Session {
                         ctx.progress(done, size.unwrap_or(total).max(done));
                         !ctx.is_cancelled()
                     })
-                    .map_err(UpdateError::from_fetch)?;
+                    .map_err(|e| failed(&archive.name, e))?;
                 let verification = verify_archive(
                     &archive.name,
                     &bytes,
