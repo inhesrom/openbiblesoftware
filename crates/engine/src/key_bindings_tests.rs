@@ -203,14 +203,14 @@ fn clear_and_reset_all_survive_a_restart() {
     // A command with no default key can be given one.
     s.run(
         "keys.set",
-        &json!({ "command": "help.credits", "key": "F1" }),
+        &json!({ "command": "help.credits", "key": "F12" }),
     )
     .unwrap();
     drop(s);
     let mut s = launch(&t.db());
     assert_eq!(s.shortcut("tab.find"), None);
     assert_eq!(s.shortcut("selection.note"), Some("Alt+N"));
-    assert_eq!(s.shortcut("help.credits"), Some("F1"));
+    assert_eq!(s.shortcut("help.credits"), Some("F12"));
     // A cleared key is free for another binding.
     assert!(s.key_conflict("view.text_larger", "Ctrl+F").is_none());
     s.run("keys.reset_all", &json!({})).unwrap();

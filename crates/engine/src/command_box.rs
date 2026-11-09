@@ -73,6 +73,10 @@ pub const IN_PLACE_COMMANDS: &[&str] = &[
     "highlight_palette.import",
     "theme.export",
     "theme.import",
+    // The First-run tour's Coach mark buttons (#218); Help → Take the tour starts it.
+    "tour.next",
+    "tour.back",
+    "tour.skip",
 ];
 
 /// Whether the Command box lists `spec` (#226): it runs with no parameter but the focused

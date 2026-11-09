@@ -107,6 +107,10 @@ pub struct Session {
     pub(crate) last_restore: Option<crate::backups::LastRestore>,
     /// The Update settings, check and Update now (#276).
     pub(crate) updates: crate::updates::Updates,
+    /// The page the User guide Tab shows (#218).
+    pub(crate) user_guide: crate::user_guide::UserGuide,
+    /// The First-run tour (#218).
+    pub(crate) tour: crate::tour::Tour,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
@@ -161,6 +165,8 @@ impl Session {
             diagnostics: crate::diagnostics::Diagnostics::default(),
             last_restore: None,
             updates: crate::updates::Updates::default(),
+            user_guide: crate::user_guide::UserGuide::default(),
+            tour: crate::tour::Tour::default(),
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
     }
@@ -246,6 +252,7 @@ impl Session {
         self.load_key_bindings();
         self.load_log_level();
         self.load_update_settings();
+        self.load_tour();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

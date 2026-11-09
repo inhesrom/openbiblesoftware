@@ -126,6 +126,8 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::copy_verses::COMMANDS)
         .chain(crate::diagnostics::COMMANDS)
         .chain(crate::updates::COMMANDS)
+        .chain(crate::user_guide::COMMANDS)
+        .chain(crate::tour::COMMANDS)
         .chain(crate::notes_export::COMMANDS)
         .chain(crate::toolbar::COMMANDS)
         .chain(crate::interlinear::COMMANDS)

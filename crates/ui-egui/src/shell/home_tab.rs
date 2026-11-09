@@ -43,6 +43,7 @@ impl State {
                 "Today's reading, where you left off, Quick start and your library",
                 "home.open",
             ));
+        (self.tour_ui).target(obs_engine::TourTarget::Home, r.rect, true);
         if !r.clicked() {
             return false;
         }

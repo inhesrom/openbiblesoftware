@@ -10,7 +10,7 @@ use egui::{Color32, RichText, Stroke, Ui, pos2, vec2};
 use egui_tiles::{Container, Linear, LinearDir, Tile, TileId, Tiles, Tree, UiResponse};
 use obs_engine::{
     Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, Side,
-    TabId, TabKind, Tool,
+    TabId, TabKind, Tool, TourTarget,
     interlinear::{InterlinearKind, InterlinearLine},
 };
 use obs_model::{Key, ResourceType};
@@ -78,7 +78,9 @@ mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
 mod topic_guide_tab;
+pub(crate) mod tour_ui;
 pub(crate) mod update_notice;
+pub(crate) mod user_guide_tab;
 mod visual_filters_window;
 mod word_info_tab;
 mod word_sections_view;
@@ -287,6 +289,10 @@ pub(crate) struct State {
     page_tone_hint: page_tone::PageToneHint,
     /// The launch Update check's clock, the update notice and Restart now (#276).
     pub(crate) updates_ui: update_notice::UpdateUi,
+    /// The User guide Tab's pages and screenshots (#218).
+    pub(crate) user_guide_ui: user_guide_tab::UserGuideUi,
+    /// Where the First-run tour's Coach marks point (#218).
+    pub(crate) tour_ui: tour_ui::TourUi,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -394,6 +400,8 @@ impl Shell {
                 areas: Default::default(),
                 page_tone_hint: page_tone::PageToneHint::default(),
                 updates_ui: update_notice::UpdateUi::default(),
+                user_guide_ui: Default::default(),
+                tour_ui: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -981,6 +989,8 @@ impl Shell {
         if !restored || self.st.session.home_opens_at_launch() {
             self.run("home.open", &json!({}));
         }
+        // The First-run tour (#218), over Home, at the first launch with this User database.
+        self.st.session.start_tour_at_first_launch();
     }
 
     /// How soon to draw again without input: job events are applied only when a frame
@@ -1056,10 +1066,12 @@ impl Shell {
             ui.ctx().request_repaint_after(after);
         }
         self.st.keys_ui.begin_frame();
+        self.st.tour_keys(ui.ctx());
         self.shortcuts(ui, None);
         // F6's marks are drawn again this frame (the Toolbar not at all while Auto-hidden).
         self.st.areas = Default::default();
         self.st.toolbar.begin_frame();
+        self.st.tour_ui.begin_frame();
         let menus = egui::Panel::top("menus")
             .frame(
                 egui::Frame::new()
@@ -1069,6 +1081,7 @@ impl Shell {
             .show(ui, |ui| self.menu_bar(ui));
         self.st.areas.menus = menus.inner.map(|id| (id, menus.response.rect));
         self.st.toolbar.menus_bottom = menus.response.rect.bottom();
+        (self.st.tour_ui).target(TourTarget::Toolbar, menus.response.rect, false);
         // The toolbar at the Bottom, Left or Right, or Auto-hidden (#141); then its open pane.
         self.toolbar_outside_menus(ui);
         self.launcher_pane(ui);
@@ -2368,6 +2381,15 @@ impl State {
         let rect = egui::Rect::from_min_max(pos2(pane.left(), ui.cursor().top()), pane.max);
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("body", tab)));
         body.set_clip_rect(rect.intersect(ui.clip_rect()));
+        if let TabKind::Resource(id) = &kind
+            && (self.session.library.get(id))
+                .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible)
+        {
+            // The tour's Word Study Coach mark points at a Bible's text, the focused one's
+            // first (#218).
+            let focused = self.session.workspace.focused() == Some(tab);
+            (self.tour_ui).target(TourTarget::WordStudy, rect, focused);
+        }
         match kind {
             TabKind::Resource(_) => self.reading_body(&mut body, tab),
             TabKind::Library => self.library_body(&mut body, tab),
@@ -2380,6 +2402,7 @@ impl State {
             TabKind::KeyboardShortcuts => self.keys_body(&mut body, tab),
             TabKind::Settings => self.settings_body(&mut body, tab),
             TabKind::Backups => self.backups_body(&mut body, tab),
+            TabKind::UserGuide => self.user_guide_body(&mut body, tab),
             TabKind::Guide(
                 g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
             ) => self.passage_keyed_guide_body(&mut body, tab, g),
@@ -3324,12 +3347,13 @@ impl State {
             HeaderBox::Filter => {
                 // The Settings Tab's box searches its Settings (#213), and has the keyboard
                 // when the Tab is focused, so Ctrl+, opens it ready to type.
-                let settings =
-                    (self.session.workspace.tab(tab)).is_some_and(|t| t.kind == TabKind::Settings);
-                let name = if settings {
-                    "Search settings"
-                } else {
-                    "Filter"
+                let kind = self.session.workspace.tab(tab).map(|t| &t.kind);
+                let settings = kind == Some(&TabKind::Settings);
+                // The User guide's box searches its pages (#218).
+                let name = match kind {
+                    Some(TabKind::Settings) => "Search settings",
+                    Some(TabKind::UserGuide) => "Search the guide",
+                    _ => "Filter",
                 };
                 let focused = settings && self.session.workspace.focused() == Some(tab);
                 if let Some(t) = self.tabs.get_mut(&tab) {
@@ -3545,6 +3569,7 @@ impl State {
         self.collection_editor_window(&ctx);
         self.page_tone_hint_ui(&ctx);
         self.update_notice(&ctx);
+        self.coach_mark(&ctx);
         self.report_problem_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
@@ -3649,6 +3674,9 @@ impl State {
             .accessible_name(
                 link.map_or_else(|| "Not linked".to_string(), |c| format!("Link set {c}")),
             );
+        // The First-run tour's Link sets Coach mark points at the focused Tab's chip (#218).
+        let focused = self.session.workspace.focused() == Some(tab);
+        (self.tour_ui).target(TourTarget::LinkSets, resp.rect, focused);
         egui::Popup::menu(&resp).show(|ui| self.link_menu(ui, tab));
     }
 

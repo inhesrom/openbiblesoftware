@@ -72,6 +72,7 @@ pub(super) fn every_tab_kind() -> Vec<TabKind> {
         TabKind::KeyboardShortcuts,
         TabKind::Settings,
         TabKind::Backups,
+        TabKind::UserGuide,
         TabKind::Guide(Guide::PassageGuide),
         TabKind::Tool(Tool::Search),
     ] {
@@ -102,7 +103,8 @@ pub(super) fn every_tab_kind() -> Vec<TabKind> {
             | TabKind::Home
             | TabKind::KeyboardShortcuts
             | TabKind::Settings
-            | TabKind::Backups => kinds.push(kind),
+            | TabKind::Backups
+            | TabKind::UserGuide => kinds.push(kind),
         }
     }
     kinds
@@ -147,6 +149,7 @@ pub(super) fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
         TabKind::KeyboardShortcuts => ("help.keyboard_shortcuts", split),
         TabKind::Settings => ("app.settings", split),
         TabKind::Backups => ("data.backups", split),
+        TabKind::UserGuide => ("help.user_guide", split),
         TabKind::Guide(Guide::PassageGuide) => (
             "guide.passage_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
@@ -426,6 +429,13 @@ pub(super) fn every_overlay() -> Vec<Overlay> {
             "Help menu",
             |h| h.open_menu("Help"),
             |h| h.find("Credits").is_some(),
+        ),
+        (
+            "First-run tour",
+            |h| {
+                h.shell.run("help.tour", &json!({}));
+            },
+            |h| h.shell.st.session.tour().is_running(),
         ),
         (
             "Customize toolbar",

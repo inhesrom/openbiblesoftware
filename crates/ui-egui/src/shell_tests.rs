@@ -3530,8 +3530,12 @@ mod find_bar;
 mod motion;
 #[path = "report_problem_tests.rs"]
 mod report_problem;
+#[path = "tour_tests.rs"]
+mod tour;
 #[path = "update_notice_tests.rs"]
 mod update_notice;
+#[path = "user_guide_tests.rs"]
+mod user_guide;
 
 #[path = "a11y_audit_tests.rs"]
 mod a11y_audit;
