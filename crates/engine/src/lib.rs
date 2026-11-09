@@ -128,6 +128,8 @@ mod reading_plans_tests;
 pub mod reanchor;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod reanchor_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod reduce_motion_tests;
 pub mod resource_navigation;
 pub mod saved_searches;
 #[cfg(all(test, not(target_arch = "wasm32")))]

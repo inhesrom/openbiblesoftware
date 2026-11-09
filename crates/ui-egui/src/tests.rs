@@ -542,6 +542,32 @@ fn bench_runs_and_reports_every_scenario() {
     );
 }
 
+/// The bench measures motion (#225) unless told to measure Reduce motion: its jumps glide
+/// into place as the Shell's do, and the jumping pane still shows its target in the jump's
+/// own frame (#19), since a glide only moves through laid-out text. (How soon the followers
+/// settle depends on their workers' time: the paced `cargo xtask bench` gates that.)
+#[test]
+fn bench_jumps_glide_and_the_jumping_pane_settles_at_once() {
+    for motion in [true, false] {
+        let cfg = bench::BenchConfig {
+            steady_frames: 10,
+            flings: 1,
+            jumps: 8,
+            panes: 2,
+            pace: false,
+            shell_scenarios: false,
+            motion,
+            ..bench::BenchConfig::default()
+        };
+        let report = bench::run(bench::synthetic_bible(), cfg);
+        assert!(
+            report.jump_origin_settle_frames_max <= 1,
+            "{motion}: {report:?}"
+        );
+        assert!(report.scenarios[2].frames >= 8, "{motion}: {report:?}");
+    }
+}
+
 /// The word the Find scenario steps through is in the bench Bible a few dozen times, far
 /// apart, so each Find next jumps (#183).
 #[test]

@@ -135,6 +135,7 @@ fn every_stored_view_and_toolbar_field_has_a_setting() {
             "red_letter" => vec!["red_letter"],
             "verse_numbers" => vec!["verse_numbers"],
             "highlights" => vec!["highlights"],
+            "reduce_motion" => vec!["reduce_motion"],
             "reading_layout" => vec![
                 "text_flow",
                 "large_chapter_numbers",

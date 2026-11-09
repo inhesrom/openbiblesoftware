@@ -15,6 +15,7 @@ pub mod icons;
 mod interlinear;
 mod key_labels;
 mod marks;
+mod motion;
 mod palette;
 mod pane;
 mod rich_clipboard;
@@ -37,6 +38,7 @@ pub use find::{FindMatch, Found};
 pub use heights::HeightIndex;
 pub use interlinear::InterlinearSource;
 pub use marks::{HighlightLooks, Mark, MarkKind, marks_for};
+pub use motion::{NoSystemMotion, SystemMotion};
 pub use palette::{ContrastShort, Palette, StylePaint, contrast};
 pub use pane::{AtlasTexture, PaneOutput, reading_pane};
 pub use rich_clipboard::RichClipboard;
@@ -187,6 +189,13 @@ impl App {
     /// bundled fonts can be chosen.
     pub fn with_system_fonts(mut self, fonts: std::sync::Arc<dyn SystemFonts>) -> Self {
         self.shell.set_system_fonts(fonts);
+        self
+    }
+
+    /// The operating system's reduce motion setting (#225). Without one, only View → Reduce
+    /// motion reduces motion.
+    pub fn with_system_motion(mut self, motion: std::sync::Arc<dyn SystemMotion>) -> Self {
+        self.shell.set_system_motion(motion);
         self
     }
 

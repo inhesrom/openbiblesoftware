@@ -48,6 +48,19 @@ struct Harness {
     native: Option<std::rc::Rc<std::cell::RefCell<floating_windows::NativeWindows>>>,
     /// How soon last frame asked for the next one, unprompted (`Duration::MAX`: never).
     repaint_delay: std::time::Duration,
+    /// The operating system's reduce motion setting, as the window would report it: on, so
+    /// each frame shows where things land; motion tests turn it off ([`Harness::system_motion`]).
+    system_motion: Arc<TestSystemMotion>,
+}
+
+/// A reduce motion setting a test can change (#225).
+#[derive(Default)]
+struct TestSystemMotion(std::sync::atomic::AtomicBool);
+
+impl crate::SystemMotion for TestSystemMotion {
+    fn reduce_motion(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -142,7 +155,9 @@ impl Harness {
         Self::open(shell, true)
     }
 
-    fn open(shell: Shell, native: bool) -> Self {
+    fn open(mut shell: Shell, native: bool) -> Self {
+        let system_motion = Arc::new(TestSystemMotion(true.into()));
+        shell.set_system_motion(system_motion.clone());
         let ctx = egui::Context::default();
         // Shortcuts as Windows and Linux write them on every host, unless a test sets macOS
         // (#262).
@@ -168,12 +183,18 @@ impl Harness {
             root_info: egui::ViewportInfo::default(),
             native: None,
             repaint_delay: std::time::Duration::MAX,
+            system_motion,
         };
         if native {
             h.native_windows();
         }
         h.frames(3);
         h
+    }
+
+    /// Set the operating system's reduce motion setting (on unless a test turns it off).
+    fn system_motion(&mut self, reduce: bool) {
+        (self.system_motion.0).store(reduce, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn frame(&mut self) {
@@ -3497,6 +3518,8 @@ mod copy_export;
 mod drag_drop;
 #[path = "find_tests.rs"]
 mod find_bar;
+#[path = "motion_tests.rs"]
+mod motion;
 #[path = "report_problem_tests.rs"]
 mod report_problem;
 

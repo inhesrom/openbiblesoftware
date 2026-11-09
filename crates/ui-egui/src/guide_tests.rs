@@ -1353,6 +1353,22 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
     until(&mut h, "Torrey's first subtopic open", |h| {
         arrow_beside(h, "Christ set an example of").is_some_and(|(_, a)| a == "[chevron-down]")
     });
+    // The open subtopic's Passages may push the other entry below the fold: wheel down to it.
+    for _ in 0..20 {
+        if arrow_beside(&h, "Promised through Christ").is_some() {
+            break;
+        }
+        h.events
+            .push(egui::Event::PointerMoved(pane(&h, topic).center()));
+        h.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -60.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.frames(2);
+    }
     assert_eq!(
         arrow_beside(&h, "Promised through Christ").map(|(_, a)| a),
         Some("[chevron-right]".to_string()),

@@ -24,7 +24,7 @@ use crate::interlinear::InterlinearSource;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, WordHit, reading_pane};
 use crate::theme;
-use crate::tokens::{inset, radius, share, size, space, stroke, text};
+use crate::tokens::{inset, motion, radius, share, size, space, stroke, text};
 use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
@@ -61,6 +61,7 @@ mod missing_resource;
 mod note_editor;
 mod notes_tab;
 mod page_tone;
+mod panel_motion;
 mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
@@ -197,9 +198,6 @@ impl ParkedAt {
 /// A Tab remembers at most this many parked scroll positions.
 const PARKED_LIMIT: usize = 64;
 
-/// How long a jump's flash lasts, in seconds.
-const FLASH_SECS: f64 = 1.2;
-
 /// Everything the dock's behaviour needs, apart from the tree itself.
 pub(crate) struct State {
     pub(crate) session: Session,
@@ -317,6 +315,10 @@ pub struct Shell {
     /// Text a command asked to put on the clipboard (Word Info's Copy), written at the end of
     /// the frame.
     copy_out: Option<String>,
+    /// The operating system's reduce motion setting (#225).
+    system_motion: Arc<dyn crate::SystemMotion>,
+    /// The main dock's Panels settling into a new arrangement (#225).
+    panel_motion: panel_motion::PanelMotion,
 }
 
 impl Default for Shell {
@@ -384,7 +386,19 @@ impl Shell {
             next_area: None,
             os_focus_to: None,
             copy_out: None,
+            system_motion: Arc::new(crate::NoSystemMotion),
+            panel_motion: Default::default(),
         }
+    }
+
+    /// Where the operating system's reduce motion setting comes from (#225).
+    pub fn set_system_motion(&mut self, motion: Arc<dyn crate::SystemMotion>) {
+        self.system_motion = motion;
+    }
+
+    /// Whether motion is reduced: View → Reduce motion, or the operating system's setting.
+    pub(crate) fn motion_reduced(&self) -> bool {
+        self.st.session.appearance.reduce_motion || self.system_motion.reduce_motion()
     }
 
     /// Whether Resource Tab `tab` has drawn its text: the block at the top of its view is
@@ -516,10 +530,15 @@ impl Shell {
                 Effect::DockWindow(window) => self.dock_floating(window),
                 Effect::Navigate { tab, verse } => {
                     let now = self.st.now;
+                    let eased = !self.motion_reduced();
                     if let Some(t) = self.st.tabs.get_mut(&tab)
                         && let Some(view) = t.view.as_mut()
                     {
+                        let from = view.shown_position();
                         if view.jump_to(verse) {
+                            if eased {
+                                view.glide_from(from, motion::JUMP, motion::ease_out);
+                            }
                             t.flash = Some((crate::pane::Flash::Verse(verse), now));
                         } else {
                             self.st
@@ -534,12 +553,19 @@ impl Shell {
                 }
                 Effect::Follow { tab, verse, flash } => {
                     let now = self.st.now;
+                    let eased = !self.motion_reduced();
                     if let Some(t) = self.st.tabs.get_mut(&tab)
                         && let Some(view) = t.view.as_mut()
-                        && view.follow(verse)
-                        && flash
                     {
-                        t.flash = Some((crate::pane::Flash::Verse(verse), now));
+                        let from = view.shown_position();
+                        let followed = view.follow(verse);
+                        // A follow that waits for its layout lands when it arrives, at once.
+                        if followed && eased && !view.is_following() {
+                            view.glide_from(from, motion::JUMP, motion::ease_out);
+                        }
+                        if followed && flash {
+                            t.flash = Some((crate::pane::Flash::Verse(verse), now));
+                        }
                     }
                 }
                 Effect::NavigateText {
@@ -841,6 +867,7 @@ impl Shell {
         if ctx.zoom_factor() != zoom {
             ctx.set_zoom_factor(zoom);
         }
+        crate::motion::set(ctx, self.motion_reduced());
         let dark = theme::c().dark;
         let tone = self.st.session.appearance.page_tone.resolve(dark);
         self.st.palette = Palette::for_tone(tone);
@@ -930,7 +957,12 @@ impl Shell {
 
     /// Draw the whole window.
     pub fn ui(&mut self, ui: &mut Ui) {
+        // Back at the front, the user may have changed the system's reduce motion setting.
+        if ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true)))) {
+            self.system_motion.refresh();
+        }
         self.apply_appearance(ui.ctx());
+        crate::motion::instant_scrolling(ui.ctx());
         self.st.apply_fonts(ui.ctx());
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
@@ -1001,6 +1033,18 @@ impl Shell {
                     self.main_drag_out(ui);
                     let before = tile_handles::widgets_so_far(ui);
                     self.tree.ui(&mut self.st, ui);
+                    let reduce = crate::motion::reduced(ui.ctx());
+                    let now = self.st.now;
+                    let settling = (self.panel_motion).after_tree(
+                        ui,
+                        &self.tree,
+                        &self.st.panels,
+                        now,
+                        reduce,
+                    );
+                    if settling {
+                        ui.ctx().request_repaint();
+                    }
                     tile_handles::after_tree(ui, &mut self.tree, before);
                     let panels = drag_drop::drop_panels(
                         &self.tree,
@@ -1029,6 +1073,7 @@ impl Shell {
         if let Some(text) = self.copy_out.take() {
             ui.ctx().copy_text(text);
         }
+        crate::motion::ease_popups(ui.ctx());
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
             // A Note being written is saved, as if focus had left it. One that cannot be saved
@@ -2348,17 +2393,25 @@ impl State {
             return;
         };
         view.set_settings(text);
-        let flash = t.flash.clone().and_then(|(v, start)| {
-            let age = self.now - start;
-            (age < FLASH_SECS).then(|| {
-                let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0) as f32;
-                (v, palette.flash.gamma_multiply(a))
-            })
-        });
-        if flash.is_some() {
-            ui.ctx().request_repaint();
-        } else {
+        // The flash fades out; with motion reduced it holds, then goes at once (#225).
+        let reduce = crate::motion::reduced(ui.ctx());
+        let age = t
+            .flash
+            .as_ref()
+            .map_or(motion::FLASH, |(_, start)| self.now - start);
+        let flash = (t.flash.clone())
+            .filter(|_| age < motion::FLASH)
+            .map(|(v, _)| {
+                let fade = motion::remaining(if reduce { 0.0 } else { age }, 0.0, motion::FLASH);
+                (v, palette.flash.gamma_multiply(fade))
+            });
+        if flash.is_none() {
             t.flash = None;
+        } else if reduce {
+            let left = std::time::Duration::from_secs_f64(motion::FLASH - age);
+            ui.ctx().request_repaint_after(left);
+        } else {
+            ui.ctx().request_repaint();
         }
         // The Find bar (#175) moves the view before the pane draws, like a jump.
         let viewport = ui.available_rect_before_wrap().height();

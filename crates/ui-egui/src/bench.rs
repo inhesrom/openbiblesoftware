@@ -78,6 +78,9 @@ pub struct BenchConfig {
     /// (a key typed into Get Resources' search, say), for checking that the gate catches
     /// synchronous work done only when an action is taken (0 normally).
     pub action_slowdown: Duration,
+    /// Motion as with Reduce motion off (#225): jumps ease into place, pop-ups scale in,
+    /// Panels settle, placeholders shimmer. `false` measures Reduce motion on.
+    pub motion: bool,
 }
 
 impl Default for BenchConfig {
@@ -98,6 +101,7 @@ impl Default for BenchConfig {
             tool_steps: 6,
             feature_slowdown: Duration::ZERO,
             action_slowdown: Duration::ZERO,
+            motion: true,
         }
     }
 }
@@ -199,6 +203,8 @@ struct Bench {
     filters: Vec<crate::filters::FilterPainter>,
     interval: Duration,
     budget: Duration,
+    /// When the bench started: frame time, which drives the panes' glides (#225).
+    started: Instant,
 }
 
 impl Bench {
@@ -210,6 +216,10 @@ impl Bench {
         extra: impl FnOnce(&mut [ReadingView]),
     ) -> Vec<usize> {
         let start = Instant::now();
+        let now = start.duration_since(self.started).as_secs_f64();
+        for v in &mut self.views {
+            v.set_clock(now);
+        }
         extra(&mut self.views);
         let mut sync = Duration::ZERO;
         let mut placeholders = Vec::with_capacity(self.views.len());
@@ -351,6 +361,7 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         filters: Vec::new(),
         interval,
         budget: SYNC_BUDGET,
+        started: Instant::now(),
     };
     let interval_ms = interval.as_secs_f64() * 1000.0;
     bench.settle();
@@ -408,23 +419,33 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         else {
             break;
         };
+        let motion = cfg.motion;
         let mut placeholders = bench.frame(&mut jumps, |views| {
             // The origin jumps at once (its target block is laid out now, exempt from the
-            // budget); the Link set's followers follow off-thread.
+            // budget); the Link set's followers follow off-thread. Each eases into place as
+            // the Shell's do (#225), unless motion is reduced.
             ws.navigate(tabs[0], target);
             for e in ws.take_effects() {
-                match e {
-                    obs_engine::Effect::Navigate { tab, verse } => {
-                        if let Some(i) = tabs.iter().position(|t| *t == tab) {
-                            views[i].jump_to(verse);
-                        }
-                    }
-                    obs_engine::Effect::Follow { tab, verse, .. } => {
-                        if let Some(i) = tabs.iter().position(|t| *t == tab) {
-                            views[i].follow(verse);
-                        }
-                    }
-                    _ => {}
+                let (tab, verse, follow) = match e {
+                    obs_engine::Effect::Navigate { tab, verse } => (tab, verse, false),
+                    obs_engine::Effect::Follow { tab, verse, .. } => (tab, verse, true),
+                    _ => continue,
+                };
+                let Some(v) = tabs.iter().position(|t| *t == tab).map(|i| &mut views[i]) else {
+                    continue;
+                };
+                let from = v.shown_position();
+                let landed = if follow {
+                    v.follow(verse) && !v.is_following()
+                } else {
+                    v.jump_to(verse)
+                };
+                if landed && motion {
+                    v.glide_from(
+                        from,
+                        crate::tokens::motion::JUMP,
+                        crate::tokens::motion::ease_out,
+                    );
                 }
             }
         });

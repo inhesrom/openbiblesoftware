@@ -435,6 +435,10 @@ _Avoid_: Dark mode (as a setting's name), Skin, Colour scheme
 The colour of Resource pages (reading panes, Text Comparison, Guides, Notes cards, reference previews): Auto (the default), Paper, Sepia or Dark. Auto follows the Theme at once: Paper in a light Theme, Dark in a dark one. A tone the user chooses is kept in every Theme; the first time the Theme turns dark over a chosen Paper or Sepia, a one-time hint offers Auto ("Page tone is set to Paper. Use Auto to follow the theme?"). Settings shows the tone the pages are in now.
 _Avoid_: Page colour, Background, Reading theme
 
+**Reduce motion**:
+Makes every change of the interface instant: scrolling takes each wheel step at once, a jump lands at once with its flash held rather than fading, pop-ups and Panels appear at their final size, and loading placeholders rest. It is on when the user turns it on (View → Reduce motion, or Settings → Motion) or when the operating system's own reduce motion setting is on. Off, these changes ease over a fraction of a second (the motion tokens).
+_Avoid_: Animations off, Disable animations, Accessibility mode
+
 **Reading font**:
 The font Resource text of one script is drawn in: one each for Latin, Greek and Hebrew, chosen in View → Fonts. It is a Bundled font by default, or a font installed on the computer, stored by family and style name. Characters a Reading font lacks are drawn in the Bundled font for that script.
 _Avoid_: Text font, Body font, Resource font

@@ -28,6 +28,7 @@ pub enum SettingsSection {
     TextAndFonts,
     InterfaceSize,
     ThemeAndPageTone,
+    Motion,
     ReadingLayout,
     Toolbar,
     KeyboardShortcuts,
@@ -37,10 +38,11 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 9] = [
+    pub const ALL: [SettingsSection; 10] = [
         SettingsSection::TextAndFonts,
         SettingsSection::InterfaceSize,
         SettingsSection::ThemeAndPageTone,
+        SettingsSection::Motion,
         SettingsSection::ReadingLayout,
         SettingsSection::Toolbar,
         SettingsSection::KeyboardShortcuts,
@@ -54,6 +56,7 @@ impl SettingsSection {
             SettingsSection::TextAndFonts => "Text and fonts",
             SettingsSection::InterfaceSize => "Interface size",
             SettingsSection::ThemeAndPageTone => "Theme and Page tone",
+            SettingsSection::Motion => "Motion",
             SettingsSection::ReadingLayout => "Reading layout defaults",
             SettingsSection::Toolbar => "Toolbar",
             SettingsSection::KeyboardShortcuts => "Keyboard shortcuts",
@@ -207,6 +210,20 @@ pub const SETTINGS: &[Setting] = &[
         "The colour of Resource pages: reading panes, popups and Guides",
         "paper sepia dark background colour color page night",
         choice("view.page_tone", "auto"),
+    ),
+    setting(
+        "reduce_motion",
+        S::Motion,
+        "Reduce motion",
+        "Scrolling, jumps, popovers and panels change at once instead of easing; on as well \
+         when the operating system's reduce motion setting is on",
+        "animation animations motion movement accessibility vestibular instant transitions",
+        SettingKind::Toggle {
+            command: "view.reduce_motion",
+            param: Some("on"),
+            default: false,
+            get: |s| s.appearance.reduce_motion,
+        },
     ),
     setting(
         "line_spacing",

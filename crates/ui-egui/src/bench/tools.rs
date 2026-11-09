@@ -140,7 +140,9 @@ impl ShellBench {
     }
 
     /// A Shell the scenario made (the app's own launch, say), before its first frame.
-    pub(super) fn over(cfg: &BenchConfig, shell: Shell) -> Self {
+    pub(super) fn over(cfg: &BenchConfig, mut shell: Shell) -> Self {
+        // Motion (#225) as the bench is set: on, unless it measures Reduce motion.
+        shell.st.session.appearance.reduce_motion = !cfg.motion;
         let ctx = egui::Context::default();
         crate::theme::install(&ctx);
         Self {

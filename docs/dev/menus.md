@@ -148,6 +148,8 @@ Checked for every command's label and every menu, choice and submenu title
 | Toolbar position ▸ | `view.toolbar_position` (one per choice) | |
 | Auto-hide toolbar | `view.toolbar_auto_hide` |  |
 | Customize toolbar… | `view.toolbar_customize` |  |
+| — | | |
+| Reduce motion | `view.reduce_motion` |  |
 
 ### Go
 
