@@ -286,10 +286,7 @@ fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> S
 
 /// "3 hours ago" for the offline banner.
 fn ago(then: u64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(then);
+    let now = u64::try_from(obs_store::clock::now_secs()).unwrap_or(then);
     let s = now.saturating_sub(then);
     match s {
         0..120 => "just now".into(),

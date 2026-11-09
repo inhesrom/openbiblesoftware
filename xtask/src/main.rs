@@ -3,6 +3,7 @@
 mod assets;
 mod atlas_basemap;
 mod bench;
+mod gallery;
 mod language_names;
 mod layers;
 mod licenses;
@@ -30,6 +31,10 @@ tasks:
   assets   every file under an assets/ directory has an ATTRIBUTION.toml entry
   licenses the committed third-party licence listing matches cargo-about's (`--check`);
            without `--check`, regenerate it (`cargo xtask licenses --help`)
+
+screenshots:
+  gallery  every surface in Light, Dark and Sepia at 1× and 2× against its golden image
+           (`--bless` accepts the new ones; docs/dev/screenshot-gallery.md)
 
 performance:
   bench    headless reading-pane and feature benchmark; fails past the thresholds in xtask/bench.toml
@@ -77,6 +82,10 @@ fn run() -> Result<()> {
             } else {
                 bench::run(&root)
             }
+        }
+        "gallery" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            gallery::run(&root, &rest)
         }
         "starter" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

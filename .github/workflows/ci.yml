@@ -33,6 +33,55 @@ jobs:
           tool: cargo-about@0.9.3
       - name: cargo xtask ci
         run: cargo xtask ci
+      # A Screenshot gallery failure (#222) leaves golden | new | diff images here.
+      - name: Upload Screenshot gallery diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery-diff-${{ matrix.os }}
+          path: target/gallery/
+          if-no-files-found: ignore
+
+  gallery:
+    name: xtask gallery (seeded colour token change)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # LIGHT.shell's red, 8 levels off: the chrome behind every Light and Sepia surface.
+      - name: Seed a colour token change
+        run: |
+          sed -i '0,/shell: Color32::from_rgb(/s//shell: Color32::from_rgb(8 ^ /' crates/ui-egui/src/tokens.rs
+          if git diff --quiet crates/ui-egui/src/tokens.rs; then
+            echo "the seeded token change did not apply" >&2
+            exit 1
+          fi
+          git diff crates/ui-egui/src/tokens.rs
+      - name: A changed colour token must fail the gallery with diffs
+        run: |
+          if cargo xtask gallery; then
+            echo "the Screenshot gallery did not catch a changed colour token" >&2
+            exit 1
+          fi
+          ls target/gallery/diff | grep -q '\.png$'
+      - name: Upload the seeded change's diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery-seeded-token-diff
+          path: target/gallery/diff/*-1x.png
+          if-no-files-found: ignore
+      - name: --bless must update the goldens, then the gallery passes
+        run: |
+          cargo xtask gallery --bless
+          if git diff --quiet docs/previews/gallery; then
+            echo "--bless did not update the goldens" >&2
+            exit 1
+          fi
+          git diff --stat docs/previews/gallery | tail -1
+          cargo xtask gallery
 
   # Update now end to end (#276): vN installed from a Release archive updates itself to vN+1
   # served from a mock release source on localhost, restarts into it and keeps the user's data.

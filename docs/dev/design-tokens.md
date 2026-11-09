@@ -78,3 +78,7 @@ real app on the Mac (`OBS_SCRIPT` + `OBS_SHOT`); every other surface is
     UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib design_token_previews
 
 into `target/previews/tokens/`, once on master and once on the branch.
+
+Since #222 the Screenshot gallery (`docs/dev/screenshot-gallery.md`) draws every surface in
+Light, Dark and Sepia at 1× and 2× and fails CI when one changes; a change to a token re-blesses
+its goldens with `cargo xtask gallery --bless`.
