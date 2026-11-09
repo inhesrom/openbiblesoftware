@@ -17,18 +17,10 @@ use serde_json::{Value, json};
 use super::State;
 use super::annotate::paint_swatch;
 use crate::theme;
+use crate::tokens::{size, space};
 
 /// Colours the form offers beside its hex field.
-const PRESETS: [(&str, Rgb); 8] = [
-    ("Red", Rgb::new(200, 40, 40)),
-    ("Gold", Rgb::new(201, 162, 39)),
-    ("Teal", Rgb::new(20, 130, 120)),
-    ("Navy", Rgb::new(40, 70, 150)),
-    ("Purple", Rgb::new(120, 60, 160)),
-    ("Yellow", Rgb::new(255, 236, 140)),
-    ("Green", Rgb::new(200, 238, 190)),
-    ("Blue", Rgb::new(196, 222, 250)),
-];
+const PRESETS: [(&str, Rgb); 8] = crate::tokens::FILTER_PRESETS;
 
 /// The filter being made or edited.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +45,7 @@ impl FilterForm {
             marked: None,
             scope: String::new(),
             look: HighlightLook::Background,
-            color: Rgb::new(255, 236, 140).to_string(),
+            color: crate::tokens::FILTER_DEFAULT.to_string(),
             all_tabs: false,
         }
     }
@@ -133,27 +125,25 @@ impl State {
         let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<Act> = Vec::new();
         let ui_state = &mut self.filters_ui;
-        let max_height = ctx.content_rect().height() - 160.0;
+        let max_height = ctx.content_rect().height() - size::DIALOG_ROOM;
         let window = egui::Window::new("Visual filters")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(560.0)
-            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
+            .default_width(size::DIALOG.x)
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, size::DIALOG_TOP))
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(max_height)
-                    .min_scrolled_height(max_height.clamp(120.0, 640.0))
+                    .min_scrolled_height(
+                        max_height.clamp(size::LABEL_COLUMN_WIDE, size::DIALOG_LIST),
+                    )
                     .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(
-                                "Colour the words that match a search as you read. Switch a \
+                        ui.label(crate::components::hint_text(
+                            "Colour the words that match a search as you read. Switch a \
                                  filter on or off in a Tab with its header's Filters menu.",
-                            )
-                            .small()
-                            .color(theme::c().muted),
-                        );
-                        ui.add_space(4.0);
+                        ));
+                        ui.add_space(space::XS);
                         filter_rows(ui, &filters, &palette, &mut acts);
                         if ui.button("New filter…").clicked() {
                             acts.push(Act::Edit(FilterForm::new_filter()));
@@ -221,20 +211,20 @@ fn filter_rows(
     }
     egui::Grid::new("visual-filters")
         .num_columns(5)
-        .spacing(vec2(8.0, 6.0))
+        .spacing(vec2(space::M, space::S))
         .show(ui, |ui| {
             for f in filters {
-                let (rect, _) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(
+                    vec2(size::CONTROL, size::CONTROL_COMPACT),
+                    Sense::hover(),
+                );
                 paint_swatch(ui, rect, &f.appearance(), palette, false);
                 ui.vertical(|ui| {
-                    ui.set_max_width(300.0);
+                    ui.set_max_width(size::COLUMN);
                     ui.label(&f.name);
                     let what = finds(f);
-                    ui.add(
-                        egui::Label::new(RichText::new(&what).small().color(theme::c().muted))
-                            .truncate(),
-                    )
-                    .on_hover_text(what);
+                    ui.add(egui::Label::new(crate::components::hint_text(&what)).truncate())
+                        .on_hover_text(what);
                 });
                 let mut all = f.all_tabs;
                 if ui
@@ -283,12 +273,12 @@ fn form_ui(
     );
     egui::Grid::new("visual-filter-form")
         .num_columns(2)
-        .spacing(vec2(8.0, 6.0))
+        .spacing(vec2(space::M, space::S))
         .show(ui, |ui| {
             ui.label("Name");
             ui.add(
                 egui::TextEdit::singleline(&mut form.name)
-                    .desired_width(320.0)
+                    .desired_width(size::FIELD_WIDE)
                     .hint_text("Imperatives in Romans 12"),
             )
             .accessible_name("Filter name");
@@ -296,7 +286,7 @@ fn form_ui(
             ui.label("Search query");
             ui.add(
                 egui::TextEdit::singleline(&mut form.query)
-                    .desired_width(320.0)
+                    .desired_width(size::FIELD_WIDE)
                     .hint_text("@imperative · strong:G26 · \"love one another\""),
             )
             .accessible_name("Filter search query");
@@ -304,7 +294,7 @@ fn form_ui(
             ui.label("Also colour");
             egui::ComboBox::from_id_salt("visual-filter-marked")
                 .selected_text(form.marked.map_or("Nothing else", MarkedText::label))
-                .width(200.0)
+                .width(size::FIELD)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut form.marked, None, "Nothing else");
                     for m in MarkedText::ALL {
@@ -318,7 +308,7 @@ fn form_ui(
             ui.label("Passages");
             ui.add(
                 egui::TextEdit::singleline(&mut form.scope)
-                    .desired_width(320.0)
+                    .desired_width(size::FIELD_WIDE)
                     .hint_text("Whole Bible"),
             )
             .on_hover_text("Limit it to these Passages, as a Search scope: Rom 12, NT, Gen-Deut")
@@ -327,7 +317,7 @@ fn form_ui(
             ui.label("Look");
             egui::ComboBox::from_id_salt("visual-filter-look")
                 .selected_text(form.look.label())
-                .width(140.0)
+                .width(size::FIELD_NARROW)
                 .show_ui(ui, |ui| {
                     for l in HighlightLook::ALL {
                         ui.selectable_value(&mut form.look, l, l.label());
@@ -338,10 +328,11 @@ fn form_ui(
             ui.end_row();
             ui.label("Colour");
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut form.color).desired_width(80.0))
+                ui.add(egui::TextEdit::singleline(&mut form.color).desired_width(size::FIELD_HEX))
                     .accessible_name("Filter colour");
                 for (name, rgb) in PRESETS {
-                    let (rect, r) = ui.allocate_exact_size(vec2(20.0, 18.0), Sense::click());
+                    let (rect, r) =
+                        ui.allocate_exact_size(egui::Vec2::splat(size::ICON_LARGE), Sense::click());
                     let shown = StyleAppearance::new(form.look, rgb);
                     paint_swatch(ui, rect, &shown, palette, r.hovered());
                     if r.on_hover_text(name)
@@ -410,14 +401,11 @@ impl State {
             .collect();
         let palette = self.palette;
         let mut run: Option<(&'static str, Value)> = None;
-        ui.label(
-            RichText::new("Visual filters in this Tab")
-                .small()
-                .color(theme::c().muted),
-        );
+        ui.label(crate::components::hint_text("Visual filters in this Tab"));
         for f in &filters {
             ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(vec2(18.0, 16.0), Sense::hover());
+                let (rect, _) =
+                    ui.allocate_exact_size(vec2(size::ICON_LARGE, size::ICON), Sense::hover());
                 paint_swatch(ui, rect, &f.appearance(), &palette, false);
                 let mut on = shown.contains(&f.id);
                 if ui

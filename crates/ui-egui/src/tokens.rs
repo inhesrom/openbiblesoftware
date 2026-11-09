@@ -390,6 +390,22 @@ pub const HIGHLIGHT_PRESETS: [(&str, obs_engine::Rgb); 12] = [
     ("Brown", obs_engine::Rgb::new(130, 80, 40)),
 ];
 
+/// Colours offered beside a Visual filter's hex field (#211): strong ones for text, lines and
+/// boxes, then Highlight backgrounds.
+pub const FILTER_PRESETS: [(&str, obs_engine::Rgb); 8] = [
+    ("Red", obs_engine::Rgb::new(200, 40, 40)),
+    ("Gold", obs_engine::Rgb::new(201, 162, 39)),
+    ("Teal", obs_engine::Rgb::new(20, 130, 120)),
+    ("Navy", obs_engine::Rgb::new(40, 70, 150)),
+    ("Purple", obs_engine::Rgb::new(120, 60, 160)),
+    ("Yellow", FILTER_DEFAULT),
+    ("Green", obs_engine::Rgb::new(200, 238, 190)),
+    ("Blue", obs_engine::Rgb::new(196, 222, 250)),
+];
+
+/// A new Visual filter's colour: the yellow Highlight background.
+pub const FILTER_DEFAULT: obs_engine::Rgb = obs_engine::Rgb::new(255, 236, 140);
+
 /// Multiples of the Resource text size, for chrome drawn beside Resource text.
 pub mod scale {
     /// A line of Resource text with its leading.
