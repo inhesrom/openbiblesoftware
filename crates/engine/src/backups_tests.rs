@@ -826,6 +826,7 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
         ),
         ("updates", r#"{"auto_check":false,"skipped":null}"#),
         ("updates", r#"{"skipped":"0.2.0"}"#),
+        ("tour", r#"{"shown":true}"#),
         (
             "custom-theme",
             r##"{"format":"openbible-theme","version":1,"base":"high_contrast_dark","colors":{"ink":"#ffffff"}}"##,
@@ -850,6 +851,8 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
         ("key_bindings", r#"{"annotation.note":"Ctrl+Nowhere"}"#),
         ("updates", r#"{"auto_check":"false"}"#),
         ("updates", r#"{"skipped":1}"#),
+        ("tour", r#"{"shown":"yes"}"#),
+        ("tour", "not JSON"),
         (
             "custom-theme",
             r#"{"format":"x","version":1,"base":"light"}"#,
@@ -990,6 +993,8 @@ fn a_backup_of_what_the_app_writes_passes_the_restore_check() {
         "filter.save",
         json!({ "name": "Grace", "query": "grace", "look": "background", "color": "#ffd6aa" }),
     );
+    run(&mut s, "help.tour", json!({}));
+    run(&mut s, "tour.skip", json!({}));
     run(&mut s, "annotation.note", json!({ "body": "grace" }));
     let out = s
         .run("search.run", &json!({ "text": "grace", "mode": "notes" }))

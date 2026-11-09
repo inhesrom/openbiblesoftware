@@ -6,7 +6,7 @@
 //! location, and the settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
 //! those leniently at launch: an unreadable one is left out or back at its default, and so is
 //! an unreadable field of a setting read field by field (a View setting, a Keyboard
-//! shortcut, an Update check flag), a Custom theme from a later version, a View Text size or Line spacing beyond what the app
+//! shortcut, an Update check flag, whether the First-run tour was shown), a Custom theme from a later version, a View Text size or Line spacing beyond what the app
 //! allows (it would be clamped), a Layout holding two Tabs with one id (restoring it would
 //! keep one of them), a Search history longer than the app keeps (its oldest
 //! entries would be dropped), a repeated or unknown card of Home or section of a Guide
@@ -197,6 +197,12 @@ fn reads_update_settings(_key: &str, json: &str) -> bool {
     )
 }
 
+/// Whether the First-run tour was shown, as `Session::load_tour` reads it (an unreadable one
+/// would start the tour again).
+fn reads_tour(_key: &str, json: &str) -> bool {
+    object_with(json, &[("shown", is_bool)])
+}
+
 /// A Guide arrangement, as `Session::load_guide_arrangements` reads it: under the key of a
 /// Guide, each of that Guide's sections once.
 fn reads_guide_arrangement(key: &str, json: &str) -> bool {
@@ -246,6 +252,11 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
         key: crate::updates::UPDATES_PREF,
         what: "Update check settings",
         reads: reads_update_settings,
+    },
+    JsonSetting {
+        key: crate::tour::TOUR_PREF,
+        what: "First-run tour",
+        reads: reads_tour,
     },
     JsonSetting {
         key: crate::home::HOME_PREF,
