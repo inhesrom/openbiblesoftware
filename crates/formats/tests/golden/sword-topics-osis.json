@@ -1,5 +1,5 @@
 {
-  "content_hash": "sha256:142add44676e34c36813b6725e55c0f22839f16eef1efb1100bbd21d1a2ce704",
+  "content_hash": "sha256:3cf05144b9590eb6aa391ad9c692caafff29158b49b74655a78a7827f6705fb2",
   "keys": [
     [
       "AARON",
@@ -60,18 +60,24 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..43",
+          "at": "0..5",
+          "kind": "heading",
+          "level": 2,
+          "text": "AARON"
+        },
+        {
+          "at": "6..49",
           "kind": "para",
           "style": "prose",
           "text": "Aaron, the brother of Moses; see Exod 4:14."
         },
         {
-          "at": "0..5",
+          "at": "6..11",
           "kind": "bold",
           "text": "Aaron"
         },
         {
-          "at": "33..42",
+          "at": "39..48",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -90,7 +96,7 @@
           "text": "Exod 4:14"
         }
       ],
-      "text": "Aaron, the brother of Moses; see Exod 4:14.",
+      "text": "AARON\nAaron, the brother of Moses; see Exod 4:14.",
       "title": "AARON"
     },
     {
@@ -98,19 +104,25 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..19",
+          "at": "0..4",
+          "kind": "heading",
+          "level": 2,
+          "text": "ABEL"
+        },
+        {
+          "at": "5..24",
           "kind": "para",
           "style": "prose",
           "text": "A city of Naphtali."
         },
         {
-          "at": "20..38",
+          "at": "25..43",
           "kind": "para",
           "style": "prose",
           "text": "Adam's second son."
         }
       ],
-      "text": "A city of Naphtali.\nAdam's second son.",
+      "text": "ABEL\nA city of Naphtali.\nAdam's second son.",
       "title": "ABEL"
     },
     {
@@ -118,13 +130,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..54",
+          "at": "0..7",
+          "kind": "heading",
+          "level": 2,
+          "text": "ABRAHAM"
+        },
+        {
+          "at": "8..62",
           "kind": "para",
           "style": "prose",
           "text": "Father of many nations, first called Abram (Gen 17:5)."
         },
         {
-          "at": "44..52",
+          "at": "52..60",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -143,7 +161,7 @@
           "text": "Gen 17:5"
         }
       ],
-      "text": "Father of many nations, first called Abram (Gen 17:5).",
+      "text": "ABRAHAM\nFather of many nations, first called Abram (Gen 17:5).",
       "title": "ABRAHAM"
     }
   ],

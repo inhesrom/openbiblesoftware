@@ -49,6 +49,16 @@ pub(crate) struct UnitText {
     pub chapters: u16,
 }
 
+impl UnitText {
+    /// Open a Dictionary entry with its headword (see [`crate::text_buf::lead_with_headword`]).
+    pub fn lead_with_headword(&mut self, headword: &str) {
+        let shift = crate::text_buf::lead_with_headword(&mut self.text, &mut self.spans, headword);
+        for (range, _, _) in &mut self.verses {
+            *range = range.start + shift..range.end + shift;
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlockKind {
     Para(ParaStyle),

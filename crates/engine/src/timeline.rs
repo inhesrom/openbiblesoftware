@@ -520,6 +520,7 @@ pub fn empty_state(
             tagging: Tagging::None,
             get_resources: None,
             starter,
+            import: true,
         },
     }
 }

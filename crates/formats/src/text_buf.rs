@@ -77,6 +77,57 @@ impl TextBuf {
     pub fn add_span(&mut self, range: Range<usize>, kind: SpanKind) {
         self.spans.push((range, kind));
     }
+
+    /// Open a Dictionary entry with its headword (see [`lead_with_headword`]).
+    pub fn lead_with_headword(&mut self, headword: &str) {
+        lead_with_headword(&mut self.text, &mut self.spans, headword);
+    }
+}
+
+/// The level of the heading a Dictionary entry opens with: Easton's TEI `<title>` level.
+pub(crate) const HEADWORD_LEVEL: u8 = 2;
+
+/// Open a Dictionary entry with its headword as a heading block, unless the entry already
+/// opens with a heading (Easton's TEI titles itself). A Dictionary Tab draws only an entry's
+/// text, so without it Hitchcock's or Smith's entries never say which name they explain
+/// (#261). Returns how far the existing text moved.
+pub(crate) fn lead_with_headword(
+    text: &mut String,
+    spans: &mut Vec<(Range<usize>, SpanKind)>,
+    headword: &str,
+) -> usize {
+    let headword: String = headword.split_whitespace().collect::<Vec<_>>().join(" ");
+    let headed = spans
+        .iter()
+        .any(|(range, kind)| range.start == 0 && matches!(kind, SpanKind::Heading { .. }));
+    if headword.is_empty() || headed {
+        return 0;
+    }
+    let headword: String = headword.nfc().collect();
+    let shift = if text.is_empty() {
+        headword.len()
+    } else {
+        headword.len() + 1
+    };
+    for (range, _) in spans.iter_mut() {
+        *range = range.start + shift..range.end + shift;
+    }
+    spans.insert(
+        0,
+        (
+            0..headword.len(),
+            SpanKind::Heading {
+                level: HEADWORD_LEVEL,
+            },
+        ),
+    );
+    let mut led = headword;
+    if !text.is_empty() {
+        led.push('\n');
+    }
+    led.push_str(text);
+    *text = led;
+    shift
 }
 
 #[cfg(test)]
@@ -101,6 +152,26 @@ mod tests {
         b.push_text(" b");
         assert_eq!(b.text, "a b");
         assert_eq!(b.tracked_end, 3);
+    }
+
+    #[test]
+    fn a_dictionary_entry_opens_with_its_headword_unless_it_has_a_heading() {
+        let mut b = TextBuf::new();
+        b.push_text("the destroyer");
+        b.add_span(0..13, SpanKind::Italic);
+        b.lead_with_headword("ABADDON");
+        assert_eq!(b.text, "ABADDON\nthe destroyer");
+        assert_eq!(
+            b.spans,
+            [
+                (0..7, SpanKind::Heading { level: 2 }),
+                (8..21, SpanKind::Italic)
+            ]
+        );
+        // Easton's entries title themselves: nothing is added.
+        b.lead_with_headword("Abaddon");
+        assert_eq!(b.text, "ABADDON\nthe destroyer");
+        assert_eq!(b.spans.len(), 2);
     }
 
     #[test]

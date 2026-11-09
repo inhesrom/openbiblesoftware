@@ -124,6 +124,8 @@ pub struct FactbookChooser {
     /// Entities called exactly that first (most often named first), then those that only
     /// start with it.
     pub choices: Vec<EntityCard>,
+    /// How many of `choices`, from the first, are called exactly that.
+    pub exact: usize,
 }
 
 /// A person or place a Factbook links to.
@@ -203,12 +205,36 @@ fn reverse_label(relation: Relation) -> &'static str {
         Relation::Father | Relation::Mother => "Child",
         Relation::Ancestor => "Descendant",
         Relation::Sibling => "Sibling",
-        Relation::Partner => "Married to",
+        Relation::Partner => "Partner",
         Relation::Offspring => "Parent",
         Relation::Founded => "Founded by",
         Relation::Founder => "Founded",
         Relation::Inhabitant => "Lived in",
     }
+}
+
+/// An entity's region, when the index gives one.
+fn region(e: &Entity) -> Option<String> {
+    e.region.clone().filter(|r| !r.trim().is_empty())
+}
+
+/// Where a place's likeliest Place location is, when its name is not just the place's own:
+/// `Antioch in Pisidia` → `in Pisidia`, `Et Tell` for Ai.
+fn location_distinction(e: &Entity) -> Option<String> {
+    let best = e.locations.iter().rev().max_by_key(|l| l.score)?;
+    let usual = usual_name(e);
+    let name = best.name.trim();
+    let same = |a: &str, b: &str| obs_model::normalize(a) == obs_model::normalize(b);
+    if name.is_empty() || same(name, &usual) {
+        return None;
+    }
+    let rest = name
+        .get(..usual.len())
+        .filter(|head| same(head, &usual))
+        .and_then(|_| name.get(usual.len()..))
+        .filter(|rest| rest.starts_with(' '))
+        .map(str::trim);
+    Some(rest.unwrap_or(name).to_string())
 }
 
 impl PeopleDirectory {
@@ -281,10 +307,12 @@ impl PeopleDirectory {
     }
 
     /// What tells `e` from others of the same name, from its structured facts: a parent,
-    /// else a child, spouse, sibling or forebear, else its region.
+    /// else a child, spouse, sibling or forebear, else its region. A place: its region, else
+    /// where its likeliest Place location is (TIPNR gives few places a region: the two
+    /// Antiochs are `on the Orontes` and `in Pisidia`, #261).
     pub fn distinction(&self, e: &Entity) -> Option<String> {
         if e.kind == EntityKind::Place {
-            return e.region.clone();
+            return region(e).or_else(|| location_distinction(e));
         }
         let first = |relation: Relation| {
             e.relations
@@ -316,7 +344,7 @@ impl PeopleDirectory {
         if let Some(a) = first(Relation::Ancestor) {
             return Some(format!("descended from {a}"));
         }
-        e.region.clone()
+        region(e)
     }
 
     /// The places whose records list `id` as someone who lived there, most often named
@@ -356,52 +384,63 @@ impl PeopleDirectory {
     }
 
     /// The entities called `query`: by usual name first, then by another name, each group
-    /// most often named first. With none called exactly that, the names that start with it.
+    /// most often named first; then those whose names only start with it, ranked the same
+    /// way. Search-as-you-type sees the names it is heading for even when a shorter name
+    /// matches exactly (`Beth` is another name of Beth-eked, but Bethlehem is wanted, #261).
     pub fn choose(&self, query: &str) -> FactbookChooser {
         let query = query.trim();
         let q = obs_model::normalize(&query.replace('_', " "));
         let mut choices = Vec::new();
+        let mut exact = 0;
         if !q.is_empty() {
-            let mut found: Vec<(usize, bool)> = Vec::new();
-            if let Some(list) = self.by_name.get(&q) {
-                found.extend(list.iter().map(|&i| (i, true)));
-            } else {
-                let mut starts: Vec<&String> =
-                    self.by_name.keys().filter(|n| n.starts_with(&q)).collect();
-                starts.sort();
-                for n in starts {
-                    for &i in &self.by_name[n] {
-                        if !found.iter().any(|(j, _)| *j == i) {
-                            found.push((i, false));
-                        }
+            let found: Vec<usize> = self.by_name.get(&q).cloned().unwrap_or_default();
+            let mut starts: Vec<&String> = self
+                .by_name
+                .keys()
+                .filter(|n| **n != q && n.starts_with(&q))
+                .collect();
+            starts.sort();
+            let mut prefixed: Vec<usize> = Vec::new();
+            for n in starts {
+                for &i in &self.by_name[n] {
+                    if !found.contains(&i) && !prefixed.contains(&i) {
+                        prefixed.push(i);
                     }
                 }
             }
-            for (i, _) in &found {
-                let e = &self.entries[*i];
-                let Some(mut card) = self.card(&e.entity.id) else {
-                    continue;
-                };
-                let usual = obs_model::normalize(&card.name);
-                if usual != q && !usual.starts_with(&q) {
-                    card.also_called = crate::aliases::entity_names(&e.entity)
-                        .into_iter()
-                        .find(|n| obs_model::normalize(n).starts_with(&q));
+            for (group, list) in [(0, found), (1, prefixed)] {
+                let mut cards: Vec<EntityCard> = Vec::new();
+                for i in list {
+                    let e = &self.entries[i];
+                    let Some(mut card) = self.card(&e.entity.id) else {
+                        continue;
+                    };
+                    let usual = obs_model::normalize(&card.name);
+                    if usual != q && !usual.starts_with(&q) {
+                        card.also_called = crate::aliases::entity_names(&e.entity)
+                            .into_iter()
+                            .find(|n| obs_model::normalize(n).starts_with(&q));
+                    }
+                    cards.push(card);
                 }
-                choices.push(card);
+                cards.sort_by(|a, b| {
+                    a.also_called
+                        .is_some()
+                        .cmp(&b.also_called.is_some())
+                        .then(b.passages.cmp(&a.passages))
+                        .then(a.first.cmp(&b.first))
+                        .then(a.entity.cmp(&b.entity))
+                });
+                if group == 0 {
+                    exact = cards.len();
+                }
+                choices.extend(cards);
             }
-            choices.sort_by(|a, b| {
-                a.also_called
-                    .is_some()
-                    .cmp(&b.also_called.is_some())
-                    .then(b.passages.cmp(&a.passages))
-                    .then(a.first.cmp(&b.first))
-                    .then(a.entity.cmp(&b.entity))
-            });
         }
         FactbookChooser {
             query: query.to_string(),
             choices,
+            exact,
         }
     }
 
@@ -538,14 +577,24 @@ impl PeopleDirectory {
 /// multitude` → `father of a great multitude`. A name the Dictionary explains twice (Noah,
 /// Zelophehad's daughter and the patriarch) keeps both, as `first · second`.
 pub fn meaning_text(headword: &str, article: &str) -> String {
-    let senses: Vec<String> = article
+    let same = |a: &str, b: &str| obs_model::normalize(a) == obs_model::normalize(b);
+    let mut senses: Vec<String> = article
         .lines()
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|line| !line.is_empty())
         .collect();
+    // The headword line an imported entry opens with (#261).
+    if senses.first().is_some_and(|first| same(first, headword)) {
+        senses.remove(0);
+    }
     let mut text = senses.join(" · ");
+    // Only a whole word: Hitchcock's LOT reads `Lotan, wrapt up; …` (#261).
     if let Some(head) = text.get(..headword.len())
-        && obs_model::normalize(head) == obs_model::normalize(headword)
+        && same(head, headword)
+        && !text[headword.len()..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric)
     {
         text = text[headword.len()..].to_string();
     }
@@ -960,7 +1009,8 @@ impl Session {
         self.resolve_factbook_choosers();
     }
 
-    /// Choosers whose name matches exactly one entity move their Tab to it.
+    /// Choosers whose name is exactly one entity's move their Tab to it, even when other names
+    /// start with it (`Lot`, not Lotan).
     fn resolve_factbook_choosers(&mut self) {
         let Some(dir) = self.guides.directory().current(&self.library) else {
             return;
@@ -969,9 +1019,9 @@ impl Session {
             .factbooks
             .choosing
             .iter()
-            .filter_map(|(tab, name)| match dir.choose(name).choices.as_slice() {
-                [one] => Some((*tab, one.entity.clone())),
-                _ => None,
+            .filter_map(|(tab, name)| {
+                let chooser = dir.choose(name);
+                (chooser.exact == 1).then(|| (*tab, chooser.choices[0].entity.clone()))
             })
             .collect();
         for (tab, id) in single {

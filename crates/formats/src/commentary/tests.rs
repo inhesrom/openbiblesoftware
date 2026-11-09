@@ -127,6 +127,19 @@ fn smith_headword_and_alias_preserve_both_entries() {
     .unwrap();
     let (r, _) = i.finish().unwrap();
     assert_eq!(r.units.len(), 2);
+    // Smith's entries carry no title of their own: each opens with its headword (#261).
+    let abraham = r.units.iter().find(|u| u.id.as_str() == "Abraham").unwrap();
+    assert!(
+        abraham.text.starts_with("Abraham\nFather."),
+        "{}",
+        abraham.text
+    );
+    assert!(
+        abraham
+            .spans
+            .iter()
+            .any(|s| s.start == 0 && s.end == 7 && matches!(s.kind, SpanKind::Heading { .. }))
+    );
     assert!(r.keys.iter().any(|k| k.key == Key::Headword("Abram".into())
         && k.alias
         && k.unit.as_str() == "Abraham"));

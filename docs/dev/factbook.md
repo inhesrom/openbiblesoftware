@@ -21,24 +21,31 @@ sections are engine data computed on the job queue, the Guide arrangement is per
   other job running.
 - **Telling people apart** (`PeopleDirectory::distinction`), structured fields only: a named
   parent (`son of Zebedee`, `daughter of …`), else a named child (`father of Peter`), spouse,
-  sibling or forebear, else the region; places use their region. TIPNR writes unnamed
-  relatives in lower case (`father_of_Lazarus`); they are skipped. TIPNR's descriptions are
+  sibling or forebear, else the region; places use their region, else where their likeliest
+  Place location is (`Antioch (on the Orontes)`, `Antioch (in Pisidia)`, #261: TIPNR gives
+  few places a region). TIPNR writes unnamed relatives in lower case (`father_of_Lazarus`);
+  they are skipped here, and named by their record's usual name (`1st daughter of Lot`) in
+  family lists, the same in the Passage Guide's People & places rows. TIPNR's `partner` is
+  any partner, not only a spouse (Lot's daughters), so the family label is Partners. TIPNR's descriptions are
   never stored (#43), so nothing here can show them.
 - **Chooser.** `tab.go` on a Factbook (the header box) takes a name: the Tab shows the chooser
   for it (`Factbooks::choosing`), or moves straight to the only entity with that name. An
   entity id (contains `@`) moves the Tab. `PeopleDirectory::choose` matches the normalized
   name against usual and other names (`_` as space): entities called that by usual name first,
-  then by another name (`Mark`, also called `John`), each group most often named first; with no
-  exact match, names that start with the text.
+  then by another name (`Mark`, also called `John`), each group most often named first; then
+  the names that only start with the text (`Beth` lists Beth-eked, whose other name is Beth,
+  then Bethel, Bethlehem, Bethany, #261). The Tab moves straight to an entity only when it is
+  the one called exactly that (`Lot`, though Lotan starts with it).
 - **Sections** (`GuideSection`, ids stored, never renamed): `summary` (other names, the Name
-  meaning, family: Father, Mother, Descended from, Siblings, Married to, Children, Founded by),
+  meaning, family: Father, Mother, Descended from, Siblings, Partners, Children, Founded by),
   `key_passages` (every mention, neighbouring Verses joined, Bible order), `dictionary_articles`
   (each Dictionary's article in Preferred order, through the #54 alias cache, with ~600
   characters of it), `related` (the entity's other links, the entities whose records link to
   it, then up to 10 named in the same Verses), `map` (#150, between Summary and Key Passages:
   a place's Place locations, or the places a person lived in; see [atlas.md](atlas.md)).
 - **Name meaning.** The first Dictionary in `factbook::NAME_MEANING_DICTIONARIES`
-  (`hitchcock`) with an article on the entity, through the alias cache; the headword is
+  (`hitchcock`) with an article on the entity, through the alias cache; the headword (its
+  heading line, or a leading whole word: `Lotan, wrapt up` stays whole for Lot) is
   dropped, and two senses of one name are joined with ` · `. That Dictionary is left out of
   Dictionary articles.
 - **Ways in.** `guide.factbook {entity | name | strongs, new_tab?, panel?, split?}`; the

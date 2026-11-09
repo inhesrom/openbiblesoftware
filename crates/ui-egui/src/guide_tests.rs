@@ -832,7 +832,7 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
         h.texts()
     );
     assert!(find_in(&h, factbook, "Father").is_some());
-    assert!(find_in(&h, factbook, "Married to").is_some());
+    assert!(find_in(&h, factbook, "Partners").is_some());
     assert!(find_in(&h, factbook, "Abram").is_some(), "Also called");
     let titles = headers(&h, factbook);
     // Map (#150) sits under the Summary.
@@ -1366,9 +1366,9 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
         find_in(h, topic, "Pardon").is_some()
             && find_in(h, topic, "see Sin, Forgiveness of").is_some()
     });
-    assert!(find_in(&h, topic, "Forgiveness of injuries").is_some());
+    assert!(find_in(&h, topic, "Forgiveness of Injuries").is_some());
     preview(&mut h, "topic-guide-chooser");
-    let injuries = find_in(&h, topic, "Forgiveness of injuries").unwrap();
+    let injuries = find_in(&h, topic, "Forgiveness of Injuries").unwrap();
     h.click(injuries.center());
     h.frames(3);
     assert_eq!(
@@ -1379,7 +1379,7 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
             .unwrap()
             .entry_history
             .current(),
-        Some(Key::Headword("Forgiveness of injuries".into()))
+        Some(Key::Headword("Forgiveness of Injuries".into()))
     );
     until(&mut h, "Torrey's entry", |h| {
         find_in(h, topic, "Christ set an example of").is_some()
@@ -1467,4 +1467,88 @@ fn parallel_passages_list_the_baptism_and_a_click_compares_it() {
     });
     preview(&mut h, "parallel-passages-compare-matthew");
     drop(h);
+}
+
+/// #261 GUIDES-3: a Guide at a range shows the whole range in its reference box, and
+/// confirming the box keeps it.
+#[test]
+fn the_reference_box_shows_a_guides_whole_range_and_enter_keeps_it() {
+    let mut h = Harness::launch(None);
+    let (_files, _bible) = setup(&mut h, "range-box", false);
+    let tab = TabId(
+        h.shell
+            .run(
+                "guide.passage_guide",
+                &json!({ "passage": "Mark 1:9-11", "split": true }),
+            )
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    let text = h.shell.st.location_text(tab);
+    assert_eq!(text, "Mark 1:9-11");
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": text }));
+    h.frames(2);
+    let t = h.shell.session().workspace.tab(tab).unwrap();
+    assert_eq!(
+        t.shown_passage().map(|p| p.to_string()).as_deref(),
+        Some("Mark 1:9-11")
+    );
+    assert_eq!(h.shell.st.location_text(tab), "Mark 1:9-11");
+    // A chapter reads as the chapter, not its title slot or first Verse.
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Acts 13" }));
+    h.frames(2);
+    assert_eq!(h.shell.st.location_text(tab), "Acts 13");
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Ps 119" }));
+    h.frames(2);
+    assert_eq!(h.shell.st.location_text(tab), "Psalms 119");
+}
+
+/// #261 GUIDES-12: a reference clicked in an unlinked Guide moves the most recent Bible Tab,
+/// click after click, instead of opening one more Bible Tab each time; Ctrl/Cmd still opens
+/// a new one.
+#[test]
+fn an_unlinked_guides_reference_moves_the_most_recent_bible_tab() {
+    let mut h = Harness::launch(None);
+    let (_files, bible) = setup(&mut h, "unlinked-ref", false);
+    let guide = open_guide(&mut h);
+    h.shell
+        .run("tab.link", &json!({ "tab": guide.0, "set": "" }));
+    h.frames(2);
+    assert_eq!(h.shell.session().workspace.tab(guide).unwrap().link, None);
+    let bibles = |h: &Harness| {
+        h.shell
+            .session()
+            .workspace
+            .tabs()
+            .filter(|t| t.kind == TabKind::Resource("kjv-sample".into()))
+            .count()
+    };
+    // The sample Bible has John 3:16-17: go back and forth.
+    for verse in [17, 16, 17] {
+        h.shell
+            .st
+            .reference_navigate(guide, Passage::verse(john(3, verse)), false);
+        assert_eq!(
+            h.shell
+                .session()
+                .workspace
+                .tab(bible)
+                .unwrap()
+                .history
+                .current(),
+            Some(john(3, verse))
+        );
+        h.frames(2);
+        assert_eq!(bibles(&h), 1, "a click opened another Bible Tab");
+    }
+    h.shell
+        .st
+        .reference_navigate(guide, Passage::verse(john(3, 16)), true);
+    h.frames(2);
+    assert_eq!(bibles(&h), 2, "Ctrl/Cmd-click opens a new Bible Tab");
 }

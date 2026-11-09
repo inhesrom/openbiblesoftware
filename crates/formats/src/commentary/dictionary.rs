@@ -118,10 +118,11 @@ pub fn import_dictionary(import: &mut StudyImport, input: DictionaryData<'_>) ->
     }
     for (title, senses) in entries {
         let source = senses.join("<br>");
-        let text = html::render(&source, None, &mut import.report);
+        let mut text = html::render(&source, None, &mut import.report);
         if text.text.trim().is_empty() {
             bail!("empty dictionary entry {title}");
         }
+        text.lead_with_headword(&title);
         import
             .sections
             .push((Key::Headword(title.clone()), title, text));

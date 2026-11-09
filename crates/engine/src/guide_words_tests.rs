@@ -662,6 +662,7 @@ fn starter_library_gen_12_1_lists_abram_with_eastons_abraham() {
         Passage::verse(gen_12(1)),
         &crate::key_words::BibleCache::default(),
         &aliases,
+        &crate::factbook::DirectoryCache::default(),
     )
     .unwrap();
     eprintln!("People & places for Gen 12:1 in {:?}", t.elapsed());

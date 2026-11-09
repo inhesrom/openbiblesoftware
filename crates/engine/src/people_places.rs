@@ -79,7 +79,9 @@ pub fn relation_label(r: Relation) -> &'static str {
         Relation::Mother => "Mother",
         Relation::Ancestor => "Descended from",
         Relation::Sibling => "Siblings",
-        Relation::Partner => "Married to",
+        // TIPNR's `partner` is any sexual partner, not only a spouse: Lot's daughters are
+        // listed as his (Gen 19:36), so `Married to` would say what the source does not.
+        Relation::Partner => "Partners",
         Relation::Offspring => "Children",
         Relation::Founded => "Founded",
         Relation::Founder => "Founded by",
@@ -108,11 +110,13 @@ pub fn usual_name(e: &Entity) -> String {
     e.name.replace('_', " ")
 }
 
-/// Relations as facts, in relation order, each relative once.
-pub fn facts(e: &Entity) -> Vec<Fact> {
+/// Relations as facts, in relation order, each relative once, named by `name_of` (the
+/// directory's usual name, so an unnamed relative reads `1st daughter of Lot` here as in the
+/// Factbook, not `daughter1 of Lot`).
+pub fn facts(e: &Entity, name_of: &dyn Fn(&str) -> String) -> Vec<Fact> {
     let mut by: Vec<(Relation, Vec<String>)> = Vec::new();
     for r in &e.relations {
-        let mut name = display_name(&r.entity);
+        let mut name = name_of(&r.entity);
         if r.uncertain {
             name.push_str(" (?)");
         }
@@ -159,15 +163,25 @@ pub fn first_named(text: &str, names: &[String]) -> Option<(usize, String)> {
     best
 }
 
-/// One row from an entity, its mentions and the ★ Bible's text of the Passage.
+/// One row from an entity, its mentions and the ★ Bible's text of the Passage. The People &
+/// places directory (when it loads) names relatives and tells a place without a region from
+/// others of its name, as the Factbook does.
 pub fn row(
     index_id: &str,
     e: &Entity,
     verses: Vec<Verse>,
     text: &str,
     articles: Vec<ArticleLink>,
+    directory: Option<&crate::factbook::PeopleDirectory>,
 ) -> (Option<usize>, PersonOrPlace) {
     let usual = usual_name(e);
+    let name_of = |id: &str| directory.map_or_else(|| display_name(id), |d| d.name_of(id));
+    let region = match (e.kind, directory) {
+        (EntityKind::Place, Some(d)) => d
+            .get(&e.id)
+            .map_or_else(|| d.distinction(e), |entry| d.distinction(&entry.entity)),
+        _ => e.region.clone(),
+    };
     let found = first_named(text, &crate::aliases::entity_names(e));
     let name = found.as_ref().map_or(usual.clone(), |(_, n)| n.clone());
     let row = PersonOrPlace {
@@ -176,8 +190,8 @@ pub fn row(
         usual_name: (name != usual).then_some(usual),
         name,
         kind: e.kind,
-        region: e.region.clone(),
-        facts: facts(e),
+        region,
+        facts: facts(e, &name_of),
         verses,
         articles,
     };
@@ -240,8 +254,10 @@ pub fn library_people_and_places(
     passage: Passage,
     cache: &crate::key_words::BibleCache,
     aliases: &crate::aliases::AliasCache,
+    directory: &crate::factbook::DirectoryCache,
 ) -> Result<Vec<PersonOrPlace>, String> {
     use obs_model::ResourceType;
+    let directory = directory.get(library).ok();
     use obs_store::ResourceStore;
     let mut text: Option<String> = None;
     let mut rows: Vec<(Option<usize>, PersonOrPlace)> = Vec::new();
@@ -310,6 +326,7 @@ pub fn library_people_and_places(
                 verses,
                 text,
                 articles,
+                directory.as_deref(),
             ));
         }
     }
@@ -326,6 +343,7 @@ pub fn library_people_and_places(
     _: Passage,
     _: &crate::key_words::BibleCache,
     _: &crate::aliases::AliasCache,
+    _: &crate::factbook::DirectoryCache,
 ) -> Result<Vec<PersonOrPlace>, String> {
     Err("Opening Resources is not supported here".into())
 }
@@ -363,7 +381,7 @@ mod tests {
     #[test]
     fn the_row_uses_the_passages_name_and_lists_relations_as_facts() {
         let text = "Now the LORD had said unto Abram, Get thee out of thy country.";
-        let (at, r) = row("tipnr", &abraham(), vec![], text, vec![]);
+        let (at, r) = row("tipnr", &abraham(), vec![], text, vec![], None);
         assert_eq!(at, Some(27));
         assert_eq!(r.name, "Abram");
         assert_eq!(r.usual_name.as_deref(), Some("Abraham"));
@@ -377,12 +395,19 @@ mod tests {
             facts,
             [
                 ("Father", vec!["Terah"]),
-                ("Married to", vec!["Sarah"]),
+                ("Partners", vec!["Sarah"]),
                 ("Children", vec!["Isaac", "Ishmael (?)"]),
             ]
         );
         // Not named in the text (another Bible's wording): the usual name, ranked last.
-        let (at, r) = row("tipnr", &abraham(), vec![], "Abrams and abram", vec![]);
+        let (at, r) = row(
+            "tipnr",
+            &abraham(),
+            vec![],
+            "Abrams and abram",
+            vec![],
+            None,
+        );
         assert_eq!((at, r.name.as_str(), r.usual_name), (None, "Abraham", None));
     }
 

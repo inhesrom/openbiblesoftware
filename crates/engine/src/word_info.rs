@@ -219,17 +219,55 @@ pub fn has_original_script(text: &str) -> bool {
 }
 
 /// A Lexicon entry's gloss as a card shows it: its first paragraph after the headword line
-/// (every converter writes the lemma and transliteration first), cut to one short line.
+/// (every converter writes the lemma and transliteration first), cut to one short line. An
+/// entry of one paragraph (most of BDB: `אֵלוֹן n.[f.] terebinth`) starts with its headword
+/// too: see [`single_line_gloss`].
 pub fn lexicon_excerpt(entry_text: &str) -> Option<String> {
     let mut paragraphs = entry_text.lines().map(str::trim).filter(|l| !l.is_empty());
     let first = paragraphs.next()?;
-    let gloss = paragraphs.next().unwrap_or(first);
+    let single;
+    let gloss = match paragraphs.next() {
+        Some(second) => second,
+        None => {
+            single = single_line_gloss(first)?;
+            single.as_str()
+        }
+    };
     let mut out: String = gloss.chars().take(EXCERPT_CHARS).collect();
     if out.len() < gloss.len() {
         out = out.trim_end().to_string();
         out.push('…');
     }
     Some(out)
+}
+
+/// The gloss of a one-paragraph Lexicon entry: without the headword and the grammar
+/// abbreviations after it (`[אֵב] n.[m.]`), and up to the first Hebrew or Greek word, which
+/// a gloss line's plain label cannot draw (#261: `אֵלוֹן n.[f.] terebinth` was drawn
+/// reversed, with boxes for the Hebrew). `None` when nothing is left: a cross-reference
+/// such as `אָב v. II. אבה.`.
+fn single_line_gloss(line: &str) -> Option<String> {
+    let abbreviation = |w: &str| {
+        w.contains('.')
+            && w.chars().count() <= 12
+            && w.chars()
+                .all(|c| c.is_alphabetic() || matches!(c, '.' | '[' | ']' | '?' | ','))
+    };
+    let rest = line
+        .split_whitespace()
+        .skip_while(|w| {
+            has_original_script(w) || abbreviation(w) || w.chars().all(|c| !c.is_alphanumeric())
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cut = rest
+        .char_indices()
+        .find(|(_, c)| has_original_script(&c.to_string()))
+        .map_or(rest.as_str(), |(i, _)| &rest[..i]);
+    let gloss = cut.trim_end_matches(|c: char| {
+        c.is_whitespace() || matches!(c, ',' | ';' | ':' | '(' | '—' | '-' | '=' | '&')
+    });
+    (!gloss.is_empty()).then(|| gloss.to_string())
 }
 
 /// What Word Info shows and whether it is pinned (per session only, #18).
@@ -395,6 +433,20 @@ mod tests {
             Some("to create")
         );
         assert_eq!(lexicon_excerpt("only line").as_deref(), Some("only line"));
+        // #261 GUIDES-4: one-paragraph BDB entries lead with their headword and grammar.
+        assert_eq!(
+            lexicon_excerpt("אֵלוֹן n.[f.] terebinth").as_deref(),
+            Some("terebinth")
+        );
+        assert_eq!(
+            lexicon_excerpt("אֹבֵד n.[m.] destruction, עֲדֵי א׳ Nu 24:20").as_deref(),
+            Some("destruction")
+        );
+        assert_eq!(
+            lexicon_excerpt("[אֵב] n.[m.] freshness, fresh green (Lag B N 207)").as_deref(),
+            Some("freshness, fresh green (Lag B N 207)")
+        );
+        assert_eq!(lexicon_excerpt("אָב v. II. אבה.").as_deref(), None);
         assert_eq!(lexicon_excerpt("  \n").as_deref(), None);
         let long = format!("head\n{}", "x".repeat(200));
         let e = lexicon_excerpt(&long).unwrap();

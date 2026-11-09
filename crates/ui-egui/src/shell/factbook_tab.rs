@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use egui::{Rect, RichText, Sense, Stroke, Ui, pos2};
 use obs_engine::{
     ArticleLink, DictionaryArticle, EntityCard, EntityLink, FactbookSummary, Guide, GuideSection,
-    RelatedEntity, TabId, TabKind, WordStatus,
+    RelatedEntity, TabId, WordStatus,
 };
 use obs_layout::ColorRole;
 use obs_model::{Direction, Key, ResourceType};
@@ -156,13 +156,7 @@ impl State {
                     }
                     return;
                 }
-                ui.label(
-                    RichText::new(format!(
-                        "{} people and places called “{name}”. Choose one:",
-                        chooser.choices.len()
-                    ))
-                    .color(theme::c().muted),
-                );
+                ui.label(RichText::new(chooser_heading(chooser, name)).color(theme::c().muted));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .id_salt(("factbook-chooser", tab))
@@ -219,14 +213,13 @@ impl State {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(RichText::new(fact.label).small().color(theme::c().muted));
-                for (i, p) in fact.people.iter().enumerate() {
-                    if i > 0 {
-                        ui.label(RichText::new(",").color(theme::c().muted));
+                comma_list(ui, &fact.people, |ui, p| {
+                    let (r, clicked) = entity_link(ui, p, new_tab);
+                    if clicked.is_some() {
+                        action = clicked;
                     }
-                    if let Some(a) = entity_link(ui, p, new_tab) {
-                        action = Some(a);
-                    }
-                }
+                    r
+                });
             });
         }
         action
@@ -447,24 +440,7 @@ impl State {
     /// Read a Key Passage: the most recently active Bible Tab goes there (its Link set
     /// follows); with Ctrl/Cmd, or with no Bible open, the ★ Bible opens there.
     pub(super) fn open_key_passage(&mut self, factbook: TabId, passage: Passage, new_tab: bool) {
-        let library = &self.session.library;
-        let bible = (!new_tab)
-            .then(|| {
-                self.session.workspace.most_recent(|t| match &t.kind {
-                    TabKind::Resource(id) => library
-                        .get(id)
-                        .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible),
-                    _ => false,
-                })
-            })
-            .flatten();
-        match bible {
-            Some(t) => {
-                self.session.workspace.focus(t);
-                self.session.workspace.navigate_standard(t, passage.start());
-            }
-            None => self.reference_navigate(factbook, passage, true),
-        }
+        self.reference_navigate(factbook, passage, new_tab);
     }
 }
 
@@ -506,15 +482,18 @@ fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
 }
 
 /// A relative's name as a link to their Factbook (plain text when there is none).
-fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAction> {
+fn entity_link(
+    ui: &mut Ui,
+    p: &EntityLink,
+    new_tab: bool,
+) -> (egui::Response, Option<FactbookAction>) {
     let text = if p.uncertain {
         format!("{} (?)", p.name)
     } else {
         p.name.clone()
     };
     if !p.known {
-        ui.label(RichText::new(text).color(theme::c().ink));
-        return None;
+        return (ui.label(RichText::new(text).color(theme::c().ink)), None);
     }
     let tip = if p.uncertain {
         format!(
@@ -527,10 +506,46 @@ fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAct
             p.name
         )
     };
-    super::unbroken_link(ui, text)
-        .on_hover_text(tip)
+    let r = super::unbroken_link(ui, text).on_hover_text(tip);
+    let clicked = r
         .clicked()
-        .then(|| FactbookAction::Entity(p.entity.clone(), new_tab))
+        .then(|| FactbookAction::Entity(p.entity.clone(), new_tab));
+    (r, clicked)
+}
+
+/// Items in a wrapping row, separated by commas that sit right after each item (`Nahor,
+/// Haran`): the comma is painted against the item and the row's item spacing follows it, so
+/// there is no space before a comma and a comma never wraps onto a line by itself (#261).
+fn comma_list<T>(ui: &mut Ui, items: &[T], mut item: impl FnMut(&mut Ui, &T) -> egui::Response) {
+    for (i, it) in items.iter().enumerate() {
+        let r = item(ui, it);
+        if i + 1 < items.len() {
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            let comma = ui.painter().text(
+                pos2(r.rect.right(), r.rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                ",",
+                font,
+                theme::c().muted,
+            );
+            // The row put its item spacing after the item: the comma takes that place, and
+            // the spacing follows it.
+            ui.add_space(comma.width());
+        }
+    }
+}
+
+/// What the chooser lists: those called `name`, then those whose names start with it (#261).
+fn chooser_heading(chooser: &obs_engine::FactbookChooser, name: &str) -> String {
+    let all = chooser.choices.len();
+    let more = all - chooser.exact.min(all);
+    match (chooser.exact, more) {
+        (_, 0) => format!("{all} people and places called “{name}”. Choose one:"),
+        (0, _) => format!("{all} people and places whose names start with “{name}”. Choose one:"),
+        (exact, more) => {
+            format!("{exact} called “{name}”, then {more} whose names start with it. Choose one:")
+        }
+    }
 }
 
 /// One person or place as a clickable row: `John (son of Zebedee)`, its details, and `why`
@@ -589,6 +604,98 @@ mod tests {
     use obs_scripture::Verse;
 
     use super::*;
+
+    /// #261 GUIDES-17: `Nahor, Haran, Sarah` — no space before a comma, one after it.
+    #[test]
+    fn comma_list_puts_each_comma_right_after_its_item() {
+        let ctx = egui::Context::default();
+        let names = ["Nahor", "Haran", "Sarah"];
+        let mut rects: Vec<Rect> = Vec::new();
+        let (mut comma_width, mut haran_width) = (0.0, 0.0);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let width = |text: &str| {
+                let font = egui::TextStyle::Body.resolve(ui.style());
+                (ui.painter())
+                    .layout_no_wrap(text.into(), font, egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            };
+            comma_width = width(",");
+            haran_width = width("Haran");
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                comma_list(ui, &names, |ui, n| {
+                    let r = ui.label(*n);
+                    rects.push(r.rect);
+                    r
+                });
+            });
+        });
+        out.textures_delta.clear();
+        // A label in a wrapping row is laid out from the row's start: its comma is the
+        // galley's last `comma_width` points.
+        let commas: Vec<Rect> = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == "," => {
+                    let r = t.galley.rect.translate(t.pos.to_vec2());
+                    Some(Rect::from_x_y_ranges(
+                        r.right() - comma_width..=r.right(),
+                        r.y_range(),
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!((rects.len(), commas.len()), (3, 2));
+        for (name, comma) in rects.iter().zip(&commas) {
+            assert!(
+                (comma.left() - name.right()).abs() < 0.5,
+                "comma {comma:?} apart from {name:?}"
+            );
+        }
+        let haran_left = rects[1].right() - haran_width;
+        assert!(
+            (haran_left - commas[0].right() - 4.0).abs() < 0.5,
+            "the item spacing after the comma: {haran_left} vs {:?}",
+            commas[0]
+        );
+    }
+
+    /// #261 GUIDES-13: the chooser says which are called the name and which only start
+    /// with it.
+    #[test]
+    fn the_chooser_heading_tells_exact_names_from_longer_ones() {
+        let card = |name: &str| EntityCard {
+            entity: format!("{name}@Gen.1.1"),
+            name: name.into(),
+            distinction: None,
+            kind: obs_model::EntityKind::Place,
+            region: None,
+            passages: 1,
+            first: None,
+            last: None,
+            also_called: None,
+        };
+        let chooser = |exact, names: &[&str]| obs_engine::FactbookChooser {
+            query: "Beth".into(),
+            choices: names.iter().map(|n| card(n)).collect(),
+            exact,
+        };
+        assert_eq!(
+            chooser_heading(&chooser(1, &["Beth-eked", "Bethel", "Bethlehem"]), "Beth"),
+            "1 called “Beth”, then 2 whose names start with it. Choose one:"
+        );
+        assert_eq!(
+            chooser_heading(&chooser(0, &["Bethel", "Bethlehem"]), "Beth"),
+            "2 people and places whose names start with “Beth”. Choose one:"
+        );
+        assert_eq!(
+            chooser_heading(&chooser(2, &["Antioch", "Antioch"]), "Antioch"),
+            "2 people and places called “Antioch”. Choose one:"
+        );
+    }
 
     #[test]
     fn in_book_drops_the_whole_book_abbreviation() {

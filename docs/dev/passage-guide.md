@@ -72,7 +72,7 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   (an entity once). Name as the ★ Bible's text of the Passage gives it (`Abram` in Gen 12:1,
   whole word, case-sensitive) with the usual name beside it (`Abraham`); rows in the order the
   text names them, then by first mention. Facts are TIPNR's structured fields only: kind,
-  region and relations (Father, Mother, Descended from, Siblings, Married to, Children,
+  region and relations (Father, Mother, Descended from, Siblings, Partners, Children,
   Founded, Founded by, Lived here). TIPNR's descriptions are never stored (#43) or shown.
 - Article links: one per Dictionary in Preferred order with an article on the entity. Click
   opens that Dictionary at the headword (its open Tab moves there; Ctrl/Cmd-click: a new Tab).
@@ -159,7 +159,10 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   sets by its Passage Key scheme. Opened while unlinked, it starts at the Passage of the
   focused Tab.
 - Cross-reference rows: hover shows the Scripture popup; click navigates the Guide's Link
-  set; Ctrl/Cmd-click opens the ★ Bible in a new Tab (#51 rules).
+  set (unlinked, the most recent Bible Tab goes there, #261, as for every Guide and Tool);
+  Ctrl/Cmd-click opens the ★ Bible in a new Tab (#51 rules).
+- The header box shows the Guide's whole Passage (`Mark 1:9-11`, `Acts 13`), so confirming
+  it never narrows the Guide to its first Verse (#261).
 - Commentary rows: hover shows a popup with more of the section; click opens the Commentary
   at that section (its open Tab if there is one, otherwise a new Tab in the usual place,
   joining the Guide's Link set), without moving the Guide or its Link set; Ctrl/Cmd-click

@@ -756,3 +756,43 @@ fn factbook_dictionary_articles_without_tipnr_offer_tipnr_and_refresh() {
     });
     assert!(h.shell.session().workspace.tab(factbook).is_some());
 }
+
+/// #261 GUIDES-14: an Atlas with no People & places index says where places come from and
+/// offers the Starter library, like the Timeline, instead of claiming the Passage names no
+/// place; it shows the map once an index arrives.
+#[test]
+fn the_atlas_without_a_people_and_places_index_offers_the_starter_library() {
+    let (mut h, lab) = setup("atlas", &[]);
+    let atlas = h
+        .shell
+        .run(
+            "tool.atlas",
+            &json!({ "passage": "Acts 13", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    let hint = obs_engine::atlas::ATLAS_NO_INDEX;
+    until(&mut h, "the Atlas's hint", |h| {
+        find_in(h, atlas, hint).is_some() && find_in(h, atlas, ADD_STARTER).is_some()
+    });
+    assert!(find_in(&h, atlas, IMPORT).is_some());
+    assert!(
+        !h.texts().iter().any(|t| t.contains("No place is listed")),
+        "{:?}",
+        h.texts()
+    );
+    let at = find_in(&h, atlas, ADD_STARTER).unwrap().center();
+    h.click(at);
+    settle(&mut h);
+    expect_starter_library(&mut h);
+    // TIPNR joins the Library (as the Starter library would add it): the map comes back.
+    let tipnr = obs_engine::testing::tipnr_acts_13();
+    let path = lab.root.join("library").join("tipnr.obr");
+    obs_store::write_obr(&tipnr, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    until(&mut h, "the Atlas's places", |h| {
+        find_in(h, atlas, hint).is_none() && h.texts().iter().any(|t| t.contains("Perga"))
+    });
+}
