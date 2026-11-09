@@ -3,7 +3,8 @@
 //! home folder written as `~`; neither a library's log message quoting typed text nor text
 //! the code put in the panic message reaches it, nor the log file, nor the GitHub issue
 //! address. The next launch finds it as a new report to offer
-//! (`ui-egui`'s `report_problem_tests` show the offer and the review).
+//! (`ui-egui`'s `report_problem_tests` show the offer and the review), and Save report as
+//! zip… saves it with the log file and a README in one zip that holds neither text (#249).
 //!
 //! Only test (debug) builds panic on `OBS_FORCE_PANIC`; a release build would start the
 //! normal app, so the test is compiled for debug builds only.
@@ -12,6 +13,12 @@
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+
+fn report_time() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
 
 /// How long the forced panic may take before the app is stopped and the test fails.
 const PANIC_WAIT: Duration = Duration::from_secs(120);
@@ -98,6 +105,51 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
         "{log}"
     );
     assert!(!log.contains("PRIVATE_NOTE"), "{log}");
+
+    // Save report as zip…: the report, the log file and the README, and no typed text. (As
+    // `help.save_diagnostics_zip` makes it, with the app's home folder: this test's differs.)
+    let name = report.path.file_name().unwrap().to_str().unwrap();
+    let files = obs_engine::diagnostics::diagnostics_zip_entries(
+        &logs,
+        Some(report),
+        home.to_str(),
+        report_time(),
+    );
+    let dest = root.join("openbible-report.zip");
+    let saved = obs_engine::diagnostics::write_diagnostics_zip(&dest, &files).unwrap();
+    assert_eq!(saved, dest);
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&dest).unwrap()).unwrap();
+    let mut entries = Vec::new();
+    for i in 0..zip.len() {
+        use std::io::Read;
+        let mut f = zip.by_index(i).unwrap();
+        let mut text = String::new();
+        f.read_to_string(&mut text).unwrap();
+        entries.push((f.name().to_string(), text));
+    }
+    let names: Vec<&str> = entries.iter().map(|e| e.0.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            obs_engine::diagnostics::ZIP_README,
+            name,
+            obs_engine::diagnostics::LOG_FILE
+        ]
+    );
+    assert_eq!(entries[1].1, report.text);
+    assert!(entries[2].1.contains("panicked at"), "{}", entries[2].1);
+    // Windows writes the Log folder with backslashes.
+    let log_in_zip = entries[2].1.replace('\\', "/");
+    assert!(log_in_zip.contains("logging to ~/logs"), "{log_in_zip}");
+    let readme = &entries[0].1;
+    assert!(
+        readme.contains(&format!("- {name}: the crash report")),
+        "{readme}"
+    );
+    for (name, text) in &entries {
+        assert!(!text.contains("PRIVATE_NOTE"), "{name}: {text}");
+        assert!(!text.contains(home.to_str().unwrap()), "{name}: {text}");
+    }
     // Nothing else was made: no User database, no library (it stopped before them).
     assert!(!root.join("user.db").exists());
     std::fs::remove_dir_all(&root).unwrap();

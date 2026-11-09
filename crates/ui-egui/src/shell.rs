@@ -245,7 +245,7 @@ pub(crate) struct State {
     fonts_ui: fonts_window::FontsUi,
     /// The Highlight styles window (View → Highlight styles, #181).
     styles_ui: highlight_styles_window::StylesUi,
-    /// The Visual filters window (View → Visual filters…, #211).
+    /// The Visual filters window (View → Visual filters, #211).
     pub(crate) filters_ui: visual_filters_window::FiltersUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
@@ -593,6 +593,7 @@ impl Shell {
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
                 Effect::ReportProblem => self.st.show_report_problem(),
+                Effect::SaveDiagnosticsZip => self.st.show_diagnostics_zip(),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::ShowVisualFilters => self.st.filters_ui.open = true,
                 Effect::FocusCommandBox => {
@@ -910,6 +911,7 @@ impl Shell {
             || self.st.picker.is_some()
             || self.st.export_waiting()
             || self.st.data_dialog_waiting()
+            || self.st.zip_dialog_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
@@ -954,6 +956,7 @@ impl Shell {
         self.st.poll_export();
         self.st.poll_data_dialog();
         self.st.poll_csv_picker();
+        self.st.poll_zip_dialog();
         self.st.poll_folder_opening();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {

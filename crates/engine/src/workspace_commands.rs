@@ -241,6 +241,7 @@ pub const MENUS: &[Menu] = &[
             C("help.keyboard_shortcuts"),
             Separator,
             C("help.report_problem"),
+            C("help.save_diagnostics_zip"),
             C("help.open_log_folder"),
             Separator,
             C("help.credits"),
@@ -772,7 +773,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     simple(
         "view.visual_filters",
-        "Visual filters…",
+        "Visual filters",
         None,
         always,
         |s, _| {

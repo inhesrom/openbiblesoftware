@@ -37,6 +37,9 @@ obs-engine.workspace = true
 obs-fonts.workspace = true
 obs-model.workspace = true
 obs-store.workspace = true
+# Opens the Diagnostics zip a forced panic's Crash report is saved in (#249); the engine's
+# version and features, so no new crate.
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
 
 [lints]
 workspace = true
