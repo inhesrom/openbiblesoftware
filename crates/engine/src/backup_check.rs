@@ -173,15 +173,20 @@ fn reads_toolbar(_key: &str, json: &str) -> bool {
 }
 
 /// The Keyboard shortcuts, as `KeyBindings::from_json` reads them: per command id, a key it
-/// can read or `null` for no key.
+/// can read or `null` for no key. A Selection key's old id counts as its new one, so the
+/// two together would leave one binding out.
 fn reads_key_bindings(_key: &str, json: &str) -> bool {
     let Ok(Value::Object(keys)) = serde_json::from_str::<Value>(json) else {
         return false;
     };
-    keys.values().all(|key| match key {
-        Value::Null => true,
-        Value::String(k) => crate::key_bindings::canonical_key(k).is_ok(),
-        _ => false,
+    let mut ids = std::collections::BTreeSet::new();
+    keys.iter().all(|(id, key)| {
+        let read = match key {
+            Value::Null => true,
+            Value::String(k) => crate::key_bindings::canonical_key(k).is_ok(),
+            _ => false,
+        };
+        read && ids.insert(crate::key_bindings::current_binding_id(id))
     })
 }
 

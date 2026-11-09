@@ -67,7 +67,9 @@ reads; a Layout must not hold two Tabs with one id (restoring it would keep only
 a Reading plan's start day must read (the loader leaves out a plan whose start day does not)
 and so must each of its Readings' Passages and day (the loader leaves out such a Reading).
 Settings the loader keeps only part of are checked as it reads them: a field of View,
-Toolbar, Update check settings or the First-run tour must read; a View Text size must not be above the maximum nor
+Toolbar, Keyboard shortcuts, Update check settings or the First-run tour must read; Keyboard
+shortcuts must not bind a Selection key under both its old id and its new one (the loader
+applies the old to the new and keeps one); a View Text size must not be above the maximum nor
 a Line spacing outside 1.0–2.0, which the loader would clamp (a Text size below the minimum is
 read: the app resets it with a notice, #241); a Search history must not hold more than
 `SEARCH_HISTORY_LIMIT` entries, which the loader would cut; a Home arrangement or Toolbar must hold each card or
@@ -93,7 +95,8 @@ and the Last session cache is forgotten so the next save writes it over the Back
 Tool showing a Notebook the Backup lacks goes back to All. Search Tabs whose results come from
 the User database (Notes mode, and Library mode, whose Search scope names Collections) drop
 their results and run their searches again over the restored data (`rerun_searches_of_user_data`,
-as a Tab restored from a Workspace snapshot does: no Visit, no Search history entry), keeping
+as a Tab restored from a Workspace snapshot does: no Visit, no Search history entry and no
+Recent searches entry, so the Backup's own Recent searches come back as they were), keeping
 their query.
 
 A restore that fails before step 2 changes nothing at all: the Session keeps its User database,

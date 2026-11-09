@@ -722,6 +722,10 @@ pub struct BibleSearches {
     recent: BTreeMap<SearchMode, Vec<String>>,
     /// The Word forms setting, once read from the User database.
     word_forms: Option<bool>,
+    /// Set while restored searches run again ([`Session::rerun_restored_searches`]): those
+    /// are not new searches, so they leave Recent searches as they are (a restored backup's
+    /// own Recent searches included, #258).
+    rerunning: bool,
     /// Outlines by [`outline_key`], shared with the jobs that read them.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
@@ -886,6 +890,9 @@ impl Session {
     }
 
     pub(crate) fn remember_search(&mut self, mode: SearchMode, query: &str) {
+        if self.bible_search.rerunning {
+            return;
+        }
         let mut recent = self.recent_searches(mode);
         recent.retain(|q| q != query);
         recent.insert(0, query.to_string());
@@ -988,8 +995,9 @@ impl Session {
 
     /// Run again the searches of the Search Tabs a Workspace snapshot brought back (the Last
     /// session, a Layout, Recently closed; #259), so they show their results as they did. It
-    /// is not a new search: no Visit and no Search history entry. A Search scope naming
-    /// something gone runs over what is left, with a notice, as a Saved search does.
+    /// is not a new search: no Visit, no Search history entry and no Recent searches entry. A
+    /// Search scope naming something gone runs over what is left, with a notice, as a Saved
+    /// search does.
     pub fn rerun_restored_searches(&mut self) {
         let tabs: Vec<TabId> = self
             .workspace
@@ -1003,7 +1011,9 @@ impl Session {
             };
             st.rerun = false;
             let fields = st.clone();
+            self.bible_search.rerunning = true;
             let error = self.start_search(tab, &fields);
+            self.bible_search.rerunning = false;
             let notice = self.gone_from_scope(&crate::favorites::SavedSearch::fields(&fields));
             if let Some(st) = self.search_tab_mut(tab) {
                 st.error = error;

@@ -635,6 +635,48 @@ fn a_backup_with_an_unreadable_field_of_a_setting_is_refused_naming_it() {
     );
 }
 
+/// #258: Keyboard shortcuts holding a Selection key under its old id and its new one would
+/// lose one binding on restore (the loader applies the old id to the new one); a Backup with
+/// them is refused by the preview and by restore before any Safety backup, naming the setting.
+#[test]
+fn a_backup_with_a_shortcut_under_its_old_and_new_id_is_refused() {
+    let f = Fixture::new("shortcut-aliases");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        db.set_preference(
+            "key_bindings",
+            r#"{"selection.highlight_1":"Alt+2","selection.highlight_yellow":"Alt+3"}"#,
+        )
+        .unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the setting `key_bindings` (Keyboard shortcuts)",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("Keyboard shortcuts"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+}
+
 /// #258: a Home or Guide arrangement holding a card or section its loader drops (repeated,
 /// unknown, not that Guide's) and an Import report naming another Resource than its key are
 /// refused before any Safety backup, naming them; the loaders would silently drop them.
@@ -934,6 +976,11 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
         ("toolbar", r#"{"launchers":[{"id":"tools","shown":"no"}]}"#),
         ("key_bindings", r#"{"annotation.note":42}"#),
         ("key_bindings", r#"{"annotation.note":"Ctrl+Nowhere"}"#),
+        // An old Selection key id beside its new one: the loader keeps one of the two.
+        (
+            "key_bindings",
+            r#"{"selection.highlight_1":"Alt+2","selection.highlight_yellow":"Alt+3"}"#,
+        ),
         ("updates", r#"{"auto_check":"false"}"#),
         ("updates", r#"{"skipped":1}"#),
         ("tour", r#"{"shown":"yes"}"#),
@@ -1207,4 +1254,36 @@ fn a_restore_runs_open_notes_searches_again_over_the_restored_data() {
 
     s.run("data.undo_restore", &Value::Null).unwrap();
     assert_eq!(hits(&s), 1);
+}
+
+/// #258: the searches a restore runs again are not new searches: a Backup's own Recent
+/// searches come back as they were (none cut to make room for the open Tab's query), and
+/// Undo restore brings back the ones from before.
+#[test]
+fn a_restore_running_searches_again_keeps_the_backups_recent_searches() {
+    let f = Fixture::new("rerun-recent");
+    let mut s = f.session();
+    for i in 0..crate::bible_search::RECENT_LIMIT {
+        s.run(
+            "search.run",
+            &json!({ "text": format!("grace {i}"), "mode": "notes" }),
+        )
+        .unwrap();
+    }
+    let backed_up = s.recent_searches(SearchMode::Notes);
+    assert_eq!(backed_up.len(), crate::bible_search::RECENT_LIMIT);
+    let backup = f.file("recent.obsbackup");
+    s.run("data.back_up", &path(&backup)).unwrap();
+    s.run("search.run", &json!({ "text": "mercy", "mode": "notes" }))
+        .unwrap();
+    let before = s.recent_searches(SearchMode::Notes);
+    assert_eq!(before[0], "mercy");
+
+    s.run("data.restore", &path(&backup)).unwrap();
+    assert_eq!(s.recent_searches(SearchMode::Notes), backed_up);
+    let mut launched = f.launched_on(&backup);
+    assert_eq!(launched.recent_searches(SearchMode::Notes), backed_up);
+
+    s.run("data.undo_restore", &Value::Null).unwrap();
+    assert_eq!(s.recent_searches(SearchMode::Notes), before);
 }

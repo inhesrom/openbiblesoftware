@@ -142,6 +142,14 @@ const RENAMED_SELECTION_KEYS: [(&str, &str); 5] = [
     ("selection.highlight_red_underline", "selection.highlight_5"),
 ];
 
+/// The id a saved binding applies to: a Selection key's old id becomes its new one.
+pub(crate) fn current_binding_id(id: &str) -> &str {
+    RENAMED_SELECTION_KEYS
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| new)
+}
+
 /// The group of the Selection keys in the Keyboard shortcuts Tab.
 pub const SELECTION_GROUP: &str = "Selection";
 /// The group of commands in no menu.
@@ -194,17 +202,14 @@ impl KeyBindings {
     fn from_json(v: &Value) -> Self {
         let mut overrides = BTreeMap::new();
         for (id, key) in v.as_object().into_iter().flatten() {
-            let id = &RENAMED_SELECTION_KEYS
-                .iter()
-                .find(|(old, _)| old == id)
-                .map_or_else(|| id.clone(), |(_, new)| (*new).to_string());
+            let id = current_binding_id(id);
             match key {
                 Value::Null => {
-                    overrides.insert(id.clone(), None);
+                    overrides.insert(id.to_string(), None);
                 }
                 Value::String(k) => {
                     if let Ok(k) = canonical_key(k) {
-                        overrides.insert(id.clone(), Some(k));
+                        overrides.insert(id.to_string(), Some(k));
                     }
                 }
                 _ => {}
