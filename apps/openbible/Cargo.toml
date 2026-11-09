@@ -25,6 +25,9 @@ fontdb = { version = "0.24", default-features = false, features = ["std", "fs", 
 # Copy verses (#154) puts HTML on the clipboard as rich text; eframe's own clipboard copies
 # plain text only. The same arboard eframe's `clipboard` feature links.
 arboard = { version = "3.6", default-features = false }
+# Get Resources (#244): the OS language heads the language filter. Reads the OS setting
+# (CoreFoundation, Win32, or LANG/LC_* on Linux) with no further dependencies on desktop.
+sys-locale = "0.3"
 # `links` opens hyperlinks (Credits, About's change record) in the system browser.
 # `clipboard` copies to the system clipboard; without it egui keeps copies inside the app.
 eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links", "clipboard"] }

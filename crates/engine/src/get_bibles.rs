@@ -6,7 +6,7 @@
 //! through the app's transport ([`Session::set_fetch`]), keeps the modules SWORD Import knows,
 //! and caches them so the Tab opens offline. Every byte comes from the repositories themselves.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use obs_model::ResourceType;
@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
+use crate::language_names::{LanguageName, language};
 use crate::library_search::type_plural;
 use crate::licence::{LicenceClass, LicenceFilter, licence_class};
 use crate::open_catalogue::{OPEN_CATALOGUE, OpenSource};
@@ -495,7 +496,8 @@ impl ResourceCatalog {
     }
 
     /// "All": every listing the filter accepts (any listed type for All) matching `query`
-    /// and, if given, `language`, by title. The three filters combine.
+    /// and, if given, `language` (any tag of that language, [`LanguageName::key`]), by title.
+    /// The three filters combine.
     pub fn all(
         &self,
         query: &str,
@@ -503,11 +505,16 @@ impl ResourceCatalog {
         filter: impl Into<ResourceFilter>,
     ) -> Vec<&ResourceListing> {
         let filter = filter.into();
+        let language = language.map(language_key);
         let mut out: Vec<&ResourceListing> = self
             .listings
             .iter()
             .filter(|b| {
-                filter.accepts(b) && b.matches(query) && language.is_none_or(|l| b.language == l)
+                filter.accepts(b)
+                    && b.matches(query)
+                    && language
+                        .as_ref()
+                        .is_none_or(|l| language_key(&b.language) == *l)
             })
             .collect();
         out.sort_by(|a, b| {
@@ -691,6 +698,32 @@ pub struct GetBibles {
     /// The "All" list's rows sorted and ready to filter, and the last list
     /// ([`Self::all_listings`]).
     all_cache: std::sync::Mutex<AllCache>,
+    /// The user's OS language (BCP 47), whose listings head the language filter (#244).
+    system_language: Option<String>,
+    /// The last language filter list ([`Self::languages`]) and what it was made for.
+    languages_cache: std::sync::Mutex<Option<(LanguagesKey, std::sync::Arc<[LanguageChoice]>)>>,
+}
+
+/// What a language filter list was made for: the type and licence filters, the OS language
+/// and [`GetBibles::generation`].
+type LanguagesKey = (ResourceFilter, LicenceFilter, Option<String>, u64);
+
+/// One language of the Get Resources language filter (#244).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanguageChoice {
+    /// The language's [`LanguageName::key`]; the filter selects the listings whose `Lang`
+    /// tag has it (`bn`, `ben` and `bn-Beng` alike).
+    pub code: String,
+    /// The key's names; its codes also hold the listings' own tags (`ben-beng-in`, `en-latn`),
+    /// so searching a tag the catalog gives finds the choice.
+    pub name: LanguageName,
+    /// How many listings the type and licence filters accept are in it.
+    pub count: usize,
+}
+
+/// A `Lang` tag's [`LanguageName::key`]: tags with one key are one language.
+fn language_key(tag: &str) -> String {
+    language(tag).key
 }
 
 /// What an "All" list was made for: the search (trimmed, lower case), language, type and
@@ -719,6 +752,8 @@ struct IndexedRow {
     row: AllRow,
     lower: [String; 3],
     licence: LicenceClass,
+    /// The row's [`LanguageName::key`], for the language filter.
+    language: String,
 }
 
 /// The compiled-in Open catalogue's rows.
@@ -880,13 +915,13 @@ impl GetBibles {
             cache.rows = Some((self.generation, self.indexed_rows()));
         }
         let rows = cache.rows.as_ref().map_or(&[][..], |(_, rows)| rows);
+        let language = language.map(language_key);
         rows.iter()
             .filter(|r| {
                 licence.accepts(r.licence)
                     && (query.is_empty() || r.lower.iter().any(|f| f.contains(query)))
-                    && self.all_row(r.row).is_some_and(|b| {
-                        filter.accepts(b) && language.is_none_or(|l| b.language == l)
-                    })
+                    && language.as_ref().is_none_or(|l| r.language == *l)
+                    && self.all_row(r.row).is_some_and(|b| filter.accepts(b))
             })
             .map(|r| r.row)
             .collect()
@@ -911,31 +946,80 @@ impl GetBibles {
                 row,
                 lower: [&b.title, &b.abbreviation, &b.module].map(|f| f.to_lowercase()),
                 licence: b.licence_class(),
+                language: language_key(&b.language),
             })
             .collect()
     }
 
-    /// Language codes among the listings the type and licence filters accept, the Open
-    /// catalogue's included, most listings first, for the language filter.
+    /// The language filter's list (#244): each language of the listings the type and licence
+    /// filters accept (the Open catalogue's included; tags of one language, `bn` and `ben`,
+    /// together) with its names and how many listings are in it. The OS language's come first ([`Self::set_system_language`]), then the rest,
+    /// each group by English name. Made again only when a filter or the catalogs changed.
     pub fn languages(
         &self,
         filter: ResourceFilter,
         licence: LicenceFilter,
-    ) -> Vec<(String, usize)> {
-        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    ) -> std::sync::Arc<[LanguageChoice]> {
+        let key: LanguagesKey = (
+            filter,
+            licence,
+            self.system_language.clone(),
+            self.generation,
+        );
+        let mut cache = self
+            .languages_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cache.as_ref().is_none_or(|(k, _)| *k != key) {
+            *cache = Some((key, self.language_choices(filter, licence).into()));
+        }
+        cache
+            .as_ref()
+            .map_or_else(|| std::sync::Arc::from([]), |(_, l)| l.clone())
+    }
+
+    fn language_choices(
+        &self,
+        filter: ResourceFilter,
+        licence: LicenceFilter,
+    ) -> Vec<LanguageChoice> {
+        // Each key's listing count and the `Lang` tags it was made from.
+        let mut counts: BTreeMap<String, (usize, BTreeSet<&str>)> = BTreeMap::new();
         let catalog = self.catalog.iter().flat_map(|c| c.listings.iter());
         for b in catalog
             .chain(self.open_listings())
             .filter(|b| filter.accepts(b) && licence.accepts(b.licence_class()))
         {
-            *counts.entry(b.language.as_str()).or_default() += 1;
+            let entry = counts.entry(language_key(&b.language)).or_default();
+            entry.0 += 1;
+            entry.1.insert(b.language.trim());
         }
-        let mut out: Vec<(String, usize)> = counts
+        let system = self.system_language.as_deref().map(|l| language(l).primary);
+        let mut out: Vec<(bool, String, LanguageChoice)> = counts
             .into_iter()
-            .map(|(l, n)| (l.to_string(), n))
+            .map(|(code, (count, tags))| {
+                let mut name = language(&code);
+                // The catalog's own tags find the choice too: `ben-Beng-IN` is `bn-IN`.
+                for tag in tags {
+                    for c in language(tag).codes {
+                        if !name.codes.contains(&c) {
+                            name.codes.push(c);
+                        }
+                    }
+                }
+                let first = system.as_ref().is_some_and(|s| *s == name.primary);
+                let sort = name.english_label().to_lowercase();
+                let choice = LanguageChoice { code, name, count };
+                (!first, sort, choice)
+            })
             .collect();
-        out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        out
+        out.sort_by(|a, b| (a.0, &a.1, &a.2.code).cmp(&(b.0, &b.1, &b.2.code)));
+        out.into_iter().map(|(_, _, c)| c).collect()
+    }
+
+    /// The user's OS language (BCP 47, `bn-BD`), whose languages head the language filter.
+    pub fn set_system_language(&mut self, tag: Option<String>) {
+        self.system_language = tag.filter(|t| !t.trim().is_empty());
     }
 
     /// Set when the last refresh failed; the Tab shows the cached catalog with this message.
@@ -1679,7 +1763,8 @@ fn update_all(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 /// The listings, filtered by `query`, `language`, `type` (all types when not given) and
 /// `licence` (all licences when not given). `featured` holds the rows of the filter's Featured
 /// sections, in order (Bibles, then Hebrew & Greek, then the other types); `open` the Open
-/// catalogue's rows (#134); `sections` names them all. Every row gives its `licence_class`.
+/// catalogue's rows (#134); `sections` names them all. Every row gives its `licence_class`
+/// and `language_name`; `languages` is the language filter's list (#244).
 fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let failed = |message| CommandError::Failed {
         command: "getbibles.list",
@@ -1715,7 +1800,8 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         };
         json!({"module": b.module, "type": crate::library_search::type_id(b.kind),
                "repo": b.repo, "title": b.title, "abbreviation": b.abbreviation,
-               "language": b.language, "size": b.size, "licence": b.licence,
+               "language": b.language, "language_name": language(&b.language).label(),
+               "size": b.size, "licence": b.licence,
                "licence_class": b.licence_class(), "source": source,
                "evidence_url": b.evidence_url,
                "version": b.version, "tags": b.tags(), "used_by": b.used_by(),
@@ -1748,6 +1834,10 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         "all": gb.all_listings(query, language, filter, licence)
             .into_iter()
             .map(row)
+            .collect::<Vec<_>>(),
+        "languages": gb.languages(filter, licence)
+            .iter()
+            .map(|c| json!({"code": c.code, "name": c.name.label(), "count": c.count}))
             .collect::<Vec<_>>(),
     }))
 }

@@ -174,6 +174,13 @@ impl App {
         self
     }
 
+    /// The user's OS language (BCP 47, `bn-BD`), whose Resources head Get Resources' language
+    /// filter (#244).
+    pub fn with_system_language(mut self, tag: Option<String>) -> Self {
+        self.shell.session_mut().get_bibles.set_system_language(tag);
+        self
+    }
+
     /// Hand the shell the app's installed fonts (View → Fonts, #138). Without them, only the
     /// bundled fonts can be chosen.
     pub fn with_system_fonts(mut self, fonts: std::sync::Arc<dyn SystemFonts>) -> Self {

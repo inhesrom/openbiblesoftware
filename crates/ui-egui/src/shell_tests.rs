@@ -3603,12 +3603,13 @@ mod get_bibles {
         let all = h.find("ALL BIBLES · 7").unwrap();
         assert!(featured.top() < nasb.top() && nasb.top() < all.top());
         assert!(h.find("Copyrighted").is_some());
-        assert!(
-            h.find("NASB95 · English · 4.5 MB · from Lockman Foundation")
-                .is_some(),
-            "{:?}",
-            h.texts()
-        );
+        // The language is named, its code on hover (#244).
+        let facts = [
+            "NASB95 · ",
+            "English",
+            " · 4.5 MB · from Lockman Foundation",
+        ];
+        assert!(facts.iter().all(|f| h.find(f).is_some()), "{:?}", h.texts());
         assert!(
             h.find(
                 "Used by Word Study › Translated as and Occurrences · Copyrighted; Permission \
@@ -3684,6 +3685,201 @@ mod get_bibles {
             h.find("Nothing matches the search, type, language and licence.")
                 .is_some()
         );
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// An Open catalogue row in `language`, for the language filter tests (#244).
+    fn open_row(id: &str, title: &str, language: &str) -> obs_engine::open_catalogue::OpenSource {
+        let mut row = obs_engine::open_catalogue::open_sources()[0].clone();
+        row.id = id.into();
+        row.title = title.into();
+        row.abbreviation = id.to_uppercase();
+        row.language = language.into();
+        row
+    }
+
+    /// The language filter's choices on screen ("English · 4"), in order: the texts the
+    /// popup paints after its search field.
+    fn language_choices(h: &Harness) -> Vec<String> {
+        let texts = h.texts();
+        let start = texts
+            .iter()
+            .position(|t| *t == "Search languages: name or code")
+            .unwrap_or_else(|| panic!("the language filter is not open: {texts:?}"));
+        texts[start..]
+            .iter()
+            .filter(|t| t.contains(" · "))
+            .map(|t| (*t).to_string())
+            .collect()
+    }
+
+    /// Open the language filter and type `query` into its search.
+    fn search_languages(h: &mut Harness, query: &str) {
+        if h.find("Search languages: name or code").is_none() && !egui::Popup::is_any_open(&h.ctx) {
+            let shown = h
+                .shell
+                .st
+                .get_bibles_ui
+                .language
+                .clone()
+                .map_or("All languages".to_string(), |l| {
+                    obs_engine::language(&l).english_label()
+                });
+            h.click_text(&shown);
+        }
+        h.shell.st.get_bibles_ui.language_search.clear();
+        h.frames(1);
+        h.events.push(Event::Text(query.into()));
+        h.frames(2);
+    }
+
+    /// #244: the language filter lists names with counts, the OS language first; a search
+    /// on the English name, the name in the language itself or the code finds Bengali; rows
+    /// name their language. No row or choice shows a bare code.
+    #[test]
+    fn the_language_filter_is_a_searchable_list_of_language_names() {
+        let (mut h, _repos, root) = setup("language-names");
+        h.shell.st.session.get_bibles.set_open_catalogue(vec![
+            open_row("bentest", "Bengali test Bible", "bn"),
+            open_row("bentest2", "Second Bengali test Bible", "ben"),
+            open_row("kmotest", "Kwoma test Bible", "kmo"),
+            open_row("oddtest", "Odd test Bible", "qqq"),
+            open_row("beftest", "Benabena test Bible", "bef"),
+        ]);
+        h.shell
+            .st
+            .session
+            .get_bibles
+            .set_system_language(Some("el-GR".into()));
+        open_get_bibles(&mut h);
+        h.click_text("All languages");
+        assert!(
+            h.find("Search languages: name or code").is_some(),
+            "{:?}",
+            h.texts()
+        );
+        let choices = language_choices(&h);
+        let choices: Vec<&str> = choices.iter().map(String::as_str).collect();
+        // Names, not codes; the OS language (Greek) has none here, so all by name.
+        for c in [
+            "English · 4",
+            "Ancient Greek · 2",
+            "Ancient Hebrew · 1",
+            "Kwoma · 1",
+        ] {
+            assert!(choices.contains(&c), "{c:?} in {choices:?}");
+        }
+        assert!(
+            choices
+                .iter()
+                .any(|c| c.starts_with("Bangla") && c.ends_with(" · 2")),
+            "{choices:?}"
+        );
+        assert!(
+            choices.contains(&"Unknown language (qqq) · 1"),
+            "{choices:?}"
+        );
+        assert!(
+            !choices
+                .iter()
+                .any(|c| c.starts_with("kmo") || c.starts_with("grc"))
+        );
+        let at = |t: &str| choices.iter().position(|c| c.starts_with(t)).unwrap();
+        assert!(at("Ancient Greek") < at("Bangla") && at("Bangla") < at("English"));
+        preview_settled(&mut h, "get-resources-language-filter-names");
+
+        for query in ["Bengali", "Bangla", "ben"] {
+            search_languages(&mut h, query);
+            let bangla: Vec<&str> = h
+                .texts()
+                .into_iter()
+                .filter(|t| t.starts_with("Bangla") && t.contains(" · "))
+                .collect();
+            assert_eq!(
+                bangla.len(),
+                1,
+                "{query:?}: bn and ben together, {:?}",
+                h.texts()
+            );
+            assert!(bangla[0].ends_with(" · 2"), "{bangla:?}");
+            // Bengali's code comes before "Benabena", which only holds it.
+            let texts = h.texts();
+            let typed = texts.iter().rposition(|t| *t == query).expect("the search");
+            let shown: Vec<&str> = texts[typed..]
+                .iter()
+                .copied()
+                .filter(|t| t.contains(" · "))
+                .collect();
+            assert!(shown[0].starts_with("Bangla"), "{query:?}: {shown:?}");
+            assert!(h.find("English · 4").is_none(), "{query:?} hides the rest");
+            if query == "Bengali" {
+                preview_settled(&mut h, "get-resources-language-filter-search-bengali");
+            }
+        }
+        search_languages(&mut h, "klingon");
+        assert!(h.find("No language matches").is_some());
+
+        // Enter takes the first match; All lists its Bible, named by language.
+        search_languages(&mut h, "kwoma");
+        h.events.push(Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(3);
+        assert_eq!(h.shell.st.get_bibles_ui.language.as_deref(), Some("kmo"));
+        assert!(h.find("Search languages: name or code").is_none(), "closed");
+        assert!(h.find("Kwoma").is_some(), "the button names it");
+        assert!(h.find("kmo").is_none(), "{:?}", h.texts());
+        let all = h.shell.st.session.get_bibles.all_listings(
+            "",
+            Some("kmo"),
+            h.shell.st.session.get_bibles.filter(),
+            obs_engine::LicenceFilter::All,
+        );
+        let titles: Vec<&str> = all.iter().map(|b| b.title.as_str()).collect();
+        assert_eq!(titles, ["Kwoma test Bible"]);
+
+        // The OS language heads the list.
+        h.shell
+            .st
+            .session
+            .get_bibles
+            .set_system_language(Some("en-US".into()));
+        h.shell.st.get_bibles_ui.language = None;
+        h.frames(2);
+        h.click_text("All languages");
+        assert_eq!(language_choices(&h)[0], "English · 4", "{:?}", h.texts());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// #244: a row's language shows its code on hover.
+    #[test]
+    fn a_rows_language_shows_its_code_on_hover() {
+        let (mut h, _repos, root) = setup("language-hover");
+        h.shell
+            .st
+            .session
+            .get_bibles
+            .set_open_catalogue(vec![open_row("kmotest", "Kwoma test Bible", "kmo")]);
+        open_get_bibles(&mut h);
+        h.shell.st.get_bibles_ui.language = Some("kmo".into());
+        h.frames(2);
+        let kwoma = h
+            .shapes
+            .iter()
+            .filter(|(_, t)| t == "Kwoma")
+            .map(|(r, _)| *r)
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("the row names Kwoma");
+        h.events.push(Event::PointerMoved(kwoma.center()));
+        h.frames(60);
+        assert!(h.texts().contains(&"Language code: kmo"), "{:?}", h.texts());
+        preview(&h, "get-resources-language-code-on-hover");
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -3870,6 +4066,14 @@ mod get_bibles {
         }
     }
 
+    /// `preview` once a popup's fade-in has finished.
+    fn preview_settled(h: &mut Harness, name: &str) {
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            h.frames(30);
+            preview(h, name);
+        }
+    }
+
     fn open_get_resources(h: &mut Harness) {
         h.open_menu("Library");
         h.click_text("Get Resources…");
@@ -3907,12 +4111,12 @@ mod get_bibles {
         ] {
             assert!(h.find(t).is_some(), "type filter {t:?}: {:?}", h.texts());
         }
-        assert!(
-            h.find("Lexicon · StrongsGreek · English · 0.9 MB · from CrossWire")
-                .is_some(),
-            "{:?}",
-            h.texts()
-        );
+        let facts = [
+            "Lexicon · StrongsGreek · ",
+            "English",
+            " · 0.9 MB · from CrossWire",
+        ];
+        assert!(facts.iter().all(|f| h.find(f).is_some()), "{:?}", h.texts());
         preview(&h, "get-resources-all");
 
         h.click_text("Lexicons");
