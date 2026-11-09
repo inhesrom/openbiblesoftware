@@ -1,6 +1,6 @@
 # Open Bible Software
 
-An offline desktop Bible study app for the serious lay student. Users read, compare, annotate and search a local library of open resources.
+An offline desktop Bible study app for the serious lay student. Users read, compare, annotate and search a local library of open resources. The app never phones home; its one network request of its own is the Update check (ADR 0017), which the user can turn off.
 
 ## Language
 
@@ -158,7 +158,7 @@ A Starter library Resource the user removed from the library. It is remembered i
 _Avoid_: Deleted resource, Hidden resource
 
 **Release archive**:
-The app for one platform as a plain `.tar.gz` or `.zip`, with the Starter library in a `starter` folder beside it, published with each tagged release. Unpacked, it runs as it is and adds the Starter library on the first launch. What users download until there are installers; it is unsigned.
+The app for one platform as a plain `.tar.gz` or `.zip`, with the Starter library in a `starter` folder beside it, published with each tagged release. Unpacked, it runs as it is and adds the Starter library on the first launch, and Update now can replace it in place with a newer one. What users download until there are installers; it is unsigned (the release's checksums will be signed, ADR 0017).
 _Avoid_: Installer, Bundle, Package (for the archive)
 
 **Import**:
@@ -592,8 +592,12 @@ _Avoid_: Profile, User library, Settings file
 ### Your data
 
 **Backup**:
-One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (File → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data, settings included (one the Backup does not have goes back to its default); the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, and the Safety backups.
+One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (File → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data, settings included (one the Backup does not have goes back to its default); the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, the Before-update backups and the Safety backups.
 _Avoid_: Snapshot, Archive, Export (for this), Restore point
+
+**Before-update backup**:
+The Backup the app takes of the User database just before Update now replaces the installed app, listed with the other kept Backups as "Before an app update" (the last five). The update itself never changes the User database, the Library or the settings.
+_Avoid_: Upgrade backup, Pre-install snapshot
 
 **Safety backup**:
 The Backup the app takes of the User database just before a restore replaces it, so the restore can be undone: Undo restore (in Back up & restore) restores it, and it stays in the list of kept Backups (the last five). A restore of an unreadable, damaged or newer file takes none and changes nothing.
@@ -602,6 +606,16 @@ _Avoid_: Undo file, Restore point
 **Data export**:
 What Export everything writes: a zip with each Notebook's Notes as Markdown (as a Notes export) and every other part of the User database as JSON (Annotations with the remembered names of the Resources they were made on, Layouts, the Last session, Favorites, History, Reading plans, the Preferred order and settings), to read or keep elsewhere. Like a Notes export it is a copy, not a Backup: the app does not read it back. Each Notebook's file is named apart from every other however a disk compares names, ignoring case and Unicode normalisation (`Romans.md`, `romans (2).md`; `Σ.md`, `ς (2).md`), so none is lost when the zip is extracted on macOS or Windows. No export (a Notes export, a Data export, a highlight palette or an Analysis CSV) is ever written over the User database or SQLite's files beside it, and an export replaces a file already there only once it is complete, so a failed export leaves the previous one as it was; a read-only file there is not replaced at all.
 _Avoid_: Backup, Dump, Archive
+
+### Updates
+
+**Update check**:
+The app asking this project's GitHub releases for the newest published version: a plain request for public release metadata, carrying nothing about the user, the computer or their data. With "Check for updates automatically" on (the default, in Settings → Updates) every launch makes one, a few seconds after the window appears; Help → Check for updates makes one any time. It is the app's only network request of its own; with the setting off the app makes none unless the user checks. Pre-releases are offered only with "Include pre-releases" on. A newer version shows the update notice: the version, its release notes, Update now, Later and Skip this version (a skipped version is not offered again at launch).
+_Avoid_: Auto-update, Phone home, Telemetry, Ping
+
+**Update now**:
+Installing the newer version the Update check found, from the update notice: the Release archive for this computer is downloaded with a progress bar and Cancel, checked against the release's checksums (and, once release signing is set up, their signature), and only then put in place of the installed copy, after a Before-update backup. Restart now starts the new version. Any failure (offline, rate-limited, a checksum that does not match, no permission to change the app's folder) leaves the old version running and says why, with Open the download page. A copy not installed from a Release archive only offers the download page.
+_Avoid_: Upgrade, Self-update, Patch
 
 ### Problems
 

@@ -1052,6 +1052,12 @@
       "repository": "https://github.com/Gilnaa/memoffset"
     },
     {
+      "name": "minisign-verify",
+      "version": "0.3.0",
+      "license": "MIT",
+      "repository": "https://github.com/jedisct1/rust-minisign-verify"
+    },
+    {
       "name": "miniz_oxide",
       "version": "0.8.9",
       "license": "MIT OR Zlib OR Apache-2.0",
@@ -2691,6 +2697,7 @@
         "egui_tiles 0.18.0",
         "emath 0.37.0",
         "epaint 0.37.0",
+        "minisign-verify 0.3.0",
         "objc-sys 0.3.5",
         "objc2 0.5.3",
         "objc2 0.6.5",

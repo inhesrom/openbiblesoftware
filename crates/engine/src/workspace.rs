@@ -839,6 +839,8 @@ pub enum Effect {
     /// Show what a Diagnostics zip holds and ask where to save it (Help → Save diagnostics
     /// as zip…, #249).
     SaveDiagnosticsZip,
+    /// Restart now (#276): start this executable (the updated app) and close this one.
+    Restart(std::path::PathBuf),
     /// Open the Highlight styles window (View → Highlight styles, #181).
     ShowHighlightStyles,
     /// Open the Visual filters window (View → Visual filters, #211).

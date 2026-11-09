@@ -321,9 +321,10 @@ pub fn start_logging(dir: &Path, level: LogLevel) -> Result<(), String> {
     set_log_level(level);
     log::info!(
         target: "openbible",
-        "Open Bible Software {} started on {}; logging to {}",
-        env!("CARGO_PKG_VERSION"),
+        "Open Bible Software {} started on {} (process {}); logging to {}",
+        crate::updates::APP_VERSION,
         os_description(),
+        std::process::id(),
         dir.display()
     );
     Ok(())
@@ -391,7 +392,7 @@ pub fn problem_report(log_lines: &[String], home: Option<&str>) -> String {
 fn about_lines(when: u64) -> String {
     format!(
         "Version: {}\nOS: {}\nTime: {}\n",
-        env!("CARGO_PKG_VERSION"),
+        crate::updates::APP_VERSION,
         os_description(),
         utc_stamp(when)
     )

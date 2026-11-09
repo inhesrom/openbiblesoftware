@@ -34,6 +34,50 @@ jobs:
       - name: cargo xtask ci
         run: cargo xtask ci
 
+  # Update now end to end (#276): vN installed from a Release archive updates itself to vN+1
+  # served from a mock release source on localhost, restarts into it and keeps the user's data.
+  # Update now and Restart now are clicked with pointer events; the screenshots (the notice,
+  # the download's progress, the installed update, the restarted app) are uploaded.
+  update-e2e:
+    name: update e2e (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: A display for the app (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
+      # The Windows runner's OpenGL is GDI's 1.1 and the app needs 2.0+: Mesa's software
+      # renderer (llvmpipe), deployed system-wide, so the relaunched app gets it too.
+      - name: OpenGL for the app (Windows)
+        if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@v3
+      - name: cargo xtask update-e2e
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a -s "-screen 0 1280x800x24" cargo xtask update-e2e
+          else
+            cargo xtask update-e2e
+          fi
+      - name: Screenshots and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-e2e-${{ matrix.os }}
+          path: |
+            target/update-e2e/shots/
+            target/update-e2e/data/logs/
+          if-no-files-found: warn
+
   bench:
     name: xtask bench
     runs-on: ubuntu-latest

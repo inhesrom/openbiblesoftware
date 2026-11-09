@@ -10,7 +10,7 @@ use obs_scripture::{Book, Passage, Verse};
 use obs_store::annotation::new_id;
 use obs_store::{
     Anchor, Annotation, BackupKind, Change, Content, Notebook, Row, SAFETY_BACKUPS, StoreError,
-    USER_SCHEMA_VERSION, UserStore,
+    UPDATE_BACKUPS, USER_SCHEMA_VERSION, UserStore,
 };
 
 struct Dir(PathBuf);
@@ -269,6 +269,37 @@ fn the_kept_backups_list_launch_safety_and_before_upgrade_copies_newest_first() 
     // A Backup the user made elsewhere is not listed.
     assert!(!list.iter().any(|b| b.path == mine));
     assert_eq!(db.local_time(0).unwrap().len(), "1970-01-01 00:00".len());
+}
+
+#[test]
+fn update_backup_keeps_the_newest_before_update_copies_and_changes_nothing() {
+    let dir = Dir::new("update");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    db.set_preference("x", "kept").unwrap();
+    let before = db.contents().unwrap();
+    let mut taken = Vec::new();
+    for _ in 0..UPDATE_BACKUPS + 2 {
+        taken.push(db.update_backup().unwrap());
+    }
+    // The database itself is as it was.
+    assert_eq!(db.contents().unwrap(), before);
+    assert_eq!(db.preference("x").unwrap().as_deref(), Some("kept"));
+    let list = db.backups().unwrap();
+    let updates: Vec<_> = list
+        .iter()
+        .filter(|b| b.kind == BackupKind::BeforeUpdate)
+        .collect();
+    assert_eq!(updates.len(), UPDATE_BACKUPS, "{list:?}");
+    // The newest are kept, and each is a whole Backup of the data.
+    assert!(updates.iter().any(|b| b.path == *taken.last().unwrap()));
+    assert!(!updates.iter().any(|b| b.path == taken[0]));
+    for b in updates {
+        assert_eq!(
+            UserStore::backup_contents(&b.path).unwrap().settings,
+            before.settings
+        );
+    }
+    assert_eq!(BackupKind::BeforeUpdate.label(), "Before an app update");
 }
 
 #[test]

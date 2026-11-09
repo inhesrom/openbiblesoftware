@@ -347,9 +347,11 @@ pub trait UserData: std::fmt::Debug {
     /// Refuse `dest` if writing there would overwrite the User database or SQLite's files
     /// beside it, by whatever path names them.
     fn refuse_own_file(&self, dest: &Path) -> Result<(), String>;
-    /// The Backups the app keeps by itself (at launch, Safety backups, before an upgrade),
-    /// newest first.
+    /// The Backups the app keeps by itself (at launch, Safety backups, before an upgrade or
+    /// an update), newest first.
     fn backups(&self) -> Result<Vec<BackupFile>, String>;
+    /// Take a Before-update backup (Update now, #276) and return its path.
+    fn update_backup(&self) -> Result<PathBuf, String>;
     /// What the User database holds now.
     fn contents(&self) -> Result<BackupContents, String>;
     /// What the Backup at `path` holds, migrated to this build's format; the file is only read.
@@ -493,6 +495,9 @@ impl UserData for obs_store::UserStore {
     }
     fn backups(&self) -> Result<Vec<BackupFile>, String> {
         obs_store::UserStore::backups(self).map_err(|e| e.to_string())
+    }
+    fn update_backup(&self) -> Result<PathBuf, String> {
+        obs_store::UserStore::update_backup(self).map_err(|e| e.to_string())
     }
     fn contents(&self) -> Result<BackupContents, String> {
         obs_store::UserStore::contents(self).map_err(|e| e.to_string())

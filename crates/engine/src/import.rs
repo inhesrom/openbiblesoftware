@@ -201,6 +201,7 @@ impl Session {
         let events = self.jobs().drain_events();
         let events = self.poll_get_bibles(events);
         let events = self.poll_starter(events);
+        let events = self.poll_updates(events);
         let events = self.poll_search_indexes(events);
         let events = self.poll_guides(events);
         let events = self.poll_bible_searches(events);

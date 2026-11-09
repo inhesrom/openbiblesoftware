@@ -38,6 +38,8 @@ and is saved in the User database as before.
 | | Get Resources, Starter library | `library.get_resources`, `library.starter` | — (actions) |
 | Search | Word forms | `search.word_forms {value}` | `value: false` |
 | Privacy and data | Clear History, Clear Search history | `history.clear`, `search.clear_history`, after a confirmation | — (actions) |
+| Updates (#276) | Check for updates automatically (on), Include pre-releases (off) | `updates.auto_check {on}`, `updates.prereleases {on}` | `on: true`, `on: false` |
+| | Check for updates | a button: Help → Check for updates (`help.check_for_updates`) | — (an action) |
 
 Under the Page tone choices a line says which tone the pages are in now (#240): "Showing Dark
 pages now: Auto follows the theme." for Auto, "Showing Sepia pages in every theme. Choose Auto to

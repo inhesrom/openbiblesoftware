@@ -10,3 +10,5 @@ crates/formats/tests/fixtures/study/*.zdt binary
 crates/formats/tests/fixtures/study/*.zdx binary
 # SWORD test module data files are compared by their reader, byte for byte.
 crates/formats/tests/assets/sword/modules/** binary
+# Update now (#276) verifies a detached minisign signature, byte for byte.
+crates/engine/tests/update-signing/** binary

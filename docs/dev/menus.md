@@ -224,6 +224,8 @@ Checked for every command's label and every menu, choice and submenu title
 | All commands | `app.commands` | Ctrl+Shift+P |
 | Keyboard shortcuts | `help.keyboard_shortcuts` |  |
 | — | | |
+| Check for updates | `help.check_for_updates` |  |
+| — | | |
 | Report a problem… | `help.report_problem` |  |
 | Save diagnostics as zip… | `help.save_diagnostics_zip` |  |
 | Open log folder | `help.open_log_folder` |  |

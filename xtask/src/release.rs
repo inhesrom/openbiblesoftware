@@ -2,9 +2,12 @@
 //! the `release` workflow publishes, and the check that one launches with its Starter library.
 //!
 //! A Release archive is a plain `.tar.gz` (Linux, macOS) or `.zip` (Windows) holding one
-//! folder, `NAME/`, with the app binary, the licence files and `starter/`: the whole of
-//! `dist/starter/`, beside the executable, where the app finds a bundled Starter library
-//! (`obs_engine::starter::bundle_candidates`, #131). Archives are unsigned.
+//! folder, `NAME/`, with the app binary, the licence files, the install marker
+//! (`openbible-install.json`, which tells Update now the folder is a Release archive it may
+//! replace in place, #276) and `starter/`: the whole of `dist/starter/`, beside the
+//! executable, where the app finds a bundled Starter library
+//! (`obs_engine::starter::bundle_candidates`, #131). Archives are unsigned; the release's
+//! SHA256SUMS is signed when the signing key is set up (docs/dev/releasing.md).
 //! TODO(#1): signing, notarization and installers wait for the packaging decisions in #1.
 
 use std::fs::{self, File};
@@ -94,12 +97,40 @@ pub struct ArchiveSpec {
 }
 
 /// One file in an archive: its path under `NAME/` (always `/`-separated), where it is read
-/// from, and its Unix mode.
+/// from (or its bytes), and its Unix mode.
 struct Entry {
     path: String,
     source: PathBuf,
+    bytes: Option<Vec<u8>>,
     mode: u32,
 }
+
+impl Entry {
+    fn file(path: String, source: PathBuf, mode: u32) -> Self {
+        Self {
+            path,
+            source,
+            bytes: None,
+            mode,
+        }
+    }
+
+    fn open(&self) -> Result<(Box<dyn Read>, u64)> {
+        match &self.bytes {
+            Some(bytes) => Ok((Box::new(io::Cursor::new(bytes.clone())), bytes.len() as u64)),
+            None => {
+                let file = File::open(&self.source)
+                    .with_context(|| format!("{}", self.source.display()))?;
+                let len = file.metadata()?.len();
+                Ok((Box::new(BufReader::new(file)), len))
+            }
+        }
+    }
+}
+
+/// The install marker's contents: a Release archive, which Update now replaces in place
+/// (`obs_engine::updates::Install`, #276).
+pub const INSTALL_MARKER_JSON: &str = "{\"kind\": \"archive\"}\n";
 
 pub fn run_archive(root: &Path, args: &[String]) -> Result<()> {
     let mut bin = None;
@@ -166,19 +197,21 @@ pub fn release_archive(spec: &ArchiveSpec) -> Result<PathBuf> {
         .context("the app binary has no file name")?
         .to_string_lossy()
         .into_owned();
-    let mut entries = vec![Entry {
-        path: bin_name,
-        source: spec.bin.clone(),
-        // Artifacts lose the executable bit between jobs; the archive sets it.
-        mode: 0o755,
-    }];
+    // Artifacts lose the executable bit between jobs; the archive sets it.
+    let mut entries = vec![Entry::file(bin_name, spec.bin.clone(), 0o755)];
     for license in LICENSE_FILES {
-        entries.push(Entry {
-            path: (*license).to_string(),
-            source: spec.root.join(license),
-            mode: 0o644,
-        });
+        entries.push(Entry::file(
+            (*license).to_string(),
+            spec.root.join(license),
+            0o644,
+        ));
     }
+    entries.push(Entry {
+        path: obs_engine::updates::INSTALL_MARKER.to_string(),
+        source: PathBuf::new(),
+        bytes: Some(INSTALL_MARKER_JSON.as_bytes().to_vec()),
+        mode: 0o644,
+    });
     for e in walkdir::WalkDir::new(&spec.starter).sort_by_file_name() {
         let e = e.with_context(|| format!("reading {}", spec.starter.display()))?;
         if !e.file_type().is_file() {
@@ -189,11 +222,11 @@ pub fn release_archive(spec: &ArchiveSpec) -> Result<PathBuf> {
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect();
-        entries.push(Entry {
-            path: format!("{STARTER_DIR}/{}", rel.join("/")),
-            source: e.path().to_path_buf(),
-            mode: 0o644,
-        });
+        entries.push(Entry::file(
+            format!("{STARTER_DIR}/{}", rel.join("/")),
+            e.path().to_path_buf(),
+            0o644,
+        ));
     }
     fs::create_dir_all(&spec.out).with_context(|| format!("{}", spec.out.display()))?;
     let path = spec
@@ -256,21 +289,15 @@ fn write_tar_gz(path: &Path, name: &str, entries: &[Entry]) -> Result<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     for entry in entries {
-        let source =
-            File::open(&entry.source).with_context(|| format!("{}", entry.source.display()))?;
-        let len = source.metadata()?.len();
+        let (source, len) = entry.open()?;
         let mut header = tar::Header::new_gnu();
         header.set_entry_type(tar::EntryType::Regular);
         header.set_size(len);
         header.set_mode(entry.mode);
         header.set_mtime(mtime);
         header.set_cksum();
-        tar.append_data(
-            &mut header,
-            format!("{name}/{}", entry.path),
-            BufReader::new(source),
-        )
-        .with_context(|| format!("adding {}", entry.path))?;
+        tar.append_data(&mut header, format!("{name}/{}", entry.path), source)
+            .with_context(|| format!("adding {}", entry.path))?;
     }
     let gz = tar.into_inner()?;
     let mut out = gz.finish()?;
@@ -288,8 +315,7 @@ fn write_zip(path: &Path, name: &str, entries: &[Entry]) -> Result<()> {
             .unix_permissions(entry.mode)
             .large_file(true);
         zip.start_file(format!("{name}/{}", entry.path), options)?;
-        let mut source =
-            File::open(&entry.source).with_context(|| format!("{}", entry.source.display()))?;
+        let (mut source, _) = entry.open()?;
         io::copy(&mut source, &mut zip).with_context(|| format!("adding {}", entry.path))?;
     }
     let mut out = zip.finish()?;
@@ -565,6 +591,9 @@ mod tests {
         for license in LICENSE_FILES {
             assert!(folder.join(license).is_file(), "{license}");
         }
+        // Update now replaces this folder in place (#276).
+        let install = obs_engine::updates::Install::of_exe(&app);
+        assert_eq!(install.kind, obs_engine::updates::InstallKind::Archive);
         let starter = folder.join(STARTER_DIR);
         for f in ["kjv.obr", "bdb.obr", MANIFEST_FILE, "CHANGES-kjv.md"] {
             assert!(starter.join(f).is_file(), "{f}");

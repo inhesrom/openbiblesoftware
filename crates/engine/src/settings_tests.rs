@@ -109,6 +109,10 @@ fn every_preference_command_is_a_setting() {
         "history.clear",
         "search.clear_history",
         "data.backups",
+        // Settings → Updates (#276).
+        "updates.auto_check",
+        "updates.prereleases",
+        "help.check_for_updates",
     ]);
     let missing: Vec<&&str> = wanted.iter().filter(|c| !covered.contains(**c)).collect();
     assert!(missing.is_empty(), "no Setting for {missing:?}");
