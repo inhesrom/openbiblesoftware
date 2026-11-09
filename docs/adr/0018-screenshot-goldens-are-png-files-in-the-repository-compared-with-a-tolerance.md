@@ -6,7 +6,7 @@ draws every Tab kind, toolbar pane, menu, window, dialog and popover in Light, D
 1× and 2× and compares each image with a golden. We decided:
 
 1. **The goldens are lossless PNG files committed under `docs/previews/gallery/`**, one per
-   surface × Look × scale (318 images, about 80 MB at the default 1400 × 900-point window), and
+   surface × Look × scale (330 images, about 80 MB at the default 1400 × 900-point window), and
    `docs/previews/gallery.md` shows them all on one page. `cargo xtask gallery --bless` writes
    only the goldens that are new or off beyond the tolerance, so a re-bless commits what
    changed and nothing else.

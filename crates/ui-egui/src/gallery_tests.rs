@@ -335,6 +335,45 @@ fn dialogs_and_popovers() -> Vec<Run> {
             h.shell.run("view.visual_filters", &json!({}));
             h.frames(3);
         }),
+        ("Language chooser", |h| {
+            h.shell
+                .run("library.get_resources", &json!({ "split": true }));
+            settle(h);
+            settle_all(h);
+            h.click_text("All languages");
+            // Off the button, so its tooltip is not drawn over the list.
+            h.events
+                .push(Event::PointerMoved(egui::pos2(1395.0, 895.0)));
+            h.frames(3);
+            assert!(
+                h.find("Search languages: name or code").is_some(),
+                "{:?}",
+                h.texts()
+            );
+        }),
+        ("Page tone hint", |h| {
+            // The hint offers Auto when the theme turns dark over a light Page tone the user
+            // chose: the Look's own (Sepia) or else Paper. It stays open, back in the Look's
+            // theme, until answered.
+            let dark = h.ctx.theme() == egui::Theme::Dark;
+            let tone = match h.shell.session().appearance.page_tone {
+                obs_engine::PageTone::Auto => obs_engine::PageTone::Paper,
+                chosen => chosen,
+            };
+            h.shell
+                .run("view.page_tone", &json!({ "value": tone.id() }));
+            for theme in ["light", "dark", if dark { "dark" } else { "light" }] {
+                h.shell.run("view.theme", &json!({ "value": theme }));
+                h.frames(2);
+            }
+            let hint = format!(
+                "Page tone is set to {}. Use Auto to follow the theme?",
+                tone.label()
+            );
+            assert!(h.find(&hint).is_some(), "{:?}", h.texts());
+            // Past its fade-in.
+            h.frames(15);
+        }),
         ("About Open Bible", |h| {
             h.shell.run("help.about", &json!({}));
             h.frames(3);

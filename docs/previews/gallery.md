@@ -374,6 +374,20 @@ Every Tab kind, toolbar pane, menu, window, dialog and popover in each Look at 1
 | ![Visual filters, Light](gallery/visual-filters-light-1x.png) | ![Visual filters, Dark](gallery/visual-filters-dark-1x.png) | ![Visual filters, Sepia](gallery/visual-filters-sepia-1x.png) |
 | [2×](gallery/visual-filters-light-2x.png) | [2×](gallery/visual-filters-dark-2x.png) | [2×](gallery/visual-filters-sepia-2x.png) |
 
+### Language chooser
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Language chooser, Light](gallery/language-chooser-light-1x.png) | ![Language chooser, Dark](gallery/language-chooser-dark-1x.png) | ![Language chooser, Sepia](gallery/language-chooser-sepia-1x.png) |
+| [2×](gallery/language-chooser-light-2x.png) | [2×](gallery/language-chooser-dark-2x.png) | [2×](gallery/language-chooser-sepia-2x.png) |
+
+### Page tone hint
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Page tone hint, Light](gallery/page-tone-hint-light-1x.png) | ![Page tone hint, Dark](gallery/page-tone-hint-dark-1x.png) | ![Page tone hint, Sepia](gallery/page-tone-hint-sepia-1x.png) |
+| [2×](gallery/page-tone-hint-light-2x.png) | [2×](gallery/page-tone-hint-dark-2x.png) | [2×](gallery/page-tone-hint-sepia-2x.png) |
+
 ### About Open Bible
 
 | Light | Dark | Sepia |
