@@ -491,17 +491,32 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
 ];
 
 /// The zip entry `notes/<file>` for a Notebook's Markdown file, with ` (2)`, ` (3)`… added
-/// until no name in `used` is the same ignoring case, so no two survive as one file when
-/// the zip is extracted onto a disk that folds case (macOS, Windows). Adds it to `used`.
+/// until no name in `used` has the same [`file_name_key`], so no two survive as one file
+/// when the zip is extracted onto a disk that folds case (macOS, Windows). Adds it to `used`.
 pub(crate) fn notebook_entry_name(used: &mut HashSet<String>, file: &str) -> String {
     let stem = file.strip_suffix(".md").unwrap_or(file);
     let mut name = format!("notes/{file}");
     let mut k = 2;
-    while !used.insert(name.to_lowercase()) {
+    while !used.insert(file_name_key(&name)) {
         name = format!("notes/{stem} ({k}).md");
         k += 1;
     }
     name
+}
+
+/// `name` as a disk that ignores case and Unicode normalisation compares it: two names with
+/// the same key may be one file there. Each character is upper-cased then lower-cased, so
+/// letters with more than one lower-case form meet (`Σ`, `σ` and final `ς`; `ſ` and `s`), as
+/// NTFS's upper-casing and APFS's case folding make them meet; and the result is decomposed
+/// (NFD), as APFS and HFS+ treat `é` and `e` + combining acute as one name. Keys may join
+/// names a disk keeps apart (`ß` and `ss`), which only costs a ` (2)`.
+fn file_name_key(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    name.nfd()
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase)
+        .nfd()
+        .collect()
 }
 
 fn path_of(command: &'static str, p: &Params<'_>) -> Result<PathBuf, CommandError> {

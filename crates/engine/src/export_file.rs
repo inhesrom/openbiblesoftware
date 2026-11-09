@@ -9,7 +9,8 @@
 //!   file beside the destination and renamed over it only once complete, so a failed
 //!   export (a full disk, a file size limit) leaves the previous file byte-identical. The
 //!   scratch file is owner-only while it is written, and the export keeps the permissions
-//!   of the file it replaces, so a private export stays private.
+//!   of the file it replaces, so a private export stays private. A read-only file is
+//!   not replaced: the export fails and leaves it as it was.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -42,19 +43,27 @@ fn replace_file(
     bytes: &[u8],
     refuse: impl Fn(&Path) -> Result<(), String>,
 ) -> std::io::Result<()> {
+    // The replaced file's permissions, so a private export stays private; a new file gets
+    // the permissions any new file gets. A read-only file is not replaced (as writing into
+    // it would fail), and so the scratch file is never made read-only, which Windows would
+    // then not let this remove after a failed rename.
+    let previous = match std::fs::metadata(dest) {
+        Ok(previous) if previous.permissions().readonly() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the file there is read-only, so the export did not replace it",
+            ));
+        }
+        Ok(previous) => Some(previous.permissions()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
     let (scratch, mut file) = new_scratch_file(dest, refuse)?;
     let written = (|| {
-        let permissions = owner_only(&file)?;
+        let created = owner_only(&file)?;
         file.write_all(bytes)?;
         file.sync_all()?;
-        // The replaced file's permissions, so a private export stays private; a new file
-        // gets the permissions any new file gets.
-        let permissions = match std::fs::metadata(dest) {
-            Ok(previous) => previous.permissions(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => permissions,
-            Err(e) => return Err(e),
-        };
-        file.set_permissions(permissions)?;
+        file.set_permissions(previous.unwrap_or(created))?;
         drop(file);
         std::fs::rename(&scratch, dest)
     })();

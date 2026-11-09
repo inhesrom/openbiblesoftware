@@ -23,6 +23,8 @@ serde_json.workspace = true
 pulldown-cmark = { workspace = true, features = ["html"] }
 # Verifies downloaded and bundled Starter library files against their manifest (#131).
 sha2.workspace = true
+# Compares Notebook file names in Export everything as a disk that ignores normalisation does (#252).
+unicode-normalization.workspace = true
 # Parses the Featured Bibles data file (Get Bibles, #91).
 toml = "1"
 # Log lines for the Log files and Crash reports (#219); the app installs the logger.

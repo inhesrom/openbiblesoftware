@@ -11,6 +11,7 @@ use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use unicode_normalization::UnicodeNormalization as _;
 
 use crate::testing::bibles::write_library;
 use crate::testing::{greek_agape, kjv_agape, study};
@@ -256,6 +257,68 @@ fn an_export_keeps_the_permissions_of_the_file_it_replaces() {
     }
 }
 
+/// Re-exporting over a read-only file fails and leaves it byte-identical, with no scratch
+/// file left beside it, for every export command. (On Windows a read-only scratch file made
+/// to match it could not be removed after the rename over it failed.)
+#[test]
+fn an_export_leaves_a_read_only_file_as_it_was() {
+    let f = Fixture::new("read-only");
+    let mut s = f.session();
+    let tab = analysis_tab(&mut s);
+    let cases = [
+        ("notes.export", json!({ "format": "markdown" }), "n.md"),
+        (
+            "highlight_palette.export",
+            json!({ "id": STANDARD_PALETTE_ID }),
+            "p.json",
+        ),
+        ("search.export_csv", json!({ "tab": tab }), "a.csv"),
+        ("data.export", json!({}), "d.zip"),
+    ];
+    for (command, params, name) in cases {
+        let dest = f.file(name);
+        std::fs::write(&dest, "a kept export").unwrap();
+        let mut read_only = std::fs::metadata(&dest).unwrap().permissions();
+        read_only.set_readonly(true);
+        std::fs::set_permissions(&dest, read_only).unwrap();
+        let err = s
+            .run(command, &with_path(&params, &dest, None))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("read-only"), "{command}: {err}");
+        assert_eq!(bytes(&dest).unwrap(), b"a kept export", "{command}");
+        assert!(
+            std::fs::metadata(&dest).unwrap().permissions().readonly(),
+            "{command}"
+        );
+        make_writable(&dest);
+    }
+    let mut left: Vec<String> = std::fs::read_dir(&f.root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with('.'))
+        .collect();
+    left.sort();
+    assert!(left.is_empty(), "scratch files left: {left:?}");
+}
+
+/// Let the fixture remove `path` again (Windows will not delete a read-only file).
+fn make_writable(path: &Path) {
+    #[cfg(unix)]
+    let writable = {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::Permissions::from_mode(0o600)
+    };
+    #[cfg(not(unix))]
+    #[allow(clippy::permissions_set_readonly_false)]
+    let writable = {
+        let mut p = std::fs::metadata(path).unwrap().permissions();
+        p.set_readonly(false);
+        p
+    };
+    std::fs::set_permissions(path, writable).unwrap();
+}
+
 /// A destination whose name is as long as a disk allows is exported to like any other: the
 /// scratch file's name does not grow with the destination's.
 #[test]
@@ -382,13 +445,26 @@ fn a_failed_export_leaves_the_previous_file_byte_identical() {
 }
 
 /// PERSONAL-1: Notebooks whose file names differ only in case (or by a `/`, which becomes a
-/// space) had entries that overwrite each other when the zip is extracted on a disk that
+/// space, or in Unicode normalisation) had entries that overwrite each other when the zip is extracted on a disk that
 /// folds case (macOS, Windows).
 #[test]
 fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
     let f = Fixture::new("case");
     let mut s = f.session();
-    let names = ["Romans", "romans", "ROMANS", "Romans study", "Romans/Study"];
+    // `Σ`, `σ` and final `ς` are one letter to a disk that folds case, though `ς` lower-cases
+    // to itself; `é` and `e` + combining acute are one name on macOS disks.
+    let names = [
+        "Romans",
+        "romans",
+        "ROMANS",
+        "Romans study",
+        "Romans/Study",
+        "\u{3a3}",
+        "\u{3c2}",
+        "\u{3c3}",
+        "Caf\u{e9}",
+        "Cafe\u{301}",
+    ];
     for (i, name) in names.iter().enumerate() {
         // `notebook.create` refuses a name another Notebook has in another case, so the
         // case twins are written as rows, as a database from elsewhere could hold them.
@@ -432,7 +508,11 @@ fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
     let notes: Vec<&String> = files.iter().filter(|n| n.starts_with("notes/")).collect();
     // The default Notebook and the five made here.
     assert_eq!(notes.len(), names.len() + 1, "{notes:?}");
-    let folded: HashSet<String> = files.iter().map(|n| n.to_lowercase()).collect();
+    // As NTFS compares names (each character upper-cased) and as APFS does (normalised).
+    let folded: HashSet<String> = files
+        .iter()
+        .map(|n| n.nfc().collect::<String>().to_uppercase())
+        .collect();
     assert_eq!(folded.len(), files.len(), "{files:?}");
 
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&dest).unwrap()).unwrap();
@@ -453,5 +533,42 @@ fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
         found.len(),
         names.len(),
         "every Notebook's Notes: {found:?}"
+    );
+}
+
+/// Notebook file names that one disk or another takes for the same name get ` (2)`, ` (3)`…:
+/// case (`Σ`, `σ`, final `ς`; `ſ` and `s`) and normalisation (`é` and `e` + combining acute).
+#[test]
+fn notebook_entry_names_are_apart_however_a_disk_compares_names() {
+    let mut used = HashSet::new();
+    let names: Vec<String> = [
+        "Romans.md",
+        "ROMANS.md",
+        "\u{3a3}.md",
+        "\u{3c2}.md",
+        "\u{3c3}.md",
+        "Caf\u{e9}.md",
+        "Cafe\u{301}.md",
+        "\u{17f}ion.md",
+        "Sion.md",
+        "Sion (2).md",
+    ]
+    .iter()
+    .map(|file| crate::backups::notebook_entry_name(&mut used, file))
+    .collect();
+    assert_eq!(
+        names,
+        [
+            "notes/Romans.md",
+            "notes/ROMANS (2).md",
+            "notes/\u{3a3}.md",
+            "notes/\u{3c2} (2).md",
+            "notes/\u{3c3} (3).md",
+            "notes/Caf\u{e9}.md",
+            "notes/Cafe\u{301} (2).md",
+            "notes/\u{17f}ion.md",
+            "notes/Sion (2).md",
+            "notes/Sion (2) (2).md",
+        ]
     );
 }
