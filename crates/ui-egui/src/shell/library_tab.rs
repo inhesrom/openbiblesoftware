@@ -429,8 +429,12 @@ impl State {
                             ui.label(
                                 RichText::new("Published change record:").color(theme::c().muted),
                             );
-                            ui.hyperlink_to(obs_model::changes_record_file(&m.resource_id), url)
-                                .on_hover_text(url);
+                            crate::components::hyperlink_to(
+                                ui,
+                                obs_model::changes_record_file(&m.resource_id),
+                                url,
+                            )
+                            .on_hover_text(url);
                         });
                     }
                     ui.add_space(space::L);

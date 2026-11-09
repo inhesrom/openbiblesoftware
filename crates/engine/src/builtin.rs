@@ -105,6 +105,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::compare::COMMANDS)
         .chain(crate::annotations::COMMANDS)
         .chain(crate::highlight_styles::COMMANDS)
+        .chain(crate::custom_theme::COMMANDS)
         .chain(crate::reanchor::COMMANDS)
         .chain(crate::notes::COMMANDS)
         .chain(crate::search::COMMANDS)

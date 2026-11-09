@@ -57,6 +57,7 @@ fn assert_same_preferences(restored: &mut Session, launched: &mut Session) {
     assert_eq!(restored.appearance, launched.appearance);
     assert_eq!(restored.fonts, launched.fonts);
     assert_eq!(restored.toolbar, launched.toolbar);
+    assert_eq!(restored.custom_theme, launched.custom_theme);
     assert_eq!(restored.copy_verses, launched.copy_verses);
     assert_eq!(restored.home_settings(), launched.home_settings());
     assert_eq!(restored.key_bindings(), launched.key_bindings());

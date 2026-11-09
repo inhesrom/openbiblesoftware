@@ -3531,6 +3531,8 @@ mod a11y_audit;
 mod floating_windows;
 #[path = "footnotes_tests.rs"]
 mod footnotes_ui;
+#[path = "high_contrast_tests.rs"]
+mod high_contrast;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
 #[path = "key_labels_tests.rs"]
@@ -3551,6 +3553,8 @@ mod recently_closed;
 mod settings;
 #[path = "tab_focus_tests.rs"]
 mod tab_focus;
+#[path = "theme_editor_tests.rs"]
+mod theme_editor;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]

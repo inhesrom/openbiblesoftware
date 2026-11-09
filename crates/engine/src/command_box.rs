@@ -71,6 +71,8 @@ pub const IN_PLACE_COMMANDS: &[&str] = &[
     "workspace.drop",
     "notes.open",
     "highlight_palette.import",
+    "theme.export",
+    "theme.import",
 ];
 
 /// Whether the Command box lists `spec` (#226): it runs with no parameter but the focused

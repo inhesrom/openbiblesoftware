@@ -250,6 +250,7 @@ const PROPER_TERMS: &[&str] = &[
     "Collection",
     "Command box",
     "Copy preset",
+    "Custom theme",
     "Exegetical Guide",
     "Factbook",
     "Favorite",

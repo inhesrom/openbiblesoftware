@@ -191,13 +191,15 @@ impl State {
             ui.horizontal_wrapped(|ui| {
                 ui.label(crate::components::hint_text("Name means"));
                 ui.label(RichText::new(format!("“{}”", m.text)).color(theme::c().ink));
-                if ui
-                    .link(RichText::new(format!("— {}", m.article.abbreviation)).small())
-                    .on_hover_text(format!(
-                        "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
-                        m.article.title, m.article.headword
-                    ))
-                    .clicked()
+                if crate::components::link(
+                    ui,
+                    RichText::new(format!("— {}", m.article.abbreviation)).small(),
+                )
+                .on_hover_text(format!(
+                    "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
+                    m.article.title, m.article.headword
+                ))
+                .clicked()
                 {
                     action = Some(FactbookAction::Article(m.article.clone(), new_tab));
                 }
@@ -298,16 +300,15 @@ impl State {
                         .strong()
                         .color(theme::c().ink),
                 );
-                if ui
-                    .link(format!(
-                        "{}: {}",
-                        a.article.abbreviation, a.article.headword
-                    ))
-                    .on_hover_text(format!(
-                        "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
-                        a.article.title, a.article.headword
-                    ))
-                    .clicked()
+                if crate::components::link(
+                    ui,
+                    format!("{}: {}", a.article.abbreviation, a.article.headword),
+                )
+                .on_hover_text(format!(
+                    "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
+                    a.article.title, a.article.headword
+                ))
+                .clicked()
                 {
                     action = Some(FactbookAction::Article(a.article.clone(), new_tab));
                 }
@@ -378,8 +379,7 @@ impl State {
                             .color(theme::c().muted),
                     );
                 }
-            } else if ui
-                .link(place.describe())
+            } else if crate::components::link(ui, place.describe())
                 .on_hover_text(format!("Open {}'s Factbook", place.name))
                 .clicked()
             {

@@ -71,6 +71,7 @@ mod search_tab;
 mod search_views;
 mod settings_tab;
 mod starter_tab;
+mod theme_editor_window;
 mod tile_handles;
 mod timeline_tab;
 mod toolbar;
@@ -247,6 +248,8 @@ pub(crate) struct State {
     styles_ui: highlight_styles_window::StylesUi,
     /// The Visual filters window (View → Visual filters, #211).
     pub(crate) filters_ui: visual_filters_window::FiltersUi,
+    /// The Theme editor (#224).
+    pub(crate) theme_editor: theme_editor_window::ThemeEditorUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
     /// The Copy verses window (#154).
@@ -372,6 +375,7 @@ impl Shell {
                 fonts_ui: fonts_window::FontsUi::default(),
                 styles_ui: highlight_styles_window::StylesUi::default(),
                 filters_ui: visual_filters_window::FiltersUi::default(),
+                theme_editor: theme_editor_window::ThemeEditorUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
                 copy_ui: copy_window::CopyUi::default(),
                 collection_editor: None,
@@ -647,6 +651,7 @@ impl Shell {
                 Effect::Restart(exe) => self.restart_now(&exe),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::ShowVisualFilters => self.st.filters_ui.open = true,
+                Effect::ShowThemeEditor => self.st.theme_editor.open = true,
                 // The Command box and the Launchers are the main window's: typed into from a
                 // floating OS window, they bring the main window to the front (#256).
                 Effect::FocusCommandBox => {
@@ -879,11 +884,12 @@ impl Shell {
     /// chrome and page palettes. Nothing is laid out or rasterized again: colour roles are
     /// resolved when quads are drawn.
     fn apply_appearance(&mut self, ctx: &egui::Context) {
-        let want = match self.st.session.appearance.theme {
-            obs_engine::Theme::Light => egui::ThemePreference::Light,
-            obs_engine::Theme::Dark => egui::ThemePreference::Dark,
-            obs_engine::Theme::System => egui::ThemePreference::System,
-        };
+        let ([light, dark], ground) = theme::chromes_of(
+            self.st.session.appearance.theme,
+            &self.st.session.custom_theme,
+        );
+        theme::use_chromes(ctx, light, dark);
+        let want = ground.map_or(egui::ThemePreference::System, Into::into);
         if ctx.options(|o| o.theme_preference) != want {
             ctx.set_theme(want);
         }
@@ -901,7 +907,7 @@ impl Shell {
         crate::motion::set(ctx, self.motion_reduced());
         let dark = theme::c().dark;
         let tone = self.st.session.appearance.page_tone.resolve(dark);
-        self.st.palette = Palette::for_tone(tone);
+        self.st.palette = Palette::for_theme(tone, theme::c().high_contrast);
         self.st.follow_page_tone_hint(dark);
     }
 
@@ -3534,6 +3540,7 @@ impl State {
         self.fonts_window(&ctx);
         self.highlight_styles_window(&ctx);
         self.visual_filters_window(&ctx);
+        self.theme_editor_window(&ctx);
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
         self.page_tone_hint_ui(&ctx);
@@ -3943,7 +3950,7 @@ fn focus_ring(ctx: &egui::Context) {
     ctx.layer_painter(layer).rect_stroke(
         rect.expand(space::PX),
         radius::S,
-        Stroke::new(FOCUS_RING_WIDTH, theme::c().lapis),
+        Stroke::new(theme::focus_ring_width(), theme::c().lapis),
         egui::StrokeKind::Outside,
     );
 }
@@ -3954,14 +3961,13 @@ fn focus_ring(ctx: &egui::Context) {
 pub(crate) fn unbroken_link(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
     let wrap = ui.style().wrap_mode;
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-    let r = ui.link(text);
+    let r = crate::components::link(ui, text);
     ui.style_mut().wrap_mode = wrap;
     r
 }
 
-/// The focus ring's layer, and its width in points.
+/// The focus ring's layer.
 pub(crate) const FOCUS_RING: &str = "focus-ring";
-pub(crate) const FOCUS_RING_WIDTH: f32 = stroke::THICK;
 
 /// Call before drawing a window that Esc closes; the closure, called after with the layer the
 /// window was drawn on, says whether Esc closes it now (#182). Esc closes one window: the one

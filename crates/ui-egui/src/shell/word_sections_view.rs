@@ -66,17 +66,16 @@ impl State {
                 RENDERINGS_SHOWN
             };
             for r in t.renderings.iter().take(shown) {
-                let link = ui
-                    .link(
-                        RichText::new(format!("{} ×{}", r.rendering, r.count))
-                            .color(theme::c().lapis),
-                    )
-                    .on_hover_text(format!(
-                        "Search the {} for {} translated “{}” · Ctrl/Cmd-click: a new Search Tab",
-                        t.bible_abbreviation,
-                        t.counted.unwrap_or(number),
-                        r.rendering
-                    ));
+                let link = crate::components::link(
+                    ui,
+                    RichText::new(format!("{} ×{}", r.rendering, r.count)).color(theme::c().lapis),
+                )
+                .on_hover_text(format!(
+                    "Search the {} for {} translated “{}” · Ctrl/Cmd-click: a new Search Tab",
+                    t.bible_abbreviation,
+                    t.counted.unwrap_or(number),
+                    r.rendering
+                ));
                 if link.clicked()
                     && let Some(text) = t.search_query(&r.rendering)
                 {

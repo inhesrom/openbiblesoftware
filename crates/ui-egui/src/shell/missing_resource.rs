@@ -57,8 +57,7 @@ impl State {
                 if ui.available_size_before_wrap().x < width {
                     ui.end_row();
                 }
-                if ui
-                    .link(RichText::new(IMPORT_FILE).small())
+                if crate::components::link(ui, RichText::new(IMPORT_FILE).small())
                     .on_hover_text("Import a USFM or SWORD file you already have")
                     .clicked()
                 {

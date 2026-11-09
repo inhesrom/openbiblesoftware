@@ -925,8 +925,7 @@ impl State {
                     }
                     let reference = RichText::new(&card.reference).strong();
                     if card.followable() {
-                        let r = ui
-                            .link(reference)
+                        let r = crate::components::link(ui, reference)
                             .on_hover_text("Go to the text (Ctrl/Cmd-click: in a new Tab)");
                         if r.clicked() {
                             let split = ui.input(|i| i.modifiers.command);

@@ -848,6 +848,8 @@ pub enum Effect {
     ShowHighlightStyles,
     /// Open the Visual filters window (View → Visual filters, #211).
     ShowVisualFilters,
+    /// Open the Theme editor (View → Theme editor, Settings, #224).
+    ShowThemeEditor,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
     Switched(TabId),

@@ -61,6 +61,59 @@ pub fn search_field<'t>(text: &'t mut String, hint: &str, width: f32) -> TextEdi
         .desired_width(width)
 }
 
+/// **Link**: text that does something when clicked. In a High contrast theme (#224) it is
+/// underlined at rest as well, so it shows as a link without its colour.
+pub fn link(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> Response {
+    let galley = laid_out(ui, text);
+    let r = ui.link(galley.clone());
+    underlined(ui, r, &galley)
+}
+
+/// A [`link`] that is greyed out unless `enabled`.
+pub fn link_enabled(ui: &mut Ui, enabled: bool, text: impl Into<egui::WidgetText>) -> Response {
+    let galley = laid_out(ui, text);
+    let r = ui.add_enabled(enabled, egui::Link::new(galley.clone()));
+    underlined(ui, r, &galley)
+}
+
+/// A [`link`] that opens `url` in the browser.
+pub fn hyperlink_to(
+    ui: &mut Ui,
+    text: impl Into<egui::WidgetText>,
+    url: impl ToString,
+) -> Response {
+    let galley = laid_out(ui, text);
+    let r = ui.hyperlink_to(galley.clone(), url);
+    underlined(ui, r, &galley)
+}
+
+/// A link's text laid out as egui's link lays it out, so its rows can be underlined.
+fn laid_out(ui: &Ui, text: impl Into<egui::WidgetText>) -> std::sync::Arc<egui::Galley> {
+    text.into()
+        .into_galley(ui, None, ui.available_width(), egui::FontSelection::Default)
+}
+
+/// Underline each row of a link at rest in High contrast; egui underlines it only when
+/// hovered or focused.
+fn underlined(ui: &Ui, r: Response, galley: &egui::Galley) -> Response {
+    if theme::c().high_contrast && ui.is_rect_visible(r.rect) {
+        let color = if r.enabled() {
+            ui.visuals().hyperlink_color
+        } else {
+            ui.visuals().widgets.noninteractive.fg_stroke.color
+        };
+        for row in &galley.rows {
+            let row = row.rect().translate(r.rect.min.to_vec2());
+            ui.painter().hline(
+                row.x_range(),
+                row.bottom(),
+                Stroke::new(stroke::HAIR, color),
+            );
+        }
+    }
+    r
+}
+
 /// **Toggle**: a check box with its label.
 pub fn toggle<'a>(ui: &mut Ui, on: &'a mut bool, label: impl egui::IntoAtoms<'a>) -> Response {
     ui.checkbox(on, label)

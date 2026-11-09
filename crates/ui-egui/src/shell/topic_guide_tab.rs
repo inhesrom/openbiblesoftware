@@ -229,16 +229,15 @@ impl State {
                         .strong()
                         .color(theme::c().ink),
                 );
-                if ui
-                    .link(format!(
-                        "{}: {}",
-                        entry.article.abbreviation, entry.article.headword
-                    ))
-                    .on_hover_text(format!(
-                        "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
-                        entry.article.title, entry.article.headword
-                    ))
-                    .clicked()
+                if crate::components::link(
+                    ui,
+                    format!("{}: {}", entry.article.abbreviation, entry.article.headword),
+                )
+                .on_hover_text(format!(
+                    "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
+                    entry.article.title, entry.article.headword
+                ))
+                .clicked()
                 {
                     action = Some(TopicAction::Article(entry.article.clone(), new_tab));
                 }
