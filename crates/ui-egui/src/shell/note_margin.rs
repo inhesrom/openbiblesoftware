@@ -188,26 +188,33 @@ impl State {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.add(icons::image(ui.ctx(), Icon::Note, icons::SMALL, muted));
-                        ui.label(RichText::new(notebook).small().color(muted));
+                        // The chevron first, at the right; the Notebook's name is cut short
+                        // in what is left, so a long name never pushes it out of the card.
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if editing {
-                                return;
-                            }
-                            let (icon, name) = if open {
-                                (Icon::ChevronUp, "Collapse Note")
-                            } else {
-                                (Icon::ChevronDown, "Expand Note")
-                            };
-                            let r = icons::button(ui, icon, icons::SMALL, muted, name)
-                                .on_hover_text(name);
-                            if r.clicked() {
-                                let action = if open {
-                                    CardAction::Collapse
+                            if !editing {
+                                let (icon, name) = if open {
+                                    (Icon::ChevronUp, "Collapse Note")
                                 } else {
-                                    CardAction::Expand
+                                    (Icon::ChevronDown, "Expand Note")
                                 };
-                                actions.push((id.clone(), action));
+                                let r = icons::button(ui, icon, icons::SMALL, muted, name)
+                                    .on_hover_text(name);
+                                if r.clicked() {
+                                    let action = if open {
+                                        CardAction::Collapse
+                                    } else {
+                                        CardAction::Expand
+                                    };
+                                    actions.push((id.clone(), action));
+                                }
                             }
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    let name = RichText::new(notebook).small().color(muted);
+                                    ui.add(egui::Label::new(name).truncate());
+                                },
+                            );
                         });
                     });
                     if !open {

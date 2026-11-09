@@ -878,8 +878,30 @@ fn blank_lines_in_a_collapsed_note_do_not_push_the_next_card_out_of_view() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Each accessible button named in `labels`, where it is on screen.
+fn buttons(h: &Harness, labels: &[&str]) -> Vec<(String, Rect)> {
+    h.tree
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.role() == egui::accesskit::Role::Button)
+        .filter_map(|(_, n)| {
+            let label = n.label().filter(|l| labels.contains(l))?;
+            let b = n.bounds()?;
+            let r = Rect::from_min_max(
+                pos2(b.x0 as f32, b.y0 as f32),
+                pos2(b.x1 as f32, b.y1 as f32),
+            );
+            Some((label.to_string(), r))
+        })
+        .collect()
+}
+
 /// A margin at its narrowest ([`CARD_MIN`](crate::note_margin::CARD_MIN)) still has room for
 /// the whole Note editor: every toolbar button is inside the card, and the last (Link) works.
+/// Its Notebook has the longest name allowed: the name is cut short, so the card stays the
+/// margin's width and its collapse chevron stays inside it and works.
 #[test]
 fn a_note_edited_in_the_narrowest_margin_keeps_every_toolbar_button_in_its_card() {
     use crate::note_margin::CARD_MIN;
@@ -887,6 +909,14 @@ fn a_note_edited_in_the_narrowest_margin_keeps_every_toolbar_button_in_its_card(
     let mut h = launch_with(&dir, &[kjv()]);
     h.ctx.enable_accesskit();
     let id = note(&mut h, 1, "no condemnation", "No condemnation.");
+    let notebook = h.shell.st.session.default_notebook().unwrap();
+    let longest = "W".repeat(obs_engine::annotations::MAX_NOTEBOOK_NAME);
+    h.shell
+        .run(
+            "notebook.rename",
+            &json!({ "id": notebook.id, "name": longest }),
+        )
+        .unwrap();
     set_display(&mut h, "KJV", "margin");
     // Narrow the window until the margin is at its narrowest: past the widest margin, it
     // narrows point for point with the window.
@@ -908,30 +938,41 @@ fn a_note_edited_in_the_narrowest_margin_keeps_every_toolbar_button_in_its_card(
     h.click(p);
     settle_all(&mut h);
     let card = margin(&h, "KJV").remove(0);
+    assert!(card.expanded, "{card:?}");
+    // The long Notebook name does not widen the open card past the margin, and its collapse
+    // chevron is inside it and collapses it.
+    assert!((card.rect.width() - CARD_MIN).abs() < 0.5, "{card:?}");
+    let chevron = buttons(&h, &["Collapse Note"]);
+    assert_eq!(chevron.len(), 1, "{chevron:?}");
+    let (_, collapse) = chevron[0];
+    assert!(
+        card.rect.contains_rect(collapse),
+        "{collapse:?} in {card:?}"
+    );
+    h.click(collapse.center());
+    settle_all(&mut h);
+    let card = margin(&h, "KJV").remove(0);
+    assert!(!card.expanded, "{card:?}");
+    assert!((card.rect.width() - CARD_MIN).abs() < 0.5, "{card:?}");
+    let chevron = buttons(&h, &["Expand Note"]);
+    assert_eq!(chevron.len(), 1, "{chevron:?}");
+    assert!(
+        card.rect.contains_rect(chevron[0].1),
+        "{chevron:?} in {card:?}"
+    );
+    h.click(chevron[0].1.center());
+    settle_all(&mut h);
+    let card = margin(&h, "KJV").remove(0);
+    assert!(card.expanded, "{card:?}");
     let p = text_in(&h, &card, "No condemnation.");
     h.click(p);
     h.frames(3);
     let card = margin(&h, "KJV").remove(0);
     assert!(card.editing, "{card:?}");
+    assert!((card.rect.width() - CARD_MIN).abs() < 0.5, "{card:?}");
     preview(&h, "note-margin-narrowest-editing");
     let every = ["B", "I", "H", "Bulleted list", "1.", "“”", "Link"];
-    let buttons: Vec<(String, Rect)> = h
-        .tree
-        .as_ref()
-        .unwrap()
-        .nodes
-        .iter()
-        .filter(|(_, n)| n.role() == egui::accesskit::Role::Button)
-        .filter_map(|(_, n)| {
-            let label = n.label().filter(|l| every.contains(l))?;
-            let b = n.bounds()?;
-            let r = Rect::from_min_max(
-                pos2(b.x0 as f32, b.y0 as f32),
-                pos2(b.x1 as f32, b.y1 as f32),
-            );
-            Some((label.to_string(), r))
-        })
-        .collect();
+    let buttons = buttons(&h, &every);
     assert_eq!(buttons.len(), every.len(), "{buttons:?}");
     // The margin's own width, not the card's drawn frame: a row too wide for the card pushes
     // its frame past the margin, where it is clipped.
