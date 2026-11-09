@@ -4039,6 +4039,15 @@ struct EscapeWindows {
     keyboard_now: (u64, Option<egui::LayerId>),
 }
 
+/// Whether a window Esc closes was drawn this pass or the last: open (the tour leaves Esc to it).
+fn escape_window_open(ctx: &egui::Context) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let s = d.get_temp_mut_or_default::<EscapeWindows>(egui::Id::unique("escape-windows"));
+        s.windows.iter().any(|&(_, seen)| seen + 1 >= pass)
+    })
+}
+
 /// Note `layer` drawn this pass (to the front when it has just opened or is pressed on, as
 /// egui raises a window); return the front window and where the keyboard was before this pass.
 fn escape_windows_note(

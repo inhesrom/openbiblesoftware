@@ -3,8 +3,8 @@
 //! ([`obs_engine::Tour`]); the shell notes where each target was drawn this frame
 //! ([`TourUi::target`]). A target not on screen (the toolbar Auto-hidden, no Bible open)
 //! puts its Coach mark in the middle of the window. Next (Done on the last), Back and Skip tour
-//! step through it; Esc skips it. The card does not block the window: everything it points at
-//! can be tried while it shows.
+//! step through it; Esc skips it, unless something else open takes Esc first. The card does
+//! not block the window: everything it points at can be tried while it shows.
 
 use std::collections::HashMap;
 
@@ -25,6 +25,9 @@ pub(crate) struct TourUi {
     /// and where the card was.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) drawn: Option<(Option<TourTarget>, Rect)>,
+    /// The keyboard was in a text field as the last frame ended (Esc takes it from the field
+    /// before this frame is drawn): Esc leaves the field, not the tour.
+    text_field_before: bool,
 }
 
 impl TourUi {
@@ -81,10 +84,12 @@ impl State {
         }
     }
 
-    /// Esc skips the tour (before any command bound to Esc, Unpin Word Info say), unless a menu
-    /// or pop-up is open: Esc closes that first.
+    /// Esc skips the tour (before any command bound to Esc, Unpin Word Info say), unless
+    /// something else is open that Esc closes or leaves first: a menu or pop-up, a Launcher's
+    /// pane, the Note editor, a Note being edited, the Command box's dropdown, a window Esc
+    /// closes, or a text field with the keyboard.
     pub(super) fn tour_keys(&mut self, ctx: &egui::Context) {
-        if !self.session.tour().is_running() || egui::Popup::is_any_open(ctx) {
+        if !self.session.tour().is_running() || self.escape_is_for_another(ctx) {
             return;
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
@@ -92,8 +97,20 @@ impl State {
         }
     }
 
+    /// Whether something other than the tour takes Esc this frame (see [`Self::tour_keys`]).
+    fn escape_is_for_another(&self, ctx: &egui::Context) -> bool {
+        egui::Popup::is_any_open(ctx)
+            || self.toolbar.open.is_some()
+            || self.note_editor.is_some()
+            || self.notes_ui.editing.is_some()
+            || self.command_box.dropdown.is_some()
+            || self.tour_ui.text_field_before
+            || super::escape_window_open(ctx)
+    }
+
     /// The Coach mark showing, if the tour is running: its target ringed and its card beside it.
     pub(super) fn coach_mark(&mut self, ctx: &egui::Context) {
+        self.tour_ui.text_field_before = ctx.text_edit_focused();
         let Some((i, step)) = self.session.tour().step() else {
             self.tour_ui.drawn = None;
             return;

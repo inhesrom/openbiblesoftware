@@ -201,6 +201,62 @@ fn skip_tour_and_esc_end_the_tour() {
     assert_eq!(step(&h), None);
 }
 
+fn escape(h: &mut Harness) {
+    for pressed in [true, false] {
+        h.events.push(Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.frame();
+    }
+    h.frames(2);
+}
+
+/// Esc closes what is open over the window first (a Launcher's pane the Library Coach mark
+/// invites a click on, a window, the Command box with the keyboard), and the tour stays at
+/// its Coach mark; with nothing open, the next Esc skips the tour.
+#[test]
+fn esc_closes_a_pane_window_or_field_before_it_skips_the_tour() {
+    let mut h = Harness::new();
+    h.shell.run("help.tour", &json!({}));
+    h.shell.run("tour.next", &json!({}));
+    h.frames(2);
+    assert_eq!(
+        h.shell.st.session.tour().step().unwrap().1.target,
+        TourTarget::Library
+    );
+    let library = h.shell.st.target_rect(TourTarget::Library).unwrap();
+    h.click(library.center());
+    h.frames(2);
+    assert_eq!(h.shell.st.toolbar.open, Some(obs_engine::Launcher::Library));
+    escape(&mut h);
+    assert_eq!(h.shell.st.toolbar.open, None, "Esc closes the Library pane");
+    assert_eq!(step(&h), Some(1), "and the tour stays at its Coach mark");
+
+    h.shell.run("view.fonts", &json!({}));
+    h.frames(2);
+    assert!(h.shell.st.fonts_ui.open);
+    escape(&mut h);
+    assert!(!h.shell.st.fonts_ui.open, "Esc closes the Fonts window");
+    assert_eq!(step(&h), Some(1));
+
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    assert!(
+        h.ctx.text_edit_focused(),
+        "the Command box has the keyboard"
+    );
+    escape(&mut h);
+    assert!(!h.ctx.text_edit_focused(), "Esc leaves the Command box");
+    assert_eq!(step(&h), Some(1));
+
+    escape(&mut h);
+    assert_eq!(step(&h), None, "with nothing open, Esc skips the tour");
+}
+
 /// A target not on screen (the toolbar Auto-hidden, so no Launchers drawn) puts its Coach mark
 /// in the middle of the window.
 #[test]

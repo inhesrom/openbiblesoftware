@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use egui::{RichText, Ui, vec2};
-use obs_engine::{GuideBlock, GuidePage, TabId, USER_GUIDE, guide_blocks, search_user_guide};
+use obs_engine::{
+    GuideBlock, GuideMatch, GuidePage, TabId, USER_GUIDE, guide_blocks, search_user_guide,
+};
 use serde_json::{Value, json};
 
 use super::State;
@@ -72,6 +74,8 @@ type Run = Vec<(&'static str, Value)>;
 pub(crate) struct UserGuideUi {
     /// Each page's blocks, parsed the first time it is shown.
     blocks: HashMap<&'static str, Arc<Vec<GuideBlock>>>,
+    /// The last search and what it found, kept while the query is unchanged.
+    search: Option<(String, Arc<Vec<GuideMatch>>)>,
     /// Decoded screenshots, by file name (`None`: not compiled in, or not a PNG).
     textures: HashMap<String, Option<egui::TextureHandle>>,
     /// What the page or the search results showed last frame: each line's text and each
@@ -87,6 +91,18 @@ impl UserGuideUi {
                 .entry(page.id)
                 .or_insert_with(|| Arc::new(guide_blocks(page))),
         )
+    }
+
+    /// What `query` finds, searched again only when the query changes.
+    fn search(&mut self, query: &str) -> Arc<Vec<GuideMatch>> {
+        match &self.search {
+            Some((q, found)) if q == query => Arc::clone(found),
+            _ => {
+                let found = Arc::new(search_user_guide(query));
+                self.search = Some((query.to_string(), Arc::clone(&found)));
+                found
+            }
+        }
     }
 
     /// Whether the screenshot `file` has been decoded and uploaded (for tests).
@@ -157,7 +173,7 @@ impl State {
         });
         for (id, params) in run {
             // A page asked for is shown, not the search that found it.
-            if id == "user_guide.page"
+            if matches!(id, "user_guide.page" | "help.user_guide")
                 && let Some(t) = self.tabs.get_mut(&tab)
             {
                 t.filter.clear();
@@ -243,14 +259,14 @@ impl State {
 
     /// Every page that holds each word of `query`, with the lines that hold one.
     fn user_guide_results(&mut self, ui: &mut Ui, query: &str, run: &mut Run) {
-        let found = search_user_guide(query);
+        let found = self.user_guide_ui.search(query);
         if found.is_empty() {
             let text = format!("Nothing in the User guide matches “{query}”.");
             self.user_guide_ui.drawn.push(text.clone());
             ui.label(RichText::new(text).color(theme::c().muted));
             return;
         }
-        for m in found {
+        for m in found.iter() {
             self.user_guide_ui.drawn.push(m.page.title.to_string());
             if crate::components::link(ui, crate::components::subtitle_text(m.page.title)).clicked()
             {

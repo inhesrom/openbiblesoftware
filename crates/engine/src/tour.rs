@@ -155,9 +155,8 @@ impl Session {
 
     /// Show the first Coach mark, and remember the tour as shown: it never starts by itself
     /// again, even when the app is closed during it.
+    /// Saved first: a tour that could not be remembered as shown does not start.
     fn start_tour(&mut self, command: &'static str) -> Result<(), CommandError> {
-        self.tour.step = Some(0);
-        self.tour.shown = true;
         if let Some(user) = &self.user {
             user.set_preference(TOUR_PREF, &json!({ "shown": true }).to_string())
                 .map_err(|e| CommandError::Failed {
@@ -165,6 +164,8 @@ impl Session {
                     message: format!("saving that the tour was shown: {e}"),
                 })?;
         }
+        self.tour.step = Some(0);
+        self.tour.shown = true;
         Ok(())
     }
 }

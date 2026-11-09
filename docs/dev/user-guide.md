@@ -11,7 +11,7 @@ single-instance Tab; **Help → Take the tour** (`help.tour`) replays the **Firs
 | `obs-engine` | `user_guide.rs` | `USER_GUIDE` (the pages, compiled in with `include_str!`), `guide_blocks` (a page's lines through `notes::note_body`, between its screenshots), `search_user_guide`, `page_for_link`; `TabKind::UserGuide` (single instance, opens with the reading Panels like Home, a search box, no Link set); commands `help.user_guide {page?}` and `user_guide.page {page}`. |
 | `obs-engine` | `tour.rs` | `TOUR_STEPS` (six Coach marks and what each points at, `TourTarget`), `Tour` (the Coach mark showing; whether the tour was shown, the `tour` preference `{"shown":true}` in the User database), `Session::start_tour_at_first_launch`; commands `help.tour`, `tour.next`, `tour.back`, `tour.skip` (the last three only on the Coach mark: `IN_PLACE_COMMANDS`). |
 | `obs-ui-egui` | `shell/user_guide_tab.rs` | The Tab: the page list (a row of links in a narrow Tab), the page drawn line by line by the Notes renderer (`State::body_line`, as a Note card's body), the screenshots (`GUIDE_IMAGES`, compiled in with `include_bytes!` and decoded once by tiny-skia), Next page, and the search results. |
-| `obs-ui-egui` | `shell/notes_tab.rs` | `body_links`: a link to `<page>.md` shows that page (`user_guide.page`). |
+| `obs-ui-egui` | `shell/notes_tab.rs` | `body_links`: a link to `<page>.md` opens the User guide at that page, or brings it to the front there (`help.user_guide` with `page`). |
 | `obs-ui-egui` | `shell/tour_ui.rs` | Where each target was drawn this frame (`TourUi::target`; the Launchers from the toolbar's own rects), the ring and the card beside it, Esc. |
 | `obs-ui-egui` | `shell.rs`, `lib.rs` | `Shell::restore_at_launch` starts the tour after Home; a scripted run (`OBS_SCRIPT`, `OBS_INPUT`, `OBS_STEPS`, `OBS_SHOT`) skips it unless `OBS_TOUR=1`. |
 
@@ -68,8 +68,10 @@ at a gallery image the same way.
   in the middle of the window. The Link sets and Word Study Coach marks show the most recent
   Bible Tab when the focused Tab is not a Bible (Home at the first launch), so they have
   something to point at.
-- **Buttons.** Next (Done on the last), Back from the second, Skip tour; Esc skips it unless a
-  menu or pop-up is open.
+- **Buttons.** Next (Done on the last), Back from the second, Skip tour; Esc skips it unless
+  something else takes Esc first: a menu or pop-up, a Launcher's pane, the Note editor or a Note
+  being edited, the Command box's dropdown, a window Esc closes, or a text field with the
+  keyboard (`State::tour_keys`).
 
 ## Evidence
 

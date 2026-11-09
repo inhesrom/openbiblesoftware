@@ -281,7 +281,7 @@ impl App {
         let scripted = ["OBS_SCRIPT", "OBS_INPUT", "OBS_STEPS", "OBS_SHOT"]
             .iter()
             .any(|v| std::env::var_os(v).is_some());
-        if scripted && std::env::var_os("OBS_TOUR").is_none() {
+        if scripted && std::env::var("OBS_TOUR").as_deref() != Ok("1") {
             self.shell.run("tour.skip", &serde_json::json!({}));
         }
         self

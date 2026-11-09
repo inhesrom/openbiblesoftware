@@ -1336,7 +1336,9 @@ impl State {
                 Target::GuidePage(page) => {
                     link_tip(ui, &format!("User guide: {}", page.title));
                     if clicked {
-                        run.push(("user_guide.page", json!({ "page": page.id })));
+                        // Opens the User guide (or brings it to the front) at the page, from a
+                        // Note card as from the guide itself.
+                        run.push(("help.user_guide", json!({ "page": page.id })));
                     }
                 }
                 Target::Other(to) => {
