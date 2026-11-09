@@ -877,3 +877,77 @@ fn blank_lines_in_a_collapsed_note_do_not_push_the_next_card_out_of_view() {
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A margin at its narrowest ([`CARD_MIN`](crate::note_margin::CARD_MIN)) still has room for
+/// the whole Note editor: every toolbar button is inside the card, and the last (Link) works.
+#[test]
+fn a_note_edited_in_the_narrowest_margin_keeps_every_toolbar_button_in_its_card() {
+    use crate::note_margin::CARD_MIN;
+    let dir = folder("narrowest");
+    let mut h = launch_with(&dir, &[kjv()]);
+    h.ctx.enable_accesskit();
+    let id = note(&mut h, 1, "no condemnation", "No condemnation.");
+    set_display(&mut h, "KJV", "margin");
+    // Narrow the window until the margin is at its narrowest: past the widest margin, it
+    // narrows point for point with the window.
+    h.screen = vec2(900.0, 900.0);
+    for _ in 0..4 {
+        settle_all(&mut h);
+        h.frames(2);
+        let cards = margin(&h, "KJV");
+        let width = cards.first().expect("a margin card").rect.width();
+        if (width - CARD_MIN).abs() < 0.5 {
+            break;
+        }
+        h.screen.x -= width - CARD_MIN;
+    }
+    let card = margin(&h, "KJV").remove(0);
+    assert!((card.rect.width() - CARD_MIN).abs() < 0.5, "{card:?}");
+    // Expand it, then edit it.
+    let p = text_in(&h, &card, "No condemnation.");
+    h.click(p);
+    settle_all(&mut h);
+    let card = margin(&h, "KJV").remove(0);
+    let p = text_in(&h, &card, "No condemnation.");
+    h.click(p);
+    h.frames(3);
+    let card = margin(&h, "KJV").remove(0);
+    assert!(card.editing, "{card:?}");
+    preview(&h, "note-margin-narrowest-editing");
+    let every = ["B", "I", "H", "Bulleted list", "1.", "“”", "Link"];
+    let buttons: Vec<(String, Rect)> = h
+        .tree
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.role() == egui::accesskit::Role::Button)
+        .filter_map(|(_, n)| {
+            let label = n.label().filter(|l| every.contains(l))?;
+            let b = n.bounds()?;
+            let r = Rect::from_min_max(
+                pos2(b.x0 as f32, b.y0 as f32),
+                pos2(b.x1 as f32, b.y1 as f32),
+            );
+            Some((label.to_string(), r))
+        })
+        .collect();
+    assert_eq!(buttons.len(), every.len(), "{buttons:?}");
+    // The margin's own width, not the card's drawn frame: a row too wide for the card pushes
+    // its frame past the margin, where it is clipped.
+    let room = Rect::from_min_size(card.rect.min, vec2(CARD_MIN, card.rect.height()));
+    for (label, r) in &buttons {
+        assert!(
+            room.contains_rect(*r),
+            "{label} at {r:?} is not inside the margin {room:?}"
+        );
+    }
+    let (_, link) = buttons.iter().find(|(l, _)| l == "Link").unwrap();
+    h.click(link.center());
+    h.frames(2);
+    let ed = h.shell.st.notes_ui.editing.as_ref().expect("still editing");
+    assert_eq!(ed.id, id);
+    assert!(ed.text.contains("[](<>)"), "{:?}", ed.text);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
