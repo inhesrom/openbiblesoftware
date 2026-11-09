@@ -365,9 +365,13 @@ pub trait UserData: std::fmt::Debug {
     /// format version it was written in; the file is only read. Writes to it change only
     /// the copy in memory.
     fn open_backup(&self, path: &Path) -> Result<(Box<dyn UserData>, u32), String>;
-    /// Replace everything with the Backup at `path`, after taking a Safety backup, whose path
-    /// is returned. An unreadable or newer Backup changes nothing.
-    fn restore(&mut self, path: &Path) -> Result<PathBuf, String>;
+    /// Replace everything with `backup`, a Backup [`UserData::open_backup`] read, after taking
+    /// a Safety backup, whose path is returned. The file it was read from is not read again:
+    /// what is restored is the copy the engine checked (#258).
+    fn restore(&mut self, backup: &dyn UserData) -> Result<PathBuf, String>;
+    /// The SQLite User database this is, if it is one; [`UserData::restore`] copies from it.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn user_store(&self) -> Option<&obs_store::UserStore>;
     /// Every saved preference, `(key, value)`, by key.
     fn preferences(&self) -> Result<Vec<(String, String)>, String>;
     /// The local date and time of `at` (Unix seconds), `YYYY-MM-DD HH:MM`.
@@ -515,8 +519,14 @@ impl UserData for obs_store::UserStore {
         let (backup, found) = obs_store::UserStore::open_backup(path).map_err(|e| e.to_string())?;
         Ok((Box::new(backup), found))
     }
-    fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
-        obs_store::UserStore::restore(self, path).map_err(|e| e.to_string())
+    fn restore(&mut self, backup: &dyn UserData) -> Result<PathBuf, String> {
+        let backup = backup
+            .user_store()
+            .ok_or("the Backup was not read by this User database")?;
+        obs_store::UserStore::restore_from(self, backup).map_err(|e| e.to_string())
+    }
+    fn user_store(&self) -> Option<&obs_store::UserStore> {
+        Some(self)
     }
     fn preferences(&self) -> Result<Vec<(String, String)>, String> {
         obs_store::UserStore::preferences(self).map_err(|e| e.to_string())

@@ -206,6 +206,14 @@ impl UserStore {
     /// returned. An unreadable or newer Backup changes nothing.
     pub fn restore(&mut self, path: &Path) -> Result<PathBuf, StoreError> {
         let (backup, _) = Self::open_backup(path)?;
+        self.restore_from(&backup)
+    }
+
+    /// Replace everything in this database with `backup`, a Backup [`UserStore::open_backup`]
+    /// read into memory. The file it was read from is not read again, so what is restored is
+    /// the copy the caller checked, whatever has happened to the file since (#258). A Safety
+    /// backup of the database as it was is taken first; its path is returned.
+    pub fn restore_from(&mut self, backup: &UserStore) -> Result<PathBuf, StoreError> {
         let page_size = |c: &Connection| -> Result<i64, StoreError> {
             c.query_row("PRAGMA page_size", [], |r| r.get(0))
                 .map_err(sql)

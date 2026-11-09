@@ -33,7 +33,7 @@ single-instance Tab with all of it.
 
 ## Restore
 
-`UserStore::restore(path)`:
+`UserStore::restore(path)` (`open_backup`, then `restore_from` the copy it read):
 
 1. `open_backup` reads the file read-only into an in-memory database, refuses a file that is not
    a User database (wrong `application_id`, or none) or is newer than this build
@@ -56,9 +56,11 @@ single-instance Tab with all of it.
    `backups/.user-restoring.<pid>-<n>.db` with the live
    page size (`VACUUM`), then deleted, however the restore ends (a `ScratchFile` guard).
 
-Before any of it, `Session::restore_backup(path)` checks what the engine keeps inside rows,
-which the store cannot read (`backup_check.rs`, #258), on the Backup read into memory
-(`UserData::open_backup`): every Layout's Workspace snapshot and every Favorite's and Visit's
+`Session::restore_backup(path)` reads the Backup into memory once (`UserData::open_backup`),
+checks that copy, and hands the same copy to `UserData::restore` (`UserStore::restore_from`):
+the file is not read again, so one changed between the checks and the restore cannot put back
+anything unchecked (#258). Before anything is written, it checks what the engine keeps inside
+rows, which the store cannot read (`backup_check.rs`, #258): every Layout's Workspace snapshot and every Favorite's and Visit's
 location must read, and so must every setting the app keeps as JSON (`JSON_SETTINGS`: View
 settings, Custom theme, toolbar, keys, Update check settings, First-run tour, Home, Guide arrangements, Saved searches, Search history, recent
 searches and Command box entries, Copy verses, Collections, Resource tags, Visual filters,

@@ -587,6 +587,60 @@ fn a_backup_with_an_unreadable_layout_setting_or_favorite_is_refused_naming_each
     s.run("data.restore", &path(&good)).unwrap();
 }
 
+/// #258: restore puts back the copy of the Backup it checked. A file replaced between the
+/// checks and the restore (here by a damaged Backup the checks would refuse) is not read
+/// again, so nothing unchecked is restored and then defaulted silently.
+#[test]
+fn restore_puts_back_the_backup_it_checked_even_if_the_file_changes_meanwhile() {
+    let f = Fixture::new("swapped");
+    let good = f.file("good.obsbackup");
+    {
+        let mut s = f.session();
+        s.run(
+            "annotation.note",
+            &json!({ "body": "kept in the good Backup" }),
+        )
+        .unwrap();
+        s.run("data.back_up", &path(&good)).unwrap();
+    }
+    let damaged = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &damaged, |db| {
+        db.set_preference("search.saved", "not JSON").unwrap();
+        db.save_layout("Broken", "not JSON").unwrap();
+    });
+    assert!(f.session().restore_preview(&damaged).is_err());
+
+    let mut s = Session::new(JobMode::Inline);
+    assert!(s.library.scan(&f.root.join("library")).is_empty());
+    let (store, _) = obs_store::UserStore::open(&f.root.join("user.db")).unwrap();
+    s.attach_user(Box::new(crate::testing::WritesFail {
+        swap_backup: Some(damaged),
+        ..crate::testing::WritesFail::visits(store, 0)
+    }));
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+
+    s.restore_backup(&good).unwrap();
+    // The file now is the damaged Backup; what was restored is the good one.
+    let (on_disk, _) = obs_store::UserStore::open_backup(&good).unwrap();
+    assert_eq!(
+        on_disk.preference("search.saved").unwrap().as_deref(),
+        Some("not JSON")
+    );
+    let user = s.user.as_ref().unwrap();
+    assert_ne!(
+        user.preference("search.saved").unwrap().as_deref(),
+        Some("not JSON")
+    );
+    assert!(user.layout("Broken").unwrap().is_none());
+    let notes = dump(&s);
+    assert!(notes.contains("kept in the good Backup"), "{notes}");
+    assert!(!notes.contains("made after the backup"), "{notes}");
+}
+
 /// #258: a setting read field by field (View, Toolbar, Keyboard shortcuts, Update check)
 /// that is valid JSON but holds a field the app could not read is refused too; the loader
 /// would leave that field at its default or drop the key.

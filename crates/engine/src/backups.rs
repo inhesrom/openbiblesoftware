@@ -173,7 +173,7 @@ impl Session {
     pub fn restore_preview(&self, path: &Path) -> Result<RestorePreview, String> {
         let user = self.user_db()?;
         let now = user.contents()?;
-        let backup = checked_backup(user, path)?;
+        let (_, backup) = checked_backup(user, path)?;
         Ok(RestorePreview {
             path: path.to_path_buf(),
             lines: restore_lines(&now, &backup),
@@ -185,19 +185,25 @@ impl Session {
 
     /// Restore the Backup at `path`: a Safety backup is taken, everything is replaced, and
     /// the Session reloads what it keeps of the User database. Returns the Safety backup. A
-    /// Backup the preview refuses changes nothing.
+    /// Backup the preview refuses changes nothing. What is restored is the copy read and
+    /// checked here, never the file read again, so a file changed meanwhile cannot slip past
+    /// the checks.
     pub fn restore_backup(&mut self, path: &Path) -> Result<PathBuf, String> {
-        checked_backup(self.user_db()?, path)?;
-        self.replace_user_data(path)
+        let (backup, _) = checked_backup(self.user_db()?, path)?;
+        self.replace_user_data(path, &*backup)
     }
 
-    /// Replace the User database with the Backup at `path` (the store's own checks only) and
-    /// reload what the Session keeps of it. Returns the Safety backup.
-    fn replace_user_data(&mut self, path: &Path) -> Result<PathBuf, String> {
+    /// Replace the User database with `backup`, read from `path`, and reload what the Session
+    /// keeps of it. Returns the Safety backup.
+    fn replace_user_data(
+        &mut self,
+        path: &Path,
+        backup: &dyn crate::persist::UserData,
+    ) -> Result<PathBuf, String> {
         let Some(mut user) = self.user.take() else {
             return Err(NO_USER.into());
         };
-        let safety = match user.restore(path) {
+        let safety = match user.restore(backup) {
             Ok(safety) => safety,
             Err(e) => {
                 // Nothing changed: keep the Session as it was, undo history included.
@@ -224,7 +230,8 @@ impl Session {
         let Some(last) = self.last_restore.clone() else {
             return Err("There is no restore to undo".into());
         };
-        let safety = self.replace_user_data(&last.safety)?;
+        let (backup, _) = self.user_db()?.open_backup(&last.safety)?;
+        let safety = self.replace_user_data(&last.safety, &*backup)?;
         self.last_restore = None;
         Ok(safety)
     }
@@ -255,12 +262,13 @@ impl Session {
     }
 }
 
-/// What the Backup at `path` holds, if the app could read all of it once restored: the store
-/// checks the database, [`crate::backup_check`] what the engine keeps in its rows.
+/// The Backup at `path`, read into memory, and what it holds, if the app could read all of it
+/// once restored: the store checks the database, [`crate::backup_check`] what the engine keeps
+/// in its rows.
 fn checked_backup(
     user: &dyn crate::persist::UserData,
     path: &Path,
-) -> Result<BackupContents, String> {
+) -> Result<(Box<dyn crate::persist::UserData>, BackupContents), String> {
     let (backup, found) = user.open_backup(path)?;
     let unreadable = crate::backup_check::unreadable_records(&*backup).map_err(|e| {
         format!(
@@ -275,10 +283,11 @@ fn checked_backup(
             unreadable.join(", ")
         ));
     }
-    Ok(BackupContents {
+    let contents = BackupContents {
         version: found,
         ..backup.contents()?
-    })
+    };
+    Ok((backup, contents))
 }
 
 impl Session {
