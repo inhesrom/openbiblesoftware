@@ -519,8 +519,13 @@ pub fn reading_pane(
     view.set_clock(ui.input(|i| i.time));
     let before = view.position().0;
 
-    // Input: wheel and trackpad, keys, scrollbar drag.
-    if response.hovered() {
+    // Input: wheel and trackpad, keys, scrollbar drag. The wheel over the Note margin is the
+    // margin's (#210): an expanded card scrolls its own text first.
+    let over_margin = (out.note_margin.as_ref()).is_some_and(|m| {
+        ui.input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| m.rect.contains(p))
+    });
+    if response.hovered() && !over_margin {
         let dy = ui.input(|i| i.smooth_scroll_delta.y);
         view.scroll_by(-dy);
     }

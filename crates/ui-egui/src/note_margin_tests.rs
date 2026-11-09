@@ -14,6 +14,7 @@ use obs_scripture::{Book, Verse};
 use super::*;
 use crate::note_margin::{CARD_GAP, GUTTER};
 use crate::shell::note_margin::DrawnCard;
+use crate::shell::notes_tab::EditPlace;
 use crate::tokens::note_margin::LIFT;
 
 /// Visual evidence for `docs/previews/<name>.png` when `UPDATE_PREVIEWS` is set.
@@ -454,7 +455,7 @@ fn overlapping_cards_stack_legibly_and_a_narrow_tab_falls_back_to_icons() {
     h.frames(2);
     let ed = h.shell.st.notes_ui.editing.as_ref().expect("editing");
     assert_eq!(ed.id, ids[1]);
-    assert_eq!(ed.place, crate::shell::notes_tab::EditPlace::Margin(kjv));
+    assert_eq!(ed.place, EditPlace::Margin(kjv));
     assert!(margin(&h, "KJV")[1].editing);
     h.events.push(Event::Key {
         key: egui::Key::End,
@@ -548,6 +549,286 @@ fn hidden_draws_no_notes_and_the_view_menu_sets_the_focused_tab() {
     settle_all(&mut h);
     assert_eq!(margin(&h, "KJV").len(), 1);
     assert!(h.find("No condemnation.").is_some());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `n` wheel steps of `dy` points (negative: down the text) with the pointer at `at`.
+fn wheel(h: &mut Harness, at: Pos2, dy: f32, n: usize) {
+    h.events.push(Event::PointerMoved(at));
+    h.frame();
+    for _ in 0..n {
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, dy),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frame();
+    }
+    settle_all(h);
+}
+
+fn key(h: &mut Harness, key: egui::Key, modifiers: Modifiers) {
+    h.events.push(Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    });
+    h.frame();
+}
+
+/// Where `text` is drawn in `card`.
+fn text_in(h: &Harness, card: &DrawnCard, text: &str) -> Pos2 {
+    h.shapes
+        .iter()
+        .find(|(r, t)| t == text && card.rect.contains(r.center()))
+        .map(|(r, _)| r.center())
+        .unwrap_or_else(|| panic!("{text:?} not in {card:?}: {:?}", h.texts()))
+}
+
+fn location(h: &Harness, tab: TabId) -> Option<Verse> {
+    h.shell
+        .st
+        .session
+        .workspace
+        .tab(tab)
+        .unwrap()
+        .history
+        .current()
+}
+
+/// The wheel over a card, collapsed or being edited, scrolls the Resource text as the user's
+/// own scrolling: the Bibles in its Link set follow.
+#[test]
+fn the_wheel_over_a_card_moves_the_text_and_its_link_set() {
+    let dir = folder("wheel");
+    let mut h = launch_with(&dir, &[kjv(), web()]);
+    note(&mut h, 1, "no condemnation", "No condemnation.");
+    note(&mut h, 2, "made me free", "Free.");
+    note(&mut h, 4, "fulfilled in us", "Fulfilled.");
+    set_display(&mut h, "KJV", "margin");
+    let (kjv, web) = (h.tab_id("KJV"), h.tab_id("WEB"));
+    assert_eq!(location(&h, kjv), Some(rom(1)));
+    assert_eq!(location(&h, web), Some(rom(1)));
+    let cards = margin(&h, "KJV");
+    // Over a collapsed card.
+    wheel(&mut h, cards[2].rect.center(), -40.0, 4);
+    let at = location(&h, kjv);
+    assert_ne!(
+        at,
+        Some(rom(1)),
+        "the wheel over a card did not move the KJV"
+    );
+    assert_eq!(location(&h, web), at, "the WEB did not follow the KJV");
+    // Over a card being edited (its text is short: nothing to scroll inside it).
+    let pane = h.shell.st.tabs[&kjv].margin.pane.unwrap();
+    let card = margin(&h, "KJV")
+        .into_iter()
+        .find(|c| c.rect.top() > pane.top())
+        .expect("a card in view");
+    let text = if h
+        .find("Free.")
+        .is_some_and(|r| card.rect.contains(r.center()))
+    {
+        "Free."
+    } else {
+        "Fulfilled."
+    };
+    let p = text_in(&h, &card, text);
+    h.click(p);
+    settle_all(&mut h);
+    let card = margin(&h, "KJV")
+        .into_iter()
+        .find(|c| c.id == card.id)
+        .unwrap();
+    let p = text_in(&h, &card, text);
+    h.click(p);
+    h.frames(2);
+    let editing = margin(&h, "KJV")
+        .into_iter()
+        .find(|c| c.editing)
+        .expect("a card being edited");
+    let (y, _) = view(&mut h, kjv).position();
+    wheel(&mut h, editing.rect.center(), -40.0, 4);
+    let (moved, _) = view(&mut h, kjv).position();
+    assert!(moved > y + 10.0, "the wheel over the editor: {y} → {moved}");
+    let at = location(&h, kjv);
+    assert_eq!(location(&h, web), at, "the WEB did not follow the KJV");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Editing a Note in one margin and then in another (or in the same one again) never puts
+/// back text from before the last keystrokes, saved or not.
+#[test]
+fn editing_a_note_in_another_margin_keeps_its_unsaved_text() {
+    let dir = folder("transfer");
+    let mut h = launch_with(&dir, &[kjv(), web()]);
+    let id = note(&mut h, 1, "no condemnation", "No condemnation.");
+    set_display(&mut h, "KJV", "margin");
+    set_display(&mut h, "WEB", "margin");
+    let (kjv, web) = (h.tab_id("KJV"), h.tab_id("WEB"));
+    let body = |h: &Harness, t: &str| {
+        let c = margin(h, t).into_iter().next().unwrap();
+        let text = if c.editing {
+            "No condemnation. Draft."
+        } else {
+            "No condemnation."
+        };
+        text_in(h, &c, text)
+    };
+    // Both cards expanded; edit the KJV's and type, before the autosave.
+    let p = body(&h, "WEB");
+    h.click(p);
+    let p = body(&h, "KJV");
+    h.click(p);
+    settle_all(&mut h);
+    let p = body(&h, "KJV");
+    h.click(p);
+    h.frames(2);
+    key(&mut h, egui::Key::End, Modifiers::COMMAND);
+    h.events.push(Event::Text(" Draft.".into()));
+    h.frame();
+    let ed = h.shell.st.notes_ui.editing.as_ref().unwrap();
+    assert_eq!(ed.place, EditPlace::Margin(kjv));
+    assert_eq!(ed.text, "No condemnation. Draft.");
+    // The WEB's card: the editor there has the text typed in the KJV.
+    let p = body(&h, "WEB");
+    h.click(p);
+    h.frames(2);
+    let ed = h.shell.st.notes_ui.editing.as_ref().expect("editing");
+    assert_eq!(ed.place, EditPlace::Margin(web));
+    assert_eq!(ed.text, "No condemnation. Draft.");
+    key(&mut h, egui::Key::End, Modifiers::COMMAND);
+    h.events.push(Event::Text(" More.".into()));
+    h.frame();
+    // Moved back with a stale copy of its text (the margin's, from before the edit): the
+    // editor keeps what was typed.
+    h.shell
+        .st
+        .start_card_edit(&id, "No condemnation.", EditPlace::Margin(kjv));
+    let ed = h.shell.st.notes_ui.editing.as_ref().unwrap();
+    assert_eq!(ed.place, EditPlace::Margin(kjv));
+    assert_eq!(ed.text, "No condemnation. Draft. More.");
+    h.frames(2);
+    key(&mut h, egui::Key::Escape, Modifiers::NONE);
+    h.frames(3);
+    assert!(h.shell.st.notes_ui.editing.is_none());
+    assert_eq!(
+        h.shell.st.session.annotation(&id).unwrap().body(),
+        "No condemnation. Draft. More."
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Links and Bible references in a card's text are live: hovering one previews it, clicking
+/// it shows the Passage, and neither expands nor edits the card.
+#[test]
+fn a_bible_reference_in_a_margin_card_previews_on_hover_and_shows_its_passage_on_click() {
+    let dir = folder("links");
+    let mut h = launch_with(&dir, &[kjv(), web()]);
+    let kjv = h.tab_id("KJV");
+    h.shell
+        .run("tab.go", &json!({ "tab": kjv.0, "text": "Rom 8:26" }));
+    settle_all(&mut h);
+    past_flash(&mut h);
+    note(&mut h, 28, "all things", "As Rom 8:1 promised.");
+    set_display(&mut h, "KJV", "margin");
+    let card = margin(&h, "KJV").into_iter().next().unwrap();
+    assert_eq!(card.links.len(), 1, "{card:?}");
+    let link = card.links[0];
+    assert!(card.rect.contains(link.center()), "{card:?}");
+    h.events.push(Event::PointerMoved(link.center()));
+    h.frames(2);
+    settle_all(&mut h);
+    h.events.push(Event::PointerMoved(link.center()));
+    h.frames(2);
+    assert!(h.find("Rom 8:1").is_some(), "no preview: {:?}", h.texts());
+    h.click(link.center());
+    settle_all(&mut h);
+    let card = margin(&h, "KJV").into_iter().find(|c| c.id == card.id);
+    assert!(
+        card.as_ref().is_none_or(|c| !c.expanded && !c.editing),
+        "{card:?}"
+    );
+    assert!(h.shell.st.notes_ui.editing.is_none());
+    let web = h.tab_id("WEB");
+    assert!(
+        [kjv, web].iter().any(|t| location(&h, *t) == Some(rom(1))),
+        "no Bible shows Rom 8:1: {:?} {:?}",
+        location(&h, kjv),
+        location(&h, web)
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A Note taller than the pane, expanded: its text scrolls inside its card, and the card
+/// after it stays in the pane where it can be read.
+#[test]
+fn a_long_expanded_note_scrolls_inside_its_card_and_keeps_the_next_card_in_view() {
+    let dir = folder("tall");
+    let mut h = launch_with(&dir, &[kjv(), web()]);
+    h.screen = vec2(1900.0, 700.0);
+    let kjv = h.tab_id("KJV");
+    h.shell
+        .run("tab.go", &json!({ "tab": kjv.0, "text": "Rom 8:27" }));
+    settle_all(&mut h);
+    past_flash(&mut h);
+    let long: String = (1..=60)
+        .map(|n| format!("Line {n} of a long Note.\n"))
+        .collect();
+    let tall = note(&mut h, 28, "all things", &long);
+    let after = note(&mut h, 28, "work together", "After the long one.");
+    set_display(&mut h, "KJV", "margin");
+    let cards = margin(&h, "KJV");
+    assert_eq!(cards[0].id, tall);
+    let p = pos2(cards[0].rect.center().x, cards[0].rect.bottom() - 10.0);
+    h.click(p);
+    settle_all(&mut h);
+    let pane = h.shell.st.tabs[&kjv].margin.pane.unwrap();
+    let cards = margin(&h, "KJV");
+    assert_eq!(
+        cards.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        [tall.as_str(), after.as_str()]
+    );
+    let (open, next) = (&cards[0], &cards[1]);
+    assert!(open.expanded);
+    // At most half the pane's height (and its header), its text scrolling inside it.
+    assert!(
+        open.rect.height() <= pane.height() * 0.5 + 60.0,
+        "{open:?} in {pane:?}"
+    );
+    let (offset, max) = open.scroll.unwrap();
+    assert!(offset == 0.0 && max > 100.0, "{:?}", open.scroll);
+    // Both cards wholly in the pane, the next one below the long one.
+    for c in &cards {
+        assert!(
+            c.rect.top() >= pane.top() - 0.5 && c.rect.bottom() <= pane.bottom() + 0.5,
+            "{c:?} is not in {pane:?}"
+        );
+    }
+    assert!(next.rect.top() >= open.rect.bottom() + CARD_GAP - 0.5);
+    assert!(h.find("After the long one.").is_some());
+    // The wheel over it scrolls its text, not the Bible's.
+    let (y, _) = view(&mut h, kjv).position();
+    wheel(&mut h, open.rect.center(), -60.0, 3);
+    let open = margin(&h, "KJV").into_iter().next().unwrap();
+    let (offset, _) = open.scroll.unwrap();
+    assert!(offset > 50.0, "{:?}", open.scroll);
+    assert_eq!(view(&mut h, kjv).position().0, y);
+    // Its last line is there to read at the bottom of its text.
+    wheel(&mut h, open.rect.center(), -300.0, 4);
+    let open = margin(&h, "KJV").into_iter().next().unwrap();
+    let (offset, max) = open.scroll.unwrap();
+    assert!((offset - max).abs() < 1.0, "{:?}", open.scroll);
+    let last = h.find("Line 60 of a long Note.").expect("its last line");
+    assert!(open.rect.contains(last.center()), "{last:?} in {open:?}");
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }

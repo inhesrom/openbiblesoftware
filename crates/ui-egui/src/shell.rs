@@ -2554,7 +2554,16 @@ impl State {
             pane_marks,
             found,
         );
-        let user_moved = out.user_moved || found_moved;
+        // The Note margin's cards (#210) before the movement is reported: the wheel over
+        // them moves the text as the wheel over the text does.
+        let margin_moved = self.note_margin(ui, tab, &out);
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let Some(view) = t.view.as_mut() else {
+            return;
+        };
+        let user_moved = out.user_moved || found_moved || margin_moved;
         // A reopened Tab's scroll position (#214) goes back once the pane has drawn at its
         // width; the view keeps it across later relayouts until the user scrolls or it jumps.
         if let Some(anchor) = t.restore_scroll.take()
@@ -2623,7 +2632,6 @@ impl State {
             }
         }
         self.footnote_frame(ui, tab, &out);
-        self.note_margin(ui, tab, &out);
         if let Some(drag) = out.drag_out {
             self.text_drag_started(ui, tab, drag);
         }

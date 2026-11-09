@@ -5,9 +5,17 @@
 //! - **Aligned**: a card starts on the line of its Note's marker, the marker the pane drew this
 //!   frame, so cards scroll with the text. Cards that would overlap stack in text order, and
 //!   each has a leader line from the text column's edge on its marker's line to the card.
+//! - **In view**: a run of cards that would go past the pane's foot moves up into it, and an
+//!   expanded card's text is at most [`EXPANDED`] of the pane's height, scrolling inside the
+//!   card, so a long Note never pushes itself or the cards after it out of reach.
 //! - **Collapsed** to the first lines of the Note's text (three rows); clicking a
 //!   card, or its chevron, expands it to the whole text, and the chevron collapses it again.
 //!   Which cards are expanded is the Tab's, for as long as the app runs.
+//! - **Live links**: links and Bible references in a card's text work as in the Notes Tool
+//!   (hover for the reference popup, click to show the Passage) rather than expanding or
+//!   editing the card.
+//! - **The wheel** over the margin scrolls an expanded card's text while it can, else the
+//!   Resource text, which then moves its Link set as the wheel over the text does.
 //! - **Editing in place**: clicking an expanded card's text edits it with the Note editor
 //!   (#186), as a Notes Tool card does: it saves as you type, and when the editor loses the
 //!   keys (a click elsewhere, Esc) or on Ctrl+Enter. One Note is edited at a time, here or in
@@ -20,14 +28,15 @@ use egui::text::{LayoutJob, TextWrapping};
 use egui::{Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 use obs_engine::TabId;
 use obs_model::NoteLineKind;
+use serde_json::Value;
 
 use super::State;
-use super::notes_tab::{EditPlace, card_editor_id};
+use super::notes_tab::{EditPlace, NoteLinkTarget, card_editor_id, note_link_targets};
 use crate::icons::{self, Icon};
-use crate::note_margin::stack;
+use crate::note_margin::{fit, stack};
 use crate::pane::PaneOutput;
 use crate::tokens::note_margin::{
-    BORDER_MIX, ESTIMATE, ESTIMATE_ROW, FILL_MIX, LEADER, LEADER_HOVER, LIFT,
+    BORDER_MIX, ESTIMATE, ESTIMATE_ROW, EXPANDED, FILL_MIX, LEADER, LEADER_HOVER, LIFT,
 };
 use crate::tokens::{alpha, inset, radius, space, stroke, text};
 
@@ -41,6 +50,9 @@ pub(super) struct MarginUi {
     pub(super) expanded: BTreeSet<String>,
     /// The cards drawn last frame, top to bottom.
     pub(super) drawn: Vec<DrawnCard>,
+    /// The pane the margin was beside last frame.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) pane: Option<Rect>,
 }
 
 /// A card as drawn last frame (tests, and the margin's own hover).
@@ -55,6 +67,11 @@ pub(super) struct DrawnCard {
     pub(super) leader: [Pos2; 3],
     pub(super) expanded: bool,
     pub(super) editing: bool,
+    /// An open card's text (or editor): how far it is scrolled inside the card, and how far
+    /// it can be.
+    pub(super) scroll: Option<(f32, f32)>,
+    /// Its links and Bible references, where each starts.
+    pub(super) links: Vec<Rect>,
 }
 
 /// What a card was asked to do this frame.
@@ -66,15 +83,17 @@ enum CardAction {
 
 impl State {
     /// After a reading pane in Margin mode drew: its Note cards and their leader lines.
-    pub(super) fn note_margin(&mut self, ui: &mut Ui, tab: TabId, out: &PaneOutput) {
+    /// Returns whether the wheel over the margin moved the Resource text, which the caller
+    /// reports as the user's own scrolling (its Link set follows).
+    pub(super) fn note_margin(&mut self, ui: &mut Ui, tab: TabId, out: &PaneOutput) -> bool {
         let Some(room) = out.note_margin else {
             if let Some(t) = self.tabs.get_mut(&tab) {
                 t.margin.drawn.clear();
             }
-            return;
+            return false;
         };
         let Some(pane) = out.response.as_ref().map(|r| r.rect) else {
-            return;
+            return false;
         };
         // One card per Note, in text order: by line, then the Notes beside the verse number
         // (oldest first), then those in the line's text in reading order.
@@ -91,7 +110,8 @@ impl State {
             }
         };
         order.sort_by(|a, b| line(a).cmp(&line(b)).then(along(a).total_cmp(&along(b))));
-        for m in order {
+        // Markers laid out below the pane's foot have no card yet.
+        for m in order.into_iter().filter(|m| m.rect.top() < pane.bottom()) {
             if !anchors.iter().any(|(a, _)| *a == m.id) {
                 anchors.push((m.id.clone(), m.rect));
             }
@@ -105,7 +125,7 @@ impl State {
             })
             .collect();
         let Some(t) = self.tabs.get_mut(&tab) else {
-            return;
+            return false;
         };
         let estimate =
             |body: &str| ESTIMATE + ESTIMATE_ROW * body.lines().count().min(COLLAPSED_ROWS) as f32;
@@ -114,7 +134,12 @@ impl State {
             .map(|(id, _, body, _)| t.margin.heights.get(id).copied().unwrap_or(estimate(body)))
             .collect();
         let wanted: Vec<f32> = notes.iter().map(|(_, m, _, _)| m.top() - LIFT).collect();
-        let tops = stack(&wanted, &heights);
+        let tops = fit(
+            &stack(&wanted, &heights),
+            &heights,
+            pane.top(),
+            pane.bottom(),
+        );
         let expanded = t.margin.expanded.clone();
         let palette = self.palette;
         let muted = icons::page_muted(&palette);
@@ -126,11 +151,13 @@ impl State {
         let fill = mix(palette.page, palette.note_marker, FILL_MIX);
         let border = mix(palette.page, palette.note_marker, BORDER_MIX);
         let clip = room.rect.intersect(ui.clip_rect());
+        // An open card's text scrolls inside it past this height.
+        let tallest = (room.rect.height() * EXPANDED).max(ESTIMATE_ROW * COLLAPSED_ROWS as f32);
         let painter = ui.painter_at(pane);
         let mut drawn = Vec::new();
         let mut measured: Vec<(String, f32)> = Vec::new();
         let mut actions: Vec<(String, CardAction)> = Vec::new();
-        let mut over_card = false;
+        let mut run: Vec<(&'static str, Value)> = Vec::new();
         for ((id, marker, body, notebook), top) in notes.iter().zip(&tops) {
             let editing = (self.notes_ui.editing.as_ref())
                 .is_some_and(|e| e.id == *id && e.place == EditPlace::Margin(tab));
@@ -151,6 +178,8 @@ impl State {
             card.set_clip_rect(clip);
             card.style_mut().interaction.selectable_labels = false;
             let mut body_rect = Rect::NOTHING;
+            let mut links: Vec<(Vec<Rect>, NoteLinkTarget)> = Vec::new();
+            let mut scroll = None;
             let frame = crate::components::card_frame()
                 .fill(fill)
                 .stroke(Stroke::new(stroke::HAIR, border))
@@ -181,38 +210,56 @@ impl State {
                             }
                         });
                     });
-                    if editing {
-                        body_rect = self.margin_editor(ui, id);
+                    if !open {
+                        let top = ui.cursor().top();
+                        links = card_lines(ui, body, false, colors);
+                        body_rect = Rect::from_min_max(
+                            pos2(ui.min_rect().left(), top),
+                            pos2(ui.min_rect().right(), ui.cursor().top()),
+                        );
                         return;
                     }
-                    let top = ui.cursor().top();
-                    card_lines(ui, body, open, colors);
-                    body_rect = Rect::from_min_max(
-                        pos2(ui.min_rect().left(), top),
-                        pos2(ui.min_rect().right(), ui.cursor().top()),
-                    );
+                    let area = egui::ScrollArea::vertical()
+                        .id_salt("note-margin-text")
+                        .max_height(tallest)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            if editing {
+                                self.margin_editor(ui, tab, id);
+                            } else {
+                                links = card_lines(ui, body, true, colors);
+                            }
+                        });
+                    body_rect = area.inner_rect;
+                    let max = (area.content_size.y - area.inner_rect.height()).max(0.0);
+                    scroll = Some((area.state.clamped_offset().y, max));
                 });
             let rect = frame.response.rect;
             measured.push((id.clone(), rect.height()));
             if !editing && body_rect.is_positive() {
+                // A link or Bible reference under the pointer is followed, not the card.
+                let visible = body_rect.intersect(clip);
+                let mut on_link = false;
+                for (rects, target) in &links {
+                    on_link |= self.note_link(&card, visible, rects, target, &mut run);
+                }
                 let what = if open {
                     "Click to edit this Note"
                 } else {
                     "Click to show the whole Note"
                 };
-                let r = card
-                    .interact(body_rect, card.scope_id().with("body"), Sense::click())
-                    .on_hover_text(what);
+                let r = card.interact(body_rect, card.scope_id().with("body"), Sense::click());
+                let r = if on_link { r } else { r.on_hover_text(what) };
                 let first = body.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
                 r.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Note: {first}"))
                 });
-                let r = if open {
+                let r = if open && !on_link {
                     r.on_hover_cursor(egui::CursorIcon::Text)
                 } else {
                     r
                 };
-                if r.clicked() {
+                if r.clicked() && !on_link {
                     let action = if open {
                         CardAction::Edit
                     } else {
@@ -222,7 +269,6 @@ impl State {
                 }
             }
             let hovered = ui.rect_contains_pointer(rect.intersect(clip));
-            over_card |= hovered;
             // The leader: from the text's edge on the marker's line, across the gutter, to
             // the card beside its first text row.
             let y = marker.center().y;
@@ -230,9 +276,12 @@ impl State {
             let card_edge = if room.rtl { rect.right() } else { rect.left() };
             let start = pos2(room.text_edge + out_of_text, y);
             let bend = pos2((start.x + card_edge) / 2.0, y);
+            // Beside its first row, or as near the marker's line as the card reaches (a card
+            // moved up into the pane can end above it).
+            let first_row = rect.top() + LIFT + marker.height() / 2.0;
             let end = pos2(
                 card_edge,
-                (rect.top() + LIFT + marker.height() / 2.0).max(y),
+                y.clamp(first_row, (rect.bottom() - LIFT).max(first_row)),
             );
             let leader = [start, bend, end];
             let line = if hovered {
@@ -259,22 +308,34 @@ impl State {
                 leader,
                 expanded: open,
                 editing,
+                scroll,
+                links: links
+                    .iter()
+                    .filter_map(|(r, _)| r.first().copied())
+                    .collect(),
             });
         }
-        // The wheel over a card scrolls the text, as it does over the rest of the pane.
-        let pane_hovered = out.response.as_ref().is_some_and(|r| r.hovered());
-        if over_card && !pane_hovered {
+        for (id, params) in run {
+            self.run(id, &params);
+        }
+        // The wheel over the margin (the pane leaves it to the margin): what an open card's
+        // text did not take scrolls the Resource text.
+        let mut moved = false;
+        if ui.rect_contains_pointer(clip) {
             let dy = ui.input(|i| i.smooth_scroll_delta.y);
             if dy != 0.0
                 && let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
             {
+                let before = view.position().0;
                 view.scroll_by(-dy);
+                moved = (view.position().0 - before).abs() > f64::EPSILON;
                 ui.ctx().request_repaint();
             }
         }
         let Some(t) = self.tabs.get_mut(&tab) else {
-            return;
+            return moved;
         };
+        t.margin.pane = Some(pane);
         for (id, h) in measured {
             let old = t.margin.heights.insert(id, h);
             if old.is_none_or(|o| (o - h).abs() > space::PX / 2.0) {
@@ -299,22 +360,25 @@ impl State {
                     self.start_card_edit(&id, &body, EditPlace::Margin(tab));
                     // Its editor draws from next frame: the pass goes on until then.
                     self.notes_ui.margin_shown = true;
-                    return;
+                    return moved;
                 }
             }
         }
+        moved
     }
 
-    /// The Note editor in a margin card for the Note being edited (`id`): it saves as you
-    /// type (the Shell's autosave), and when the keys leave it or on Ctrl+Enter.
-    fn margin_editor(&mut self, ui: &mut Ui, id: &str) -> Rect {
+    /// The Note editor in Tab `tab`'s margin card for the Note being edited (`id`): it saves
+    /// as you type (the Shell's autosave), and when the keys leave it or on Ctrl+Enter. Each
+    /// Tab's editor is its own widget, so the one the edit moves away from (a click on the
+    /// same Note's card in another Tab) giving up the keys does not end the edit.
+    fn margin_editor(&mut self, ui: &mut Ui, tab: TabId, id: &str) {
         let now = self.now;
         self.notes_ui.margin_shown = true;
         let Some(ed) = self.notes_ui.editing.as_mut() else {
-            return Rect::NOTHING;
+            return;
         };
-        let out =
-            super::note_editor::note_editor(ui, card_editor_id(id).with("margin"), &mut ed.text, 4);
+        let editor = card_editor_id(id).with(("margin", tab));
+        let out = super::note_editor::note_editor(ui, editor, &mut ed.text, 4);
         let r = out.response;
         if ed.focus {
             r.request_focus();
@@ -339,7 +403,6 @@ impl State {
         if finished {
             self.save_card_edit(true);
         }
-        r.rect
     }
 }
 
@@ -354,9 +417,16 @@ struct Look {
 /// A card's text: the Note's lines with their Note formatting (#186): a heading in the
 /// display face, a list item after its bullet or number, a quote in quotation marks, bold,
 /// italics, and links and Bible references in the link colour. Collapsed, only its first
-/// [`COLLAPSED_ROWS`] rows, with "…" where it is cut.
-fn card_lines(ui: &mut Ui, body: &str, open: bool, colors: CardColors) {
+/// [`COLLAPSED_ROWS`] rows, with "…" where it is cut. Returns where its links and Bible
+/// references are drawn, with where each goes.
+fn card_lines(
+    ui: &mut Ui,
+    body: &str,
+    open: bool,
+    colors: CardColors,
+) -> Vec<(Vec<Rect>, NoteLinkTarget)> {
     let lines = obs_engine::note_body(body);
+    let mut links = Vec::new();
     let mut rows = if open { usize::MAX } else { COLLAPSED_ROWS };
     let mut shown = false;
     let size = ui.style().text_styles[&egui::TextStyle::Body].size;
@@ -424,6 +494,8 @@ fn card_lines(ui: &mut Ui, body: &str, open: bool, colors: CardColors) {
         };
         let mut job = LayoutJob::default();
         job.append(&prefix, 0.0, format(plain));
+        // The job's characters before the line's text.
+        let lead = prefix.chars().count();
         let mut at = 0;
         while at < line.text.len() {
             let look = looks[at];
@@ -445,7 +517,14 @@ fn card_lines(ui: &mut Ui, body: &str, open: bool, colors: CardColors) {
         let galley = ui.fonts_mut(|f| f.layout_job(job));
         rows = rows.saturating_sub(galley.rows.len());
         let elided = galley.elided;
-        ui.add(egui::Label::new(galley));
+        let origin = ui.add(egui::Label::new(galley.clone())).rect.min;
+        for (range, target) in note_link_targets(bl) {
+            let chars = |byte: usize| lead + line.text.get(..byte).map_or(0, |t| t.chars().count());
+            let rects = char_rects(&galley, origin, chars(range.start)..chars(range.end));
+            if !rects.is_empty() {
+                links.push((rects, target));
+            }
+        }
         if elided {
             // Cut mid-line: its "…" says there is more.
             break;
@@ -459,6 +538,33 @@ fn card_lines(ui: &mut Ui, body: &str, open: bool, colors: CardColors) {
                 .color(colors.muted),
         );
     }
+    links
+}
+
+/// Where characters `chars` of a one-line `galley` drawn at `origin` are, a rect per row
+/// (none for characters an elided galley cut).
+fn char_rects(galley: &egui::Galley, origin: Pos2, chars: std::ops::Range<usize>) -> Vec<Rect> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    for row in &galley.rows {
+        let mut on = Rect::NOTHING;
+        for g in &row.row.glyphs {
+            if chars.contains(&at) {
+                on = on.union(
+                    g.logical_rect()
+                        .translate(row.pos.to_vec2() + origin.to_vec2()),
+                );
+            }
+            at += 1;
+        }
+        if on.is_positive() {
+            out.push(on);
+        }
+        if row.ends_with_newline {
+            at += 1;
+        }
+    }
+    out
 }
 
 /// A card's colours, from the Page tone.

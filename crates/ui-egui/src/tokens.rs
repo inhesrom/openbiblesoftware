@@ -643,6 +643,9 @@ pub mod note_margin {
     /// A card's height until it is drawn: its header and frame, and each row of text.
     pub const ESTIMATE: f32 = 44.0;
     pub const ESTIMATE_ROW: f32 = super::text::LABEL_LINE;
+    /// An expanded card's text (or its editor) is at most this share of the pane's height;
+    /// a longer Note scrolls inside its card.
+    pub const EXPANDED: f32 = 0.5;
     /// How much of the Note marker colour a card's fill and border take over the page.
     pub const FILL_MIX: f32 = 0.06;
     pub const BORDER_MIX: f32 = 0.35;

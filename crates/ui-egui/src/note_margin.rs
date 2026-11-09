@@ -10,7 +10,8 @@
 //!   the margin shrinks towards [`CARD_MIN`]; when even that leaves too little, there is no
 //!   margin ([`split`] gives `None`) and the Tab shows Icons.
 //! - **Cards** sit beside their Note's marker; one that would overlap the card above is moved
-//!   down just below it ([`stack`]), so cards never overlap and keep text order. Positions are
+//!   down just below it ([`stack`]), so cards never overlap and keep text order; a run of
+//!   cards that would go past the pane's foot moves up into it ([`fit`]). Positions are
 //!   worked out from the laid-out text every frame, so cards scroll with their Anchors.
 
 use obs_layout::ColumnWidth;
@@ -79,6 +80,26 @@ pub fn stack(wanted: &[f32], heights: &[f32]) -> Vec<f32> {
     out
 }
 
+/// `tops` (from [`stack`], of cards `heights` tall) with a run of cards that would go past
+/// `bottom` (the pane's foot) moved up, keeping their order and gaps, so the last of them
+/// ends there; none moves up past `top` (the pane's top) for it. Cards taller together than
+/// the pane still run past `bottom`.
+pub fn fit(tops: &[f32], heights: &[f32], top: f32, bottom: f32) -> Vec<f32> {
+    let mut out = tops.to_vec();
+    let mut limit = bottom;
+    for (t, h) in out.iter_mut().zip(heights).rev() {
+        *t = t.min(limit - h).max(top.min(*t));
+        limit = *t - CARD_GAP;
+    }
+    // Where the pane's top held a card back, the ones below go down again to clear it.
+    let mut below = f32::NEG_INFINITY;
+    for (t, h) in out.iter_mut().zip(heights) {
+        *t = t.max(below + CARD_GAP);
+        below = *t + h;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,5 +155,27 @@ mod tests {
         // Pushed far enough, a card pushes the next one too.
         let tops = stack(&[0.0, 10.0, 60.0], &[100.0, 20.0, 20.0]);
         assert_eq!(tops, vec![0.0, 106.0, 132.0]);
+    }
+
+    #[test]
+    fn cards_running_past_the_pane_move_up_into_it_but_not_past_its_top() {
+        // In the pane: unchanged.
+        let tops = [0.0, 56.0, 600.0];
+        assert_eq!(fit(&tops, &[50.0, 50.0, 300.0], 0.0, 1000.0), tops);
+        // The last card would end at 1100: it ends at 1000, and pushes the one above it up.
+        let tops = [0.0, 700.0, 756.0];
+        assert_eq!(
+            fit(&tops, &[50.0, 50.0, 344.0], 0.0, 1000.0),
+            vec![0.0, 600.0, 656.0]
+        );
+        // Taller together than the pane: from its top down, the rest past its foot.
+        let tops = [0.0, 56.0, 112.0];
+        assert_eq!(
+            fit(&tops, &[50.0, 50.0, 2000.0], 0.0, 1000.0),
+            vec![0.0, 56.0, 112.0]
+        );
+        // A card already above the pane's top (its marker scrolled up) stays where it is.
+        let tops = [-40.0, 900.0];
+        assert_eq!(fit(&tops, &[50.0, 200.0], 0.0, 1000.0), vec![-40.0, 800.0]);
     }
 }
