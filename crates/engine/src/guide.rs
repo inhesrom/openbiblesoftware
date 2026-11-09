@@ -1218,6 +1218,14 @@ pub struct Guides {
     topics: Arc<crate::topic_guide::TopicCache>,
 }
 
+impl Guides {
+    /// Forget the sections that failed, so the next ask computes them again (Retry, #223).
+    pub(crate) fn forget_failures(&mut self) {
+        self.results
+            .retain(|_, s| !matches!(s, SectionStatus::Failed(_)));
+    }
+}
+
 impl Default for Guides {
     fn default() -> Self {
         let aliases = Arc::new(AliasCache::default());

@@ -162,8 +162,9 @@ impl State {
         }
         let plans = self.session.home_plans();
         if plans.is_empty() {
-            muted(ui, "No Reading plan yet.");
-            if crate::components::link(ui, "Start a Reading plan…").clicked() {
+            if crate::components::empty_state(ui, "No Reading plan yet.", "Start a Reading plan…")
+                .clicked()
+            {
                 *run = Some(("tool.reading_plans", json!({})));
             }
             return;

@@ -574,6 +574,16 @@ impl WordStudies {
         Arc::clone(&self.indexes)
     }
 
+    /// Forget the headers, choosers and Occurrences previews that failed, so the next ask
+    /// computes them again (Retry, #223).
+    pub(crate) fn forget_failures(&mut self) {
+        self.headers
+            .retain(|_, s| !matches!(s, WordStatus::Failed(_)));
+        self.choosers
+            .retain(|_, s| !matches!(s, WordStatus::Failed(_)));
+        self.previews.retain(|_, p| p.error.is_none());
+    }
+
     /// Word Study state whose rendering indexes are `indexes` (shared with the Guide
     /// sections, so each Bible's index is read once).
     pub fn with_indexes(indexes: Arc<RenderingIndexes>) -> Self {

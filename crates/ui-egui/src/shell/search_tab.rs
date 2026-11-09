@@ -38,6 +38,8 @@ pub(super) struct Fields {
     sidebar: Option<bool>,
     /// Save…'s name field while its menu is open.
     pub(super) save_name: Option<String>,
+    /// The query field, for "Edit the search" when nothing matches (#223).
+    query_field: Option<egui::Id>,
     /// The sidebar asks whether to clear the Search history.
     pub(super) confirm_clear_history: bool,
 }
@@ -205,6 +207,7 @@ impl State {
         let mut morph = std::mem::take(&mut t.search_fields.morph);
         let mut morph_open = t.search_fields.morph_open;
         let mut toggle_sidebar = false;
+        let mut query_field = None;
         let recent = self.session.recent_searches(st.mode);
         let word_forms = self.session.search_word_forms();
         let bibles = st.bibles(&self.session.library);
@@ -294,6 +297,7 @@ impl State {
                                 .margin(inset::BAR),
                         )
                         .accessible_name("Search for");
+                    query_field = Some(r.id);
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if enter {
                         // The same Enter must not also open the selected result.
@@ -347,7 +351,6 @@ impl State {
                 if st.mode == SearchMode::Library {
                     self.resource_picker(ui, tab, &st, &mut run);
                     error_line(ui, error.as_ref(), ErrorField::Resources, "");
-                    error_line(ui, error.as_ref(), ErrorField::Search, "");
                     return;
                 }
                 ui.horizontal(|ui| {
@@ -422,7 +425,6 @@ impl State {
                             .response
                             .accessible_name("Notebook");
                     });
-                    error_line(ui, error.as_ref(), ErrorField::Search, "");
                     return;
                 }
                 ui.horizontal_wrapped(|ui| {
@@ -452,13 +454,13 @@ impl State {
                     });
                 });
                 error_line(ui, error.as_ref(), ErrorField::Bibles, "");
-                error_line(ui, error.as_ref(), ErrorField::Search, "");
             });
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.search_fields.query = query;
             t.search_fields.scope = scope;
             t.search_fields.morph = morph;
             t.search_fields.morph_open = morph_open;
+            t.search_fields.query_field = query_field;
             if toggle_sidebar {
                 t.search_fields.sidebar = Some(!sidebar);
             }
@@ -589,6 +591,10 @@ impl State {
     /// The summary line, notices about Resources not searched, and the results: in Bible
     /// mode, in the chosen results view (#146).
     fn search_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
+        let any = st.results.is_some() || st.library_results.is_some();
+        if self.results_state(ui, tab, st, any) {
+            return;
+        }
         // The Grid, Chart and Analysis count every result; the Verse list may be filtered.
         let shown = match st.view {
             ResultsView::Verses => st.results.as_ref(),
@@ -623,12 +629,14 @@ impl State {
                         "{name}: searched through its older index while it is rebuilt"
                     )));
                 }
+                // A line of the summary: the plain message, the error itself on hover (#223).
                 for (name, why) in failed {
                     ui.label(
-                        RichText::new(format!("{name} could not be searched: {why}"))
+                        RichText::new(format!("{name} could not be searched."))
                             .small()
                             .color(theme::c().warn),
-                    );
+                    )
+                    .on_hover_text(why);
                 }
                 if st.all_results().is_some() {
                     self.results_view_switch(ui, tab, st);
@@ -669,6 +677,28 @@ impl State {
                 }
             });
         }
+        if st.row_count() == 0 {
+            // Bibles still being indexed are searched when ready: loading, not empty.
+            let indexing = match (&st.results, &st.library_results) {
+                (Some(r), _) => r.indexing.clone(),
+                (None, Some(r)) => r.indexing.clone(),
+                (None, None) => Vec::new(),
+            };
+            if !indexing.is_empty() {
+                crate::components::band_frame().show(ui, |ui| {
+                    ui.add_space(space::M);
+                    let what = format!("Indexing {}…", indexing.join(", "));
+                    crate::components::loading_state(ui, &what);
+                });
+                return;
+            }
+            let message = match (&st.results, st.query.trim()) {
+                (Some(_), q) => format!("No verses match “{q}”."),
+                (None, q) => format!("No paragraphs match “{q}”."),
+            };
+            self.no_matches(ui, tab, &message);
+            return;
+        }
         let palette = self.palette;
         let settings = self.session.text;
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -708,17 +738,82 @@ impl State {
         }
     }
 
+    /// The results area while there are no results to show (#223): the search failed (a plain
+    /// message, Retry, and the error behind Details), is running (a skeleton), or has not been
+    /// run (what to search for, and an example). A failure is shown over older results too.
+    /// Returns whether there is nothing more to draw.
+    fn results_state(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab, any: bool) -> bool {
+        let failed = st
+            .error
+            .as_ref()
+            .filter(|e| e.field == ErrorField::Search && !st.running);
+        if any && failed.is_none() {
+            return false;
+        }
+        let mut run: Option<Value> = None;
+        crate::components::band_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add_space(space::M);
+            if let Some(e) = failed {
+                if crate::components::error_state(ui, "The search could not be run.", &e.message) {
+                    run = Some(json!({ "tab": tab.0, "text": st.query, "scope": st.scope }));
+                }
+            } else if st.running {
+                crate::components::loading_state(ui, "Searching…");
+            } else {
+                let (message, example) = match st.mode {
+                    SearchMode::Bible => (
+                        "Search the Bibles in your library for words, “a phrase”, a Strong's \
+                         number (strong:G26) or grammar (@verb aorist), then press Enter.",
+                        "love",
+                    ),
+                    SearchMode::Library => (
+                        "Search your Commentaries, Lexicons and Dictionaries for words or \
+                         “a phrase”, then press Enter.",
+                        "grace",
+                    ),
+                    SearchMode::Notes => {
+                        ("Search the text of your Notes, then press Enter.", "prayer")
+                    }
+                };
+                if crate::components::empty_state(ui, message, &format!("Search for “{example}”"))
+                    .clicked()
+                {
+                    run = Some(json!({ "tab": tab.0, "text": example }));
+                }
+            }
+        });
+        if let Some(params) = run {
+            self.run("search.run", &params);
+        }
+        !any
+    }
+
+    /// A search that matched nothing: say so, and offer to edit the query (#223).
+    fn no_matches(&mut self, ui: &mut Ui, tab: TabId, message: &str) {
+        crate::components::band_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add_space(space::M);
+            if crate::components::empty_state(ui, message, "Edit the search").clicked()
+                && let Some(id) = self
+                    .tabs
+                    .get(&tab)
+                    .and_then(|t| t.search_fields.query_field)
+            {
+                ui.memory_mut(|m| m.request_focus(id));
+            }
+        });
+    }
+
     /// Notes mode's results (#16 rule 13): newest change first, each row the Note's anchor
     /// reference, its Notebook and a snippet with the hits marked, drawn by the text pipeline.
     /// A click opens the Note in the Notes Tool; Ctrl/Cmd-click goes to its text in a new Tab.
     /// ↑/↓ move through the rows and Enter opens one.
     fn notes_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
-        let muted = theme::c().muted;
+        if self.results_state(ui, tab, st, st.notes.is_some()) {
+            return;
+        }
         let Some(results) = st.notes.clone() else {
-            ui.add_space(space::XXXL);
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Type a search above and press Enter").color(muted));
-            });
             return;
         };
         crate::components::band_frame().show(ui, |ui| {
@@ -739,10 +834,8 @@ impl State {
         });
         let rows = results.hits.len();
         if rows == 0 {
-            ui.add_space(space::XXL);
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No notes match").color(muted));
-            });
+            let message = format!("No Notes match “{}”.", st.query.trim());
+            self.no_matches(ui, tab, &message);
             return;
         }
         let focused = self.session.workspace.focused() == Some(tab);

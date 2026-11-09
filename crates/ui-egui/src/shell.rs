@@ -344,6 +344,10 @@ pub struct Shell {
     system_motion: Arc<dyn crate::SystemMotion>,
     /// The main dock's Panels settling into a new arrangement (#225).
     panel_motion: panel_motion::PanelMotion,
+    /// Tests: frames leave the inline job queue alone, so Guide sections, Word Study headers
+    /// and the People & places directory stay loading (#223's loading states).
+    #[cfg(test)]
+    hold_jobs: bool,
 }
 
 impl Default for Shell {
@@ -420,6 +424,8 @@ impl Shell {
             copy_out: None,
             system_motion: Arc::new(crate::NoSystemMotion),
             panel_motion: Default::default(),
+            #[cfg(test)]
+            hold_jobs: false,
         }
     }
 
@@ -1044,7 +1050,12 @@ impl Shell {
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
         // live on workers. Without worker threads (wasm), Guide sections and the People &
         // places directory step here, a job a frame.
-        if !self.st.session.jobs().is_threaded()
+        #[cfg(test)]
+        let held = self.hold_jobs;
+        #[cfg(not(test))]
+        let held = false;
+        if !held
+            && !self.st.session.jobs().is_threaded()
             && (self.st.session.guides.is_busy()
                 || self.st.session.word_study.is_busy()
                 || self.st.session.reanchoring.is_busy()
@@ -1967,6 +1978,13 @@ pub fn parse_shortcut(s: &str) -> Option<egui::KeyboardShortcut> {
 impl State {
     fn toast(&mut self, m: impl Into<String>) {
         self.toast = Some((m.into(), self.now));
+    }
+
+    /// An error state's Retry (#223): forget what failed to load, in the engine and in the
+    /// reference caches, so the Tabs that show it ask again on the next frame.
+    fn retry_failed(&mut self) {
+        self.session.retry_failed();
+        self.references.retry_failed();
     }
 
     /// Every way a command runs (a button, a menu, the Command box, a key) comes here, so a

@@ -36,11 +36,14 @@ impl State {
             .tab(tab)
             .and_then(|t| t.entry_history.current());
         let Some(Key::StrongsNumber(number)) = key else {
-            hint_page(
+            if hint_page(
                 ui,
                 "Type a Strong's number (G5485, H1254A) or an English word (love) in the box \
                  above, or click Word Study in Word Info.",
-            );
+                "Show G26 (love)",
+            ) {
+                self.run("tab.go", &json!({ "tab": tab.0, "text": "G26" }));
+            }
             return;
         };
         if let Some(t) = self.tabs.get_mut(&tab)
@@ -57,10 +60,7 @@ impl State {
             tab,
             Guide::WordStudy,
             &Key::StrongsNumber(number),
-            &mut |st, ui| {
-                st.word_study_header(ui, number, &status);
-                None
-            },
+            &mut |st, ui| st.word_study_header(ui, number, &status),
         );
     }
 
@@ -71,19 +71,18 @@ impl State {
         ui: &mut Ui,
         number: StrongsNumber,
         status: &WordStatus<WordStudyHeader>,
-    ) {
+    ) -> Option<Action> {
         let h = match status {
             WordStatus::Ready(h) => h,
             WordStatus::Loading => {
                 strongs_line(ui, number, None);
-                ui.label(RichText::new("Loading…").color(theme::c().muted));
-                ui.ctx().request_repaint();
-                return;
+                crate::components::loading_state(ui, &format!("Loading {number}…"));
+                return None;
             }
             WordStatus::Failed(e) => {
                 strongs_line(ui, number, None);
-                ui.label(RichText::new(format!("Could not load: {e}")).color(theme::c().warn));
-                return;
+                let message = format!("{number} could not be loaded.");
+                return crate::components::error_state(ui, &message, e).then_some(Action::Retry);
             }
         };
         strongs_line(ui, number, h.part_of_speech.as_deref());
@@ -126,6 +125,7 @@ impl State {
             None => "No occurrences in a Strong's-tagged Bible in your library".into(),
         };
         ui.label(RichText::new(occurrences).color(theme::c().muted));
+        None
     }
 
     /// The English-word chooser: the Strong's numbers a tagged English Bible renders with the
@@ -155,17 +155,14 @@ impl State {
             });
             let c = match &status {
                 WordStatus::Loading => {
-                    ui.label(
-                        RichText::new(format!("Looking up “{words}”…")).color(theme::c().muted),
-                    );
-                    ui.ctx().request_repaint();
+                    crate::components::loading_state(ui, &format!("Looking up “{words}”…"));
                     return;
                 }
                 WordStatus::Failed(e) => {
-                    ui.label(
-                        RichText::new(format!("Could not look up “{words}”: {e}"))
-                            .color(theme::c().warn),
-                    );
+                    let message = format!("“{words}” could not be looked up.");
+                    if crate::components::error_state(ui, &message, e) {
+                        action = Some(Action::Retry);
+                    }
                     return;
                 }
                 WordStatus::Ready(c) => c,

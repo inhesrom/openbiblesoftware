@@ -147,7 +147,6 @@ fn language_filter(
 enum Item<'a> {
     Header(String, usize),
     Listing(&'a ResourceListing),
-    Empty(&'static str),
 }
 
 enum Action {
@@ -301,35 +300,27 @@ impl State {
         let mut action: Option<Action> = None;
         let mut new_filter: Option<ResourceFilter> = None;
         let mut new_licence: Option<LicenceFilter> = None;
+        let mut clear = false;
         crate::components::page_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             let gb = &self.session.get_bibles;
-            // Status line: refreshing, offline (cache shown), or never fetched.
+            // Status: refreshing, offline (cache shown), or never fetched (#223's states).
             if gb.is_refreshing() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Checking SWORD repositories for Resources…");
-                });
-            }
-            if let Some(why) = gb.offline() {
-                crate::components::notice_frame(theme::c().warn).show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        let msg = match gb.catalog() {
-                            Some(c) => format!(
-                                "Offline: showing the catalog from {}. Downloads need \
-                                         a connection.",
-                                ago(c.fetched_at)
-                            ),
-                            None => "Offline: the Resource catalog could not be loaded, \
-                                             and there is no saved copy yet."
-                                .to_string(),
-                        };
-                        ui.colored_label(theme::c().warn, msg).on_hover_text(why);
-                        if !gb.is_refreshing() && ui.button("Try again").clicked() {
-                            action = Some(Action::Run("getbibles.refresh", json!({})));
-                        }
-                    });
-                });
+                crate::components::loading_state(ui, "Checking SWORD repositories for Resources…");
+                ui.add_space(space::XS);
+            } else if let Some(why) = gb.offline() {
+                let msg = match gb.catalog() {
+                    Some(c) => format!(
+                        "Offline: showing the catalog from {}. Downloads need a connection.",
+                        ago(c.fetched_at)
+                    ),
+                    None => "Offline: the Resource catalog could not be loaded, and there is \
+                             no saved copy yet."
+                        .to_string(),
+                };
+                if crate::components::error_state(ui, &msg, why) {
+                    action = Some(Action::Run("getbibles.refresh", json!({})));
+                }
                 ui.add_space(space::XS);
             }
             let summary = self.session.resource_updates();
@@ -341,8 +332,13 @@ impl State {
             // Without a fetched catalog the Open catalogue (compiled in) still lists.
             if gb.catalog().is_none() && !gb.is_refreshing() && gb.offline().is_none() {
                 ui.horizontal(|ui| {
-                    ui.label("The SWORD repositories' catalog has not been loaded.");
-                    if ui.button("Load catalog").clicked() {
+                    if crate::components::empty_state(
+                        ui,
+                        "The SWORD repositories' catalog has not been loaded.",
+                        "Load catalog",
+                    )
+                    .clicked()
+                    {
                         action = Some(Action::Run("getbibles.refresh", json!({})));
                     }
                 });
@@ -421,12 +417,23 @@ impl State {
                 ResourceFilter::All => "All Resources".to_string(),
                 f => format!("All {}", f.label()),
             };
-            items.push(Item::Header(all_title, all.len()));
+            // Nothing matches (#223): said first, not under the Featured sections' rows.
             if all.is_empty() {
-                items.push(Item::Empty(
-                    "Nothing matches the search, type, language and licence.",
-                ));
+                ui.horizontal(|ui| {
+                    if crate::components::empty_state(
+                        ui,
+                        "Nothing matches the search, type, language and licence.",
+                        "Show everything",
+                    )
+                    .on_hover_text("Clear the search and language, and show every type and licence")
+                    .clicked()
+                    {
+                        clear = true;
+                    }
+                });
+                ui.add_space(space::S);
             }
+            items.push(Item::Header(all_title, all.len()));
             items.extend(all.into_iter().map(Item::Listing));
 
             egui::ScrollArea::vertical()
@@ -440,9 +447,6 @@ impl State {
                                     ui.add_space(ROW_HEIGHT - size::CONTROL_COMPACT);
                                     section(ui, &format!("{title} · {n}"));
                                 }
-                                Item::Empty(msg) => {
-                                    ui.label(RichText::new(*msg).color(theme::c().muted));
-                                }
                                 Item::Listing(b) => {
                                     let status = self.session.listing_status(b);
                                     let show_type = shown_filter == ResourceFilter::All;
@@ -455,6 +459,12 @@ impl State {
                     }
                 });
         });
+        if clear {
+            self.get_bibles_ui.query.clear();
+            self.get_bibles_ui.language = None;
+            new_filter = Some(ResourceFilter::All);
+            new_licence = Some(LicenceFilter::All);
+        }
         if let Some(f) = new_filter {
             self.session.get_bibles.set_filter(f);
         }

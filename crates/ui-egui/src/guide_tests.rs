@@ -233,7 +233,11 @@ fn sections_appear_as_they_finish_without_blocking_frames() {
         }
     }
     assert!(saw_references, "{:?}", h.texts());
-    assert!(find_in(&h, guide, "Loading…").is_some(), "{:?}", h.texts());
+    assert!(
+        find_in(&h, guide, "Loading Commentaries…").is_some(),
+        "{:?}",
+        h.texts()
+    );
     assert!(find_in(&h, guide, "Alpha Commentary").is_none());
     assert_eq!(
         headers(&h, guide)[..2],
@@ -255,7 +259,7 @@ fn sections_appear_as_they_finish_without_blocking_frames() {
     until(&mut h, "the Commentaries rows", |h| {
         find_in(h, guide, "Alpha Commentary").is_some() && find_in(h, guide, "Beta Notes").is_some()
     });
-    assert!(find_in(&h, guide, "Loading…").is_none());
+    assert!(find_in(&h, guide, "Loading Commentaries…").is_none());
     // One row per Commentary, in Preferred order, with its section reference.
     let alpha = find_in(&h, guide, "Alpha Commentary").unwrap();
     let beta = find_in(&h, guide, "Beta Notes").unwrap();
@@ -445,7 +449,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
                 "People & places"
             ]
         );
-        assert!(has_prefix_in(&h, *g, hint) || find_in(&h, *g, "Loading…").is_some());
+        assert!(has_prefix_in(&h, *g, hint) || has_prefix_in(&h, *g, "Loading "));
     }
     drop(h);
     let _ = std::fs::remove_dir_all(db.parent().unwrap());

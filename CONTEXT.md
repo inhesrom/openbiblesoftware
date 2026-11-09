@@ -466,6 +466,18 @@ _Avoid_: Page colour, Background, Reading theme
 Makes every change of the interface instant: scrolling takes each wheel step at once, a jump lands at once with its flash held rather than fading, pop-ups and Panels appear at their final size, and loading placeholders rest. It is on when the user turns it on (View → Reduce motion, or Settings → Motion) or when the operating system's own reduce motion setting is on. Off, these changes ease over a fraction of a second (the motion tokens).
 _Avoid_: Animations off, Disable animations, Accessibility mode
 
+**Empty state**:
+What a Tab or pane shows when it has nothing to show yet: one plain sentence saying why (nothing typed, nothing in the library, nothing matches the filter) and one Button that fills it — Show an example (Show John 3:16-18, Show G26 (love), Search for “love”), Clear the filter, Open the Library, or, when a Resource is missing, the buttons that get it (Add the Starter library…, Get Lexicons…). No pane is left blank.
+_Avoid_: Placeholder, Blank slate, Zero state
+
+**Loading state**:
+What a Tab or pane shows while its content is read or computed: a line saying what is loading (“Loading Commentaries…”) over a skeleton of faint bars where the text will be, with the loading shimmer, or a progress bar when the length is known (a download, an import). The rest of the window keeps working; the content replaces it as soon as it is there.
+_Avoid_: Spinner, Busy, Please wait
+
+**Error state**:
+What a Tab or pane shows when its content could not be read or fetched: what failed, in plain words (“Commentaries could not be loaded.”), a Retry button that asks again, and Details, which shows the error as the code reported it (for a problem report) only when clicked. A failure stays until Retry, so it is not tried again every frame. A row of a list (a Search summary line, an Occurrences preview) says the plain message and shows the error on hover.
+_Avoid_: Error message, Crash, Failure dialog
+
 **Reading font**:
 The font Resource text of one script is drawn in: one each for Latin, Greek and Hebrew, chosen in View → Fonts. It is a Bundled font by default, or a font installed on the computer, stored by family and style name. Characters a Reading font lacks are drawn in the Bundled font for that script.
 _Avoid_: Text font, Body font, Resource font

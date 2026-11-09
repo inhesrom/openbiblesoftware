@@ -2,7 +2,7 @@
 
 <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); do not edit. -->
 
-Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
+Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
 
 ## Tabs
 
@@ -746,3 +746,257 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each 
 |---|---|---|
 | ![Reading plan, Bible chooser, Light](gallery/reading-plan-bible-chooser-light-1x.png) | ![Reading plan, Bible chooser, Dark](gallery/reading-plan-bible-chooser-dark-1x.png) | ![Reading plan, Bible chooser, Sepia](gallery/reading-plan-bible-chooser-sepia-1x.png) |
 | [2×](gallery/reading-plan-bible-chooser-light-2x.png) | [2×](gallery/reading-plan-bible-chooser-dark-2x.png) | [2×](gallery/reading-plan-bible-chooser-sepia-2x.png) |
+
+## Empty, loading and error states
+
+### Library: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library: empty, Light](gallery/library-empty-light-1x.png) | ![Library: empty, Dark](gallery/library-empty-dark-1x.png) | ![Library: empty, Sepia](gallery/library-empty-sepia-1x.png) |
+| [2×](gallery/library-empty-light-2x.png) | [2×](gallery/library-empty-dark-2x.png) | [2×](gallery/library-empty-sepia-2x.png) |
+
+### Library: nothing matches
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library: nothing matches, Light](gallery/library-nothing-matches-light-1x.png) | ![Library: nothing matches, Dark](gallery/library-nothing-matches-dark-1x.png) | ![Library: nothing matches, Sepia](gallery/library-nothing-matches-sepia-1x.png) |
+| [2×](gallery/library-nothing-matches-light-2x.png) | [2×](gallery/library-nothing-matches-dark-2x.png) | [2×](gallery/library-nothing-matches-sepia-2x.png) |
+
+### Get Resources: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: loading, Light](gallery/get-resources-loading-light-1x.png) | ![Get Resources: loading, Dark](gallery/get-resources-loading-dark-1x.png) | ![Get Resources: loading, Sepia](gallery/get-resources-loading-sepia-1x.png) |
+| [2×](gallery/get-resources-loading-light-2x.png) | [2×](gallery/get-resources-loading-dark-2x.png) | [2×](gallery/get-resources-loading-sepia-2x.png) |
+
+### Get Resources: offline
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: offline, Light](gallery/get-resources-offline-light-1x.png) | ![Get Resources: offline, Dark](gallery/get-resources-offline-dark-1x.png) | ![Get Resources: offline, Sepia](gallery/get-resources-offline-sepia-1x.png) |
+| [2×](gallery/get-resources-offline-light-2x.png) | [2×](gallery/get-resources-offline-dark-2x.png) | [2×](gallery/get-resources-offline-sepia-2x.png) |
+
+### Get Resources: nothing matches
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: nothing matches, Light](gallery/get-resources-nothing-matches-light-1x.png) | ![Get Resources: nothing matches, Dark](gallery/get-resources-nothing-matches-dark-1x.png) | ![Get Resources: nothing matches, Sepia](gallery/get-resources-nothing-matches-sepia-1x.png) |
+| [2×](gallery/get-resources-nothing-matches-light-2x.png) | [2×](gallery/get-resources-nothing-matches-dark-2x.png) | [2×](gallery/get-resources-nothing-matches-sepia-2x.png) |
+
+### Starter library: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Starter library: loading, Light](gallery/starter-library-loading-light-1x.png) | ![Starter library: loading, Dark](gallery/starter-library-loading-dark-1x.png) | ![Starter library: loading, Sepia](gallery/starter-library-loading-sepia-1x.png) |
+| [2×](gallery/starter-library-loading-light-2x.png) | [2×](gallery/starter-library-loading-dark-2x.png) | [2×](gallery/starter-library-loading-sepia-2x.png) |
+
+### Starter library: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Starter library: error, Light](gallery/starter-library-error-light-1x.png) | ![Starter library: error, Dark](gallery/starter-library-error-dark-1x.png) | ![Starter library: error, Sepia](gallery/starter-library-error-sepia-1x.png) |
+| [2×](gallery/starter-library-error-light-2x.png) | [2×](gallery/starter-library-error-dark-2x.png) | [2×](gallery/starter-library-error-sepia-2x.png) |
+
+### Search: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: empty, Light](gallery/search-empty-light-1x.png) | ![Search: empty, Dark](gallery/search-empty-dark-1x.png) | ![Search: empty, Sepia](gallery/search-empty-sepia-1x.png) |
+| [2×](gallery/search-empty-light-2x.png) | [2×](gallery/search-empty-dark-2x.png) | [2×](gallery/search-empty-sepia-2x.png) |
+
+### Search: searching
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: searching, Light](gallery/search-searching-light-1x.png) | ![Search: searching, Dark](gallery/search-searching-dark-1x.png) | ![Search: searching, Sepia](gallery/search-searching-sepia-1x.png) |
+| [2×](gallery/search-searching-light-2x.png) | [2×](gallery/search-searching-dark-2x.png) | [2×](gallery/search-searching-sepia-2x.png) |
+
+### Search: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: error, Light](gallery/search-error-light-1x.png) | ![Search: error, Dark](gallery/search-error-dark-1x.png) | ![Search: error, Sepia](gallery/search-error-sepia-1x.png) |
+| [2×](gallery/search-error-light-2x.png) | [2×](gallery/search-error-dark-2x.png) | [2×](gallery/search-error-sepia-2x.png) |
+
+### Search: nothing matches
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: nothing matches, Light](gallery/search-nothing-matches-light-1x.png) | ![Search: nothing matches, Dark](gallery/search-nothing-matches-dark-1x.png) | ![Search: nothing matches, Sepia](gallery/search-nothing-matches-sepia-1x.png) |
+| [2×](gallery/search-nothing-matches-light-2x.png) | [2×](gallery/search-nothing-matches-dark-2x.png) | [2×](gallery/search-nothing-matches-sepia-2x.png) |
+
+### Notes: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Notes: empty, Light](gallery/notes-empty-light-1x.png) | ![Notes: empty, Dark](gallery/notes-empty-dark-1x.png) | ![Notes: empty, Sepia](gallery/notes-empty-sepia-1x.png) |
+| [2×](gallery/notes-empty-light-2x.png) | [2×](gallery/notes-empty-dark-2x.png) | [2×](gallery/notes-empty-sepia-2x.png) |
+
+### Passage Guide: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Passage Guide: empty, Light](gallery/passage-guide-empty-light-1x.png) | ![Passage Guide: empty, Dark](gallery/passage-guide-empty-dark-1x.png) | ![Passage Guide: empty, Sepia](gallery/passage-guide-empty-sepia-1x.png) |
+| [2×](gallery/passage-guide-empty-light-2x.png) | [2×](gallery/passage-guide-empty-dark-2x.png) | [2×](gallery/passage-guide-empty-sepia-2x.png) |
+
+### Passage Guide: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Passage Guide: loading, Light](gallery/passage-guide-loading-light-1x.png) | ![Passage Guide: loading, Dark](gallery/passage-guide-loading-dark-1x.png) | ![Passage Guide: loading, Sepia](gallery/passage-guide-loading-sepia-1x.png) |
+| [2×](gallery/passage-guide-loading-light-2x.png) | [2×](gallery/passage-guide-loading-dark-2x.png) | [2×](gallery/passage-guide-loading-sepia-2x.png) |
+
+### Passage Guide: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Passage Guide: error, Light](gallery/passage-guide-error-light-1x.png) | ![Passage Guide: error, Dark](gallery/passage-guide-error-dark-1x.png) | ![Passage Guide: error, Sepia](gallery/passage-guide-error-sepia-1x.png) |
+| [2×](gallery/passage-guide-error-light-2x.png) | [2×](gallery/passage-guide-error-dark-2x.png) | [2×](gallery/passage-guide-error-sepia-2x.png) |
+
+### Word Study: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Word Study: empty, Light](gallery/word-study-empty-light-1x.png) | ![Word Study: empty, Dark](gallery/word-study-empty-dark-1x.png) | ![Word Study: empty, Sepia](gallery/word-study-empty-sepia-1x.png) |
+| [2×](gallery/word-study-empty-light-2x.png) | [2×](gallery/word-study-empty-dark-2x.png) | [2×](gallery/word-study-empty-sepia-2x.png) |
+
+### Word Study: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Word Study: loading, Light](gallery/word-study-loading-light-1x.png) | ![Word Study: loading, Dark](gallery/word-study-loading-dark-1x.png) | ![Word Study: loading, Sepia](gallery/word-study-loading-sepia-1x.png) |
+| [2×](gallery/word-study-loading-light-2x.png) | [2×](gallery/word-study-loading-dark-2x.png) | [2×](gallery/word-study-loading-sepia-2x.png) |
+
+### Word Study: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Word Study: error, Light](gallery/word-study-error-light-1x.png) | ![Word Study: error, Dark](gallery/word-study-error-dark-1x.png) | ![Word Study: error, Sepia](gallery/word-study-error-sepia-1x.png) |
+| [2×](gallery/word-study-error-light-2x.png) | [2×](gallery/word-study-error-dark-2x.png) | [2×](gallery/word-study-error-sepia-2x.png) |
+
+### Factbook: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Factbook: empty, Light](gallery/factbook-empty-light-1x.png) | ![Factbook: empty, Dark](gallery/factbook-empty-dark-1x.png) | ![Factbook: empty, Sepia](gallery/factbook-empty-sepia-1x.png) |
+| [2×](gallery/factbook-empty-light-2x.png) | [2×](gallery/factbook-empty-dark-2x.png) | [2×](gallery/factbook-empty-sepia-2x.png) |
+
+### Factbook: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Factbook: loading, Light](gallery/factbook-loading-light-1x.png) | ![Factbook: loading, Dark](gallery/factbook-loading-dark-1x.png) | ![Factbook: loading, Sepia](gallery/factbook-loading-sepia-1x.png) |
+| [2×](gallery/factbook-loading-light-2x.png) | [2×](gallery/factbook-loading-dark-2x.png) | [2×](gallery/factbook-loading-sepia-2x.png) |
+
+### Factbook: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Factbook: error, Light](gallery/factbook-error-light-1x.png) | ![Factbook: error, Dark](gallery/factbook-error-dark-1x.png) | ![Factbook: error, Sepia](gallery/factbook-error-sepia-1x.png) |
+| [2×](gallery/factbook-error-light-2x.png) | [2×](gallery/factbook-error-dark-2x.png) | [2×](gallery/factbook-error-sepia-2x.png) |
+
+### Topic Guide: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Topic Guide: empty, Light](gallery/topic-guide-empty-light-1x.png) | ![Topic Guide: empty, Dark](gallery/topic-guide-empty-dark-1x.png) | ![Topic Guide: empty, Sepia](gallery/topic-guide-empty-sepia-1x.png) |
+| [2×](gallery/topic-guide-empty-light-2x.png) | [2×](gallery/topic-guide-empty-dark-2x.png) | [2×](gallery/topic-guide-empty-sepia-2x.png) |
+
+### Topic Guide: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Topic Guide: loading, Light](gallery/topic-guide-loading-light-1x.png) | ![Topic Guide: loading, Dark](gallery/topic-guide-loading-dark-1x.png) | ![Topic Guide: loading, Sepia](gallery/topic-guide-loading-sepia-1x.png) |
+| [2×](gallery/topic-guide-loading-light-2x.png) | [2×](gallery/topic-guide-loading-dark-2x.png) | [2×](gallery/topic-guide-loading-sepia-2x.png) |
+
+### Topic Guide: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Topic Guide: error, Light](gallery/topic-guide-error-light-1x.png) | ![Topic Guide: error, Dark](gallery/topic-guide-error-dark-1x.png) | ![Topic Guide: error, Sepia](gallery/topic-guide-error-sepia-1x.png) |
+| [2×](gallery/topic-guide-error-light-2x.png) | [2×](gallery/topic-guide-error-dark-2x.png) | [2×](gallery/topic-guide-error-sepia-2x.png) |
+
+### Cross-references: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Cross-references: empty, Light](gallery/cross-references-empty-light-1x.png) | ![Cross-references: empty, Dark](gallery/cross-references-empty-dark-1x.png) | ![Cross-references: empty, Sepia](gallery/cross-references-empty-sepia-1x.png) |
+| [2×](gallery/cross-references-empty-light-2x.png) | [2×](gallery/cross-references-empty-dark-2x.png) | [2×](gallery/cross-references-empty-sepia-2x.png) |
+
+### Cross-references: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Cross-references: loading, Light](gallery/cross-references-loading-light-1x.png) | ![Cross-references: loading, Dark](gallery/cross-references-loading-dark-1x.png) | ![Cross-references: loading, Sepia](gallery/cross-references-loading-sepia-1x.png) |
+| [2×](gallery/cross-references-loading-light-2x.png) | [2×](gallery/cross-references-loading-dark-2x.png) | [2×](gallery/cross-references-loading-sepia-2x.png) |
+
+### Cross-references: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Cross-references: error, Light](gallery/cross-references-error-light-1x.png) | ![Cross-references: error, Dark](gallery/cross-references-error-dark-1x.png) | ![Cross-references: error, Sepia](gallery/cross-references-error-sepia-1x.png) |
+| [2×](gallery/cross-references-error-light-2x.png) | [2×](gallery/cross-references-error-dark-2x.png) | [2×](gallery/cross-references-error-sepia-2x.png) |
+
+### Atlas: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Atlas: empty, Light](gallery/atlas-empty-light-1x.png) | ![Atlas: empty, Dark](gallery/atlas-empty-dark-1x.png) | ![Atlas: empty, Sepia](gallery/atlas-empty-sepia-1x.png) |
+| [2×](gallery/atlas-empty-light-2x.png) | [2×](gallery/atlas-empty-dark-2x.png) | [2×](gallery/atlas-empty-sepia-2x.png) |
+
+### Atlas: nothing in the library
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Atlas: nothing in the library, Light](gallery/atlas-nothing-in-the-library-light-1x.png) | ![Atlas: nothing in the library, Dark](gallery/atlas-nothing-in-the-library-dark-1x.png) | ![Atlas: nothing in the library, Sepia](gallery/atlas-nothing-in-the-library-sepia-1x.png) |
+| [2×](gallery/atlas-nothing-in-the-library-light-2x.png) | [2×](gallery/atlas-nothing-in-the-library-dark-2x.png) | [2×](gallery/atlas-nothing-in-the-library-sepia-2x.png) |
+
+### Atlas: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Atlas: loading, Light](gallery/atlas-loading-light-1x.png) | ![Atlas: loading, Dark](gallery/atlas-loading-dark-1x.png) | ![Atlas: loading, Sepia](gallery/atlas-loading-sepia-1x.png) |
+| [2×](gallery/atlas-loading-light-2x.png) | [2×](gallery/atlas-loading-dark-2x.png) | [2×](gallery/atlas-loading-sepia-2x.png) |
+
+### Atlas: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Atlas: error, Light](gallery/atlas-error-light-1x.png) | ![Atlas: error, Dark](gallery/atlas-error-dark-1x.png) | ![Atlas: error, Sepia](gallery/atlas-error-sepia-1x.png) |
+| [2×](gallery/atlas-error-light-2x.png) | [2×](gallery/atlas-error-dark-2x.png) | [2×](gallery/atlas-error-sepia-2x.png) |
+
+### Timeline: nothing in the library
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: nothing in the library, Light](gallery/timeline-nothing-in-the-library-light-1x.png) | ![Timeline: nothing in the library, Dark](gallery/timeline-nothing-in-the-library-dark-1x.png) | ![Timeline: nothing in the library, Sepia](gallery/timeline-nothing-in-the-library-sepia-1x.png) |
+| [2×](gallery/timeline-nothing-in-the-library-light-2x.png) | [2×](gallery/timeline-nothing-in-the-library-dark-2x.png) | [2×](gallery/timeline-nothing-in-the-library-sepia-2x.png) |
+
+### Timeline: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: loading, Light](gallery/timeline-loading-light-1x.png) | ![Timeline: loading, Dark](gallery/timeline-loading-dark-1x.png) | ![Timeline: loading, Sepia](gallery/timeline-loading-sepia-1x.png) |
+| [2×](gallery/timeline-loading-light-2x.png) | [2×](gallery/timeline-loading-dark-2x.png) | [2×](gallery/timeline-loading-sepia-2x.png) |
+
+### Timeline: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: error, Light](gallery/timeline-error-light-1x.png) | ![Timeline: error, Dark](gallery/timeline-error-dark-1x.png) | ![Timeline: error, Sepia](gallery/timeline-error-sepia-1x.png) |
+| [2×](gallery/timeline-error-light-2x.png) | [2×](gallery/timeline-error-dark-2x.png) | [2×](gallery/timeline-error-sepia-2x.png) |
+
+### Favorites: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Favorites: empty, Light](gallery/favorites-empty-light-1x.png) | ![Favorites: empty, Dark](gallery/favorites-empty-dark-1x.png) | ![Favorites: empty, Sepia](gallery/favorites-empty-sepia-1x.png) |
+| [2×](gallery/favorites-empty-light-2x.png) | [2×](gallery/favorites-empty-dark-2x.png) | [2×](gallery/favorites-empty-sepia-2x.png) |
+
+### History: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![History: empty, Light](gallery/history-empty-light-1x.png) | ![History: empty, Dark](gallery/history-empty-dark-1x.png) | ![History: empty, Sepia](gallery/history-empty-sepia-1x.png) |
+| [2×](gallery/history-empty-light-2x.png) | [2×](gallery/history-empty-dark-2x.png) | [2×](gallery/history-empty-sepia-2x.png) |

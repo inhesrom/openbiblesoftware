@@ -48,6 +48,10 @@ enum Action {
     Step(String, bool),
     /// Add a Resource to a Collection by hand, or take it out: (Collection, resource id).
     Collect(String, String),
+    /// The empty Library's Button (#223).
+    Starter,
+    /// Nothing matches the filter: show every Resource again.
+    ClearFilter,
 }
 
 impl State {
@@ -88,13 +92,17 @@ impl State {
             ui.set_min_size(ui.available_size());
             let lib = &self.session.library;
             if lib.entries().is_empty() {
-                ui.label(
-                    RichText::new(
-                        "Your library is empty. Use Library → Import… to add a USFM Resource, \
-                             or drop a .obr file on the window.",
-                    )
-                    .color(theme::c().muted),
-                );
+                if crate::components::empty_state(
+                    ui,
+                    "Your library is empty. Add the Starter library's open Bibles, lexicons and \
+                     reference books, import a file with Library → Import…, or drop a .obr file \
+                     on the window.",
+                    super::missing_resource::ADD_STARTER,
+                )
+                .clicked()
+                {
+                    action = Some(Action::Starter);
+                }
                 return;
             }
             // Language chips.
@@ -145,9 +153,15 @@ impl State {
                 .auto_shrink([false, false])
                 .show_viewport(ui, |ui, viewport| {
                     if items.is_empty() {
-                        ui.label(
-                            RichText::new("Nothing matches the filter.").color(theme::c().muted),
-                        );
+                        if crate::components::empty_state(
+                            ui,
+                            "Nothing matches the filter.",
+                            "Clear the filter",
+                        )
+                        .clicked()
+                        {
+                            action = Some(Action::ClearFilter);
+                        }
                         return;
                     }
                     ui.set_height(total - gap);
@@ -299,6 +313,16 @@ impl State {
         }
         match action {
             None => {}
+            Some(Action::Starter) => {
+                self.run("library.starter", &json!({}));
+            }
+            Some(Action::ClearFilter) => {
+                if let Some(t) = self.tabs.get_mut(&tab) {
+                    t.filter.clear();
+                    t.languages.clear();
+                    t.collection = None;
+                }
+            }
             Some(Action::Open(id)) => {
                 let split = self.split_held;
                 self.run("resource.open", &json!({ "id": id, "split": split }));

@@ -445,7 +445,16 @@ impl State {
             .tab(tab)
             .and_then(|t| t.shown_passage())
         else {
-            ui.label("Enter a Bible reference (Acts 13) or join a Link set");
+            if crate::components::empty_state(
+                ui,
+                "Enter a Bible reference (Acts 13) in the box above, or put the Atlas in a \
+                 Bible's Link set to follow it.",
+                "Show Acts 13",
+            )
+            .clicked()
+            {
+                self.run("tab.go", &json!({ "tab": tab.0, "text": "Acts 13" }));
+            }
             return;
         };
         if let Some(empty) = self.session.atlas_empty_state() {
@@ -465,15 +474,23 @@ impl State {
         );
         let places: Arc<Vec<MapPlace>> = match result {
             None => {
-                ui.label(format!(
-                    "Finding the places of {}…",
-                    format_passage(passage, &Standard, RefStyle::Short)
-                ));
-                ui.ctx().request_repaint();
+                crate::components::loading_state(
+                    ui,
+                    &format!(
+                        "Finding the places of {}…",
+                        format_passage(passage, &Standard, RefStyle::Short)
+                    ),
+                );
                 return;
             }
             Some(Err(e)) => {
-                ui.label(format!("Could not read the places: {e}"));
+                if crate::components::error_state(
+                    ui,
+                    "The places of this Passage could not be read.",
+                    &e,
+                ) {
+                    self.retry_failed();
+                }
                 return;
             }
             Some(Ok(p)) => p,
@@ -526,14 +543,16 @@ impl State {
         });
         // Search results, under the box.
         let query = state.query.trim().to_string();
+        let mut retry = false;
         if !query.is_empty() {
             match self.session.atlas_search(&query) {
                 WordStatus::Loading => {
-                    ui.label(RichText::new("Looking up places…").color(theme::c().muted));
-                    ui.ctx().request_repaint();
+                    crate::components::loading_state(ui, "Looking up places…");
                 }
                 WordStatus::Failed(e) => {
-                    ui.colored_label(theme::c().warn, e);
+                    if crate::components::error_state(ui, "Places could not be looked up.", &e) {
+                        retry = true;
+                    }
                 }
                 WordStatus::Ready(found) if found.is_empty() => {
                     ui.label(
@@ -564,6 +583,9 @@ impl State {
                     });
                 }
             }
+        }
+        if retry {
+            self.retry_failed();
         }
         // The map, and the place list beside it, or under it in a narrow Tab.
         // Within what the Panel shows, however wide the rows above grew.

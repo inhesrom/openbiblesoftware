@@ -91,12 +91,13 @@ impl State {
             .and_then(|t| t.shown_passage());
         let timeline: Arc<Timeline> = match self.references.timeline(&self.session.library) {
             None => {
-                ui.label("Reading the Timeline…");
-                ui.ctx().request_repaint();
+                crate::components::loading_state(ui, "Reading the Timeline…");
                 return;
             }
             Some(Err(e)) => {
-                ui.colored_label(theme::c().warn, format!("Could not read the Timeline: {e}"));
+                if crate::components::error_state(ui, "The Timeline could not be read.", &e) {
+                    self.retry_failed();
+                }
                 return;
             }
             Some(Ok(t)) => t,

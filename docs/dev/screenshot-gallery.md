@@ -1,7 +1,8 @@
 # Screenshot gallery (#222)
 
-Every Tab kind, toolbar pane, menu, window, dialog and popover, drawn headlessly in Light, Dark
-and Sepia at 1× and 2×, and compared with its golden image (ADR 0019). The goldens are in
+Every Tab kind, toolbar pane, menu, window, dialog and popover, and each surface's empty,
+loading and error states (#223), drawn headlessly in Light, Dark and Sepia at 1× and 2×, and
+compared with its golden image (ADR 0019). The goldens are in
 `docs/previews/gallery/`; [`docs/previews/gallery.md`](../previews/gallery.md) shows them all.
 
 ## Running it
@@ -55,6 +56,14 @@ gallery's `tab_title` name it; a new pane, menu or window in the audit's `every_
 the gallery too. Other menus, popovers, dialogs and choosers are in `menus_and_toolbar`,
 `dialogs_and_popovers` and `menus_and_choosers` in `gallery_tests.rs`: a name, what opens it,
 and what shows it is open (the gallery fails if it is not on screen when drawn).
+
+The empty, loading and error states are `pane_states` in `pane_states_tests.rs` (section
+"Empty, loading and error states"): a name, what brings the state about (an empty Library, a
+filter that matches nothing, jobs held so a Guide stays loading, a Guide section source or
+fetch that fails), and what shows it is on screen. A surface that gains a new state adds it
+there. The same file's tests check that no error state shows the error itself before Details,
+that Retry asks again, that each empty state's Button fills its Tab, and that no Tab is blank in
+an empty Library.
 
 `every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
 each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo

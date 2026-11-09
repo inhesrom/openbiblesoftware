@@ -59,24 +59,20 @@ impl State {
                     } else {
                         0.0
                     };
-                    ui.add(
-                        egui::ProgressBar::new(fraction)
-                            .desired_width(size::FIELD_WIDE)
-                            .text(format!(
-                                "Downloading {} of {}",
-                                megabytes(d.done),
-                                megabytes(d.total)
-                            )),
-                    );
+                    ui.add(crate::components::progress_bar(
+                        fraction,
+                        format!(
+                            "Downloading {} of {}",
+                            megabytes(d.done),
+                            megabytes(d.total)
+                        ),
+                    ));
                     if ui.button("Cancel").clicked() {
                         action = Some(("starter.cancel", json!({})));
                     }
                 });
             } else if starter.is_checking() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Loading the Starter library list…");
-                });
+                crate::components::loading_state(ui, "Loading the Starter library list…");
             } else if !wanted.is_empty() {
                 let bytes: u64 = wanted.iter().map(|i| i.bytes).sum();
                 let label = if bundled {
@@ -102,24 +98,24 @@ impl State {
                     .color(theme::c().muted),
                 );
             }
-            if let Some(error) = starter.error() {
+            if let Some(error) = starter.error()
+                && starter.download().is_none()
+                && !starter.is_checking()
+            {
                 ui.add_space(space::XS);
-                crate::components::notice_frame(theme::c().warn).show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.colored_label(theme::c().warn, error);
-                        if starter.download().is_none()
-                            && !starter.is_checking()
-                            && ui.button("Retry").clicked()
-                        {
-                            // The same attempt again: an Add back stays one.
-                            action = Some(if starter.manifest().is_none() {
-                                ("starter.check", json!({}))
-                            } else {
-                                ("starter.retry", json!({}))
-                            });
-                        }
+                let message = if starter.manifest().is_none() {
+                    "The Starter library list could not be loaded."
+                } else {
+                    "The Starter library could not be added."
+                };
+                if crate::components::error_state(ui, message, error) {
+                    // The same attempt again: an Add back stays one.
+                    action = Some(if starter.manifest().is_none() {
+                        ("starter.check", json!({}))
+                    } else {
+                        ("starter.retry", json!({}))
                     });
-                });
+                }
             }
             ui.add_space(space::L);
             if rows.is_empty() {

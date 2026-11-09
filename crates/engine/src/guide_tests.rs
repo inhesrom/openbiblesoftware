@@ -410,6 +410,59 @@ fn sections_compute_independently_and_a_held_one_does_not_hold_back_the_others()
     assert_eq!(ready(commentaries).count(), 2);
 }
 
+/// Fails every section while `failing` is set (a disk error, say), then computes as usual.
+#[derive(Debug)]
+struct Flaky {
+    failing: Arc<std::sync::atomic::AtomicBool>,
+    inner: LibrarySections,
+}
+impl SectionSource for Flaky {
+    fn compute(
+        &self,
+        library: &Library,
+        key: &Key,
+        section: GuideSection,
+        ctx: &JobContext,
+    ) -> Result<SectionData, String> {
+        if self.failing.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("disk read error at block 7".into());
+        }
+        self.inner.compute(library, key, section, ctx)
+    }
+}
+
+/// Acceptance (#223): a failed section stays failed (no retry loop every frame) until Retry,
+/// which computes it again.
+#[test]
+fn retry_failed_computes_a_failed_section_again() {
+    let t = Temp::new("retry");
+    commentaries(&t.lib());
+    let mut s = session(&t, false);
+    let failing = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    s.guides.set_source(Arc::new(Flaky {
+        failing: Arc::clone(&failing),
+        inner: LibrarySections::default(),
+    }));
+    let key = Key::Passage(Passage::verse(john(3, 16)));
+    let failed = SectionStatus::Failed("disk read error at block 7".into());
+    assert_eq!(settle(&mut s, &key, GuideSection::Commentaries), failed);
+    failing.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        settle(&mut s, &key, GuideSection::Commentaries),
+        failed,
+        "a failure is kept until Retry"
+    );
+    s.retry_failed();
+    assert_eq!(
+        s.guide_section(&key, GuideSection::Commentaries),
+        SectionStatus::Loading
+    );
+    assert_eq!(
+        ready(settle(&mut s, &key, GuideSection::Commentaries)).count(),
+        2
+    );
+}
+
 #[test]
 fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restarts() {
     let t = Temp::new("arrangement");

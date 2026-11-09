@@ -312,7 +312,8 @@ fn query_errors_show_inline_under_the_box() {
     // Notes mode (#64) starts with its own prompt.
     switch_mode(&mut h, "Notes");
     assert!(
-        h.find("Type a search above and press Enter").is_some(),
+        h.find("Search the text of your Notes, then press Enter.")
+            .is_some(),
         "{:?}",
         h.texts()
     );

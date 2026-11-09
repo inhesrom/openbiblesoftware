@@ -47,6 +47,11 @@ impl<T: Send + 'static, K: Clone + Eq + Hash + Send + 'static> Queries<T, K> {
         self.ready.clear();
     }
 
+    /// Forget the queries that failed, so the next ask runs them again (Retry, #223).
+    fn forget_failures(&mut self) {
+        self.ready.retain(|_, r| r.is_ok());
+    }
+
     fn get_key(
         &mut self,
         passage: K,
@@ -86,6 +91,24 @@ impl<T: Send + 'static, K: Clone + Eq + Hash + Send + 'static> Queries<T, K> {
             self.pending.insert(id, passage);
         }
         None
+    }
+}
+
+#[cfg(test)]
+impl<T: Send + 'static, K: Clone + Eq + Hash + Send + 'static> Queries<T, K> {
+    /// Tests: run queries inline, and none until released (a query stays pending).
+    fn hold(&mut self) {
+        self.clear();
+        self.jobs = JobQueue::inline();
+        self.held = true;
+    }
+
+    /// Tests: every pending query fails with `why`, as a worker reporting an error would.
+    fn fail_pending(&mut self, why: &str) {
+        for (id, key) in std::mem::take(&mut self.pending) {
+            self.jobs.cancel(id);
+            self.ready.insert(key, Err(why.to_string()));
+        }
     }
 }
 
@@ -224,6 +247,31 @@ impl References {
         }
     }
 
+    /// Tests: hold the Cross-references, places and Timeline queries (#223's loading
+    /// states).
+    #[cfg(test)]
+    pub(super) fn hold(&mut self) {
+        self.groups.hold();
+        self.places.hold();
+        self.timeline.hold();
+    }
+
+    /// Tests: fail the held queries with `why` (#223's error states).
+    #[cfg(test)]
+    pub(super) fn fail_held(&mut self, why: &str) {
+        self.groups.fail_pending(why);
+        self.places.fail_pending(why);
+        self.timeline.fail_pending(why);
+    }
+
+    /// Retry (#223): forget the Cross-references, places and Timeline that failed to load.
+    pub(super) fn retry_failed(&mut self) {
+        self.groups.forget_failures();
+        self.previews.forget_failures();
+        self.places.forget_failures();
+        self.timeline.forget_failures();
+    }
+
     /// The Timeline of the library's People & places indexes (#185); `None` while it is read
     /// on a worker.
     pub(super) fn timeline(
@@ -295,7 +343,19 @@ impl State {
             .tab(tab)
             .and_then(|t| t.shown_passage());
         let Some(passage) = passage else {
-            ui.label("Enter a Bible reference or join a Link set");
+            if crate::components::empty_state(
+                ui,
+                "Enter a Bible reference (John 3:16) in the box above, or put this Tool in a \
+                 Bible's Link set to follow it.",
+                "Show John 3:16",
+            )
+            .clicked()
+            {
+                self.run(
+                    "tab.go",
+                    &serde_json::json!({ "tab": tab.0, "text": "Jn 3:16" }),
+                );
+            }
             return;
         };
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -312,12 +372,13 @@ impl State {
         );
         let groups = match result {
             None => {
-                ui.label("Loading Cross-references…");
-                ui.ctx().request_repaint();
+                crate::components::loading_state(ui, "Loading Cross-references…");
                 return;
             }
             Some(Err(e)) => {
-                ui.label(format!("Could not load Cross-references: {e}"));
+                if crate::components::error_state(ui, "Cross-references could not be loaded.", &e) {
+                    self.retry_failed();
+                }
                 return;
             }
             Some(Ok(groups)) => groups,

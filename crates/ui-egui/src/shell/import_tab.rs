@@ -192,10 +192,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
                 )));
             }
             ImportPhase::Download => {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(format!("Downloading from {}…", origin.repo));
-                });
+                ui.add(waiting(format!("Downloading from {}…", origin.repo)));
             }
             ImportPhase::Failed if record.report.is_none() => {
                 ui.label("Download stopped");
@@ -212,10 +209,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
             ui.label("Parse: waiting for the download");
         }
         ImportPhase::Parse if record.total == 0 => {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Reading the source…");
-            });
+            ui.add(waiting("Reading the source…"));
         }
         ImportPhase::Parse => {
             ui.add(
@@ -244,10 +238,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
             );
         }
         (ImportPhase::Index, _) => {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Search index: starting…");
-            });
+            ui.add(waiting("Search index: starting…"));
         }
         (ImportPhase::Failed, _) => {
             ui.label("Search index: not built");
@@ -259,10 +250,10 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
                     ui.label("Search index: built");
                 }
                 (Some(IndexStatus::Indexing { done, total }), _) if *total > 0 => {
-                    ui.add(
-                        egui::ProgressBar::new(*done as f32 / *total as f32)
-                            .text(format!("Search index: {done} / {total}")),
-                    );
+                    ui.add(crate::components::progress_bar(
+                        *done as f32 / *total as f32,
+                        format!("Search index: {done} / {total}"),
+                    ));
                 }
                 (Some(IndexStatus::Unavailable), _) => {
                     ui.label(UNAVAILABLE_INDEX);
@@ -283,7 +274,12 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
 
 #[allow(clippy::cast_precision_loss)]
 fn progress(record: &ImportRecord) -> egui::ProgressBar {
-    egui::ProgressBar::new(record.done as f32 / record.total.max(1) as f32)
+    crate::components::progress_bar(record.done as f32 / record.total.max(1) as f32, "")
+}
+
+/// A phase under way whose length is not known yet: an animated, empty progress bar (#223).
+fn waiting(what: impl Into<egui::WidgetText>) -> egui::ProgressBar {
+    crate::components::progress_bar(0.0, what).animate(true)
 }
 
 /// What was brought in, dropped markup, Unmapped/Absent counts and licence warnings.
