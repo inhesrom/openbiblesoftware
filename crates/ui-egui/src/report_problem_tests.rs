@@ -337,7 +337,7 @@ fn unzip(path: &Path) -> Vec<(String, String)> {
 fn listed(h: &Harness) -> Vec<String> {
     let zip = match &h.shell.st.report_ui.shown {
         Some(crate::shell::report_problem::Shown::Review { zip, .. })
-        | Some(crate::shell::report_problem::Shown::Diagnostics { zip }) => zip,
+        | Some(crate::shell::report_problem::Shown::Diagnostics { zip, .. }) => zip,
         _ => panic!("no zip window"),
     };
     let names: Vec<String> = zip.iter().map(|f| f.name.clone()).collect();
@@ -521,6 +521,65 @@ fn help_save_diagnostics_as_zip_saves_the_log_files_without_a_crash_report() {
     assert!(
         h.shell.st.report_ui.shown.is_none(),
         "the window closes once saved"
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_zip_saves_the_files_as_listed_though_the_log_changes_while_the_dialog_is_open() {
+    let dir = folder("zip-listed");
+    let logs = dir.join("logs");
+    let report = crashed_last_time(&logs);
+    std::fs::write(logs.join(diagnostics::LOG_FILE), "listed line\n").unwrap();
+    let mut h = launch(&dir.join("user.db"), &logs);
+    h.click_text("Report a problem…");
+    h.frames(2);
+    let names = listed(&h);
+    let Some(crate::shell::report_problem::Shown::Review { zip, .. }) = &h.shell.st.report_ui.shown
+    else {
+        panic!("no review");
+    };
+    let shown: Vec<(String, String)> = zip
+        .iter()
+        .map(|f| (f.name.clone(), f.text.clone()))
+        .collect();
+    // Each file is listed with its size.
+    for f in zip {
+        let line = format!(
+            "{} — {} ({})",
+            f.name,
+            f.about,
+            crate::shell::report_problem::size_label(f.text.len())
+        );
+        assert!(h.find(&line).is_some(), "{line}: {:?}", h.texts());
+    }
+
+    // While the dialog is open the log grows and rotates.
+    let dest = dir.join("openbible-report.zip");
+    let log_dir = logs.clone();
+    let answer = dest.clone();
+    h.shell.st.report_ui.save_dialog = Arc::new(move |_: &str, _: Option<&Path>| {
+        std::fs::write(
+            log_dir.join("openbible.1.log"),
+            "listed line\nwritten while the dialog was open\n",
+        )
+        .unwrap();
+        std::fs::write(log_dir.join(diagnostics::LOG_FILE), "after rotating\n").unwrap();
+        Some(answer.clone())
+    });
+    h.shell.st.report_ui.reveal_file = Arc::new(|_: &Path| Ok(None));
+    h.click_text("Save report as zip…");
+    until(&mut h, "zip saved", |h| !h.shell.st.zip_dialog_waiting());
+
+    // The zip holds what was listed: the same files, the same text, the same sizes.
+    let saved = unzip(&dest);
+    assert_eq!(saved, shown);
+    assert_eq!(saved.iter().map(|f| f.0.clone()).collect::<Vec<_>>(), names);
+    assert_eq!(saved[1].1, report);
+    assert_eq!(
+        saved[2],
+        (diagnostics::LOG_FILE.into(), "listed line\n".into())
     );
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();

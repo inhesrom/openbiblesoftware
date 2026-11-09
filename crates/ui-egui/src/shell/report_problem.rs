@@ -7,9 +7,9 @@
 //! Log folder ([`obs_engine::diagnostics`]).
 //!
 //! Save report as zip… (and Help → Save diagnostics as zip…, with the log files only, #249)
-//! lists what the Diagnostics zip will hold, asks where to save it, writes it with
-//! `help.save_diagnostics_zip` and shows it in the file manager, for the user to attach to an
-//! email or a message themselves.
+//! lists what the Diagnostics zip will hold, asks where to save it, writes exactly the files
+//! it listed with `help.save_diagnostics_zip` (the log may grow meanwhile) and shows it in the
+//! file manager, for the user to attach to an email or a message themselves.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -56,9 +56,9 @@ pub(crate) struct ReportProblemUi {
     pub(super) shown: Option<Shown>,
     /// A folder or file being shown, until its file manager exits.
     pub(super) opening: Option<(PathBuf, FolderShown)>,
-    /// The save dialog's answer, with the Crash report to include, waited for without
-    /// blocking a frame.
-    saving: Option<Receiver<(Option<String>, Option<PathBuf>)>>,
+    /// The save dialog's answer, with the number of the zip's listed files, waited for
+    /// without blocking a frame.
+    saving: Option<Receiver<(i64, Option<PathBuf>)>>,
 }
 
 impl Default for ReportProblemUi {
@@ -79,14 +79,15 @@ pub(crate) enum Shown {
     /// The launch offer for a new Crash report.
     Offer(CrashReport),
     /// A report to review: a Crash report, or (none) a problem report made now; `zip` is
-    /// what Save report as zip… saves.
+    /// what Save report as zip… saves, the Session's list number `listed`.
     Review {
         report: Option<CrashReport>,
         text: String,
         zip: Vec<ZipEntry>,
+        listed: i64,
     },
     /// Help → Save diagnostics as zip…: what the zip of the log files holds.
-    Diagnostics { zip: Vec<ZipEntry> },
+    Diagnostics { zip: Vec<ZipEntry>, listed: i64 },
 }
 
 /// What a click asks for, done after the window is drawn.
@@ -268,18 +269,23 @@ impl State {
                 diagnostics::home_dir().as_deref(),
             ),
         };
-        let zip = self.session.diagnostics_zip_entries(report.as_ref());
-        self.report_ui.shown = Some(Shown::Review { report, text, zip });
+        let (listed, zip) = self.session.list_diagnostics_zip(report.as_ref());
+        self.report_ui.shown = Some(Shown::Review {
+            report,
+            text,
+            zip,
+            listed,
+        });
     }
 
     /// Help → Save diagnostics as zip…: what the zip of the log files will hold, to save.
     pub(super) fn show_diagnostics_zip(&mut self) {
-        let zip = self.session.diagnostics_zip_entries(None);
-        self.report_ui.shown = Some(Shown::Diagnostics { zip });
+        let (listed, zip) = self.session.list_diagnostics_zip(None);
+        self.report_ui.shown = Some(Shown::Diagnostics { zip, listed });
     }
 
-    /// Ask where to save the zip, on its own thread; `report` is the Crash report's file name.
-    fn ask_zip_path(&mut self, ctx: &egui::Context, report: Option<String>) {
+    /// Ask where to save the zip listed as `listed`, on its own thread.
+    fn ask_zip_path(&mut self, ctx: &egui::Context, listed: i64) {
         let dialog = Arc::clone(&self.report_ui.save_dialog);
         let name = self.session.diagnostics_zip_file_name();
         let folder = diagnostics::default_zip_folder();
@@ -289,7 +295,7 @@ impl State {
             .name("obs-zip-dialog".into())
             .spawn(move || {
                 let path = dialog(&name, folder.as_deref());
-                let _ = tx.send((report, path));
+                let _ = tx.send((listed, path));
                 ctx.request_repaint();
             });
         match spawned {
@@ -308,7 +314,7 @@ impl State {
         let Some(rx) = &self.report_ui.saving else {
             return;
         };
-        let (report, path) = match rx.try_recv() {
+        let (listed, path) = match rx.try_recv() {
             Ok(answer) => answer,
             Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
@@ -321,10 +327,8 @@ impl State {
         let Some(path) = path else {
             return;
         };
-        let mut p = json!({ "path": path.to_string_lossy() });
-        if let Some(r) = report {
-            p["report"] = json!(r);
-        }
+        // The files the window listed, as they were then.
+        let p = json!({ "path": path.to_string_lossy(), "listed": listed });
         let Some(out) = self.run("help.save_diagnostics_zip", &p) else {
             return;
         };
@@ -441,7 +445,7 @@ impl State {
                         }
                     });
                 }
-                Shown::Diagnostics { zip } => {
+                Shown::Diagnostics { zip, .. } => {
                     ui.set_max_width(460.0);
                     ui.label(
                         "One zip of the app's log files, to send to the developers by email or \
@@ -462,7 +466,9 @@ impl State {
                         }
                     });
                 }
-                Shown::Review { report, text, zip } => {
+                Shown::Review {
+                    report, text, zip, ..
+                } => {
                     ui.set_width(620.0);
                     ui.label(REVIEW_NOTE);
                     ui.add_space(4.0);
@@ -561,19 +567,12 @@ impl State {
                 }
                 self.report_ui.shown = Some(shown);
             }
-            (Act::SaveZip, shown @ (Shown::Review { .. } | Shown::Diagnostics { .. })) => {
-                let report = match &shown {
-                    Shown::Review {
-                        report: Some(r), ..
-                    } => r
-                        .path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(String::from),
-                    _ => None,
-                };
+            (
+                Act::SaveZip,
+                shown @ (Shown::Review { listed, .. } | Shown::Diagnostics { listed, .. }),
+            ) => {
                 self.report_ui.shown = Some(shown);
-                self.ask_zip_path(ctx, report);
+                self.ask_zip_path(ctx, listed);
             }
             (Act::OpenFolder, shown) => {
                 if let Some(dir) = self.session.log_dir().map(Path::to_path_buf) {
@@ -616,7 +615,7 @@ fn zip_list(ui: &mut egui::Ui, heading: &str, zip: &[ZipEntry]) {
 }
 
 /// `512 bytes`, `12 KB`, `1.2 MB`.
-fn size_label(bytes: usize) -> String {
+pub(crate) fn size_label(bytes: usize) -> String {
     match bytes {
         b if b < 1024 => format!("{b} bytes"),
         b if b < 1024 * 1024 => format!("{} KB", b.div_ceil(1024)),

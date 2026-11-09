@@ -19,8 +19,9 @@
 //! - **Save report as zip…** (in Report a problem) and Help → Save diagnostics as zip…
 //!   (`help.save_diagnostics_zip`) write a **Diagnostics zip** where the user chooses: a
 //!   README, the Crash report being reviewed (when there is one) and the log files, and
-//!   nothing else ([`diagnostics_zip_entries`]). It is written whole, then named, and never
-//!   over an existing file ([`write_diagnostics_zip`]). The user sends it, if at all.
+//!   nothing else ([`diagnostics_zip_entries`]); from a window, exactly the files it listed
+//!   ([`Session::list_diagnostics_zip`]). It is written whole, then named, and never over an
+//!   existing file ([`write_diagnostics_zip`]). The user sends it, if at all.
 
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -833,29 +834,55 @@ fn zip_readme(files: &[ZipEntry], when: u64) -> String {
 }
 
 /// Write `files` as a zip at `dest`, or beside it as `name (2).zip` … when `dest` exists:
-/// an existing file is never replaced. The zip is written whole to a temporary file in the
-/// same folder, then given its name in one step, so a zip under that name is always
-/// complete. Returns where it was written.
+/// an existing file is never replaced. The zip is written whole to a temporary file of its
+/// own in the same folder, then given its name in one step (a hard link), so a zip under
+/// that name is always complete. On a disk without hard links (FAT, exFAT) nothing is saved
+/// and the error says so. Returns where it was written.
 pub fn write_diagnostics_zip(dest: &Path, files: &[ZipEntry]) -> std::io::Result<PathBuf> {
+    write_zip_linking(dest, files, |from, to| std::fs::hard_link(from, to))
+}
+
+/// [`write_diagnostics_zip`], giving the name with `link` (tests stand in a disk without
+/// hard links).
+fn write_zip_linking(
+    dest: &Path,
+    files: &[ZipEntry],
+    link: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<PathBuf> {
     let bytes = zip_bytes(files)?;
+    let (temp, mut file) = create_temp(dest)?;
+    // Only the temporary file made here is removed: another's of the same name is not ours.
+    let written = (|| {
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        drop(file);
+        claim_name(&temp, dest, link)
+    })();
+    let _ = std::fs::remove_file(&temp);
+    written
+}
+
+/// A new temporary file beside `dest`, `.name.<process>-<n>.partial` with the first `n` no
+/// file has: `create_new` fails on a taken name, so two saves at once (in this process or
+/// another) each get their own, and an existing file is never opened.
+fn create_temp(dest: &Path) -> std::io::Result<(PathBuf, File)> {
     let folder = dest.parent().unwrap_or(Path::new("."));
     let name = dest
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("openbible-report.zip");
-    let temp = folder.join(format!(".{name}.{}.partial", std::process::id()));
-    let written = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)?;
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-        drop(file);
-        claim_name(&temp, dest, true)
-    })();
-    let _ = std::fs::remove_file(&temp);
-    written
+    for n in 0..1000 {
+        let temp = folder.join(format!(".{name}.{}-{n}.partial", std::process::id()));
+        match OpenOptions::new().write(true).create_new(true).open(&temp) {
+            Ok(file) => return Ok((temp, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        format!("{}: 1000 temporary files are in the way", folder.display()),
+    ))
 }
 
 fn zip_bytes(files: &[ZipEntry]) -> std::io::Result<Vec<u8>> {
@@ -872,27 +899,30 @@ fn zip_bytes(files: &[ZipEntry]) -> std::io::Result<Vec<u8>> {
     Ok(out.into_inner())
 }
 
-/// Give the complete file `temp` the first free name of `dest`, `dest (2)`, …. A hard link
-/// fails when the name is taken, so no existing file is replaced, even one made meanwhile;
-/// where the disk has no hard links, the name is taken by creating it empty, then `temp`
-/// replaces that empty file (and always without `hard_links`).
-fn claim_name(temp: &Path, dest: &Path, hard_links: bool) -> std::io::Result<PathBuf> {
+/// Give the complete file `temp` the first free name of `dest`, `dest (2)`, … with `link`
+/// (a hard link). A link fails when the name is taken, so no existing file is replaced, even
+/// one made meanwhile, and the name appears only with the whole file. Any other failure (a
+/// disk without hard links) is an error: no fallback that could show the name empty or half
+/// written, or replace a file.
+fn claim_name(
+    temp: &Path,
+    dest: &Path,
+    link: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<PathBuf> {
     for n in 1..1000 {
         let to = numbered(dest, n);
-        if hard_links {
-            match std::fs::hard_link(temp, &to) {
-                Ok(()) => return Ok(to),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => {}
-            }
-        }
-        match OpenOptions::new().write(true).create_new(true).open(&to) {
-            Ok(_) => {
-                std::fs::rename(temp, &to)?;
-                return Ok(to);
-            }
+        match link(temp, &to) {
+            Ok(()) => return Ok(to),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e),
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "nothing was saved: the zip could not be given its name ({e}); this \
+                         disk may not support hard links, so choose a folder on another disk"
+                    ),
+                ));
+            }
         }
     }
     Err(std::io::Error::new(
@@ -993,6 +1023,9 @@ pub fn default_log_dir() -> Option<PathBuf> {
 pub struct Diagnostics {
     log_dir: Option<PathBuf>,
     level: LogLevel,
+    /// The files a zip window last listed, with their number: what saving it saves.
+    listed_zip: Option<(i64, Vec<ZipEntry>)>,
+    listings: i64,
 }
 
 impl Session {
@@ -1014,13 +1047,20 @@ impl Session {
         self.log_dir().map(crash_reports).unwrap_or_default()
     }
 
-    /// What a Diagnostics zip made now would hold: the README, `report` (a Crash report in
-    /// the Log folder) and the log files ([`diagnostics_zip_entries`]). None without a Log
-    /// folder.
-    pub fn diagnostics_zip_entries(&self, report: Option<&CrashReport>) -> Vec<ZipEntry> {
-        self.log_dir().map_or_else(Vec::new, |dir| {
+    /// What a Diagnostics zip made now would hold, for a window to list: the README,
+    /// `report` (a Crash report in the Log folder) and the log files
+    /// ([`diagnostics_zip_entries`]); none without a Log folder. The list is kept under the
+    /// number returned with it, and `help.save_diagnostics_zip` with that number as `listed`
+    /// saves exactly these files, however the log files have changed since. Only the last
+    /// list is kept.
+    pub fn list_diagnostics_zip(&mut self, report: Option<&CrashReport>) -> (i64, Vec<ZipEntry>) {
+        let files = self.log_dir().map_or_else(Vec::new, |dir| {
             diagnostics_zip_entries(dir, report, home_dir().as_deref(), now_secs())
-        })
+        });
+        let d = &mut self.diagnostics;
+        d.listings += 1;
+        d.listed_zip = Some((d.listings, files.clone()));
+        (d.listings, files)
     }
 
     /// The file name Save report as zip… suggests now ([`diagnostics_zip_name`]).
@@ -1094,27 +1134,45 @@ fn report_problem(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError>
 }
 
 /// Without `path`, the app asks where (Help → Save diagnostics as zip…); with it, the zip
-/// is written there (or beside it, never over a file), with the Crash report named `report`
-/// when given.
+/// is written there (or beside it, never over a file): the files a window listed when
+/// `listed` names that list ([`Session::list_diagnostics_zip`]), else the files now, with
+/// the Crash report named `report` when given.
 fn save_diagnostics_zip(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "help.save_diagnostics_zip";
     let Some(dest) = p.str("path").filter(|d| !d.is_empty()) else {
         s.workspace.push_effect(Effect::SaveDiagnosticsZip);
         return Ok(Value::Null);
     };
-    let report = match p.str("report").filter(|r| !r.is_empty()) {
-        None => None,
-        Some(name) => Some(
-            s.crash_reports()
-                .into_iter()
-                .find(|r| r.path.file_name().and_then(|n| n.to_str()) == Some(name))
-                .ok_or_else(|| failed(ID, format!("there is no crash report “{name}”")))?,
-        ),
-    };
-    if s.log_dir().is_none() {
+    let Some(dir) = s.log_dir().map(Path::to_path_buf) else {
         return Err(failed(ID, "this app keeps no log folder"));
-    }
-    let files = s.diagnostics_zip_entries(report.as_ref());
+    };
+    let report = p.str("report").filter(|r| !r.is_empty());
+    let files = match p.i64("listed") {
+        Some(_) if report.is_some() => {
+            return Err(failed(ID, "a listed zip already holds its crash report"));
+        }
+        Some(n) => match &s.diagnostics.listed_zip {
+            Some((id, files)) if *id == n && !files.is_empty() => files.clone(),
+            _ => {
+                return Err(failed(
+                    ID,
+                    "those files are no longer listed: list them again",
+                ));
+            }
+        },
+        None => {
+            let report = match report {
+                None => None,
+                Some(name) => Some(
+                    s.crash_reports()
+                        .into_iter()
+                        .find(|r| r.path.file_name().and_then(|n| n.to_str()) == Some(name))
+                        .ok_or_else(|| failed(ID, format!("there is no crash report “{name}”")))?,
+                ),
+            };
+            diagnostics_zip_entries(&dir, report.as_ref(), home_dir().as_deref(), now_secs())
+        }
+    };
     let dest = PathBuf::from(dest);
     let path = write_diagnostics_zip(&dest, &files)
         .map_err(|e| failed(ID, format!("{}: {e}", dest.display())))?;
@@ -1155,6 +1213,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 kind: ParamKind::String,
                 required: false,
                 help: "file name of a Crash report in the Log folder to include",
+            },
+            ParamSpec {
+                name: "listed",
+                kind: ParamKind::Integer,
+                required: false,
+                help: "number of the list a window showed: save exactly those files",
             },
         ],
         enabled: has_log_dir,
@@ -1659,15 +1723,113 @@ mod tests {
         );
         // A folder that is not there: an error, and nothing written.
         assert!(write_diagnostics_zip(&dir.join("gone/x.zip"), &files).is_err());
-        // Where the disk has no hard links, a name is taken the same way.
-        let temp = dir.join("temp");
-        std::fs::write(&temp, "zip").unwrap();
-        std::fs::write(dir.join("taken"), "kept").unwrap();
-        let to = claim_name(&temp, &dir.join("taken"), false).unwrap();
-        assert_eq!(to, dir.join("taken (2)"));
-        assert_eq!(std::fs::read_to_string(&to).unwrap(), "zip");
-        assert_eq!(std::fs::read_to_string(dir.join("taken")).unwrap(), "kept");
-        assert!(!temp.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn two_files() -> Vec<ZipEntry> {
+        vec![
+            ZipEntry {
+                name: ZIP_README.into(),
+                about: "readme",
+                text: "hello\n".into(),
+            },
+            ZipEntry {
+                name: LOG_FILE.into(),
+                about: "log",
+                text: "line\n".into(),
+            },
+        ]
+    }
+
+    #[test]
+    fn a_disk_without_hard_links_saves_nothing_rather_than_show_a_name_early() {
+        let dir = folder("zip-no-links");
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("openbible-report.zip");
+        // The name is never made, empty or otherwise, before or after the link fails.
+        let no_links = |_: &Path, to: &Path| {
+            assert!(!to.exists(), "{} made early", to.display());
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "operation not supported",
+            ))
+        };
+        let e = write_zip_linking(&dest, &two_files(), no_links).unwrap_err();
+        assert!(e.to_string().contains("nothing was saved"), "{e}");
+        assert!(e.to_string().contains("hard links"), "{e}");
+        assert!(names_in(&dir).is_empty(), "{:?}", names_in(&dir));
+        // A taken name goes on to the next even then, and the taken file is kept as it was.
+        std::fs::write(&dest, "kept").unwrap();
+        let tried = Mutex::new(Vec::new());
+        let e = write_zip_linking(&dest, &two_files(), |_: &Path, to: &Path| {
+            tried.lock().unwrap().push(to.to_path_buf());
+            if to.exists() {
+                Err(std::io::ErrorKind::AlreadyExists.into())
+            } else {
+                Err(std::io::ErrorKind::Unsupported.into())
+            }
+        })
+        .unwrap_err();
+        assert!(e.to_string().contains("nothing was saved"), "{e}");
+        assert_eq!(
+            *tried.lock().unwrap(),
+            [dest.clone(), dir.join("openbible-report (2).zip")]
+        );
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "kept");
+        assert_eq!(names_in(&dir), ["openbible-report.zip"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_zip_never_removes_a_temporary_file_it_did_not_make() {
+        let dir = folder("zip-temp");
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("openbible-report.zip");
+        // Another save's temporary file under the first name tried: kept, and this save
+        // takes the next.
+        let theirs = format!(".openbible-report.zip.{}-0.partial", std::process::id());
+        std::fs::write(dir.join(&theirs), "another save's").unwrap();
+        assert_eq!(write_diagnostics_zip(&dest, &two_files()).unwrap(), dest);
+        assert_eq!(
+            std::fs::read_to_string(dir.join(&theirs)).unwrap(),
+            "another save's"
+        );
+        assert_eq!(names_in(&dir), [theirs.as_str(), "openbible-report.zip"]);
+        std::fs::remove_file(dir.join(&theirs)).unwrap();
+        std::fs::remove_file(&dest).unwrap();
+
+        // Saves at once to one name: each whole under a name of its own, no file lost.
+        let saved: Vec<PathBuf> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| write_diagnostics_zip(&dest, &two_files()).unwrap()))
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let mut want: Vec<String> = (1..=8)
+            .map(|n| {
+                let p = numbered(&dest, n);
+                p.file_name().unwrap().to_string_lossy().into_owned()
+            })
+            .collect();
+        want.sort();
+        assert_eq!(names_in(&dir), want, "no temporary file left, none missing");
+        let mut got = saved.clone();
+        got.sort();
+        got.dedup();
+        assert_eq!(got.len(), 8, "{saved:?}");
+        for p in &saved {
+            let files: Vec<(String, String)> = unzip(p);
+            assert_eq!(files.len(), 2, "{}", p.display());
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1721,6 +1883,35 @@ mod tests {
             );
         }
         assert!(!dir.join("bad.zip").exists());
+
+        // A listed zip saves exactly what was listed, though the log grew and rotated since.
+        let report = s.crash_reports().into_iter().next().unwrap();
+        let (listed, files) = s.list_diagnostics_zip(Some(&report));
+        std::fs::write(logs.join(LOG_FILE), "a line\nthen another\n").unwrap();
+        std::fs::write(logs.join("openbible.1.log"), "rotated\n").unwrap();
+        let dest = dir.join("listed.zip");
+        let out = s
+            .run(
+                "help.save_diagnostics_zip",
+                &json!({ "path": dest, "listed": listed }),
+            )
+            .unwrap();
+        assert_eq!(out["path"], dest.display().to_string());
+        let want: Vec<(String, String)> = files
+            .iter()
+            .map(|f| (f.name.clone(), f.text.clone()))
+            .collect();
+        assert_eq!(unzip(&dest), want);
+        assert_eq!(want[2], (LOG_FILE.to_string(), "a line\n".to_string()));
+        // Only the last list is kept, and it holds its own Crash report.
+        let (newer, _) = s.list_diagnostics_zip(None);
+        for p in [
+            json!({ "path": dir.join("old.zip"), "listed": listed }),
+            json!({ "path": dir.join("old.zip"), "listed": newer, "report": report_name }),
+        ] {
+            assert!(s.run("help.save_diagnostics_zip", &p).is_err(), "{p}");
+        }
+        assert!(!dir.join("old.zip").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
