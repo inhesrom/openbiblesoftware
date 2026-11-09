@@ -4,17 +4,22 @@
 //! column and row readable, no row pointing at one that is not there). What the engine keeps
 //! *inside* rows is its own: a Layout's Workspace snapshot, a Favorite's or a Visit's
 //! location, and the settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
-//! those leniently at launch: an unreadable one is left out or back at its default. So a
-//! restore checks them first, and a Backup holding one the app could not read is refused,
+//! those leniently at launch: an unreadable one is left out or back at its default, and so is
+//! an unreadable field of a setting read field by field (a View setting, a Keyboard
+//! shortcut, an Update check flag). So a restore checks them first, and a Backup holding one the app could not read is refused,
 //! naming it, rather than silently losing it after the live data is gone.
 //!
 //! Plain-text settings (a Log level, the last Notebook used) are not checked: any text is
 //! one, and a value the app does not know is its default.
 
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
+use crate::appearance::{FontSlot, InterfaceSize, PageTone, Theme, VERSE_NUMBER_STYLES};
 use crate::favorites::TabLocation;
 use crate::persist::{UserData, WorkspaceSnapshot};
+use crate::toolbar::Launcher;
+use crate::toolbar_settings::{LauncherLabels, ToolbarPosition};
 
 /// A setting the app keeps as JSON in the User database.
 pub(crate) struct JsonSetting {
@@ -43,27 +48,160 @@ fn reads<T: DeserializeOwned>(json: &str) -> bool {
     serde_json::from_str::<T>(json).is_ok()
 }
 
-/// Every setting the app keeps as JSON, with the type its loader reads it as.
+/// A field check: whether the loader reads this present value rather than leaving it at
+/// its default.
+type FieldCheck = fn(&Value) -> bool;
+
+/// Whether `json` is an object each of whose `fields` that is present reads. The settings
+/// read field by field (View, Toolbar, Update check) leave a field they cannot read at its
+/// default, so a Backup holding one must be refused here. Fields the app does not know are
+/// ignored on load and here.
+fn object_with(json: &str, fields: &[(&str, FieldCheck)]) -> bool {
+    let Ok(Value::Object(v)) = serde_json::from_str::<Value>(json) else {
+        return false;
+    };
+    fields
+        .iter()
+        .all(|(name, reads)| v.get(*name).is_none_or(reads))
+}
+
+fn is_bool(v: &Value) -> bool {
+    v.is_boolean()
+}
+
+fn is_number(v: &Value) -> bool {
+    v.is_number()
+}
+
+/// The View settings, as `appearance::apply_json` reads them, with the records from #37 (a
+/// `dark_page` flag and a boolean `verse_numbers`).
+fn reads_view(json: &str) -> bool {
+    object_with(
+        json,
+        &[
+            ("theme", |v| v.as_str().and_then(Theme::from_id).is_some()),
+            ("page_tone", |v| {
+                v.as_str().and_then(PageTone::from_id).is_some()
+            }),
+            ("dark_page", is_bool),
+            ("interface_size", |v| {
+                v.as_str().and_then(InterfaceSize::from_id).is_some()
+            }),
+            ("text_size", is_number),
+            ("text_size_default", is_number),
+            ("line_spacing", is_number),
+            ("red_letter", is_bool),
+            ("highlights", is_bool),
+            ("reduce_motion", is_bool),
+            ("verse_numbers", |v| match v {
+                Value::String(s) => VERSE_NUMBER_STYLES.iter().any(|c| c.1 == s),
+                Value::Bool(_) => true,
+                _ => false,
+            }),
+            ("fonts", reads_fonts),
+            // Written as `null` only if the layout could not be written.
+            ("reading_layout", |v| {
+                v.is_null()
+                    || serde_json::from_value::<obs_layout::ReadingLayout>(v.clone()).is_ok()
+            }),
+        ],
+    )
+}
+
+/// The font choices of the View settings: per script slot, a family (blank: none chosen)
+/// with its style and whether its absence was noticed.
+fn reads_fonts(v: &Value) -> bool {
+    let Some(fonts) = v.as_object() else {
+        return false;
+    };
+    FontSlot::ALL.iter().all(|slot| {
+        fonts.get(slot.id()).is_none_or(|c| {
+            c.as_object().is_some_and(|c| {
+                c.get("family").is_some_and(Value::is_string)
+                    && c.get("style").is_none_or(Value::is_string)
+                    && c.get("missing_noticed").is_none_or(is_bool)
+            })
+        })
+    })
+}
+
+/// The Toolbar, as `ToolbarSettings::from_json` reads it: each Launcher once.
+fn reads_toolbar(json: &str) -> bool {
+    object_with(
+        json,
+        &[
+            ("position", |v| {
+                v.as_str().and_then(ToolbarPosition::from_id).is_some()
+            }),
+            ("auto_hide", is_bool),
+            ("labels", |v| {
+                v.as_str().and_then(LauncherLabels::from_id).is_some()
+            }),
+            ("launchers", |v| {
+                let Some(list) = v.as_array() else {
+                    return false;
+                };
+                let mut seen = Vec::new();
+                list.iter().all(|item| {
+                    let launcher = item["id"].as_str().and_then(Launcher::from_id);
+                    let read = launcher.is_some_and(|l| !seen.contains(&l))
+                        && item.get("shown").is_none_or(is_bool);
+                    seen.extend(launcher);
+                    read
+                })
+            }),
+        ],
+    )
+}
+
+/// The Keyboard shortcuts, as `KeyBindings::from_json` reads them: per command id, a key it
+/// can read or `null` for no key.
+fn reads_key_bindings(json: &str) -> bool {
+    let Ok(Value::Object(keys)) = serde_json::from_str::<Value>(json) else {
+        return false;
+    };
+    keys.values().all(|key| match key {
+        Value::Null => true,
+        Value::String(k) => crate::key_bindings::canonical_key(k).is_ok(),
+        _ => false,
+    })
+}
+
+/// The Update check settings, as `Session::load_update_settings` reads them.
+fn reads_update_settings(json: &str) -> bool {
+    object_with(
+        json,
+        &[
+            ("auto_check", is_bool),
+            ("prereleases", is_bool),
+            ("explained", is_bool),
+            // `null`: no release skipped.
+            ("skipped", |v| v.is_null() || v.is_string()),
+        ],
+    )
+}
+
+/// Every setting the app keeps as JSON, with how its loader reads it.
 pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
     JsonSetting {
         key: crate::session::VIEW_PREF,
         what: "View settings (Text size, Theme, fonts)",
-        reads: reads::<serde_json::Value>,
+        reads: reads_view,
     },
     JsonSetting {
         key: crate::toolbar_settings::TOOLBAR_PREF,
         what: "Toolbar",
-        reads: reads::<serde_json::Value>,
+        reads: reads_toolbar,
     },
     JsonSetting {
         key: crate::key_bindings::KEY_BINDINGS_PREF,
         what: "Keyboard shortcuts",
-        reads: reads::<serde_json::Value>,
+        reads: reads_key_bindings,
     },
     JsonSetting {
         key: crate::updates::UPDATES_PREF,
         what: "Update check settings",
-        reads: reads::<serde_json::Value>,
+        reads: reads_update_settings,
     },
     JsonSetting {
         key: crate::home::HOME_PREF,

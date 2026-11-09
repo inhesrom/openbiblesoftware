@@ -587,6 +587,111 @@ fn a_backup_with_an_unreadable_layout_setting_or_favorite_is_refused_naming_each
     s.run("data.restore", &path(&good)).unwrap();
 }
 
+/// #258: a setting read field by field (View, Toolbar, Keyboard shortcuts, Update check)
+/// that is valid JSON but holds a field the app could not read is refused too; the loader
+/// would leave that field at its default or drop the key.
+#[test]
+fn a_backup_with_an_unreadable_field_of_a_setting_is_refused_naming_it() {
+    let f = Fixture::new("unreadable-field");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        db.set_preference("view", r#"{"theme":"dark","text_size":"large"}"#)
+            .unwrap();
+        db.set_preference("toolbar", r#"{"launchers":[{"id":"nowhere"}]}"#)
+            .unwrap();
+        db.set_preference("key_bindings", r#"{"annotation.note":42}"#)
+            .unwrap();
+        db.set_preference("updates", r#"{"auto_check":"false"}"#)
+            .unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the setting `view` (View settings",
+        "the setting `toolbar` (Toolbar)",
+        "the setting `key_bindings` (Keyboard shortcuts)",
+        "the setting `updates` (Update check settings)",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("Keyboard shortcuts"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+}
+
+/// Each field-by-field setting refuses a field its loader would default or drop, and still
+/// reads what the app wrote before (#37's View record, old Selection key ids, no skipped
+/// release).
+#[test]
+fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
+    let reads = |key: &str, json: &str| {
+        let setting = crate::backup_check::JSON_SETTINGS
+            .iter()
+            .find(|j| j.names(key))
+            .unwrap();
+        (setting.reads)(json)
+    };
+    for (key, json) in [
+        (
+            "view",
+            r#"{"text_size":18,"dark_page":true,"verse_numbers":false}"#,
+        ),
+        (
+            "view",
+            r#"{"theme":"light","fonts":{"greek":{"family":"Gentium"}},"reading_layout":null}"#,
+        ),
+        ("view", r#"{"some_later_field":1}"#),
+        (
+            "toolbar",
+            r#"{"position":"left","launchers":[{"id":"tools","shown":false}]}"#,
+        ),
+        (
+            "key_bindings",
+            r#"{"selection.highlight_yellow":"Ctrl+1","edit.undo":null}"#,
+        ),
+        ("updates", r#"{"auto_check":false,"skipped":null}"#),
+        ("updates", r#"{"skipped":"0.2.0"}"#),
+    ] {
+        assert!(reads(key, json), "{key} {json}");
+    }
+    for (key, json) in [
+        ("view", "[]"),
+        ("view", r#"{"theme":"purple"}"#),
+        ("view", r#"{"red_letter":"yes"}"#),
+        ("view", r#"{"verse_numbers":"sideways"}"#),
+        ("view", r#"{"fonts":{"latin":{"family":3}}}"#),
+        ("view", r#"{"reading_layout":{"flow":"sideways"}}"#),
+        ("toolbar", r#"{"position":"middle"}"#),
+        (
+            "toolbar",
+            r#"{"launchers":[{"id":"tools"},{"id":"tools"}]}"#,
+        ),
+        ("toolbar", r#"{"launchers":[{"id":"tools","shown":"no"}]}"#),
+        ("key_bindings", r#"{"annotation.note":42}"#),
+        ("key_bindings", r#"{"annotation.note":"Ctrl+Nowhere"}"#),
+        ("updates", r#"{"auto_check":"false"}"#),
+        ("updates", r#"{"skipped":1}"#),
+    ] {
+        assert!(!reads(key, json), "{key} {json}");
+    }
+}
+
 /// Everything the app itself writes passes the check: a Backup of a Session that has used
 /// every setting kept as JSON it can reach here previews and restores.
 #[test]
