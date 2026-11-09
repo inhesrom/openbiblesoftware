@@ -266,16 +266,7 @@ pub fn inverse(changes: &[Change]) -> Vec<Change> {
 
 /// Milliseconds since the Unix epoch (0 where the platform has no clock, as on bare wasm).
 pub fn now_ms() -> i64 {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        0
-    }
+    crate::clock::now_ms()
 }
 
 /// Last (millisecond × 4096 + counter) handed out, so ids from one process always sort in

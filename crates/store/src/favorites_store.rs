@@ -126,8 +126,8 @@ impl UserStore {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
         tx.execute(
             "INSERT INTO history (visited_at, day, label, location)
-             VALUES (?1, date(?1, 'unixepoch', 'localtime'), ?2, ?3)",
-            params![at, label, location],
+             VALUES (?1, date(?1, 'unixepoch', ?4), ?2, ?3)",
+            params![at, label, location, crate::clock::to_local()],
         )
         .map_err(sql)?;
         tx.execute(
@@ -155,14 +155,13 @@ impl UserStore {
             .conn
             .prepare_cached(
                 "SELECT id, visited_at, day,
-                        CAST(julianday(date(?1, 'unixepoch', 'localtime')) - julianday(day)
-                             AS INTEGER),
-                        strftime('%H:%M', visited_at, 'unixepoch', 'localtime'), label, location
+                        CAST(julianday(date(?1, 'unixepoch', ?2)) - julianday(day) AS INTEGER),
+                        strftime('%H:%M', visited_at, 'unixepoch', ?2), label, location
                  FROM history ORDER BY visited_at DESC, id DESC",
             )
             .map_err(sql)?;
         let rows = stmt
-            .query_map([at], |r| {
+            .query_map(params![at, crate::clock::to_local()], |r| {
                 Ok(VisitRow {
                     id: r.get(0)?,
                     visited_at: r.get(1)?,
@@ -180,9 +179,11 @@ impl UserStore {
     /// The local day of `at` (Unix seconds), `YYYY-MM-DD`, as History's days are kept.
     pub fn local_day(&self, at: i64) -> Result<String, StoreError> {
         self.conn
-            .query_row("SELECT date(?1, 'unixepoch', 'localtime')", [at], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT date(?1, 'unixepoch', ?2)",
+                params![at, crate::clock::to_local()],
+                |r| r.get(0),
+            )
             .map_err(sql)
     }
 

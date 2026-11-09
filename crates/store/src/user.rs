@@ -9,7 +9,6 @@
 //! newest [`ROLLING_BACKUPS`] are kept) is written with SQLite's online backup API.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -60,9 +59,7 @@ pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
 }
 
 pub(crate) fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+    crate::clock::now_secs()
 }
 
 /// What happened when the User database was opened.

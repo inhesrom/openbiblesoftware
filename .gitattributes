@@ -12,3 +12,5 @@ crates/formats/tests/fixtures/study/*.zdx binary
 crates/formats/tests/assets/sword/modules/** binary
 # Update now (#276) verifies a detached minisign signature, byte for byte.
 crates/engine/tests/update-signing/** binary
+# Screenshot gallery goldens (#222) are compared pixel by pixel.
+docs/previews/gallery/*.png binary

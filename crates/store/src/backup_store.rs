@@ -285,8 +285,8 @@ impl UserStore {
     pub fn local_time(&self, at: i64) -> Result<String, StoreError> {
         self.conn
             .query_row(
-                "SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
-                params![at],
+                "SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', ?2)",
+                params![at, crate::clock::to_local()],
                 |r| r.get(0),
             )
             .map_err(sql)

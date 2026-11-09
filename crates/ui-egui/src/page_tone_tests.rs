@@ -20,7 +20,7 @@ fn preview(h: &Harness, name: &str) {
 
 /// Genesis 1:1-3 of the BSB as its USFM download marks it up (public domain): a heading, a
 /// footnote and a cross-reference, imported as the Starter library imports the BSB.
-fn bsb_genesis_1() -> obs_model::Resource {
+pub(super) fn bsb_genesis_1() -> obs_model::Resource {
     let usfm = "\\id GEN\n\\c 1\n\\s1 The Creation\n\\p\n\\v 1 In the beginning God created \
                 the heavens and the earth.\\x - \\xo 1:1 \\xt Genesis 1:3\\x*\n\\v 2 Now the \
                 earth was formless and void, and darkness was over the surface of the deep. \
@@ -53,7 +53,7 @@ fn harness(name: &str) -> (Harness, super::missing_resource::Lab) {
 }
 
 /// Open the BSB at Genesis 1:1 in a Panel of its own; its Tab.
-fn open_bsb(h: &mut Harness) -> TabId {
+pub(super) fn open_bsb(h: &mut Harness) -> TabId {
     let tab = h
         .shell
         .run("resource.open", &json!({ "id": "bsb", "split": true }))
@@ -134,7 +134,7 @@ fn assert_on_tone(h: &Harness, surface: &str, region: Rect, want: &Palette) {
 }
 
 /// Where in the Tab's reading pane its cross-reference note's `↗` marker (#208) is drawn.
-fn cross_reference_marker(h: &Harness, tab: TabId) -> Pos2 {
+pub(super) fn cross_reference_marker(h: &Harness, tab: TabId) -> Pos2 {
     let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
     let [ox, oy] = view.text_origin;
     let m = (view.footnote_markers(900.0).into_iter())

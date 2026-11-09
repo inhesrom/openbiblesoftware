@@ -1218,11 +1218,9 @@ fn imported_from(r: &crate::ImportRecord, listing: &ResourceListing) -> bool {
     }
 }
 
+/// Unix seconds by the User database's clock (fixed in the Screenshot gallery, #222).
 pub(crate) fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    u64::try_from(obs_store::clock::now_secs()).unwrap_or(0)
 }
 
 impl Session {

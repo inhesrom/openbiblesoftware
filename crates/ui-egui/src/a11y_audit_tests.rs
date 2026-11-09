@@ -48,7 +48,7 @@ pub(super) fn key(h: &mut Harness, key: Key, modifiers: Modifiers) {
     h.frames(2);
 }
 
-fn type_text(h: &mut Harness, text: &str) {
+pub(super) fn type_text(h: &mut Harness, text: &str) {
     h.events.push(Event::Text(text.into()));
     h.frames(2);
 }
@@ -58,7 +58,7 @@ fn type_text(h: &mut Harness, text: &str) {
 
 /// Every Tab kind, as the audit opens it. The match has no catch-all, so a new Tab kind does
 /// not build until the audit covers it.
-fn every_tab_kind() -> Vec<TabKind> {
+pub(super) fn every_tab_kind() -> Vec<TabKind> {
     let mut kinds = Vec::new();
     for kind in [
         TabKind::Library,
@@ -109,7 +109,7 @@ fn every_tab_kind() -> Vec<TabKind> {
 }
 
 /// Open a Tab of `kind` (with something in it to use) in its own Panel and draw it.
-fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
+pub(super) fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
     let split = json!({ "split": true });
     let (id, params) = match kind {
         TabKind::Library => ("library.open", split),
@@ -374,9 +374,9 @@ fn every_tab_kind_names_its_interactive_nodes() {
 
 /// The toolbar panes, the Command box, the menus and the windows, each opened over the default
 /// layout: what opens it, and what shows it is open.
-type Overlay = (&'static str, fn(&mut Harness), fn(&Harness) -> bool);
+pub(super) type Overlay = (&'static str, fn(&mut Harness), fn(&Harness) -> bool);
 
-fn every_overlay() -> Vec<Overlay> {
+pub(super) fn every_overlay() -> Vec<Overlay> {
     fn pane(h: &Harness, which: Launcher) -> bool {
         h.shell.st.toolbar.open == Some(which)
     }

@@ -12,6 +12,7 @@ mod annotation_store;
 mod backup;
 #[cfg(not(target_arch = "wasm32"))]
 mod backup_store;
+pub mod clock;
 // Pure column encodings; the wasm backend will use them too once it exists.
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod codec;

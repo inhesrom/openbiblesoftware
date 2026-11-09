@@ -415,6 +415,16 @@ impl Harness {
 
     /// Rasterize last frame as the GPU would (premultiplied alpha, nearest texels) into a PPM.
     fn screenshot(&self, path: &std::path::Path) {
+        let (w, h, rgb) = self.pixels();
+        let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
+        out.extend(rgb);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, out).unwrap();
+    }
+
+    /// Last frame rasterized as the GPU would (premultiplied alpha, nearest texels): width,
+    /// height and 8-bit RGB rows, top to bottom.
+    fn pixels(&self) -> (usize, usize, Vec<u8>) {
         // In device pixels: a 2× window (`root_info.native_pixels_per_point`) shoots at 2×.
         let ppp = self.ctx.pixels_per_point();
         let (w, h) = (
@@ -481,13 +491,11 @@ impl Harness {
                 }
             }
         }
-        let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
-        out.extend(
-            px.iter()
-                .flat_map(|p| p.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)),
-        );
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, out).unwrap();
+        let rgb = px
+            .iter()
+            .flat_map(|p| p.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8))
+            .collect();
+        (w, h, rgb)
     }
 
     fn tab_id(&self, title: &str) -> obs_engine::TabId {
@@ -3531,6 +3539,8 @@ mod a11y_audit;
 mod floating_windows;
 #[path = "footnotes_tests.rs"]
 mod footnotes_ui;
+#[path = "gallery_tests.rs"]
+mod gallery;
 #[path = "high_contrast_tests.rs"]
 mod high_contrast;
 #[path = "interlinear_tests.rs"]

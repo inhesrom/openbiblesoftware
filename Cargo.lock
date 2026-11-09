@@ -2688,6 +2688,7 @@ dependencies = [
  "obs-scripture",
  "obs-search",
  "obs-store",
+ "png",
  "resvg",
  "rfd",
  "serde",
