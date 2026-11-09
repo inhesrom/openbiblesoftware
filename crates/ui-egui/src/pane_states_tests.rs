@@ -437,7 +437,12 @@ fn open_state(name: &str) -> (Harness, super::missing_resource::Lab) {
         .into_iter()
         .find(|(n, ..)| *n == name)
         .unwrap_or_else(|| panic!("no state {name}"));
-    let (mut h, lab) = super::gallery::launch(&format!("states-{name}"), &super::gallery::LOOKS[0]);
+    // A folder name on every platform (no `:`).
+    let folder: String = (name.chars())
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let (mut h, lab) =
+        super::gallery::launch(&format!("states-{folder}"), &super::gallery::LOOKS[0]);
     open(&mut h);
     h.frames(4);
     assert!(is_open(&h), "{name} is not on screen: {:?}", h.texts());
