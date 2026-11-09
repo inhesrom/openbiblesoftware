@@ -4,7 +4,7 @@
 //! opens that Dictionary at the article. Both reuse an open Tab of the kind unless Ctrl/Cmd
 //! is held, and leave the Guide and its Link set where they are.
 
-use egui::{FontId, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
+use egui::{FontId, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{ArticleLink, Guide, GuideSection, KeyWords, PersonOrPlace, TabId, TabKind};
 use obs_layout::ColorRole;
 use obs_model::Key;
@@ -13,11 +13,12 @@ use serde_json::json;
 
 use super::State;
 use crate::theme;
+use crate::tokens::{share, size, space, text};
 
 /// Rows shown before "Show all".
 pub(super) const ROWS_SHOWN: usize = 12;
 /// Width of the Lemma column of a Key word row.
-const LEMMA_W: f32 = 112.0;
+const LEMMA_W: f32 = size::LABEL_COLUMN_WIDE;
 /// Values of one fact shown before "+N".
 const FACT_VALUES: usize = 5;
 
@@ -77,7 +78,7 @@ impl State {
             k.words.len().min(ROWS_SHOWN)
         };
         let settings = self.session.text;
-        let row_h = (settings.size * settings.line_spacing).max(22.0) + 4.0;
+        let row_h = (settings.size * settings.line_spacing).max(size::CONTROL_COMPACT) + space::XS;
         for w in &k.words[..shown] {
             // One line in fixed columns: Lemma | transliteration and Gloss | counts.
             let width = ui.available_width();
@@ -88,15 +89,16 @@ impl State {
                     "{}× · {} in {}",
                     w.in_passage, w.in_bible, k.bible_abbreviation
                 ),
-                FontId::proportional(11.5),
+                FontId::proportional(text::SMALL),
                 c.muted,
             );
             let counts_at = pos2(
-                rect.right() - counts.size().x - 12.0,
+                rect.right() - counts.size().x - space::L,
                 rect.center().y - counts.size().y / 2.0,
             );
             ui.painter().galley(counts_at, counts, c.muted);
-            let lemma_rect = Rect::from_min_size(rect.min, vec2(LEMMA_W.min(width * 0.4), row_h));
+            let lemma_rect =
+                Rect::from_min_size(rect.min, vec2(LEMMA_W.min(width * share::LABEL), row_h));
             let centered = Layout::left_to_right(egui::Align::Center);
             ui.scope_builder(
                 UiBuilder::new().max_rect(lemma_rect).layout(centered),
@@ -111,10 +113,10 @@ impl State {
                 },
             );
             let middle = Rect::from_min_max(
-                pos2(lemma_rect.right() + 6.0, rect.top()),
-                pos2(counts_at.x - 8.0, rect.bottom()),
+                pos2(lemma_rect.right() + space::S, rect.top()),
+                pos2(counts_at.x - space::M, rect.bottom()),
             );
-            if middle.width() > 16.0 {
+            if middle.width() > space::XL {
                 ui.scope_builder(UiBuilder::new().max_rect(middle).layout(centered), |ui| {
                     ui.set_clip_rect(middle.intersect(ui.clip_rect()));
                     if let Some(t) = &w.transliteration {
@@ -142,12 +144,7 @@ impl State {
             let label = format!("Word Study on {}", w.strongs);
             r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
             if r.hovered() {
-                ui.painter().rect_stroke(
-                    rect.expand(2.0),
-                    4.0,
-                    Stroke::new(1.0, theme::c().hover_rule),
-                    egui::StrokeKind::Outside,
-                );
+                crate::components::hover_outline(ui, rect);
             }
             let r = r.on_hover_ui(|ui| {
                 let mut head = w.strongs.to_string();
@@ -158,11 +155,9 @@ impl State {
                 if let Some(g) = &w.gloss {
                     ui.label(g);
                 }
-                ui.label(
-                    RichText::new("Click for a Word Study · Ctrl/Cmd-click opens a new Tab")
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text(
+                    "Click for a Word Study · Ctrl/Cmd-click opens a new Tab",
+                ));
             });
             if r.clicked() {
                 action = Some(WordsAction::WordStudy(w.strongs, new_tab));
@@ -170,16 +165,12 @@ impl State {
         }
         self.show_all(ui, tab, GuideSection::KeyWords, k.words.len());
         if k.function_words > 0 {
-            ui.label(
-                RichText::new(format!(
-                    "{} function word{} left out (articles, conjunctions, prepositions, \
+            ui.label(crate::components::hint_text(format!(
+                "{} function word{} left out (articles, conjunctions, prepositions, \
                      particles, pronouns)",
-                    k.function_words,
-                    if k.function_words == 1 { "" } else { "s" }
-                ))
-                .small()
-                .color(theme::c().muted),
-            );
+                k.function_words,
+                if k.function_words == 1 { "" } else { "s" }
+            )));
         }
         action
     }
@@ -220,16 +211,16 @@ impl State {
                 if let Some(u) = &row.usual_name {
                     ui.label(RichText::new(format!("({u})")).color(theme::c().ink));
                 }
-                ui.label(RichText::new(row.summary()).small().color(theme::c().muted));
+                ui.label(crate::components::hint_text(row.summary()));
             });
             if !row.facts.is_empty() {
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.spacing_mut().item_spacing.x = space::XS;
                     for (i, f) in row.facts.iter().enumerate() {
                         if i > 0 {
                             ui.label(RichText::new("·").color(theme::c().muted));
                         }
-                        ui.label(RichText::new(f.label).small().color(theme::c().muted));
+                        ui.label(crate::components::hint_text(f.label));
                         let mut values = f
                             .values
                             .iter()
@@ -251,19 +242,14 @@ impl State {
                     .iter()
                     .map(|v| format_passage(Passage::verse(*v), &Standard, RefStyle::Short))
                     .collect();
-                ui.label(
-                    RichText::new(format!("Mentioned in {}", verses.join(", ")))
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text(format!(
+                    "Mentioned in {}",
+                    verses.join(", ")
+                )));
             }
             ui.horizontal_wrapped(|ui| {
                 if row.articles.is_empty() {
-                    ui.label(
-                        RichText::new("No Dictionary article")
-                            .small()
-                            .color(theme::c().muted),
-                    );
+                    ui.label(crate::components::hint_text("No Dictionary article"));
                 }
                 for a in &row.articles {
                     let r = ui
@@ -277,7 +263,7 @@ impl State {
                     }
                 }
             });
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         self.show_all(ui, tab, GuideSection::PeopleAndPlaces, rows.len());
         action

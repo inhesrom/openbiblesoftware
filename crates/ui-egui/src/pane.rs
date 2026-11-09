@@ -14,11 +14,12 @@ use crate::palette::Palette;
 use crate::selection::{
     DocPos, Granularity, Selection, range_rects, selection_rects, text_range_rects,
 };
+use crate::tokens::{alpha, mark, radius, scale, size, space, stroke};
 use crate::view::{FootnoteMarker, MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
 
-const SCROLLBAR: f32 = 10.0;
+const SCROLLBAR: f32 = size::SCROLLBAR;
 
 /// The atlas plus its GPU copy.
 pub struct AtlasTexture {
@@ -214,7 +215,7 @@ pub fn reading_pane(
 
     // The Reading column (#209), centred in wide panes: Medium is a comfortable measure of
     // about 70 characters.
-    let room = (rect.width() - 2.0 * MARGIN - SCROLLBAR).max(40.0);
+    let room = (rect.width() - 2.0 * MARGIN - SCROLLBAR).max(size::TEXT_MIN);
     let settings = view.settings();
     let measure = (settings.layout.column.ems()).map_or(room, |ems| room.min(settings.size * ems));
     let left = rect.left() + MARGIN + ((room - measure) / 2.0).floor();
@@ -256,7 +257,7 @@ pub fn reading_pane(
     if response.drag_started()
         && let Some(p) = response.interact_pointer_pos()
     {
-        view.dragging_scrollbar = track.expand(4.0).contains(p);
+        view.dragging_scrollbar = track.expand(space::XS).contains(p);
     }
     if response.dragged()
         && view.dragging_scrollbar
@@ -287,17 +288,16 @@ pub fn reading_pane(
             }
             None => {
                 // Placeholder while a worker lays the block out: faint bars where lines go.
-                let line = view.settings().size * 1.8;
-                let bottom = rect.top() + b.top + b.height - line * 0.4;
-                let mut y = rect.top() + b.top + line * 0.4;
+                let line = view.settings().size * scale::LINE;
+                let bottom = rect.top() + b.top + b.height - line * scale::PLACEHOLDER_INSET;
+                let mut y = rect.top() + b.top + line * scale::PLACEHOLDER_INSET;
                 while y < bottom {
-                    painter.rect_filled(
-                        Rect::from_min_size(
-                            pos2(text_rect.left(), y),
-                            vec2(text_rect.width(), line * 0.35),
-                        ),
-                        2.0,
-                        palette.verse_number.gamma_multiply(0.12),
+                    crate::components::text_placeholder(
+                        &painter,
+                        pos2(text_rect.left(), y - line * scale::PLACEHOLDER_TOP),
+                        text_rect.width(),
+                        line,
+                        palette.verse_number.gamma_multiply(alpha::WASH),
                     );
                     y += line;
                 }
@@ -336,7 +336,7 @@ pub fn reading_pane(
                     pos2(text_rect.left() + x0, rect.top() + y0),
                     pos2(text_rect.left() + x1, rect.top() + y1),
                 ),
-                2.0,
+                radius::XS,
                 color,
             );
         }
@@ -376,7 +376,7 @@ pub fn reading_pane(
             let r = to_screen(text_band(*r, size));
             match p.look {
                 HighlightLook::Background => {
-                    painter.rect_filled(r, 1.5, p.color);
+                    painter.rect_filled(r, mark::RADIUS, p.color);
                     grounds.push((r, p.color));
                 }
                 HighlightLook::TextColor => recolour.push((r, p.color)),
@@ -438,13 +438,13 @@ pub fn reading_pane(
         );
         let rects = range_rects(view, &[word], rect.height());
         for &[x0, _, x1, y1] in rects.iter().flatten() {
-            let y = rect.top() + y1 - 1.5;
+            let y = rect.top() + y1 - mark::LINE_MIN;
             painter.line_segment(
                 [
                     pos2(text_rect.left() + x0, y),
                     pos2(text_rect.left() + x1, y),
                 ],
-                egui::Stroke::new(1.0, palette.underline),
+                egui::Stroke::new(stroke::HAIR, palette.underline),
             );
         }
         if !view.dragging_scrollbar && response.clicked() {
@@ -504,12 +504,12 @@ pub fn reading_pane(
     // mid-line has the previous verse's words just before its number. Space taken so far in
     // each line's margin, keyed by the line's top.
     let mut beside: std::collections::HashMap<i64, f32> = std::collections::HashMap::new();
-    let gap = (size * 0.12).max(2.0);
+    let gap = (size * mark::GAP_EMS).max(mark::GAP_MIN);
     // The pane's own room, in text coordinates: marks never go under the scrollbar or
     // outside the pane.
     let (room_left, room_right) = (
-        rect.left() - text_rect.left() + 1.0,
-        track.left() - text_rect.left() - 1.0,
+        rect.left() - text_rect.left() + space::PX,
+        track.left() - text_rect.left() - space::PX,
     );
     for (a, rects) in &filtered {
         draw_line_or_box(&painter, paint(*a), rects, size, &to_screen);
@@ -527,7 +527,7 @@ pub fn reading_pane(
                     continue;
                 };
                 paint_note_marker(&painter, marker, palette);
-                if hover.is_some_and(|p| marker.expand(3.0).contains(p)) {
+                if hover.is_some_and(|p| marker.expand(mark::HIT_SLOP).contains(p)) {
                     out.hovered_note = Some((mark.id.clone(), marker));
                     if response.clicked() {
                         out.clicked_note = Some(mark.id.clone());
@@ -542,10 +542,14 @@ pub fn reading_pane(
                 let used = beside.entry((band[1] * 4.0).round() as i64).or_insert(0.0);
                 let (w, h, round) = match mark.kind {
                     MarkKind::Margin(_) => {
-                        let w = (size * 0.16).max(2.5);
+                        let w = (size * mark::MARGIN_EMS).max(mark::MARGIN_MIN);
                         (w, band[3] - band[1], w / 2.0)
                     }
-                    _ => (size * 0.42, size * 0.48, 1.5),
+                    _ => (
+                        size * mark::NOTE_WIDTH_EMS,
+                        size * mark::NOTE_HEIGHT_EMS,
+                        mark::RADIUS,
+                    ),
                 };
                 let x = if rtl {
                     (text_rect.width() + gap + *used).min(room_right - w)
@@ -560,7 +564,7 @@ pub fn reading_pane(
                     }
                     _ => {
                         paint_note_marker(&painter, r, palette);
-                        if hover.is_some_and(|p| r.expand(3.0).contains(p)) {
+                        if hover.is_some_and(|p| r.expand(mark::HIT_SLOP).contains(p)) {
                             out.hovered_note = Some((mark.id.clone(), r));
                         }
                     }
@@ -575,15 +579,17 @@ pub fn reading_pane(
     let (y, total) = view.position();
     if total > f64::from(rect.height()) {
         let frac = (y / total) as f32;
-        let thumb_h = (rect.height() * rect.height() / total as f32).clamp(24.0, rect.height());
+        let thumb_h =
+            (rect.height() * rect.height() / total as f32).clamp(size::THUMB_MIN, rect.height());
         let thumb_top = track.top() + frac * (track.height() - thumb_h);
+        let thumb_w = SCROLLBAR - 2.0 * space::XXS;
         painter.rect_filled(
             Rect::from_min_size(
-                pos2(track.left() + 2.0, thumb_top),
-                vec2(SCROLLBAR - 4.0, thumb_h),
+                pos2(track.left() + space::XXS, thumb_top),
+                vec2(thumb_w, thumb_h),
             ),
-            3.0,
-            palette.verse_number.gamma_multiply(0.5),
+            thumb_w / 2.0,
+            palette.verse_number.gamma_multiply(alpha::HALF),
         );
     }
     crate::a11y::publish(
@@ -706,7 +712,7 @@ fn footnote_markers(
             continue;
         }
         let id = footnote_marker_id(pane.id, &m);
-        let response = ui.interact(r.expand(3.0).intersect(rect), id, Sense::click());
+        let response = ui.interact(r.expand(mark::HIT_SLOP).intersect(rect), id, Sense::click());
         let hit = FootnoteHit {
             resource: view.doc.manifest.resource_id.clone(),
             unit: m.unit,
@@ -727,8 +733,8 @@ fn footnote_markers(
         register_footnote_widget(ui.ctx(), id);
         if response.has_focus() {
             painter.rect_stroke(
-                r.expand(2.0),
-                2.0,
+                r.expand(space::XXS),
+                radius::XS,
                 ui.visuals().selection.stroke,
                 egui::StrokeKind::Outside,
             );
@@ -778,15 +784,15 @@ pub fn found_rects(
 /// others in the paler find-match overlay. Neither is a Highlight style.
 pub(crate) fn paint_find_match(painter: &egui::Painter, r: Rect, current: bool, palette: &Palette) {
     if current {
-        painter.rect_filled(r, 2.0, palette.search_hit);
+        painter.rect_filled(r, radius::XS, palette.search_hit);
         painter.rect_stroke(
             r,
-            2.0,
-            egui::Stroke::new(1.5, palette.find_current),
+            radius::XS,
+            egui::Stroke::new(stroke::MEDIUM, palette.find_current),
             egui::StrokeKind::Outside,
         );
     } else {
-        painter.rect_filled(r, 2.0, palette.find_match);
+        painter.rect_filled(r, radius::XS, palette.find_match);
     }
 }
 
@@ -801,19 +807,19 @@ fn draw_line_or_box(
     if !matches!(p.look, HighlightLook::Underline | HighlightLook::Box) {
         return;
     }
-    for r in line_runs(rects, size * 0.6) {
+    for r in line_runs(rects, size * mark::JOIN_EMS) {
         let r = to_screen(text_band(r, size));
         if p.look == HighlightLook::Underline {
-            let y = r.bottom() - (size * 0.1).max(1.5);
+            let y = r.bottom() - (size * mark::UNDERLINE_DROP_EMS).max(mark::LINE_MIN);
             painter.line_segment(
                 [pos2(r.left(), y), pos2(r.right(), y)],
-                egui::Stroke::new((size * 0.09).max(1.5), p.color),
+                egui::Stroke::new((size * mark::UNDERLINE_EMS).max(mark::LINE_MIN), p.color),
             );
         } else {
             painter.rect_stroke(
                 r,
-                2.0,
-                egui::Stroke::new((size * 0.08).max(1.5), p.color),
+                radius::XS,
+                egui::Stroke::new((size * mark::BOX_EMS).max(mark::LINE_MIN), p.color),
                 egui::StrokeKind::Outside,
             );
         }
@@ -843,7 +849,7 @@ fn line_runs(rects: &[[f32; 4]], gap: f32) -> Vec<[f32; 4]> {
 }
 
 fn text_band([x0, y0, x1, y1]: [f32; 4], size: f32) -> [f32; 4] {
-    let inset = ((y1 - y0 - size * 1.4) / 2.0).max(0.0);
+    let inset = ((y1 - y0 - size * mark::BAND_EMS) / 2.0).max(0.0);
     [x0, y0 + inset, x1, y1 - inset]
 }
 
@@ -866,11 +872,11 @@ fn note_marker(
     if !in_view.contains(&end_block) {
         return None;
     }
-    let (w, h) = (size * 0.42, size * 0.48);
+    let (w, h) = (size * mark::NOTE_WIDTH_EMS, size * mark::NOTE_HEIGHT_EMS);
     let x = if rtl {
-        last[0] - w - 1.0
+        last[0] - w - space::PX
     } else {
-        last[2] + 1.0
+        last[2] + space::PX
     };
     // Raised like a superscript: its top at the text band's top, so it sits over the cap
     // height rather than over the next word's lowercase letters.
@@ -900,11 +906,17 @@ fn verse_number_line(
 
 /// A small note: a filled card with two ruled lines in the page colour.
 fn paint_note_marker(painter: &egui::Painter, r: Rect, palette: &Palette) {
-    painter.rect_filled(r, 1.5, palette.note_marker);
-    let stroke = egui::Stroke::new(1.0, palette.page);
-    for f in [0.38, 0.66] {
+    painter.rect_filled(r, mark::RADIUS, palette.note_marker);
+    let stroke = egui::Stroke::new(stroke::HAIR, palette.page);
+    for f in mark::NOTE_RULES {
         let y = r.top() + r.height() * f;
-        painter.line_segment([pos2(r.left() + 2.0, y), pos2(r.right() - 2.0, y)], stroke);
+        painter.line_segment(
+            [
+                pos2(r.left() + space::XXS, y),
+                pos2(r.right() - space::XXS, y),
+            ],
+            stroke,
+        );
     }
 }
 

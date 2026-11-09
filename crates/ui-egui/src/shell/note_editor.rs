@@ -45,6 +45,7 @@ use obs_model::{NoteLineKind, NoteMarkKind};
 
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{scale, size, space, stroke};
 
 /// A change the toolbar or a shortcut makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,16 +128,18 @@ pub(super) fn note_editor(
     let off = |f: Format| format_blocked(text, sel.clone(), f);
     let toolbar = ui
         .horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.spacing_mut().item_spacing.x = space::XXS;
             for f in Format::TOOLBAR {
                 let (b, name) = match f.label() {
-                    Ok(text) => (egui::Button::new(text), None),
+                    Ok(text) => (crate::components::button(text), None),
                     Err((icon, name)) => {
                         let img = icons::image(ui.ctx(), icon, icons::BODY, theme::c().ink);
-                        (egui::Button::new(img), Some(name))
+                        (crate::components::button(img), Some(name))
                     }
                 };
-                let b = b.frame(false).min_size(egui::vec2(24.0, 20.0));
+                let b = b
+                    .frame(false)
+                    .min_size(egui::vec2(size::ROW_COMPACT, size::CONTROL_COMPACT));
                 let why = off(f);
                 let mut response = ui.add_enabled(why.is_none(), b);
                 if let Some(name) = name {
@@ -1219,7 +1222,7 @@ fn layout_job(ui: &Ui, text: &str) -> LayoutJob {
         let line = &bl.line;
         let src = line.source.clone();
         if let NoteLineKind::Heading(n) = line.kind {
-            let size = body.size * [1.4, 1.25, 1.12].get(usize::from(n) - 1).unwrap_or(&1.05);
+            let size = body.size * scale::HEADINGS.get(usize::from(n) - 1).unwrap_or(&1.0);
             for l in &mut looks[src.clone()] {
                 l.font = theme::display(size);
                 l.color = ui.visuals().strong_text_color();
@@ -1267,7 +1270,7 @@ fn layout_job(ui: &Ui, text: &str) -> LayoutJob {
                     color: look.color,
                     italics: look.italics,
                     underline: if look.underline {
-                        Stroke::new(1.0, look.color)
+                        Stroke::new(stroke::HAIR, look.color)
                     } else {
                         Stroke::NONE
                     },

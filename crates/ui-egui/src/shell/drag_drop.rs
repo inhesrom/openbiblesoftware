@@ -33,9 +33,7 @@ use super::{PanelTiles, State};
 use crate::pane::{DragOut, has_text};
 use crate::selection::{Granularity, Selection};
 use crate::theme;
-
-/// A Panel's tab bar (`Behavior::tab_bar_height`).
-const TAB_BAR: f32 = 31.0;
+use crate::tokens::{size, space};
 
 /// What is being carried across the Workspace.
 #[derive(Debug, Clone)]
@@ -165,7 +163,7 @@ fn target_at(panels: &[DropPanel], p: Pos2) -> Option<(DropTarget, Rect)> {
     let d = panels.iter().find(|d| d.rect.contains(p))?;
     let r = d.rect;
     let edge = r.right() - r.width() * super::toolbar::DROP_EDGE;
-    let bar = r.top() + TAB_BAR;
+    let bar = r.top() + size::TAB_BAR;
     Some(match d.tab {
         _ if p.x >= edge => (
             DropTarget::Beside(d.panel),
@@ -346,7 +344,10 @@ impl State {
             .tab(tab)
             .is_some_and(|t| matches!(t.kind, TabKind::Resource(_)));
         (resource && self.text_under(tab, p).is_some()).then(|| {
-            let body = Rect::from_min_max(pos2(d.rect.left(), d.rect.top() + TAB_BAR), d.rect.max);
+            let body = Rect::from_min_max(
+                pos2(d.rect.left(), d.rect.top() + size::TAB_BAR),
+                d.rect.max,
+            );
             (DropTarget::Tab(tab), body)
         })
     }
@@ -508,14 +509,14 @@ impl State {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                ui.set_max_width(420.0);
+                ui.set_max_width(size::PROSE);
                 ui.label(format!("Move this Note from {} to {}?", r.from, r.to));
                 ui.label(
                     RichText::new("It keeps its text and Notebook.")
                         .small()
                         .color(theme::c().muted),
                 );
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 ui.horizontal(|ui| {
                     if ui.button("Move").clicked() {
                         done = Some(true);

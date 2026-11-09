@@ -16,17 +16,18 @@ use crate::find::Found;
 use crate::heights::HeightIndex;
 use crate::palette::Palette;
 use crate::pane::AtlasTexture;
+use crate::tokens::{alpha, mark, radius, scale, size, space, stroke, text};
 use crate::workers::SnippetCache;
 
 /// The abbreviation column's width.
-pub const LABEL_WIDTH: f32 = 86.0;
+pub const LABEL_WIDTH: f32 = size::LABEL_COLUMN + space::XL;
 /// A Verse block's reference line.
-const BLOCK_HEAD: f32 = 24.0;
+const BLOCK_HEAD: f32 = size::ROW_COMPACT;
 /// Space below each row and below each block.
-const ROW_GAP: f32 = 6.0;
-const BLOCK_GAP: f32 = 10.0;
-const MARGIN: f32 = 14.0;
-const SCROLLBAR: f32 = 10.0;
+const ROW_GAP: f32 = space::S;
+const BLOCK_GAP: f32 = space::L;
+const MARGIN: f32 = space::L;
+const SCROLLBAR: f32 = size::SCROLLBAR;
 /// What an Absent verse's row says (#10 rule 8).
 pub const ABSENT: &str = "— not in this Bible —";
 /// What a row in another language than the base says (#18 rule 14).
@@ -212,11 +213,11 @@ impl ComparisonView {
     }
 
     fn line_height(&self) -> f32 {
-        self.settings.size * self.settings.line_spacing * 1.2
+        self.settings.size * self.settings.line_spacing * scale::ROW_LINE
     }
 
     fn text_width(&self) -> f32 {
-        (self.width - LABEL_WIDTH).max(60.0)
+        (self.width - LABEL_WIDTH).max(size::TEXT_MIN)
     }
 
     fn estimate(&self, i: usize) -> f32 {
@@ -510,7 +511,7 @@ pub fn comparison_pane(
     let track = Rect::from_min_max(pos2(rect.right() - SCROLLBAR, rect.top()), rect.max);
     if response.dragged()
         && let Some(p) = response.interact_pointer_pos()
-        && track.expand(4.0).contains(p)
+        && track.expand(space::XS).contains(p)
     {
         let (y, _) = view.position();
         let max = view.max_scroll();
@@ -537,7 +538,7 @@ pub fn comparison_pane(
             rect.center(),
             Align2::CENTER_CENTER,
             "Go to a passage, or link this Tab to a Bible",
-            FontId::proportional(14.0),
+            FontId::proportional(text::BODY),
             palette.verse_number,
         );
         return out;
@@ -547,9 +548,9 @@ pub fn comparison_pane(
     let settings = view.settings;
     let text_left = left + LABEL_WIDTH;
     let text_width = view.text_width();
-    let label_font = FontId::proportional(13.0);
-    let small = FontId::proportional(11.5);
-    let tint = palette.search_hit.gamma_multiply(0.75);
+    let label_font = FontId::proportional(text::LABEL);
+    let small = FontId::proportional(text::SMALL);
+    let tint = palette.search_hit.gamma_multiply(alpha::STRONG);
     let mut quads = Vec::new();
     let mut tints: Vec<Rect> = Vec::new();
     // Find matches (#175): their rectangles, and whether each is the current one.
@@ -567,10 +568,10 @@ pub fn comparison_pane(
             obs_scripture::RefStyle::Long,
         );
         painter.text(
-            pos2(left, y + 4.0),
+            pos2(left, y + space::XS),
             Align2::LEFT_TOP,
             &reference,
-            FontId::proportional(12.5),
+            FontId::proportional(text::LABEL),
             palette.verse_number,
         );
         let mut measured = true;
@@ -584,7 +585,7 @@ pub fn comparison_pane(
             // The label column: abbreviation (a star for the base), the Bible's own number where it
             // differs, and "not compared".
             let label = painter.text(
-                pos2(left, row_y + 2.0),
+                pos2(left, row_y + space::XXS),
                 Align2::LEFT_TOP,
                 view.abbreviation(row),
                 label_font.clone(),
@@ -594,8 +595,8 @@ pub fn comparison_pane(
             if is_base {
                 accessible_label.push_str(" — base Bible");
                 let at = Rect::from_center_size(
-                    pos2(label.right() + 10.0, label.center().y),
-                    vec2(12.0, 12.0),
+                    pos2(label.right() + space::L, label.center().y),
+                    egui::Vec2::splat(crate::icons::SMALL),
                 );
                 crate::icons::paint(
                     &painter,
@@ -605,7 +606,7 @@ pub fn comparison_pane(
                     crate::icons::page_muted(palette),
                 );
             }
-            let mut label_h = 18.0;
+            let mut label_h = text::LABEL_LINE;
             let notes = [
                 c.cell.native_label(block.verse),
                 (c.marks == Marks::NotCompared).then(|| NOT_COMPARED.to_string()),
@@ -613,13 +614,13 @@ pub fn comparison_pane(
             for note in notes.into_iter().flatten() {
                 accessible_label.push_str(&format!(" — {note}"));
                 painter.text(
-                    pos2(left, row_y + label_h + 1.0),
+                    pos2(left, row_y + label_h + space::PX),
                     Align2::LEFT_TOP,
                     note,
                     small.clone(),
                     palette.verse_number,
                 );
-                label_h += 15.0;
+                label_h += text::CAPTION_LINE;
             }
             if let Some(error) = view.docs[row].doc.as_ref().err() {
                 let message = if is_base {
@@ -630,7 +631,7 @@ pub fn comparison_pane(
                 let galley =
                     painter.layout(message.clone(), label_font.clone(), palette.ink, text_width);
                 height = galley.size().y;
-                painter.galley(pos2(text_left, row_y + 3.0), galley, palette.ink);
+                painter.galley(pos2(text_left, row_y + space::XS), galley, palette.ink);
                 accessible_text = message;
             } else {
                 match &c.cell {
@@ -683,13 +684,12 @@ pub fn comparison_pane(
                             None => {
                                 measured = false;
                                 reveal_pending |= reveal == Some((i, row));
-                                painter.rect_filled(
-                                    Rect::from_min_size(
-                                        pos2(text_left, row_y + height * 0.3),
-                                        vec2(text_width, height * 0.35),
-                                    ),
-                                    2.0,
-                                    palette.verse_number.gamma_multiply(0.12),
+                                crate::components::text_placeholder(
+                                    &painter,
+                                    pos2(text_left, row_y),
+                                    text_width,
+                                    height,
+                                    palette.verse_number.gamma_multiply(alpha::WASH),
                                 );
                             }
                         }
@@ -701,7 +701,7 @@ pub fn comparison_pane(
                             native.chapter, native.verse, into.chapter, into.verse
                         );
                         painter.text(
-                            pos2(text_left, row_y + 3.0),
+                            pos2(text_left, row_y + space::XS),
                             Align2::LEFT_TOP,
                             &label,
                             label_font.clone(),
@@ -711,7 +711,7 @@ pub fn comparison_pane(
                     }
                     Cell::Absent => {
                         painter.text(
-                            pos2(text_left, row_y + 3.0),
+                            pos2(text_left, row_y + space::XS),
                             Align2::LEFT_TOP,
                             ABSENT,
                             label_font.clone(),
@@ -763,7 +763,10 @@ pub fn comparison_pane(
         painter.hline(
             left..=rect.right() - MARGIN - SCROLLBAR,
             y + height - BLOCK_GAP / 2.0,
-            Stroke::new(1.0, palette.verse_number.gamma_multiply(0.2)),
+            Stroke::new(
+                stroke::HAIR,
+                palette.verse_number.gamma_multiply(alpha::TINT),
+            ),
         );
         y += height;
         i += 1;
@@ -778,7 +781,7 @@ pub fn comparison_pane(
         ui.ctx().request_repaint();
     }
     for r in tints {
-        painter.rect_filled(r, 2.0, tint);
+        painter.rect_filled(r, radius::XS, tint);
     }
     for (r, current) in matches {
         crate::pane::paint_find_match(&painter, r, current, palette);
@@ -794,26 +797,26 @@ pub fn comparison_pane(
     }
     painter.add(Shape::mesh(mesh));
     for [x, _, b] in carets {
-        let s = settings.size * 0.3;
+        let s = settings.size * mark::CARET_EMS;
         painter.line(
-            vec![pos2(x - s, b), pos2(x, b - s * 1.4), pos2(x + s, b)],
-            Stroke::new(1.6, palette.underline),
+            vec![
+                pos2(x - s, b),
+                pos2(x, b - s * mark::CARET_RISE),
+                pos2(x + s, b),
+            ],
+            Stroke::new(stroke::MEDIUM, palette.underline),
         );
     }
 
     let (pos, total) = view.position();
     if total > f64::from(rect.height()) {
         let frac = (pos / view.max_scroll()) as f32;
-        let thumb_h = (rect.height() * rect.height() / total as f32)
-            .clamp(24.0_f32.min(rect.height()), rect.height());
-        let thumb_top = track.top() + frac * (track.height() - thumb_h);
-        painter.rect_filled(
-            Rect::from_min_size(
-                pos2(track.left() + 2.0, thumb_top),
-                vec2(SCROLLBAR - 4.0, thumb_h),
-            ),
-            3.0,
-            palette.verse_number.gamma_multiply(0.5),
+        crate::components::scroll_thumb(
+            &painter,
+            track,
+            frac,
+            rect.height() / total as f32,
+            palette.verse_number.gamma_multiply(alpha::HALF),
         );
     }
     out.response = Some(response);

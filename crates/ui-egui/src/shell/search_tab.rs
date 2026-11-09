@@ -9,7 +9,7 @@
 //! kind of grammar (part of speech, tense, voice, mood …) that writes `@verb aorist
 //! imperative` into the query box.
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
 use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
 use obs_engine::{MorphCategory, MorphCriteria, ResultsView, SearchTab, TabId};
@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 use super::{State, search_sidebar};
 use crate::search_view::{SearchView, search_pane};
 use crate::theme;
+use crate::tokens::{alpha, inset, radius, scale, size, space, stroke, text};
 
 /// The query and Scope fields as typed, and what the engine last said they were (a search
 /// handed over by another Tool, or a Saved search, Search history entry, Favorite or Visit
@@ -58,33 +59,28 @@ fn morphology_chooser(ui: &mut Ui, tab: TabId, morph: &mut MorphCriteria) -> Opt
     let mut add = None;
     egui::Frame::new()
         .fill(theme::c().field)
-        .stroke(Stroke::new(1.0, theme::c().rule))
-        .corner_radius(6.0)
-        .inner_margin(egui::Margin::symmetric(8, 6))
+        .stroke(crate::components::rule_stroke())
+        .corner_radius(radius::M)
+        .inner_margin(inset::CARD)
         .show(ui, |ui| {
-            ui.label(
-                RichText::new("Morphology: one word with all of these")
-                    .small()
-                    .color(theme::c().muted),
-            );
+            ui.label(crate::components::hint_text(
+                "Morphology: one word with all of these",
+            ));
             // As many label and menu pairs to a row as fit.
-            let per_row =
-                ((ui.available_width() / 190.0) as usize).clamp(1, MorphCategory::ALL.len());
+            let per_row = ((ui.available_width() / (size::FIELD_NARROW + size::LABEL_COLUMN))
+                as usize)
+                .clamp(1, MorphCategory::ALL.len());
             egui::Grid::new(("search-morph-grid", tab))
                 .num_columns(per_row * 2)
-                .spacing(vec2(6.0, 4.0))
+                .spacing(vec2(space::S, space::XS))
                 .show(ui, |ui| {
                     for (i, &category) in MorphCategory::ALL.iter().enumerate() {
                         let current = morph.get(category);
-                        ui.label(
-                            RichText::new(category.label())
-                                .small()
-                                .color(theme::c().muted),
-                        );
+                        ui.label(crate::components::hint_text(category.label()));
                         egui::ComboBox::from_id_salt(("search-morph", tab, category))
                             .selected_text(current.unwrap_or("Any"))
-                            .width(110.0)
-                            .height(320.0)
+                            .width(size::FIELD_NARROW)
+                            .height(size::LIST_TALL)
                             .show_ui(ui, |ui| {
                                 if ui.selectable_label(current.is_none(), "Any").clicked() {
                                     morph.set(category, None);
@@ -112,19 +108,22 @@ fn morphology_chooser(ui: &mut Ui, tab: TabId, morph: &mut MorphCriteria) -> Opt
             }
             ui.horizontal_wrapped(|ui| {
                 if ui
-                    .add_enabled(chosen, egui::Button::new("Add to query"))
+                    .add_enabled(chosen, crate::components::button("Add to query"))
                     .on_hover_text("Describes the Strong's number or Lemma typed just before it")
                     .clicked()
                 {
                     add = Some(false);
                 }
                 if ui
-                    .add_enabled(chosen, egui::Button::new("Add and search"))
+                    .add_enabled(chosen, crate::components::button("Add and search"))
                     .clicked()
                 {
                     add = Some(true);
                 }
-                if ui.add_enabled(chosen, egui::Button::new("Clear")).clicked() {
+                if ui
+                    .add_enabled(chosen, crate::components::button("Clear"))
+                    .clicked()
+                {
                     *morph = MorphCriteria::default();
                 }
             });
@@ -182,12 +181,12 @@ impl State {
         if sidebar {
             egui::Panel::right(("search-sidebar", tab))
                 .resizable(true)
-                .default_size(230.0)
-                .size_range(160.0..=420.0)
+                .default_size(size::SIDE_LIST)
+                .size_range(size::FIELD..=size::PROSE)
                 .frame(
                     egui::Frame::new()
                         .fill(theme::c().field)
-                        .inner_margin(egui::Margin::symmetric(10, 8)),
+                        .inner_margin(inset::CARD),
                 )
                 .show(ui, |ui| self.search_sidebar(ui, tab, &mut run));
         }
@@ -245,7 +244,7 @@ impl State {
         };
         egui::Frame::new()
             .fill(theme::c().surface)
-            .inner_margin(egui::Margin::symmetric(10, 6))
+            .inner_margin(inset::CARD)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let bible_mode = st.mode == SearchMode::Bible;
@@ -256,7 +255,7 @@ impl State {
                         }
                     }
                     if bible_mode {
-                        ui.add_space(12.0);
+                        ui.add_space(space::L);
                         if ui
                             .selectable_label(morph_open, "Morphology…")
                             .on_hover_text("Choose grammar in plain English: @verb aorist")
@@ -277,7 +276,11 @@ impl State {
                 });
                 // Word forms is for English words of Bibles and Library Resources (#180).
                 let forms_toggle = st.mode != SearchMode::Notes;
-                let buttons = if forms_toggle { 320.0 } else { 210.0 };
+                let buttons = if forms_toggle {
+                    size::FIELD_WIDE + space::XXXL
+                } else {
+                    size::SIDE_LIST
+                };
                 // Wrapped, so a narrow Tab puts the toggle on a line of its own.
                 ui.horizontal_wrapped(|ui| {
                     let r = ui
@@ -285,8 +288,10 @@ impl State {
                             egui::TextEdit::singleline(&mut query)
                                 .id_salt(("search-query", tab))
                                 .hint_text(query_hint(st.mode))
-                                .desired_width((ui.available_width() - buttons).max(120.0))
-                                .margin(egui::Margin::symmetric(8, 4)),
+                                .desired_width(
+                                    (ui.available_width() - buttons).max(size::FIELD_NARROW),
+                                )
+                                .margin(inset::BAR),
                         )
                         .accessible_name("Search for");
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -300,7 +305,7 @@ impl State {
                             json!({ "tab": tab.0, "text": query.clone(), "scope": scope.clone() }),
                         ));
                     }
-                    ui.menu_button("Recent", |ui| {
+                    crate::components::menu(ui, "Recent", |ui| {
                         if recent.is_empty() {
                             ui.label(RichText::new("No recent searches").color(theme::c().muted));
                         }
@@ -346,14 +351,14 @@ impl State {
                     return;
                 }
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Scope").small().color(theme::c().muted));
+                    ui.label(crate::components::hint_text("Scope"));
                     let r = ui
                         .add(
                             egui::TextEdit::singleline(&mut scope)
                                 .id_salt(("search-scope", tab))
                                 .hint_text("Whole Bible, or a Passage list: Rom 1-8; Gal")
-                                .desired_width(220.0)
-                                .margin(egui::Margin::symmetric(8, 3)),
+                                .desired_width(size::SIDE_LIST)
+                                .margin(inset::BAR),
                         )
                         .accessible_name("Scope");
                     if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -369,7 +374,7 @@ impl State {
                         crate::icons::SMALL,
                         theme::c().muted,
                     );
-                    ui.menu_button(presets, |ui| {
+                    crate::components::menu(ui, presets, |ui| {
                         for p in scope_presets(context) {
                             if ui.button(&p.label).clicked() {
                                 run.push((
@@ -386,7 +391,7 @@ impl State {
                 error_line(ui, error.as_ref(), ErrorField::Scope, &scope);
                 if st.mode == SearchMode::Notes {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Notebook").small().color(theme::c().muted));
+                        ui.label(crate::components::hint_text("Notebook"));
                         let current = st
                             .notebook
                             .as_ref()
@@ -421,30 +426,18 @@ impl State {
                     return;
                 }
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    ui.label(RichText::new("Bibles").small().color(theme::c().muted));
+                    ui.spacing_mut().item_spacing.x = space::XS;
+                    ui.label(crate::components::hint_text("Bibles"));
                     for (id, abbreviation) in &chosen {
-                        egui::Frame::new()
-                            .fill(theme::c().field)
-                            .stroke(Stroke::new(1.0, theme::c().rule))
-                            .corner_radius(11.0)
-                            .inner_margin(egui::Margin::symmetric(6, 0))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 2.0;
-                                    ui.label(RichText::new(abbreviation).size(12.5));
-                                    if crate::icons::chip_close(ui, "Do not search this Bible")
-                                        .clicked()
-                                    {
-                                        run.push((
-                                            "search.bible",
-                                            json!({ "tab": tab.0, "id": id }),
-                                        ));
-                                    }
-                                });
-                            });
+                        if crate::components::removable_chip(
+                            ui,
+                            abbreviation,
+                            "Do not search this Bible",
+                        ) {
+                            run.push(("search.bible", json!({ "tab": tab.0, "id": id })));
+                        }
                     }
-                    ui.menu_button(RichText::new("+ Bible").size(12.5), |ui| {
+                    crate::components::menu(ui, crate::components::label_text("+ Bible"), |ui| {
                         if others.is_empty() {
                             ui.label(
                                 RichText::new("Every Bible is searched").color(theme::c().muted),
@@ -471,11 +464,9 @@ impl State {
             }
         }
         if let Some(notice) = &st.notice {
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(12, 4))
-                .show(ui, |ui| {
-                    ui.label(RichText::new(notice).small().color(theme::c().warn));
-                });
+            crate::components::band_frame().show(ui, |ui| {
+                ui.label(RichText::new(notice).small().color(theme::c().warn));
+            });
         }
         if st.mode == SearchMode::Notes {
             self.notes_results(ui, tab, &st);
@@ -498,25 +489,10 @@ impl State {
     ) {
         let library = &self.session.library;
         let scope = &st.library;
-        let chip = |ui: &mut Ui, label: &str, hover: &str| -> bool {
-            let mut clicked = false;
-            egui::Frame::new()
-                .fill(theme::c().field)
-                .stroke(Stroke::new(1.0, theme::c().rule))
-                .corner_radius(11.0)
-                .inner_margin(egui::Margin::symmetric(6, 0))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        ui.label(RichText::new(label).size(12.5));
-                        clicked = crate::icons::chip_close(ui, hover).clicked();
-                    });
-                });
-            clicked
-        };
+        let chip = crate::components::removable_chip;
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            ui.label(RichText::new("Resources").small().color(theme::c().muted));
+            ui.spacing_mut().item_spacing.x = space::XS;
+            ui.label(crate::components::hint_text("Resources"));
             for ty in &scope.types {
                 if library.of_type(*ty).next().is_none() {
                     continue;
@@ -545,12 +521,12 @@ impl State {
                     run.push(("search.resource", json!({ "tab": tab.0, "id": id })));
                 }
             }
-            ui.menu_button(RichText::new("Choose…").size(12.5), |ui| {
+            crate::components::menu(ui, crate::components::label_text("Choose…"), |ui| {
                 let mut any = false;
                 // Collections (#153): chosen while every type is searched, one narrows the
                 // search to just it.
                 if !library.collections().is_empty() {
-                    ui.label(RichText::new("Collections").small().color(theme::c().muted));
+                    ui.label(crate::components::hint_text("Collections"));
                     for c in library.collections() {
                         let mut on = scope.collections.contains(&c.name);
                         if ui
@@ -592,7 +568,7 @@ impl State {
                             let mut on = scope.includes(library, id);
                             let label =
                                 format!("{} — {}", e.manifest.abbreviation, e.manifest.title);
-                            if ui.checkbox(&mut on, label).clicked() {
+                            if crate::components::toggle(ui, &mut on, label).clicked() {
                                 run.push(("search.resource", json!({ "tab": tab.0, "id": id })));
                             }
                         }
@@ -634,38 +610,30 @@ impl State {
             (None, None) => None,
         };
         if let Some((summary, indexing, stale, failed)) = &summary {
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(12, 4))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(RichText::new(summary).strong().color(theme::c().ink));
-                    for name in indexing {
-                        ui.label(
-                            RichText::new(format!("Indexing {name}… searched when ready"))
-                                .small()
-                                .color(theme::c().muted),
-                        );
-                    }
-                    for name in stale {
-                        ui.label(
-                            RichText::new(format!(
-                                "{name}: searched through its older index while it is rebuilt"
-                            ))
+            crate::components::band_frame().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(summary).strong().color(theme::c().ink));
+                for name in indexing {
+                    ui.label(crate::components::hint_text(format!(
+                        "Indexing {name}… searched when ready"
+                    )));
+                }
+                for name in stale {
+                    ui.label(crate::components::hint_text(format!(
+                        "{name}: searched through its older index while it is rebuilt"
+                    )));
+                }
+                for (name, why) in failed {
+                    ui.label(
+                        RichText::new(format!("{name} could not be searched: {why}"))
                             .small()
-                            .color(theme::c().muted),
-                        );
-                    }
-                    for (name, why) in failed {
-                        ui.label(
-                            RichText::new(format!("{name} could not be searched: {why}"))
-                                .small()
-                                .color(theme::c().warn),
-                        );
-                    }
-                    if st.all_results().is_some() {
-                        self.results_view_switch(ui, tab, st);
-                    }
-                });
+                            .color(theme::c().warn),
+                    );
+                }
+                if st.all_results().is_some() {
+                    self.results_view_switch(ui, tab, st);
+                }
+            });
         }
         if st.all_results().is_some() {
             if st.view != ResultsView::Verses
@@ -747,33 +715,31 @@ impl State {
     fn notes_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
         let muted = theme::c().muted;
         let Some(results) = st.notes.clone() else {
-            ui.add_space(30.0);
+            ui.add_space(space::XXXL);
             ui.vertical_centered(|ui| {
                 ui.label(RichText::new("Type a search above and press Enter").color(muted));
             });
             return;
         };
-        egui::Frame::new()
-            .inner_margin(egui::Margin::symmetric(12, 4))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(results.summary())
-                            .strong()
-                            .color(theme::c().ink),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let any = !results.hits.is_empty();
-                        if let Some(format) = super::notes_tab::export_menu(ui, "Export…", any) {
-                            self.export_or_print(ui.ctx(), json!({ "tab": tab.0 }), format);
-                        }
-                    });
+        crate::components::band_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(results.summary())
+                        .strong()
+                        .color(theme::c().ink),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let any = !results.hits.is_empty();
+                    if let Some(format) = super::notes_tab::export_menu(ui, "Export…", any) {
+                        self.export_or_print(ui.ctx(), json!({ "tab": tab.0 }), format);
+                    }
                 });
             });
+        });
         let rows = results.hits.len();
         if rows == 0 {
-            ui.add_space(20.0);
+            ui.add_space(space::XXL);
             ui.vertical_centered(|ui| {
                 ui.label(RichText::new("No notes match").color(muted));
             });
@@ -801,8 +767,8 @@ impl State {
         }
         let settings = self.session.text;
         let palette = self.palette;
-        let line = settings.size * settings.line_spacing * 1.2;
-        let row_height = 26.0 + 2.0 * line;
+        let line = settings.size * settings.line_spacing * scale::ROW_LINE;
+        let row_height = size::ROW + 2.0 * line;
         egui::ScrollArea::vertical()
             .id_salt(("notes-hits", tab))
             .auto_shrink([false, false])
@@ -823,14 +789,14 @@ impl State {
                     };
                     painter.rect_filled(rect, 0.0, fill);
                     painter.text(
-                        rect.min + vec2(12.0, 4.0),
+                        rect.min + vec2(space::L, space::XS),
                         egui::Align2::LEFT_TOP,
                         format!("{} · {}", hit.reference, hit.notebook),
-                        egui::FontId::proportional(12.5),
+                        egui::FontId::proportional(text::LABEL),
                         palette.verse_number,
                     );
-                    let width = (rect.width() - 24.0).max(60.0);
-                    let origin = rect.min + vec2(12.0, 22.0);
+                    let width = (rect.width() - 2.0 * space::L).max(size::TEXT_MIN);
+                    let origin = rect.min + vec2(space::L, size::CONTROL_COMPACT);
                     if let Some(laid) = self.snippets.get(
                         &hit.snippet.text,
                         ColorRole::Ink,
@@ -845,7 +811,7 @@ impl State {
                                         origin + vec2(x0, y0),
                                         origin + vec2(x1, y1),
                                     ),
-                                    2.0,
+                                    radius::XS,
                                     palette.search_hit,
                                 );
                             }
@@ -865,20 +831,22 @@ impl State {
                         }
                         painter.add(Shape::mesh(mesh));
                     } else {
-                        painter.rect_filled(
-                            Rect::from_min_size(
-                                pos2(origin.x, origin.y + line * 0.3),
-                                vec2(width, line * 0.35),
-                            ),
-                            2.0,
-                            palette.verse_number.gamma_multiply(0.12),
+                        crate::components::text_placeholder(
+                            &painter,
+                            origin,
+                            width,
+                            line,
+                            palette.verse_number.gamma_multiply(alpha::WASH),
                         );
                         ui.ctx().request_repaint();
                     }
                     painter.hline(
                         rect.x_range(),
-                        rect.bottom() - 0.5,
-                        Stroke::new(1.0, palette.verse_number.gamma_multiply(0.2)),
+                        rect.bottom() - stroke::HAIR / 2.0,
+                        Stroke::new(
+                            stroke::HAIR,
+                            palette.verse_number.gamma_multiply(alpha::TINT),
+                        ),
                     );
                     r.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::Role::Button, true, &hit.snippet.text)

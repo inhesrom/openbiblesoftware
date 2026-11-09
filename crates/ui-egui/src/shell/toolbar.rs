@@ -33,6 +33,7 @@ use serde_json::{Value, json};
 use super::Shell;
 use super::toolbar_look as look;
 use crate::icons;
+use crate::tokens::{inset, size, space};
 
 /// The Library pane's search field.
 pub(crate) const SEARCH_HINT: &str = "Find a Resource: title, abbreviation, type, language";
@@ -378,7 +379,7 @@ impl Shell {
                     .id(field_id)
                     .hint_text(hint)
                     .desired_width(f32::INFINITY)
-                    .margin(egui::Margin::symmetric(8, 5)),
+                    .margin(inset::BAR),
             )
             .accessible_name(hint);
         if std::mem::take(&mut tb.focus) {
@@ -469,7 +470,7 @@ impl Shell {
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             if sections.is_empty() {
-                                ui.add_space(6.0);
+                                ui.add_space(space::S);
                                 ui.label(
                                     egui::RichText::new(format!(
                                         "No Resource matches “{}”",
@@ -519,10 +520,10 @@ impl Shell {
                                 }
                             }
                         });
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                     ui.separator();
                     ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
+                        ui.spacing_mut().item_spacing.x = space::XXS;
                         for (id, label, enabled) in &footer {
                             let r = ui.add_enabled_ui(*enabled, |ui| {
                                 look::footer_link(ui, label, index == selected)
@@ -603,7 +604,7 @@ impl Shell {
                     ui.set_max_width(look::TOOLS_WIDTH);
                     self.pane_field(ui, TOOLS_HINT, "launcher-filter");
                     let selected = self.st.toolbar.selected;
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                     if rows.is_empty() {
                         ui.label(egui::RichText::new("No tool matches").color(look::look().muted));
                     }
@@ -667,10 +668,11 @@ impl Shell {
                     for (i, (id, label)) in rows.iter().enumerate() {
                         let selected = i == tb.selected;
                         let (rect, _) = ui.allocate_exact_size(
-                            vec2(ui.available_width(), look::ROW + 8.0),
+                            vec2(ui.available_width(), look::ROW + space::M),
                             Sense::hover(),
                         );
-                        let label_rect = Rect::from_min_size(rect.min, vec2(176.0, rect.height()));
+                        let label_rect =
+                            Rect::from_min_size(rect.min, vec2(size::FIELD, rect.height()));
                         let resp = ui.interact(
                             label_rect,
                             ui.scope_id().with(("guide", *id)),
@@ -683,8 +685,8 @@ impl Shell {
                         look::plain_row(ui, label_rect, icons::for_command(id), label, "", true);
                         let input = tb.guide_inputs.entry(id).or_default();
                         let field = Rect::from_min_max(
-                            pos2(label_rect.right(), rect.top() + 5.0),
-                            pos2(rect.right() - 8.0, rect.bottom() - 5.0),
+                            pos2(label_rect.right(), rect.top() + space::XS),
+                            pos2(rect.right() - space::M, rect.bottom() - space::XS),
                         );
                         let edit = ui
                             .put(
@@ -692,7 +694,7 @@ impl Shell {
                                 egui::TextEdit::singleline(input)
                                     .id(egui::Id::unique(("guide-input", *id)))
                                     .hint_text(guide_hint(id))
-                                    .margin(egui::Margin::symmetric(8, 4)),
+                                    .margin(inset::BAR),
                             )
                             .accessible_name(format!("{label}: {}", guide_hint(id)));
                         if selected && focus {
@@ -705,7 +707,7 @@ impl Shell {
                             action = Some(Action::Run(Item::Command(id), false));
                         }
                     }
-                    ui.add_space(2.0);
+                    ui.add_space(space::XXS);
                     ui.label(
                         egui::RichText::new("Enter opens the Guide at what you typed")
                             .small()
@@ -782,7 +784,7 @@ impl Shell {
             .fade_in(false)
             .show(ui.ctx(), |ui| {
                 look::dropdown_frame(ui).show(ui, |ui| {
-                    let width = look::CARDS_ACROSS as f32 * (look::CARD.x + 8.0) - 8.0;
+                    let width = look::CARDS_ACROSS as f32 * (look::CARD.x + space::M) - space::M;
                     ui.set_min_width(width);
                     ui.set_max_width(width);
                     if !renaming {
@@ -821,10 +823,10 @@ impl Shell {
                                 action = Some(a);
                             }
                         });
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                     ui.separator();
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
+                        ui.spacing_mut().item_spacing.x = space::XXS;
                         for (n, (id, label, enabled)) in footer.iter().enumerate() {
                             let index = shown_cards.len() + n;
                             let r = ui.add_enabled_ui(*enabled, |ui| {
@@ -895,13 +897,16 @@ impl Shell {
                         .as_mut()
                         .filter(|(from, _)| *from == card.name && !card.builtin);
                     if let Some((_, text)) = editing {
-                        let field = Rect::from_min_size(slot.min, vec2(slot.width(), 22.0));
+                        let field = Rect::from_min_size(
+                            slot.min,
+                            vec2(slot.width(), size::CONTROL_COMPACT),
+                        );
                         let edit = ui
                             .put(
                                 field,
                                 egui::TextEdit::singleline(text)
                                     .id(egui::Id::unique("layout-rename"))
-                                    .margin(egui::Margin::symmetric(4, 2)),
+                                    .margin(inset::BAR),
                             )
                             .accessible_name("Layout name");
                         if !edit.has_focus() && !edit.lost_focus() {
@@ -922,11 +927,13 @@ impl Shell {
                     {
                         let mut x = slot.right();
                         for (text, what) in [("Delete", 1), ("Rename", 0)] {
-                            let w = look::small_width(ui, text) + 8.0;
+                            let w = look::small_width(ui, text) + space::M;
                             x -= w;
-                            let r =
-                                Rect::from_min_size(pos2(x, slot.bottom() - 16.0), vec2(w, 16.0));
-                            x -= 2.0;
+                            let r = Rect::from_min_size(
+                                pos2(x, slot.bottom() - size::BADGE),
+                                vec2(w, size::BADGE),
+                            );
+                            x -= space::XXS;
                             if look::card_action(ui, r, text).clicked() {
                                 if what == 0 {
                                     tb.renaming = Some((card.name.clone(), card.name.clone()));
@@ -938,7 +945,7 @@ impl Shell {
                     }
                 }
             });
-            ui.add_space(4.0);
+            ui.add_space(space::XS);
         }
         action
     }

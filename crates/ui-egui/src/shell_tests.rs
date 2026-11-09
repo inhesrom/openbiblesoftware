@@ -3480,6 +3480,8 @@ mod context_menu;
 #[path = "parallel_resources_tests.rs"]
 mod parallel_resources;
 
+#[path = "design_tokens_previews_tests.rs"]
+mod design_tokens_previews;
 #[path = "icon_previews_tests.rs"]
 mod icon_previews;
 

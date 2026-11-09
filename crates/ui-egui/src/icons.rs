@@ -10,14 +10,15 @@
 
 use std::collections::HashMap;
 
+use crate::tokens::{size, space};
 use egui::{Color32, ColorImage, Context, Image, Painter, Rect, TextureHandle, Vec2, vec2};
 
 /// Beside small text (the chrome's 11.5 to 12.5 point labels).
-pub const SMALL: f32 = 12.0;
+pub const SMALL: f32 = size::ICON_SMALL;
 /// Beside body text (14 points): menu items, buttons, Tab header controls.
-pub const BODY: f32 = 16.0;
+pub const BODY: f32 = size::ICON;
 /// Toolbar Launchers.
-pub const LARGE: f32 = 18.0;
+pub const LARGE: f32 = size::ICON_LARGE;
 
 macro_rules! icons {
     ($($variant:ident => $file:literal,)*) => {
@@ -307,7 +308,7 @@ pub fn label(
     text: impl Into<egui::WidgetText>,
 ) -> egui::Response {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = space::XS;
         ui.add(image(ui.ctx(), icon, BODY, color));
         ui.label(text)
     })
@@ -321,7 +322,7 @@ pub fn chip_close(ui: &mut egui::Ui, what: &str) -> egui::Response {
     ui.add(
         egui::Button::new(img)
             .frame(false)
-            .min_size(vec2(16.0, 20.0)),
+            .min_size(vec2(size::ICON, size::CONTROL_COMPACT)),
     )
     .accessible_name(what)
     .on_hover_text(what)

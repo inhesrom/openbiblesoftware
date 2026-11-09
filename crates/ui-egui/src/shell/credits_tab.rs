@@ -14,63 +14,55 @@ use obs_engine::{Library, TabId};
 use super::State;
 use super::library_tab::section;
 use crate::theme;
+use crate::tokens::{self, size, space, stroke, text};
 
 impl State {
     pub(super) fn credits_body(&mut self, ui: &mut Ui, tab: TabId) {
         let credits = credits();
         let downloaded = self.session.open_resource_credits();
         let library = &self.session.library;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .id_salt(("credits", tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new("Credits")
-                                .font(theme::display(20.0))
-                                .color(theme::c().ink),
-                        );
-                        ui.label(
-                            RichText::new(format!(
-                                "Open Bible Software {} is built on open texts, open data, open \
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .id_salt(("credits", tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(crate::components::title_text("Credits"));
+                    ui.label(
+                        RichText::new(format!(
+                            "Open Bible Software {} is built on open texts, open data, open \
                                  fonts and open-source software. Thank you to everyone credited \
                                  here.",
-                                env!("CARGO_PKG_VERSION")
-                            ))
-                            .color(theme::c().muted),
-                        );
-                        for p in &credits.problems {
-                            ui.colored_label(theme::c().warn, p);
+                            env!("CARGO_PKG_VERSION")
+                        ))
+                        .color(theme::c().muted),
+                    );
+                    for p in &credits.problems {
+                        ui.colored_label(theme::c().warn, p);
+                    }
+                    for (i, s) in credits.sections.iter().enumerate() {
+                        ui.add_space(space::XL);
+                        section(ui, s.title);
+                        ui.label(RichText::new(s.intro).color(theme::c().muted));
+                        for c in &s.credits {
+                            ui.add_space(space::L);
+                            credit_row(ui, c, library);
                         }
-                        for (i, s) in credits.sections.iter().enumerate() {
-                            ui.add_space(16.0);
-                            section(ui, s.title);
-                            ui.label(RichText::new(s.intro).color(theme::c().muted));
-                            for c in &s.credits {
-                                ui.add_space(10.0);
+                        // Downloaded open Resources (#134) follow the Starter library.
+                        if i == 0 && !downloaded.is_empty() {
+                            ui.add_space(space::XL);
+                            section(ui, OPEN_RESOURCES_TITLE);
+                            ui.label(RichText::new(OPEN_RESOURCES_INTRO).color(theme::c().muted));
+                            for c in &downloaded {
+                                ui.add_space(space::L);
                                 credit_row(ui, c, library);
                             }
-                            // Downloaded open Resources (#134) follow the Starter library.
-                            if i == 0 && !downloaded.is_empty() {
-                                ui.add_space(16.0);
-                                section(ui, OPEN_RESOURCES_TITLE);
-                                ui.label(
-                                    RichText::new(OPEN_RESOURCES_INTRO).color(theme::c().muted),
-                                );
-                                for c in &downloaded {
-                                    ui.add_space(10.0);
-                                    credit_row(ui, c, library);
-                                }
-                            }
                         }
-                        ui.add_space(16.0);
-                        third_party(ui, &credits.third_party);
-                    });
-            });
+                    }
+                    ui.add_space(space::XL);
+                    third_party(ui, &credits.third_party);
+                });
+        });
     }
 }
 
@@ -116,13 +108,13 @@ fn credit_row(ui: &mut Ui, c: &Credit, library: &Library) {
         CollapsingHeader::new(title.as_str())
             .id_salt(("credit-text", &c.name, title.as_str()))
             .show(ui, |ui| {
-                ui.label(RichText::new(*text).monospace().size(11.0));
+                ui.label(RichText::new(*text).monospace().size(text::CAPTION));
             });
     }
 }
 
 /// Width of the field-name column.
-const FIELD_WIDTH: f32 = 116.0;
+const FIELD_WIDTH: f32 = size::LABEL_COLUMN_WIDE;
 
 /// A muted field name, then its value wrapped in the rest of the width.
 fn field(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
@@ -131,7 +123,7 @@ fn field(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
             ui.set_width(FIELD_WIDTH);
             ui.label(RichText::new(label).color(theme::c().muted));
         });
-        let rest = ui.available_width().max(80.0);
+        let rest = ui.available_width().max(size::TEXT_MIN);
         ui.vertical(|ui| {
             ui.set_max_width(rest);
             value(ui);
@@ -160,7 +152,7 @@ fn linked_text(ui: &mut Ui, text: &str) {
             egui::TextFormat {
                 font_id: font.clone(),
                 color: link,
-                underline: egui::Stroke::new(1.0, link),
+                underline: egui::Stroke::new(stroke::HAIR, link),
                 ..Default::default()
             }
         } else {
@@ -245,7 +237,7 @@ fn third_party(ui: &mut Ui, t: &ThirdParty) {
             egui::Grid::new("credits-crate-grid")
                 .num_columns(3)
                 .striped(true)
-                .spacing(vec2(14.0, 2.0))
+                .spacing(tokens::TABLE_SPACING)
                 .show(ui, |ui| {
                     for c in &t.crates {
                         match &c.repository {
@@ -278,15 +270,14 @@ fn third_party(ui: &mut Ui, t: &ThirdParty) {
                             RichText::new(format!("Covers: {}", l.used_by.join(", ")))
                                 .color(theme::c().muted),
                         );
-                        ui.label(RichText::new(&l.text).monospace().size(11.0));
+                        ui.label(RichText::new(&l.text).monospace().size(text::CAPTION));
                     });
             }
         });
     if !t.generator.is_empty() {
-        ui.add_space(6.0);
+        ui.add_space(space::S);
         ui.label(
-            RichText::new(format!("Generated by {}.", t.generator))
-                .size(11.0)
+            crate::components::caption_text(format!("Generated by {}.", t.generator))
                 .color(theme::c().muted),
         );
     }

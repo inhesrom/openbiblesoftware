@@ -13,9 +13,10 @@ use serde_json::{Value, json};
 use super::State;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{size, space, text};
 
 /// Narrower than this, the cards stack in one column.
-const TWO_COLUMNS: f32 = 760.0;
+const TWO_COLUMNS: f32 = size::TWO_COLUMNS;
 
 /// A command a card asked for.
 type Run = Option<(&'static str, Value)>;
@@ -31,9 +32,9 @@ impl State {
             .is_some_and(|t| t.kind == obs_engine::TabKind::Home);
         let r = ui
             .add(
-                egui::Button::new((
+                crate::components::button((
                     icons::image(ui.ctx(), Icon::Home, icons::BODY, theme::c().muted),
-                    RichText::new("Home").size(12.5),
+                    crate::components::label_text("Home"),
                 ))
                 .selected(open),
             )
@@ -55,43 +56,40 @@ impl State {
         let hidden: Vec<HomeCard> = settings.hidden().collect();
         let today = self.session.plan_today();
         let mut run: Run = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 14))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .id_salt(("home", tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new("Home")
-                                .font(theme::display(24.0))
-                                .color(theme::c().ink),
-                        );
-                        ui.horizontal_wrapped(|ui| {
-                            muted(ui, &today.long_label());
-                            ui.add_space(12.0);
-                            home_settings_row(ui, settings.open_at_launch, &mut run);
-                        });
-                        hidden_row(ui, &hidden, &mut run);
-                        ui.add_space(10.0);
-                        if visible.is_empty() {
-                            muted(ui, "Every card is hidden.");
-                        }
-                        if ui.available_width() >= TWO_COLUMNS {
-                            ui.columns(2, |cols| {
-                                for (i, card) in visible.iter().enumerate() {
-                                    self.home_card(&mut cols[i % 2], *card, &visible, &mut run);
-                                }
-                            });
-                        } else {
-                            for card in &visible {
-                                self.home_card(ui, *card, &visible, &mut run);
-                            }
-                        }
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .id_salt(("home", tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("Home")
+                            .font(theme::display(text::DISPLAY))
+                            .color(theme::c().ink),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        muted(ui, &today.long_label());
+                        ui.add_space(space::L);
+                        home_settings_row(ui, settings.open_at_launch, &mut run);
                     });
-            });
+                    hidden_row(ui, &hidden, &mut run);
+                    ui.add_space(space::L);
+                    if visible.is_empty() {
+                        muted(ui, "Every card is hidden.");
+                    }
+                    if ui.available_width() >= TWO_COLUMNS {
+                        ui.columns(2, |cols| {
+                            for (i, card) in visible.iter().enumerate() {
+                                self.home_card(&mut cols[i % 2], *card, &visible, &mut run);
+                            }
+                        });
+                    } else {
+                        for card in &visible {
+                            self.home_card(ui, *card, &visible, &mut run);
+                        }
+                    }
+                });
+        });
         if let Some((id, params)) = run {
             self.session.workspace.user_focused(tab);
             self.run(id, &params);
@@ -102,65 +100,55 @@ impl State {
     fn home_card(&mut self, ui: &mut Ui, card: HomeCard, visible: &[HomeCard], run: &mut Run) {
         let place = visible.iter().position(|c| *c == card).unwrap_or(0);
         let all = self.session.home_settings().clone();
-        egui::Frame::new()
-            .fill(theme::c().surface)
-            .stroke(egui::Stroke::new(1.0, theme::c().rule))
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::same(12))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(card.title())
-                            .strong()
-                            .size(15.0)
-                            .color(theme::c().ink),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let title = card.title();
-                        if card_button(ui, Icon::Close, &format!("Hide {title}")).clicked() {
-                            *run = Some(("home.hide_card", json!({ "card": card.id() })));
-                        }
-                        // Moves are within the whole order, hidden cards included: past the
-                        // next shown card down, to the previous shown card's place up.
-                        let next = visible.get(place + 1).and_then(|c| all.position(*c));
-                        let prev = place
-                            .checked_sub(1)
-                            .and_then(|i| visible.get(i))
-                            .and_then(|c| all.position(*c));
-                        if ui
-                            .add_enabled_ui(next.is_some(), |ui| {
-                                card_button(ui, Icon::MoveDown, &format!("Move {title} down"))
-                            })
-                            .inner
-                            .clicked()
-                            && let Some(to) = next
-                        {
-                            *run = Some(("home.move_card", json!({ "card": card.id(), "to": to })));
-                        }
-                        if ui
-                            .add_enabled_ui(prev.is_some(), |ui| {
-                                card_button(ui, Icon::MoveUp, &format!("Move {title} up"))
-                            })
-                            .inner
-                            .clicked()
-                            && let Some(to) = prev
-                        {
-                            *run = Some(("home.move_card", json!({ "card": card.id(), "to": to })));
-                        }
-                    });
+        crate::components::card_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(crate::components::subtitle_text(card.title()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let title = card.title();
+                    if card_button(ui, Icon::Close, &format!("Hide {title}")).clicked() {
+                        *run = Some(("home.hide_card", json!({ "card": card.id() })));
+                    }
+                    // Moves are within the whole order, hidden cards included: past the
+                    // next shown card down, to the previous shown card's place up.
+                    let next = visible.get(place + 1).and_then(|c| all.position(*c));
+                    let prev = place
+                        .checked_sub(1)
+                        .and_then(|i| visible.get(i))
+                        .and_then(|c| all.position(*c));
+                    if ui
+                        .add_enabled_ui(next.is_some(), |ui| {
+                            card_button(ui, Icon::MoveDown, &format!("Move {title} down"))
+                        })
+                        .inner
+                        .clicked()
+                        && let Some(to) = next
+                    {
+                        *run = Some(("home.move_card", json!({ "card": card.id(), "to": to })));
+                    }
+                    if ui
+                        .add_enabled_ui(prev.is_some(), |ui| {
+                            card_button(ui, Icon::MoveUp, &format!("Move {title} up"))
+                        })
+                        .inner
+                        .clicked()
+                        && let Some(to) = prev
+                    {
+                        *run = Some(("home.move_card", json!({ "card": card.id(), "to": to })));
+                    }
                 });
-                ui.add_space(4.0);
-                match card {
-                    HomeCard::TodaysReading => self.todays_reading_card(ui, run),
-                    HomeCard::ContinueReading => self.continue_card(ui, run),
-                    HomeCard::HistoryAndFavorites => self.history_favorites_card(ui, run),
-                    HomeCard::VerseOfTheDay => self.verse_of_the_day_card(ui, run),
-                    HomeCard::QuickStart => self.quick_start_card(ui, run),
-                    HomeCard::LibrarySummary => self.library_summary_card(ui, run),
-                }
             });
-        ui.add_space(10.0);
+            ui.add_space(space::XS);
+            match card {
+                HomeCard::TodaysReading => self.todays_reading_card(ui, run),
+                HomeCard::ContinueReading => self.continue_card(ui, run),
+                HomeCard::HistoryAndFavorites => self.history_favorites_card(ui, run),
+                HomeCard::VerseOfTheDay => self.verse_of_the_day_card(ui, run),
+                HomeCard::QuickStart => self.quick_start_card(ui, run),
+                HomeCard::LibrarySummary => self.library_summary_card(ui, run),
+            }
+        });
+        ui.add_space(space::L);
     }
 
     fn todays_reading_card(&mut self, ui: &mut Ui, run: &mut Run) {
@@ -191,7 +179,7 @@ impl State {
                     };
                     if ui
                         .add(
-                            egui::Button::new(RichText::new(behind).color(theme::c().warn))
+                            crate::components::button(RichText::new(behind).color(theme::c().warn))
                                 .frame(false),
                         )
                         .on_hover_text("Catch up or Reschedule in Reading plans")
@@ -209,7 +197,7 @@ impl State {
                         r.label.clone()
                     };
                     if ui
-                        .button(RichText::new(text).size(14.0))
+                        .button(RichText::new(text).size(text::BODY))
                         .on_hover_text("Open in the plan's Bible (Ctrl/Cmd-click: in a new split)")
                         .clicked()
                     {
@@ -224,7 +212,7 @@ impl State {
                     muted(ui, &format!("Next reading: {next}"));
                 }
             });
-            ui.add_space(4.0);
+            ui.add_space(space::XS);
         }
     }
 
@@ -238,8 +226,12 @@ impl State {
         };
         if ui
             .add(
-                egui::Button::new(RichText::new(&v.label).size(16.0).color(theme::c().lapis))
-                    .frame(false),
+                crate::components::button(
+                    RichText::new(&v.label)
+                        .size(text::SUBTITLE)
+                        .color(theme::c().lapis),
+                )
+                .frame(false),
             )
             .on_hover_text("Open it again (Ctrl/Cmd-click: in a new split)")
             .clicked()
@@ -283,7 +275,7 @@ impl State {
         if ui.link("All History…").clicked() {
             *run = Some(("tool.history", json!({})));
         }
-        ui.add_space(6.0);
+        ui.add_space(space::S);
         heading(ui, "Favorites");
         let favorites: Vec<(i64, String)> = self
             .session
@@ -313,10 +305,8 @@ impl State {
         let votd = self.session.verse_of_the_day();
         if ui
             .add(
-                egui::Button::new(
-                    RichText::new(&votd.label)
-                        .strong()
-                        .size(15.0)
+                crate::components::button(
+                    crate::components::subtitle_text(&votd.label)
                         .color(theme::c().lapis),
                 )
                 .frame(false),
@@ -346,8 +336,8 @@ impl State {
             ui.horizontal(|ui| {
                 if ui
                     .add(
-                        egui::Button::new(RichText::new(q.label).size(14.0))
-                            .min_size(vec2(130.0, 26.0)),
+                        crate::components::button(RichText::new(q.label).size(text::BODY))
+                            .min_size(vec2(size::FIELD_NARROW, size::CONTROL)),
                     )
                     .on_hover_text(q.help)
                     .clicked()
@@ -362,7 +352,7 @@ impl State {
     fn library_summary_card(&mut self, ui: &mut Ui, run: &mut Run) {
         egui::Grid::new("home-library")
             .num_columns(2)
-            .spacing(vec2(12.0, 4.0))
+            .spacing(vec2(space::L, space::XS))
             .show(ui, |ui| {
                 for c in self.session.library_summary() {
                     ui.label(
@@ -374,7 +364,7 @@ impl State {
                         if c.count > 0 {
                             return;
                         }
-                        ui.add_space(12.0);
+                        ui.add_space(space::L);
                         match c.get {
                             Some(f) => {
                                 if ui.link(format!("Get {}…", f.label())).clicked() {
@@ -398,7 +388,7 @@ impl State {
                     ui.end_row();
                 }
             });
-        ui.add_space(6.0);
+        ui.add_space(space::S);
         let starter = self.session.starter_summary();
         // Each link on a line of its own: a link wrapped over two lines leaves an unnamed
         // AccessKit node for its second line.
@@ -469,23 +459,23 @@ fn hidden_row(ui: &mut Ui, hidden: &[HomeCard], run: &mut Run) {
 
 /// A small header button with an accessible name.
 fn card_button(ui: &mut Ui, icon: Icon, name: &str) -> egui::Response {
-    icons::button(ui, icon, icons::BODY, theme::c().muted, name).on_hover_text(name)
+    crate::components::icon_button(ui, icon, name)
 }
 
 /// One place to open: returns whether it was clicked.
 fn place_row(ui: &mut Ui, icon: Option<Icon>, label: &str) -> bool {
-    let text = RichText::new(label).size(14.0).color(theme::c().ink);
+    let text = RichText::new(label).size(text::BODY).color(theme::c().ink);
     let button = match icon {
-        Some(icon) => egui::Button::new((
+        Some(icon) => crate::components::button((
             icons::image(ui.ctx(), icon, icons::BODY, theme::c().gilt),
             text,
         )),
-        None => egui::Button::new(text),
+        None => crate::components::button(text),
     };
     ui.add(
         button
             .frame(false)
-            .min_size(vec2(ui.available_width(), 22.0)),
+            .min_size(vec2(ui.available_width(), size::CONTROL_COMPACT)),
     )
     .on_hover_text("Open (Ctrl/Cmd-click: in a new split)")
     .clicked()
@@ -496,10 +486,5 @@ fn muted(ui: &mut Ui, text: &str) {
 }
 
 fn heading(ui: &mut Ui, text: &str) {
-    ui.label(
-        RichText::new(text.to_uppercase())
-            .size(10.5)
-            .strong()
-            .color(theme::c().muted),
-    );
+    crate::components::section_header(ui, text);
 }

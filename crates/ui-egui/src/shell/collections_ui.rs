@@ -8,6 +8,7 @@ use serde_json::json;
 
 use super::{RESOURCE_TYPES, State, type_name};
 use crate::theme;
+use crate::tokens::{self, radius, size, space};
 
 /// The New Collection… / Edit… window's fields.
 #[derive(Debug, Clone, Default)]
@@ -48,9 +49,9 @@ pub(super) fn collections_bar(
 ) -> Option<BarAction> {
     let mut action = None;
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Collections").small().color(theme::c().muted));
+        ui.label(crate::components::hint_text("Collections"));
         if !library.collections().is_empty() {
-            let all = egui::Button::selectable(chosen.is_none(), "All").corner_radius(11.0);
+            let all = egui::Button::selectable(chosen.is_none(), "All").corner_radius(radius::PILL);
             if ui.add(all).on_hover_text("Show every Resource").clicked() {
                 action = Some(BarAction::Filter(None));
             }
@@ -58,7 +59,7 @@ pub(super) fn collections_bar(
         for c in library.collections() {
             let name = c.name.as_str();
             let on = chosen == Some(name);
-            let chip = egui::Button::selectable(on, name).corner_radius(11.0);
+            let chip = egui::Button::selectable(on, name).corner_radius(radius::PILL);
             if ui
                 .add(chip)
                 .on_hover_text(format!("Show only the Resources in {name}"))
@@ -154,27 +155,27 @@ impl State {
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(480.0)
+            .default_width(size::DIALOG_WIDTH)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 egui::Grid::new("collection-fields")
                     .num_columns(2)
-                    .spacing([12.0, 8.0])
+                    .spacing(tokens::GRID_SPACING)
                     .show(ui, |ui| {
                         ui.label("Name");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut ed.name)
-                                .hint_text("Older commentaries")
-                                .desired_width(320.0),
-                        )
+                        ui.add(crate::components::search_field(
+                            &mut ed.name,
+                            "Older commentaries",
+                            size::FIELD_WIDE,
+                        ))
                         .accessible_name("Name");
                         ui.end_row();
                         ui.label("Rules");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut ed.rules)
-                                .hint_text("type:commentary language:en")
-                                .desired_width(320.0),
-                        )
+                        ui.add(crate::components::search_field(
+                            &mut ed.rules,
+                            "type:commentary language:en",
+                            size::FIELD_WIDE,
+                        ))
                         .accessible_name("Rules")
                         .on_hover_text(
                             "type: (bible, commentary, lexicon, dictionary), language:, tag:, \
@@ -188,25 +189,17 @@ impl State {
                         ui.label(RichText::new(e).small().color(theme::c().warn));
                     }
                     (Ok(_), Some(n)) => {
-                        ui.label(
-                            RichText::new(format!(
-                                "{n} Resource{} in the Library now",
-                                if n == 1 { "" } else { "s" }
-                            ))
-                            .small()
-                            .color(theme::c().muted),
-                        );
+                        ui.label(crate::components::hint_text(format!(
+                            "{n} Resource{} in the Library now",
+                            if n == 1 { "" } else { "s" }
+                        )));
                     }
                     (Ok(_), None) => {}
                 }
-                ui.add_space(6.0);
-                ui.label(
-                    RichText::new("Chosen by hand")
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.add_space(space::S);
+                ui.label(crate::components::hint_text("Chosen by hand"));
                 egui::ScrollArea::vertical()
-                    .max_height(260.0)
+                    .max_height(size::LIST_MAX)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         // Chosen by hand before they left the library: kept unless unticked.
@@ -220,7 +213,9 @@ impl State {
                             ui.label(RichText::new("Not in the Library now").strong());
                             for id in absent {
                                 let mut on = true;
-                                if ui.checkbox(&mut on, id.as_str()).changed() && !on {
+                                if crate::components::toggle(ui, &mut on, id.as_str()).changed()
+                                    && !on
+                                {
                                     ed.resources.retain(|r| *r != id);
                                 }
                             }
@@ -236,7 +231,7 @@ impl State {
                                 let mut on = ed.resources.iter().any(|r| r == id);
                                 let label =
                                     format!("{} — {}", e.manifest.abbreviation, e.manifest.title);
-                                if ui.checkbox(&mut on, label).changed() {
+                                if crate::components::toggle(ui, &mut on, label).changed() {
                                     if on {
                                         ed.resources.push(id.clone());
                                     } else {
@@ -246,10 +241,13 @@ impl State {
                             }
                         }
                     });
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 ui.horizontal(|ui| {
                     let ready = parsed.is_ok() && !ed.name.trim().is_empty();
-                    if ui.add_enabled(ready, egui::Button::new("Save")).clicked() {
+                    if ui
+                        .add_enabled(ready, crate::components::button("Save"))
+                        .clicked()
+                    {
                         save = true;
                     }
                     if ui.button("Cancel").clicked()
@@ -285,7 +283,7 @@ pub(super) fn collections_menu(
     id: &str,
 ) -> Option<String> {
     let mut toggled = None;
-    ui.menu_button("Collections", |ui| {
+    crate::components::menu(ui, "Collections", |ui| {
         for c in library.collections() {
             let by_hand = c.resources.iter().any(|r| r == id);
             let mut on = library.in_collection(&c.name, id);

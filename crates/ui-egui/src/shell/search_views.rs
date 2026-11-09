@@ -16,17 +16,20 @@ use serde_json::{Value, json};
 
 use super::State;
 use crate::theme;
+use crate::tokens::{alpha, chart, radius, scale, size, space, stroke, text};
 
 /// A Grid cell.
-const CELL: egui::Vec2 = vec2(64.0, 24.0);
+const CELL: egui::Vec2 = chart::CELL;
 /// The Chart's label column.
-const BAR_LABEL: f32 = 130.0;
-const BAR_HEIGHT: f32 = 20.0;
+const BAR_LABEL: f32 = chart::BAR_LABEL;
+const BAR_HEIGHT: f32 = chart::BAR;
 /// The longest bar.
-const BAR_MAX: f32 = 640.0;
+const BAR_MAX: f32 = chart::BAR_MAX;
 /// The Analysis table's fixed columns (Context takes the rest).
-const COLUMN_WIDTHS: [f32; 5] = [150.0, 64.0, 130.0, 120.0, 180.0];
-const CONTEXT_MIN: f32 = 260.0;
+const COLUMN_WIDTHS: [f32; 5] = chart::ANALYSIS_COLUMNS;
+const CONTEXT_MIN: f32 = chart::ANALYSIS_CONTEXT_MIN;
+/// A table cell's inset from its column's left.
+const CELL_PAD: f32 = space::L;
 
 /// A Grid cell's fill: none for no hit, then from a pale to a full lapis by heat.
 pub(super) fn heat_fill(heat: f32) -> Color32 {
@@ -34,7 +37,8 @@ pub(super) fn heat_fill(heat: f32) -> Color32 {
     if heat <= 0.0 {
         c.field
     } else {
-        c.field.lerp_to_gamma(c.lapis, 0.15 + 0.85 * heat)
+        c.field
+            .lerp_to_gamma(c.lapis, chart::HEAT_MIN + (1.0 - chart::HEAT_MIN) * heat)
     }
 }
 
@@ -49,7 +53,7 @@ impl State {
     pub(super) fn results_view_switch(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.spacing_mut().item_spacing.x = space::XXS;
             for v in ResultsView::ALL {
                 let r = ui.selectable_label(st.view == v, v.label());
                 if r.clicked() && st.view != v {
@@ -59,23 +63,11 @@ impl State {
             if st.view == ResultsView::Verses
                 && let (Some(filter), Some(all)) = (st.filter, st.all_results())
             {
-                ui.add_space(12.0);
-                egui::Frame::new()
-                    .fill(theme::c().field)
-                    .stroke(Stroke::new(1.0, theme::c().rule))
-                    .corner_radius(11.0)
-                    .inner_margin(egui::Margin::symmetric(6, 0))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 2.0;
-                            ui.label(
-                                RichText::new(format!("Only {}", filter.label(all))).size(12.5),
-                            );
-                            if crate::icons::chip_close(ui, "Show every result").clicked() {
-                                run.push(("search.filter", json!({ "tab": tab.0 })));
-                            }
-                        });
-                    });
+                ui.add_space(space::L);
+                let label = format!("Only {}", filter.label(all));
+                if crate::components::removable_chip(ui, &label, "Show every result") {
+                    run.push(("search.filter", json!({ "tab": tab.0 })));
+                }
             }
         });
         for (id, params) in run {
@@ -97,82 +89,76 @@ impl State {
             .id_salt(("search-grid", tab))
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(12, 6))
-                    .show(ui, |ui| {
-                        egui::Grid::new(("search-grid-cells", tab))
-                            .spacing(vec2(3.0, 3.0))
-                            .show(ui, |ui| {
-                                ui.label(RichText::new("Bible book").small().color(muted));
-                                for b in &grid.bibles {
-                                    ui.add_sized(CELL, egui::Label::new(RichText::new(b).strong()));
+                crate::components::band_frame().show(ui, |ui| {
+                    egui::Grid::new(("search-grid-cells", tab))
+                        .spacing(egui::Vec2::splat(space::XS))
+                        .show(ui, |ui| {
+                            ui.label(RichText::new("Bible book").small().color(muted));
+                            for b in &grid.bibles {
+                                ui.add_sized(CELL, egui::Label::new(RichText::new(b).strong()));
+                            }
+                            ui.end_row();
+                            for (i, book) in grid.books.iter().enumerate() {
+                                let name = crate::components::button(book.name()).frame(false);
+                                if ui
+                                    .add(name)
+                                    .on_hover_text(format!("Show the Verses in {}", book.name()))
+                                    .clicked()
+                                {
+                                    run.push(json!({ "tab": tab.0, "book": book.osis() }));
+                                }
+                                for (j, count) in grid.counts[i].iter().enumerate() {
+                                    let (rect, r) = ui.allocate_exact_size(CELL, Sense::click());
+                                    let heat = grid.heat(*count);
+                                    let painter = ui.painter();
+                                    painter.rect_filled(rect, radius::S, heat_fill(heat));
+                                    if r.hovered() && *count > 0 {
+                                        painter.rect_stroke(
+                                            rect,
+                                            radius::S,
+                                            Stroke::new(stroke::MEDIUM, theme::c().ink),
+                                            egui::StrokeKind::Inside,
+                                        );
+                                    }
+                                    let ink = if heat > 0.0 {
+                                        theme::text_on(heat_fill(heat))
+                                    } else {
+                                        theme::c().ink
+                                    };
+                                    painter.text(
+                                        rect.center(),
+                                        Align2::CENTER_CENTER,
+                                        count.to_string(),
+                                        FontId::proportional(text::LABEL),
+                                        if *count == 0 { muted } else { ink },
+                                    );
+                                    let bible = &grid.bibles[j];
+                                    let label = format!("{} in {bible}: {count}", book.name());
+                                    r.widget_info(|| {
+                                        egui::WidgetInfo::labeled(
+                                            egui::Role::Button,
+                                            *count > 0,
+                                            &label,
+                                        )
+                                    });
+                                    if *count > 0 {
+                                        let r = r.on_hover_text(format!(
+                                            "Show the {count} Verses of {} in {bible}",
+                                            book.name()
+                                        ));
+                                        if r.clicked() {
+                                            run.push(json!({
+                                                "tab": tab.0,
+                                                "book": book.osis(),
+                                                "bible": results.bibles[j].id,
+                                            }));
+                                        }
+                                    }
                                 }
                                 ui.end_row();
-                                for (i, book) in grid.books.iter().enumerate() {
-                                    let name = egui::Button::new(book.name()).frame(false);
-                                    if ui
-                                        .add(name)
-                                        .on_hover_text(format!(
-                                            "Show the Verses in {}",
-                                            book.name()
-                                        ))
-                                        .clicked()
-                                    {
-                                        run.push(json!({ "tab": tab.0, "book": book.osis() }));
-                                    }
-                                    for (j, count) in grid.counts[i].iter().enumerate() {
-                                        let (rect, r) =
-                                            ui.allocate_exact_size(CELL, Sense::click());
-                                        let heat = grid.heat(*count);
-                                        let painter = ui.painter();
-                                        painter.rect_filled(rect, 3.0, heat_fill(heat));
-                                        if r.hovered() && *count > 0 {
-                                            painter.rect_stroke(
-                                                rect,
-                                                3.0,
-                                                Stroke::new(1.5, theme::c().ink),
-                                                egui::StrokeKind::Inside,
-                                            );
-                                        }
-                                        let ink = if heat > 0.0 {
-                                            theme::text_on(heat_fill(heat))
-                                        } else {
-                                            theme::c().ink
-                                        };
-                                        painter.text(
-                                            rect.center(),
-                                            Align2::CENTER_CENTER,
-                                            count.to_string(),
-                                            FontId::proportional(13.0),
-                                            if *count == 0 { muted } else { ink },
-                                        );
-                                        let bible = &grid.bibles[j];
-                                        let label = format!("{} in {bible}: {count}", book.name());
-                                        r.widget_info(|| {
-                                            egui::WidgetInfo::labeled(
-                                                egui::Role::Button,
-                                                *count > 0,
-                                                &label,
-                                            )
-                                        });
-                                        if *count > 0 {
-                                            let r = r.on_hover_text(format!(
-                                                "Show the {count} Verses of {} in {bible}",
-                                                book.name()
-                                            ));
-                                            if r.clicked() {
-                                                run.push(json!({
-                                                    "tab": tab.0,
-                                                    "book": book.osis(),
-                                                    "bible": results.bibles[j].id,
-                                                }));
-                                            }
-                                        }
-                                    }
-                                    ui.end_row();
-                                }
-                            });
-                    });
+                            }
+                        });
+                });
             });
         for params in run {
             self.run("search.filter", &params);
@@ -188,102 +174,99 @@ impl State {
         let books = chart_bars(&results, ChartBy::Book);
         let bars = chart_bars(&results, st.chart);
         let mut run: Vec<(&'static str, Value)> = Vec::new();
-        egui::Frame::new()
-            .inner_margin(egui::Margin::symmetric(12, 2))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(st.chart == ChartBy::Book, "By book")
-                        .clicked()
-                    {
-                        run.push(("search.chart", json!({ "tab": tab.0, "value": "books" })));
-                    }
-                    let current = match st.chart {
-                        ChartBy::Book => "By chapter of…".to_string(),
-                        ChartBy::Chapter(b) => format!("Chapters of {}", b.name()),
-                    };
-                    egui::ComboBox::from_id_salt(("search-chart-book", tab))
-                        .selected_text(current)
-                        .show_ui(ui, |ui| {
-                            for bar in &books {
-                                let book = bar.filter.book;
-                                let on = st.chart == ChartBy::Chapter(book);
-                                if ui.selectable_label(on, book.name()).clicked() {
-                                    run.push((
-                                        "search.chart",
-                                        json!({ "tab": tab.0, "value": book.osis() }),
-                                    ));
-                                }
+        crate::components::band_frame().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(st.chart == ChartBy::Book, "By book")
+                    .clicked()
+                {
+                    run.push(("search.chart", json!({ "tab": tab.0, "value": "books" })));
+                }
+                let current = match st.chart {
+                    ChartBy::Book => "By chapter of…".to_string(),
+                    ChartBy::Chapter(b) => format!("Chapters of {}", b.name()),
+                };
+                egui::ComboBox::from_id_salt(("search-chart-book", tab))
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        for bar in &books {
+                            let book = bar.filter.book;
+                            let on = st.chart == ChartBy::Chapter(book);
+                            if ui.selectable_label(on, book.name()).clicked() {
+                                run.push((
+                                    "search.chart",
+                                    json!({ "tab": tab.0, "value": book.osis() }),
+                                ));
                             }
-                        })
-                        .response
-                        .accessible_name("Chart chapters of");
-                });
+                        }
+                    })
+                    .response
+                    .accessible_name("Chart chapters of");
             });
+        });
         let max = bars.iter().map(|b| b.count).max().unwrap_or(0).max(1);
         let palette = self.palette;
         egui::ScrollArea::vertical()
             .id_salt(("search-chart", tab))
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(12, 4))
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 3.0;
-                        for bar in &bars {
-                            let (rect, r) = ui.allocate_exact_size(
-                                vec2(ui.available_width(), BAR_HEIGHT),
-                                if bar.count > 0 {
-                                    Sense::click()
-                                } else {
-                                    Sense::hover()
-                                },
-                            );
-                            let painter = ui.painter();
-                            if r.hovered() && bar.count > 0 {
-                                painter.rect_filled(rect, 2.0, palette.hover);
-                            }
-                            painter.text(
-                                rect.left_center(),
-                                Align2::LEFT_CENTER,
-                                &bar.label,
-                                FontId::proportional(13.0),
-                                theme::c().ink,
-                            );
-                            let room = (rect.width() - BAR_LABEL - 40.0).clamp(20.0, BAR_MAX);
-                            let w = room * bar.count as f32 / max as f32;
-                            let bar_rect = Rect::from_min_size(
-                                rect.left_top() + vec2(BAR_LABEL, 3.0),
-                                vec2(w, BAR_HEIGHT - 6.0),
-                            );
-                            painter.rect_filled(bar_rect, 2.0, theme::c().lapis);
-                            painter.text(
-                                bar_rect.right_center() + vec2(6.0, 0.0),
-                                Align2::LEFT_CENTER,
-                                bar.count.to_string(),
-                                FontId::proportional(12.0),
-                                theme::c().muted,
-                            );
-                            let label = format!("{}: {}", bar.label, bar.count);
-                            r.widget_info(|| {
-                                egui::WidgetInfo::labeled(egui::Role::Button, bar.count > 0, &label)
-                            });
-                            if bar.count > 0
-                                && r.on_hover_text(format!(
-                                    "Show the {} Verses of {}",
-                                    bar.count, bar.label
-                                ))
-                                .clicked()
-                            {
-                                let f = bar.filter;
-                                let mut p = json!({ "tab": tab.0, "book": f.book.osis() });
-                                if let Some(c) = f.chapter {
-                                    p["chapter"] = json!(c);
-                                }
-                                run.push(("search.filter", p));
-                            }
+                crate::components::band_frame().show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = space::XS;
+                    for bar in &bars {
+                        let (rect, r) = ui.allocate_exact_size(
+                            vec2(ui.available_width(), BAR_HEIGHT),
+                            if bar.count > 0 {
+                                Sense::click()
+                            } else {
+                                Sense::hover()
+                            },
+                        );
+                        let painter = ui.painter();
+                        if r.hovered() && bar.count > 0 {
+                            painter.rect_filled(rect, radius::XS, palette.hover);
                         }
-                    });
+                        painter.text(
+                            rect.left_center(),
+                            Align2::LEFT_CENTER,
+                            &bar.label,
+                            FontId::proportional(text::LABEL),
+                            theme::c().ink,
+                        );
+                        let room =
+                            (rect.width() - BAR_LABEL - space::XXXL).clamp(space::XXL, BAR_MAX);
+                        let w = room * bar.count as f32 / max as f32;
+                        let bar_rect = Rect::from_min_size(
+                            rect.left_top() + vec2(BAR_LABEL, chart::BAR_INSET),
+                            vec2(w, BAR_HEIGHT - 2.0 * chart::BAR_INSET),
+                        );
+                        painter.rect_filled(bar_rect, radius::XS, theme::c().lapis);
+                        painter.text(
+                            bar_rect.right_center() + vec2(space::S, 0.0),
+                            Align2::LEFT_CENTER,
+                            bar.count.to_string(),
+                            FontId::proportional(text::SMALL),
+                            theme::c().muted,
+                        );
+                        let label = format!("{}: {}", bar.label, bar.count);
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::Role::Button, bar.count > 0, &label)
+                        });
+                        if bar.count > 0
+                            && r.on_hover_text(format!(
+                                "Show the {} Verses of {}",
+                                bar.count, bar.label
+                            ))
+                            .clicked()
+                        {
+                            let f = bar.filter;
+                            let mut p = json!({ "tab": tab.0, "book": f.book.osis() });
+                            if let Some(c) = f.chapter {
+                                p["chapter"] = json!(c);
+                            }
+                            run.push(("search.filter", p));
+                        }
+                    }
+                });
             });
         for (id, params) in run {
             self.run(id, &params);
@@ -295,7 +278,7 @@ impl State {
     pub(super) fn results_analysis(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
         let muted = theme::c().muted;
         let Some((analysis, order)) = st.analysis_rows() else {
-            ui.add_space(30.0);
+            ui.add_space(space::XXXL);
             // A failed Analysis says why under the search box; no spinner here then.
             let failed = !st.analysis_running() && st.error.is_some();
             ui.vertical_centered(|ui| {
@@ -315,48 +298,46 @@ impl State {
         };
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         let mut export = false;
-        egui::Frame::new()
-            .inner_margin(egui::Margin::symmetric(12, 2))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let n = analysis.rows.len();
-                    ui.label(
-                        RichText::new(format!(
-                            "{n} matched {}",
-                            if n == 1 { "word" } else { "words" }
-                        ))
-                        .color(muted),
-                    );
-                    export = ui
-                        .button("Export CSV…")
-                        .on_hover_text("Save the table, in this order, for a spreadsheet")
-                        .clicked();
-                });
+        crate::components::band_frame().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let n = analysis.rows.len();
+                ui.label(
+                    RichText::new(format!(
+                        "{n} matched {}",
+                        if n == 1 { "word" } else { "words" }
+                    ))
+                    .color(muted),
+                );
+                export = ui
+                    .button("Export CSV…")
+                    .on_hover_text("Save the table, in this order, for a spreadsheet")
+                    .clicked();
             });
+        });
         let settings = self.session.text;
         let palette = self.palette;
-        let line = settings.size * settings.line_spacing * 1.2;
-        let row_height = line + 6.0;
+        let line = settings.size * settings.line_spacing * scale::ROW_LINE;
+        let row_height = line + space::S;
         let full = ui.available_width();
         let fixed: f32 = COLUMN_WIDTHS.iter().sum();
-        let context_width = (full - fixed - 24.0).max(CONTEXT_MIN);
+        let context_width = (full - fixed - 2.0 * CELL_PAD).max(CONTEXT_MIN);
         let widths: Vec<f32> = COLUMN_WIDTHS
             .iter()
             .copied()
             .chain(std::iter::once(context_width))
             .collect();
-        let total: f32 = widths.iter().sum::<f32>() + 24.0;
+        let total: f32 = widths.iter().sum::<f32>() + 2.0 * CELL_PAD;
         let sort = st.analysis_sort;
         egui::ScrollArea::horizontal()
             .id_salt(("search-analysis-h", tab))
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 // Header.
-                let (head, _) = ui.allocate_exact_size(vec2(total, 26.0), Sense::hover());
+                let (head, _) = ui.allocate_exact_size(vec2(total, size::ROW), Sense::hover());
                 ui.painter().rect_filled(head, 0.0, theme::c().surface);
-                let mut x = head.left() + 12.0;
+                let mut x = head.left() + CELL_PAD;
                 for (column, w) in AnalysisColumn::ALL.iter().zip(&widths) {
-                    let cell = Rect::from_min_size(Pos2::new(x, head.top()), vec2(*w, 26.0));
+                    let cell = Rect::from_min_size(Pos2::new(x, head.top()), vec2(*w, size::ROW));
                     let sorted = (sort.column == *column).then_some(sort.descending);
                     let r = ui
                         .interact(
@@ -375,18 +356,19 @@ impl State {
                         cell.left_center(),
                         Align2::LEFT_CENTER,
                         column.label(),
-                        FontId::proportional(13.0),
+                        FontId::proportional(text::LABEL),
                         ink,
                     );
                     // The sorted column's chevron: down descending, up ascending.
                     if let Some(descending) = sorted {
-                        let c = text.right_center() + vec2(10.0, 0.0);
+                        let c = text.right_center() + vec2(space::L, 0.0);
                         let icon = if descending {
                             crate::icons::Icon::ChevronDown
                         } else {
                             crate::icons::Icon::ChevronUp
                         };
-                        let at = egui::Rect::from_center_size(c, vec2(12.0, 12.0));
+                        let at =
+                            egui::Rect::from_center_size(c, egui::Vec2::splat(crate::icons::SMALL));
                         crate::icons::paint(ui.painter(), icon, at, crate::icons::SMALL, ink);
                     }
                     let label = match sorted {
@@ -416,13 +398,13 @@ impl State {
                             if r.hovered() {
                                 painter.rect_filled(rect, 0.0, palette.hover);
                             }
-                            let mut x = rect.left() + 12.0;
+                            let mut x = rect.left() + CELL_PAD;
                             let cells: Vec<Rect> = widths
                                 .iter()
                                 .map(|w| {
                                     let c = Rect::from_min_size(
-                                        Pos2::new(x, rect.top() + 3.0),
-                                        vec2(w - 8.0, line),
+                                        Pos2::new(x, rect.top() + space::XS),
+                                        vec2(w - space::M, line),
                                     );
                                     x += w;
                                     c
@@ -435,10 +417,10 @@ impl State {
                             ] {
                                 // On the pipeline text's baseline, near the bottom of its line.
                                 painter.with_clip_rect(cells[i].intersect(clip)).text(
-                                    cells[i].left_center() + vec2(0.0, 4.0),
+                                    cells[i].left_center() + vec2(0.0, space::XS),
                                     Align2::LEFT_CENTER,
                                     text,
-                                    FontId::proportional(13.0),
+                                    FontId::proportional(text::LABEL),
                                     if i == 0 { theme::c().ink } else { muted },
                                 );
                             }
@@ -449,8 +431,11 @@ impl State {
                             self.table_cell_text(ui, cells[5], clip, &excerpt, row.rtl, Some(word));
                             painter.hline(
                                 rect.x_range(),
-                                rect.bottom() - 0.5,
-                                Stroke::new(1.0, palette.verse_number.gamma_multiply(0.15)),
+                                rect.bottom() - stroke::HAIR / 2.0,
+                                Stroke::new(
+                                    stroke::HAIR,
+                                    palette.verse_number.gamma_multiply(alpha::TINT),
+                                ),
                             );
                             let label = format!(
                                 "{} {} {} {} {}",
@@ -521,13 +506,12 @@ impl State {
             .snippets
             .get(text, ColorRole::Ink, rtl, width, &settings)
         else {
-            painter.rect_filled(
-                Rect::from_min_size(
-                    cell.left_top() + vec2(0.0, cell.height() * 0.3),
-                    vec2(cell.width().min(60.0), cell.height() * 0.35),
-                ),
-                2.0,
-                palette.verse_number.gamma_multiply(0.12),
+            crate::components::text_placeholder(
+                &painter,
+                cell.left_top(),
+                cell.width().min(size::LABEL_COLUMN),
+                cell.height(),
+                palette.verse_number.gamma_multiply(alpha::WASH),
             );
             ui.ctx().request_repaint();
             return;
@@ -541,7 +525,7 @@ impl State {
             for [x0, y0, x1, y1] in crate::compare_view::range_rects(&laid, h) {
                 painter.rect_filled(
                     Rect::from_min_max(origin + vec2(x0, y0), origin + vec2(x1, y1)),
-                    2.0,
+                    radius::XS,
                     palette.search_hit,
                 );
             }

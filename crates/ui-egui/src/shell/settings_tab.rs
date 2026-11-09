@@ -13,6 +13,7 @@ use super::State;
 use super::library_tab::section;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::space;
 
 /// A command a row asked for.
 type Run = Option<(&'static str, Value)>;
@@ -71,51 +72,44 @@ impl State {
             self.begin_key_bindings(ui);
         }
         let mut run: Run = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .id_salt(("settings", tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new("Settings")
-                                .font(theme::display(20.0))
-                                .color(theme::c().ink),
-                        );
-                        ui.label(
-                            RichText::new(
-                                "Every preference in one place. Changes apply at once and are \
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .id_salt(("settings", tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(crate::components::title_text("Settings"));
+                    ui.label(
+                        RichText::new(
+                            "Every preference in one place. Changes apply at once and are \
                                  kept in the User database; Reset puts one back to its default.",
-                            )
-                            .color(theme::c().muted),
+                        )
+                        .color(theme::c().muted),
+                    );
+                    for section_kind in SettingsSection::ALL {
+                        let in_section: Vec<&Setting> = (rows.iter().copied())
+                            .filter(|s| s.section == section_kind)
+                            .collect();
+                        if in_section.is_empty() {
+                            continue;
+                        }
+                        ui.add_space(space::XL);
+                        section(ui, section_kind.title());
+                        for setting in in_section {
+                            if let Some(r) = self.setting_row(ui, setting, &query) {
+                                run = Some(r);
+                            }
+                        }
+                    }
+                    if rows.is_empty() {
+                        ui.add_space(space::XL);
+                        ui.label(
+                            RichText::new(format!("No setting matches “{query}”."))
+                                .color(theme::c().muted),
                         );
-                        for section_kind in SettingsSection::ALL {
-                            let in_section: Vec<&Setting> = (rows.iter().copied())
-                                .filter(|s| s.section == section_kind)
-                                .collect();
-                            if in_section.is_empty() {
-                                continue;
-                            }
-                            ui.add_space(16.0);
-                            section(ui, section_kind.title());
-                            for setting in in_section {
-                                if let Some(r) = self.setting_row(ui, setting, &query) {
-                                    run = Some(r);
-                                }
-                            }
-                        }
-                        if rows.is_empty() {
-                            ui.add_space(14.0);
-                            ui.label(
-                                RichText::new(format!("No setting matches “{query}”."))
-                                    .color(theme::c().muted),
-                            );
-                        }
-                    });
-            });
+                    }
+                });
+        });
         if let Some((id, params)) = run {
             if id.starts_with("keys.") {
                 self.run_key_action(id, &params);
@@ -130,7 +124,7 @@ impl State {
     fn setting_row(&mut self, ui: &mut Ui, setting: &'static Setting, query: &str) -> Run {
         let mut run = None;
         let is_default = self.session.setting_is_default(setting.id);
-        ui.add_space(8.0);
+        ui.add_space(space::M);
         ui.horizontal(|ui| {
             match setting.kind {
                 SettingKind::Toggle {
@@ -141,7 +135,8 @@ impl State {
                 } => {
                     let before = get(&mut self.session);
                     let mut on = before;
-                    ui.checkbox(
+                    crate::components::toggle(
+                        ui,
                         &mut on,
                         RichText::new(setting.label).strong().color(theme::c().ink),
                     );
@@ -166,7 +161,7 @@ impl State {
             }
         });
         if !matches!(setting.kind, SettingKind::Action { .. }) {
-            ui.label(RichText::new(setting.help).small().color(theme::c().muted));
+            ui.label(crate::components::hint_text(setting.help));
         }
         self.setting_control(ui, setting, query).or(run)
     }
@@ -199,7 +194,7 @@ impl State {
                     let ink = theme::c().ink;
                     let smaller = icons::image(ui.ctx(), Icon::Remove, icons::BODY, ink);
                     if ui
-                        .add(egui::Button::new(smaller))
+                        .add(crate::components::button(smaller))
                         .accessible_name("Smaller text")
                         .on_hover_text(super::with_key(
                             &self.session,
@@ -216,7 +211,7 @@ impl State {
                     );
                     let larger = icons::image(ui.ctx(), Icon::Add, icons::BODY, ink);
                     if ui
-                        .add(egui::Button::new(larger))
+                        .add(crate::components::button(larger))
                         .accessible_name("Larger text")
                         .on_hover_text(super::with_key(
                             &self.session,
@@ -246,7 +241,7 @@ impl State {
                 Ok(notebooks) => {
                     for n in notebooks {
                         let mut on = n.show_in_text;
-                        ui.checkbox(&mut on, &n.name)
+                        crate::components::toggle(ui, &mut on, &n.name)
                             .on_hover_text(format!("Draw “{}” in Resource text", n.name));
                         if on != n.show_in_text {
                             run =
@@ -377,7 +372,7 @@ impl State {
         };
         ui.horizontal(|ui| {
             let r = ui
-                .add_enabled(enabled, egui::Button::new(label))
+                .add_enabled(enabled, crate::components::button(label))
                 .on_disabled_hover_text("Nothing to do now");
             if r.clicked() {
                 if asks {

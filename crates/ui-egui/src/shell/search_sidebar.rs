@@ -9,22 +9,17 @@ use obs_engine::{SavedSearch, Session, TabId};
 use serde_json::{Value, json};
 
 use super::State;
-use crate::theme;
+use crate::tokens::{size, space};
 
 /// The sidebar shows by itself in a Search Tab at least this wide (until toggled).
-pub(super) const SIDEBAR_MIN_TAB_WIDTH: f32 = 640.0;
+pub(super) const SIDEBAR_MIN_TAB_WIDTH: f32 = size::SIDEBAR_TAB;
 
 fn heading(ui: &mut Ui, text: &str) {
-    ui.label(
-        RichText::new(text.to_uppercase())
-            .size(10.5)
-            .strong()
-            .color(theme::c().muted),
-    );
+    crate::components::section_header(ui, text);
 }
 
 fn muted(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).small().color(theme::c().muted));
+    ui.label(crate::components::hint_text(text));
 }
 
 /// One clickable row: the label, with a tooltip of the search's summary (when the label is
@@ -39,17 +34,17 @@ fn row(
     action: &str,
 ) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(label).size(13.0))
+        crate::components::button(crate::components::label_text(label))
             .frame(false)
             .truncate()
-            .min_size(vec2(ui.available_width(), 22.0)),
+            .min_size(vec2(ui.available_width(), size::CONTROL_COMPACT)),
     )
     .on_hover_ui(|ui| {
         if let Some(summary) = summary {
             ui.label(summary);
         }
         ui.label(session.search_scope_details(search));
-        ui.label(RichText::new(action).small().color(theme::c().muted));
+        ui.label(crate::components::hint_text(action));
     })
 }
 
@@ -106,7 +101,7 @@ impl State {
                         }
                     });
                 }
-                ui.add_space(10.0);
+                ui.add_space(space::L);
                 ui.horizontal(|ui| {
                     heading(ui, "History");
                     if !history.is_empty() && !confirming {
@@ -177,14 +172,17 @@ impl State {
                     let field = ui.add(
                         egui::TextEdit::singleline(name)
                             .id_salt(("search-save-name", tab))
-                            .desired_width(200.0),
+                            .desired_width(size::FIELD),
                     );
                     let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if enter {
                         ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
                     }
                     let named = !name.trim().is_empty();
-                    if (ui.add_enabled(named, egui::Button::new("Save")).clicked() || enter)
+                    if (ui
+                        .add_enabled(named, crate::components::button("Save"))
+                        .clicked()
+                        || enter)
                         && named
                     {
                         run.push((

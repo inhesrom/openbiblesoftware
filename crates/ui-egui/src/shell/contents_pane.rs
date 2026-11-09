@@ -20,16 +20,19 @@ use super::State;
 use crate::doc::ReadingDoc;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{radius, share, size, space, stroke};
 
 /// Height of one line of the outline.
-const ROW_H: f32 = 22.0;
+const ROW_H: f32 = size::ROW_COMPACT;
 /// Indent per level of the outline.
-const INDENT: f32 = 10.0;
+const INDENT: f32 = space::L;
 
 /// How wide the pane is beside text `width` wide: about a third, within limits, never over
 /// half.
 pub(super) fn pane_width(width: f32) -> f32 {
-    (width * 0.36).clamp(170.0, 280.0).min(width * 0.5)
+    (width * share::SIDE_PANE)
+        .clamp(size::FIELD, size::FIELD_WIDE)
+        .min(width * 0.5)
 }
 
 /// Each Resource's Contents, by resource id, with the document it was built from (a new
@@ -140,14 +143,15 @@ impl State {
     /// shows or hides the pane, filled while the pane shows.
     pub(super) fn contents_button(&mut self, ui: &mut Ui, tab: TabId) {
         let on = self.session.workspace.tab(tab).is_some_and(|t| t.contents);
-        let (rect, r) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+        let (rect, r) =
+            ui.allocate_exact_size(egui::Vec2::splat(size::CONTROL_COMPACT), Sense::click());
         let visuals = ui.visuals();
         if on {
             ui.painter()
-                .rect_filled(rect, 4.0, visuals.selection.bg_fill);
+                .rect_filled(rect, radius::S, visuals.selection.bg_fill);
         } else if r.hovered() {
             ui.painter()
-                .rect_filled(rect, 4.0, visuals.widgets.hovered.weak_bg_fill);
+                .rect_filled(rect, radius::S, visuals.widgets.hovered.weak_bg_fill);
         }
         let color = if on || r.hovered() {
             theme::c().lapis
@@ -174,11 +178,11 @@ impl State {
         }
         ui.painter().rect_filled(rect, 0.0, theme::c().surface);
         ui.painter().vline(
-            rect.right() - 0.5,
+            rect.right() - stroke::HAIR / 2.0,
             rect.y_range(),
-            egui::Stroke::new(1.0, theme::c().rule),
+            crate::components::rule_stroke(),
         );
-        let inner = rect.shrink2(vec2(6.0, 4.0));
+        let inner = rect.shrink2(vec2(space::S, space::XS));
         // Its own scope, so the list keeps where it is scrolled when the Tab moves Panels.
         let mut ui = ui.new_child(
             egui::UiBuilder::new()
@@ -239,7 +243,7 @@ impl State {
                     .first()
                     .and_then(|&n| contents.node(n).target.clone());
             }
-            ui.add_space(2.0);
+            ui.add_space(space::XXS);
         }
         let filtering = !state.filter.trim().is_empty();
         let rows = if filtering {
@@ -250,7 +254,7 @@ impl State {
         if filtering && rows.is_empty() {
             ui.label(RichText::new("No entry matches").color(theme::c().muted));
         }
-        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.spacing_mut().item_spacing.y = space::XXS;
         let area = egui::ScrollArea::vertical()
             .id_salt(("contents-rows", tab))
             .auto_shrink(false)
@@ -286,7 +290,7 @@ impl State {
                     ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
                 let left = row.left() + depth as f32 * INDENT;
                 let icon =
-                    egui::Rect::from_min_size(egui::pos2(left, row.top()), vec2(14.0, ROW_H));
+                    egui::Rect::from_min_size(egui::pos2(left, row.top()), vec2(INDENT, ROW_H));
                 if !filtering && !node.children.is_empty() {
                     let response = ui
                         .interact(
@@ -296,7 +300,10 @@ impl State {
                         )
                         .on_hover_text(if open { "Collapse" } else { "Expand" });
                     let mut tri = response.clone();
-                    tri.rect = egui::Rect::from_center_size(icon.center(), vec2(9.0, 9.0));
+                    tri.rect = egui::Rect::from_center_size(
+                        icon.center(),
+                        egui::Vec2::splat(size::DISCLOSURE),
+                    );
                     egui::collapsing_header::paint_default_icon(
                         ui,
                         if open { 1.0 } else { 0.0 },
@@ -307,7 +314,7 @@ impl State {
                     }
                 }
                 let text = egui::Rect::from_min_max(
-                    egui::pos2((icon.right() + 2.0).min(row.right()), row.top()),
+                    egui::pos2((icon.right() + space::XXS).min(row.right()), row.top()),
                     row.max,
                 );
                 let label = egui::Button::selectable(Some(n) == current, &node.label).truncate();

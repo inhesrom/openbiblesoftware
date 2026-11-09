@@ -10,9 +10,10 @@ use super::get_bibles_tab::licence_badge;
 use super::import_tab::megabytes;
 use super::library_tab::{section, type_singular};
 use crate::theme;
+use crate::tokens::{size, space};
 
 /// Every row is this tall: a right-to-left row would otherwise take the whole height.
-const ROW_HEIGHT: f32 = 64.0;
+const ROW_HEIGHT: f32 = size::ROW_DOUBLE;
 
 /// A short licence badge and its colour, from an SPDX expression.
 fn spdx_badge(spdx: &str) -> (&'static str, egui::Color32) {
@@ -33,136 +34,124 @@ impl State {
         let bundled = starter.bundle().is_some();
         let rows = session.starter_rows();
         let wanted = session.starter_wanted();
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                ui.label(
-                    RichText::new("Starter library")
-                        .font(theme::display(20.0))
-                        .color(theme::c().ink),
-                );
-                ui.label(
-                    RichText::new(if bundled {
-                        "Open Bibles, original-language texts, lexicons, commentaries and \
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            ui.label(crate::components::title_text("Starter library"));
+            ui.label(
+                RichText::new(if bundled {
+                    "Open Bibles, original-language texts, lexicons, commentaries and \
                          reference data that come with the app. A Resource you remove stays \
                          removed until you add it back here."
-                    } else {
-                        "This copy of the app came without the Starter library: open Bibles, \
+                } else {
+                    "This copy of the app came without the Starter library: open Bibles, \
                          original-language texts, lexicons, commentaries and reference data. \
                          Download it from the app's releases; every file is checked before \
                          anything is added."
-                    })
-                    .color(theme::c().muted),
-                );
-                ui.add_space(8.0);
-                if let Some(d) = starter.download() {
-                    ui.horizontal(|ui| {
-                        #[allow(clippy::cast_precision_loss)]
-                        let fraction = if d.total > 0 {
-                            d.done as f32 / d.total as f32
-                        } else {
-                            0.0
-                        };
-                        ui.add(egui::ProgressBar::new(fraction).desired_width(260.0).text(
-                            format!(
+                })
+                .color(theme::c().muted),
+            );
+            ui.add_space(space::M);
+            if let Some(d) = starter.download() {
+                ui.horizontal(|ui| {
+                    #[allow(clippy::cast_precision_loss)]
+                    let fraction = if d.total > 0 {
+                        d.done as f32 / d.total as f32
+                    } else {
+                        0.0
+                    };
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_width(size::FIELD_WIDE)
+                            .text(format!(
                                 "Downloading {} of {}",
                                 megabytes(d.done),
                                 megabytes(d.total)
-                            ),
-                        ));
-                        if ui.button("Cancel").clicked() {
-                            action = Some(("starter.cancel", json!({})));
+                            )),
+                    );
+                    if ui.button("Cancel").clicked() {
+                        action = Some(("starter.cancel", json!({})));
+                    }
+                });
+            } else if starter.is_checking() {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Loading the Starter library list…");
+                });
+            } else if !wanted.is_empty() {
+                let bytes: u64 = wanted.iter().map(|i| i.bytes).sum();
+                let label = if bundled {
+                    format!(
+                        "Add {} missing Resource{}",
+                        wanted.len(),
+                        if wanted.len() == 1 { "" } else { "s" }
+                    )
+                } else {
+                    format!(
+                        "Download Starter library (≈{} MB)",
+                        bytes.div_ceil(1_000_000)
+                    )
+                };
+                if ui.button(RichText::new(label).strong()).clicked() {
+                    action = Some(("starter.add", json!({})));
+                }
+            } else if starter.manifest().is_some() {
+                ui.label(
+                    RichText::new(
+                        "Every Starter Resource you have not removed is in your Library.",
+                    )
+                    .color(theme::c().muted),
+                );
+            }
+            if let Some(error) = starter.error() {
+                ui.add_space(space::XS);
+                crate::components::notice_frame(theme::c().warn).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.colored_label(theme::c().warn, error);
+                        if starter.download().is_none()
+                            && !starter.is_checking()
+                            && ui.button("Retry").clicked()
+                        {
+                            // The same attempt again: an Add back stays one.
+                            action = Some(if starter.manifest().is_none() {
+                                ("starter.check", json!({}))
+                            } else {
+                                ("starter.retry", json!({}))
+                            });
                         }
                     });
-                } else if starter.is_checking() {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Loading the Starter library list…");
-                    });
-                } else if !wanted.is_empty() {
-                    let bytes: u64 = wanted.iter().map(|i| i.bytes).sum();
-                    let label = if bundled {
-                        format!(
-                            "Add {} missing Resource{}",
-                            wanted.len(),
-                            if wanted.len() == 1 { "" } else { "s" }
-                        )
-                    } else {
-                        format!(
-                            "Download Starter library (≈{} MB)",
-                            bytes.div_ceil(1_000_000)
-                        )
-                    };
-                    if ui.button(RichText::new(label).strong()).clicked() {
-                        action = Some(("starter.add", json!({})));
-                    }
-                } else if starter.manifest().is_some() {
-                    ui.label(
-                        RichText::new(
-                            "Every Starter Resource you have not removed is in your Library.",
-                        )
-                        .color(theme::c().muted),
-                    );
-                }
-                if let Some(error) = starter.error() {
-                    ui.add_space(4.0);
-                    egui::Frame::new()
-                        .fill(theme::c().warn.gamma_multiply(0.12))
-                        .inner_margin(egui::Margin::symmetric(10, 6))
-                        .corner_radius(4.0)
-                        .show(ui, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.colored_label(theme::c().warn, error);
-                                if starter.download().is_none()
-                                    && !starter.is_checking()
-                                    && ui.button("Retry").clicked()
-                                {
-                                    // The same attempt again: an Add back stays one.
-                                    action = Some(if starter.manifest().is_none() {
-                                        ("starter.check", json!({}))
-                                    } else {
-                                        ("starter.retry", json!({}))
-                                    });
+                });
+            }
+            ui.add_space(space::L);
+            if rows.is_empty() {
+                return;
+            }
+            // The ones that need the user first: removed, missing, outdated.
+            let (have, need): (Vec<&StarterRow>, Vec<&StarterRow>) = rows
+                .iter()
+                .partition(|r| r.status == StarterStatus::InLibrary);
+            egui::ScrollArea::vertical()
+                .id_salt("starter-library")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (title, group) in
+                        [("Not in your Library", &need), ("In your Library", &have)]
+                    {
+                        if group.is_empty() {
+                            continue;
+                        }
+                        section(ui, &format!("{title} · {}", group.len()));
+                        for row in group {
+                            ui.allocate_ui(egui::vec2(ui.available_width(), ROW_HEIGHT), |ui| {
+                                ui.set_min_height(ROW_HEIGHT);
+                                if let Some(a) = starter_row(ui, row, bundled) {
+                                    action = Some(a);
                                 }
                             });
-                        });
-                }
-                ui.add_space(10.0);
-                if rows.is_empty() {
-                    return;
-                }
-                // The ones that need the user first: removed, missing, outdated.
-                let (have, need): (Vec<&StarterRow>, Vec<&StarterRow>) = rows
-                    .iter()
-                    .partition(|r| r.status == StarterStatus::InLibrary);
-                egui::ScrollArea::vertical()
-                    .id_salt("starter-library")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        for (title, group) in
-                            [("Not in your Library", &need), ("In your Library", &have)]
-                        {
-                            if group.is_empty() {
-                                continue;
-                            }
-                            section(ui, &format!("{title} · {}", group.len()));
-                            for row in group {
-                                ui.allocate_ui(
-                                    egui::vec2(ui.available_width(), ROW_HEIGHT),
-                                    |ui| {
-                                        ui.set_min_height(ROW_HEIGHT);
-                                        if let Some(a) = starter_row(ui, row, bundled) {
-                                            action = Some(a);
-                                        }
-                                    },
-                                );
-                            }
-                            ui.add_space(8.0);
                         }
-                    });
-            });
+                        ui.add_space(space::M);
+                    }
+                });
+        });
         if let Some((command, params)) = action {
             self.run(command, &params);
         }
@@ -179,7 +168,7 @@ fn starter_row(
     let mut action = None;
     let id = json!({ "id": row.resource_id });
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        let muted = |text: &str| RichText::new(text).small().color(theme::c().muted);
+        let muted = |text: &str| crate::components::hint_text(text);
         match row.status {
             StarterStatus::InLibrary => {
                 if ui
@@ -221,7 +210,7 @@ fn starter_row(
                 ui.label(muted("Adding…"));
             }
         }
-        ui.add_space(8.0);
+        ui.add_space(space::M);
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.add(
                 egui::Label::new(RichText::new(&row.title).strong().color(theme::c().ink))
@@ -244,12 +233,7 @@ fn starter_row(
                 }
                 facts.push(megabytes(row.bytes));
                 ui.add(
-                    egui::Label::new(
-                        RichText::new(facts.join(" · "))
-                            .small()
-                            .color(theme::c().muted),
-                    )
-                    .truncate(),
+                    egui::Label::new(crate::components::hint_text(facts.join(" · "))).truncate(),
                 );
             });
             if !row.features.is_empty() {

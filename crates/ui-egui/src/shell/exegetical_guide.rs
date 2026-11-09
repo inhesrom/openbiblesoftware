@@ -4,7 +4,7 @@
 //! words. A word or a Lexicon summary opens a Word Study at its Strong's number; a summary's
 //! Lexicon name opens the Lexicon at the entry. Ctrl/Cmd opens a new Tab.
 
-use egui::{FontId, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
+use egui::{FontId, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{GrammarNote, GuideSection, LexiconSummary, TabId, WordByWord};
 use obs_layout::ColorRole;
 use obs_scripture::{Passage, RefStyle, Standard, format_passage};
@@ -13,9 +13,10 @@ use super::State;
 use super::guide_tab::Action;
 use super::guide_words::{ROWS_SHOWN, WordsAction};
 use crate::theme;
+use crate::tokens::{share, size, space, text};
 
 /// Width of the column holding the word as written (and its Lemma under it).
-const WORD_W: f32 = 130.0;
+const WORD_W: f32 = size::LABEL_COLUMN_WIDE;
 
 impl State {
     /// Word by word: each Verse's reference in the Bible read (with its Standard numbering
@@ -30,7 +31,7 @@ impl State {
     ) -> Option<Action> {
         let mut action = None;
         let settings = self.session.text;
-        let row_h = (settings.size * settings.line_spacing).max(22.0) + 2.0;
+        let row_h = (settings.size * settings.line_spacing).max(size::CONTROL_COMPACT) + space::XXS;
         let c = theme::c();
         for verse in &w.verses {
             ui.horizontal_wrapped(|ui| {
@@ -60,7 +61,7 @@ impl State {
                 let top = Rect::from_min_size(rect.min, vec2(width, row_h));
                 let bottom =
                     Rect::from_min_size(pos2(rect.left(), top.bottom()), vec2(width, row_h));
-                let column = WORD_W.min(width * 0.4);
+                let column = WORD_W.min(width * share::LABEL);
                 let centered = Layout::left_to_right(egui::Align::Center);
                 let word_rect = Rect::from_min_size(top.min, vec2(column, row_h));
                 ui.scope_builder(
@@ -68,10 +69,10 @@ impl State {
                     |ui| self.guide_snippet(ui, &word.written, ColorRole::Ink, word.rtl, 1),
                 );
                 let middle = Rect::from_min_max(
-                    pos2(word_rect.right() + 8.0, top.top()),
-                    pos2(top.right() - 8.0, top.bottom()),
+                    pos2(word_rect.right() + space::M, top.top()),
+                    pos2(top.right() - space::M, top.bottom()),
                 );
-                if middle.width() > 16.0 {
+                if middle.width() > space::XL {
                     ui.scope_builder(UiBuilder::new().max_rect(middle).layout(centered), |ui| {
                         ui.set_clip_rect(middle.intersect(ui.clip_rect()));
                         if let Some(t) = &word.transliteration {
@@ -90,8 +91,8 @@ impl State {
                     });
                 }
                 let lemma_rect = Rect::from_min_size(
-                    pos2(bottom.left() + 14.0, bottom.top()),
-                    vec2((column - 14.0).max(20.0), row_h),
+                    pos2(bottom.left() + space::XL, bottom.top()),
+                    vec2((column - space::XL).max(space::XXL), row_h),
                 );
                 ui.scope_builder(
                     UiBuilder::new().max_rect(lemma_rect).layout(centered),
@@ -106,10 +107,10 @@ impl State {
                     },
                 );
                 let grammar = Rect::from_min_max(
-                    pos2(lemma_rect.right() + 8.0, bottom.top()),
-                    pos2(bottom.right() - 8.0, bottom.bottom()),
+                    pos2(lemma_rect.right() + space::M, bottom.top()),
+                    pos2(bottom.right() - space::M, bottom.bottom()),
                 );
-                if grammar.width() > 16.0 {
+                if grammar.width() > space::XL {
                     ui.scope_builder(UiBuilder::new().max_rect(grammar).layout(centered), |ui| {
                         ui.set_clip_rect(grammar.intersect(ui.clip_rect()));
                         let mut line = word.strongs.to_string();
@@ -135,12 +136,7 @@ impl State {
                 let label = format!("Word Study on {} ({})", word.strongs, word.written);
                 r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
                 if r.hovered() {
-                    ui.painter().rect_stroke(
-                        rect.expand(2.0),
-                        4.0,
-                        Stroke::new(1.0, c.hover_rule),
-                        egui::StrokeKind::Outside,
-                    );
+                    crate::components::hover_outline(ui, rect);
                 }
                 let r = r.on_hover_ui(|ui| {
                     ui.label(RichText::new(word.strongs.to_string()).strong());
@@ -148,23 +144,17 @@ impl State {
                         ui.label(m);
                     }
                     if let Some(code) = &word.morph_code {
-                        ui.label(
-                            RichText::new(format!("Code: {code}"))
-                                .small()
-                                .color(theme::c().muted),
-                        );
+                        ui.label(crate::components::hint_text(format!("Code: {code}")));
                     }
-                    ui.label(
-                        RichText::new("Click for a Word Study · Ctrl/Cmd-click opens a new Tab")
-                            .small()
-                            .color(theme::c().muted),
-                    );
+                    ui.label(crate::components::hint_text(
+                        "Click for a Word Study · Ctrl/Cmd-click opens a new Tab",
+                    ));
                 });
                 if r.clicked() {
                     action = Some(Action::Words(WordsAction::WordStudy(word.strongs, new_tab)));
                 }
             }
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         action
     }
@@ -187,10 +177,11 @@ impl State {
         let c = theme::c();
         for row in &rows[..shown] {
             let settings = self.session.text;
-            let row_h = (settings.size * settings.line_spacing).max(22.0) + 2.0;
+            let row_h =
+                (settings.size * settings.line_spacing).max(size::CONTROL_COMPACT) + space::XXS;
             let width = ui.available_width();
             let (rect, _) = ui.allocate_exact_size(vec2(width, row_h), Sense::hover());
-            let column = WORD_W.min(width * 0.4);
+            let column = WORD_W.min(width * share::LABEL);
             let centered = Layout::left_to_right(egui::Align::Center);
             let lemma_rect = Rect::from_min_size(rect.min, vec2(column, row_h));
             ui.scope_builder(
@@ -206,8 +197,8 @@ impl State {
                 },
             );
             let middle = Rect::from_min_max(
-                pos2(lemma_rect.right() + 8.0, rect.top()),
-                pos2(rect.right() - 8.0, rect.bottom()),
+                pos2(lemma_rect.right() + space::M, rect.top()),
+                pos2(rect.right() - space::M, rect.bottom()),
             );
             ui.scope_builder(UiBuilder::new().max_rect(middle).layout(centered), |ui| {
                 ui.set_clip_rect(middle.intersect(ui.clip_rect()));
@@ -241,10 +232,10 @@ impl State {
             });
             let rtl = row.entry.direction == obs_model::Direction::Rtl;
             ui.horizontal(|ui| {
-                ui.add_space(14.0);
+                ui.add_space(space::XL);
                 ui.vertical(|ui| self.guide_snippet(ui, &row.summary, ColorRole::Ink, rtl, 3));
             });
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         self.show_all(ui, tab, GuideSection::LexiconSummaries, rows.len());
         action
@@ -260,19 +251,19 @@ impl State {
                 ui.label(RichText::new(note.label).small().color(c.muted));
             });
             ui.horizontal(|ui| {
-                ui.add_space(14.0);
+                ui.add_space(space::XL);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(note.explanation).color(c.ink));
                     let words = note.words.join("  ");
                     let rtl = note.term.language != obs_model::MorphLanguage::Greek;
-                    let font = FontId::proportional(11.5);
+                    let font = FontId::proportional(text::SMALL);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("In:").font(font).color(c.muted));
                         ui.vertical(|ui| self.guide_snippet(ui, &words, ColorRole::Ink, rtl, 2));
                     });
                 });
             });
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
     }
 }

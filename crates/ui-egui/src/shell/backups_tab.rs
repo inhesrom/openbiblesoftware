@@ -16,6 +16,7 @@ use serde_json::json;
 use super::State;
 use super::library_tab::section;
 use crate::theme;
+use crate::tokens::{size, space};
 
 /// What a file dialog of the Tab is asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,28 +96,21 @@ fn file_name(path: &Path) -> String {
 
 impl State {
     pub(super) fn backups_body(&mut self, ui: &mut Ui, tab: TabId) {
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .id_salt(("backups", tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.set_max_width(ui.available_width().min(720.0));
-                        self.backups_content(ui);
-                    });
-            });
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .id_salt(("backups", tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_max_width(ui.available_width().min(size::PAGE_MAX));
+                    self.backups_content(ui);
+                });
+        });
     }
 
     fn backups_content(&mut self, ui: &mut Ui) {
         let muted = theme::c().muted;
-        ui.label(
-            RichText::new(obs_engine::BACKUPS_TITLE)
-                .font(theme::display(20.0))
-                .color(theme::c().ink),
-        );
+        ui.label(crate::components::title_text(obs_engine::BACKUPS_TITLE));
         ui.label(
             RichText::new(
                 "Your Notes, Highlights, Notebooks, Layouts, Reading plans, Favorites, History \
@@ -126,7 +120,7 @@ impl State {
         );
         let has_user = self.session.user.is_some();
         if !has_user {
-            ui.add_space(8.0);
+            ui.add_space(space::M);
             ui.colored_label(
                 theme::c().warn,
                 "Your User database is not open, so there is nothing to back up or restore.",
@@ -134,7 +128,7 @@ impl State {
         }
         let busy = self.backups_ui.waiting.is_some();
 
-        ui.add_space(16.0);
+        ui.add_space(space::XL);
         section(ui, "Back up");
         ui.label(
             RichText::new(
@@ -143,14 +137,14 @@ impl State {
             .color(muted),
         );
         if ui
-            .add_enabled(has_user && !busy, egui::Button::new("Back up now…"))
+            .add_enabled(has_user && !busy, crate::components::button("Back up now…"))
             .clicked()
         {
             let name = self.session.backup_file_name();
             self.ask_data_file(ui.ctx(), DataPick::BackUp, name);
         }
 
-        ui.add_space(16.0);
+        ui.add_space(space::XL);
         section(ui, "Restore");
         ui.label(
             RichText::new(
@@ -161,13 +155,16 @@ impl State {
             .color(muted),
         );
         if ui
-            .add_enabled(has_user && !busy, egui::Button::new("Restore from backup…"))
+            .add_enabled(
+                has_user && !busy,
+                crate::components::button("Restore from backup…"),
+            )
             .clicked()
         {
             self.ask_data_file(ui.ctx(), DataPick::Restore, String::new());
         }
         if let Some(last) = self.session.last_restore().cloned() {
-            ui.add_space(6.0);
+            ui.add_space(space::S);
             ui.horizontal_wrapped(|ui| {
                 ui.label(format!(
                     "Restored from {}. A safety backup was taken first.",
@@ -182,7 +179,7 @@ impl State {
         }
         self.restore_preview_panel(ui);
 
-        ui.add_space(16.0);
+        ui.add_space(space::XL);
         section(ui, "Automatic backups");
         ui.label(
             RichText::new(format!(
@@ -202,7 +199,7 @@ impl State {
         for b in &kept {
             ui.horizontal_wrapped(|ui| {
                 if ui
-                    .add_enabled(!busy, egui::Button::new("Restore…"))
+                    .add_enabled(!busy, crate::components::button("Restore…"))
                     .on_hover_text(b.path.display().to_string())
                     .clicked()
                 {
@@ -216,7 +213,7 @@ impl State {
             self.preview_restore(&path);
         }
 
-        ui.add_space(16.0);
+        ui.add_space(space::XL);
         section(ui, "Export everything");
         ui.label(
             RichText::new(
@@ -227,7 +224,10 @@ impl State {
             .color(muted),
         );
         if ui
-            .add_enabled(has_user && !busy, egui::Button::new("Export everything…"))
+            .add_enabled(
+                has_user && !busy,
+                crate::components::button("Export everything…"),
+            )
             .clicked()
         {
             let name = self.session.data_export_file_name();
@@ -241,83 +241,79 @@ impl State {
             return;
         };
         let mut act = None;
-        ui.add_space(8.0);
-        egui::Frame::new()
-            .stroke(egui::Stroke::new(1.0, theme::c().rule))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::same(12))
-            .show(ui, |ui| match preview {
-                Err(why) => {
-                    ui.colored_label(theme::c().warn, why);
-                    if ui.button("Close").clicked() {
-                        act = Some(false);
-                    }
+        ui.add_space(space::M);
+        crate::components::card_frame().show(ui, |ui| match preview {
+            Err(why) => {
+                ui.colored_label(theme::c().warn, why);
+                if ui.button("Close").clicked() {
+                    act = Some(false);
                 }
-                Ok(p) => {
+            }
+            Ok(p) => {
+                ui.label(
+                    RichText::new(format!("Restore {}?", file_name(&p.path)))
+                        .strong()
+                        .color(theme::c().ink),
+                );
+                ui.label(
+                    RichText::new("Everything below is replaced with what the backup holds.")
+                        .color(theme::c().muted),
+                );
+                if p.older_format {
                     ui.label(
-                        RichText::new(format!("Restore {}?", file_name(&p.path)))
-                            .strong()
-                            .color(theme::c().ink),
-                    );
-                    ui.label(
-                        RichText::new("Everything below is replaced with what the backup holds.")
-                            .color(theme::c().muted),
-                    );
-                    if p.older_format {
-                        ui.label(
-                            RichText::new(
-                                "This backup was made by an older version of the app; it is \
+                        RichText::new(
+                            "This backup was made by an older version of the app; it is \
                                  upgraded as it is restored.",
-                            )
-                            .color(theme::c().muted),
-                        );
-                    }
-                    ui.add_space(6.0);
-                    egui::Grid::new("restore-preview")
-                        .num_columns(3)
-                        .spacing(vec2(24.0, 4.0))
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.label("");
-                            ui.label(RichText::new("Now").strong());
-                            ui.label(RichText::new("After restoring").strong());
+                        )
+                        .color(theme::c().muted),
+                    );
+                }
+                ui.add_space(space::S);
+                egui::Grid::new("restore-preview")
+                    .num_columns(3)
+                    .spacing(vec2(space::XXL, space::XS))
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("");
+                        ui.label(RichText::new("Now").strong());
+                        ui.label(RichText::new("After restoring").strong());
+                        ui.end_row();
+                        for l in &p.lines {
+                            ui.label(l.what);
+                            ui.label(l.now.to_string());
+                            let after = RichText::new(l.after.to_string());
+                            ui.label(if l.after == l.now {
+                                after
+                            } else {
+                                after.strong().color(theme::c().ink)
+                            });
                             ui.end_row();
-                            for l in &p.lines {
-                                ui.label(l.what);
-                                ui.label(l.now.to_string());
-                                let after = RichText::new(l.after.to_string());
-                                ui.label(if l.after == l.now {
-                                    after
-                                } else {
-                                    after.strong().color(theme::c().ink)
-                                });
-                                ui.end_row();
-                            }
-                        });
-                    // What comes back and what goes, by name.
-                    for l in p.lines.iter().filter(|l| !l.detail.is_empty()) {
-                        ui.label(format!("{}: {}", l.what, l.detail));
-                    }
-                    if !p.changes_anything() {
-                        ui.label(
-                            RichText::new(
-                                "The counts match your data now; the text of Notes and \
-                                 settings may still differ.",
-                            )
-                            .color(theme::c().muted),
-                        );
-                    }
-                    ui.add_space(6.0);
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        if ui.button("Restore").clicked() {
-                            act = Some(true);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            act = Some(false);
                         }
                     });
+                // What comes back and what goes, by name.
+                for l in p.lines.iter().filter(|l| !l.detail.is_empty()) {
+                    ui.label(format!("{}: {}", l.what, l.detail));
                 }
-            });
+                if !p.changes_anything() {
+                    ui.label(
+                        RichText::new(
+                            "The counts match your data now; the text of Notes and \
+                                 settings may still differ.",
+                        )
+                        .color(theme::c().muted),
+                    );
+                }
+                ui.add_space(space::S);
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    if ui.button("Restore").clicked() {
+                        act = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        act = Some(false);
+                    }
+                });
+            }
+        });
         match act {
             Some(true) => {
                 // Unsaved Note text keeps the preview open, for Restore once it is saved.

@@ -4,7 +4,7 @@
 //! until a Strong's number is chosen. Everything shown comes from the engine as pure data
 //! computed on the job queue; this file only draws it.
 
-use egui::{Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Rect, RichText, Sense, Ui, pos2, vec2};
 use obs_engine::{
     Chooser, Effect, Guide, LexiconEntry, TabId, TabKind, WordStatus, WordStudyHeader,
 };
@@ -16,9 +16,10 @@ use serde_json::json;
 use super::State;
 use super::guide_tab::{Action, hint_page};
 use crate::theme;
+use crate::tokens::{scale, size, space};
 
 /// Width of the chooser's Lemma column.
-const LEMMA_WIDTH: f32 = 120.0;
+const LEMMA_WIDTH: f32 = size::LABEL_COLUMN_WIDE;
 
 /// Most lines of one Lexicon entry paragraph.
 const ENTRY_LINES: usize = 400;
@@ -89,7 +90,7 @@ impl State {
         if let Some(lemma) = &h.lemma {
             let settings = self.session.text;
             let big = TextSettings {
-                size: settings.size * 1.9,
+                size: settings.size * scale::HEADWORD,
                 ..settings
             };
             let rtl = number.language() == StrongsLanguage::Hebrew;
@@ -102,11 +103,10 @@ impl State {
             }
             if let Some(g) = &h.gloss {
                 ui.label(RichText::new(format!("“{}”", g.text)).color(theme::c().ink));
-                ui.label(
-                    RichText::new(format!("— {}", g.abbreviation))
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text(format!(
+                    "— {}",
+                    g.abbreviation
+                )));
             }
         });
         let occurrences = match &h.occurrences {
@@ -140,47 +140,40 @@ impl State {
             .is_some_and(|t| t.entry_history.current().is_some());
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         let mut action: Option<Action> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!("“{words}”"))
-                            .font(theme::display(20.0))
-                            .color(theme::c().ink),
-                    );
-                    if can_cancel
-                        && ui
-                            .small_button("Cancel")
-                            .on_hover_text("Back to the Strong's number shown before (Esc)")
-                            .clicked()
-                    {
-                        action = Some(Action::StopChoosing);
-                    }
-                });
-                let c = match &status {
-                    WordStatus::Loading => {
-                        ui.label(
-                            RichText::new(format!("Looking up “{words}”…")).color(theme::c().muted),
-                        );
-                        ui.ctx().request_repaint();
-                        return;
-                    }
-                    WordStatus::Failed(e) => {
-                        ui.label(
-                            RichText::new(format!("Could not look up “{words}”: {e}"))
-                                .color(theme::c().warn),
-                        );
-                        return;
-                    }
-                    WordStatus::Ready(c) => c,
-                };
-                if let Some(a) = self.chooser_rows(ui, c, new_tab) {
-                    action = Some(a);
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            ui.horizontal(|ui| {
+                ui.label(crate::components::title_text(format!("“{words}”")));
+                if can_cancel
+                    && ui
+                        .small_button("Cancel")
+                        .on_hover_text("Back to the Strong's number shown before (Esc)")
+                        .clicked()
+                {
+                    action = Some(Action::StopChoosing);
                 }
             });
+            let c = match &status {
+                WordStatus::Loading => {
+                    ui.label(
+                        RichText::new(format!("Looking up “{words}”…")).color(theme::c().muted),
+                    );
+                    ui.ctx().request_repaint();
+                    return;
+                }
+                WordStatus::Failed(e) => {
+                    ui.label(
+                        RichText::new(format!("Could not look up “{words}”: {e}"))
+                            .color(theme::c().warn),
+                    );
+                    return;
+                }
+                WordStatus::Ready(c) => c,
+            };
+            if let Some(a) = self.chooser_rows(ui, c, new_tab) {
+                action = Some(a);
+            }
+        });
         if can_cancel && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             action = Some(Action::StopChoosing);
         }
@@ -225,7 +218,7 @@ impl State {
             ))
             .color(theme::c().muted),
         );
-        ui.add_space(6.0);
+        ui.add_space(space::S);
         let settings = self.session.text;
         let mut chosen = None;
         egui::ScrollArea::vertical()
@@ -236,7 +229,7 @@ impl State {
                     let top = ui.cursor().min;
                     ui.horizontal(|ui| {
                         ui.add_sized(
-                            [64.0, 22.0],
+                            [size::LABEL_COLUMN, size::CONTROL_COMPACT],
                             egui::Label::new(
                                 RichText::new(choice.strongs.to_string())
                                     .strong()
@@ -249,13 +242,13 @@ impl State {
                             Some(lemma) => {
                                 let rtl = choice.strongs.language() == StrongsLanguage::Hebrew;
                                 let big = TextSettings {
-                                    size: settings.size * 1.15,
+                                    size: settings.size * scale::LEMMA,
                                     ..settings
                                 };
                                 self.snippet(ui, lemma, rtl, LEMMA_WIDTH, &big);
                             }
                             None => {
-                                ui.allocate_space(vec2(LEMMA_WIDTH, 1.0));
+                                ui.allocate_space(vec2(LEMMA_WIDTH, space::PX));
                             }
                         }
                         ui.label(RichText::new(format!("×{}", choice.count)).color(theme::c().ink));
@@ -281,17 +274,12 @@ impl State {
                     let label = format!("Study {} ({} times)", choice.strongs, choice.count);
                     r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
                     if r.hovered() {
-                        ui.painter().rect_stroke(
-                            rect.expand(2.0),
-                            4.0,
-                            Stroke::new(1.0, theme::c().hover_rule),
-                            egui::StrokeKind::Outside,
-                        );
+                        crate::components::hover_outline(ui, rect);
                     }
                     if r.clicked() {
                         chosen = Some(Action::Choose(choice.strongs, new_tab));
                     }
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                 }
             });
         chosen
@@ -319,7 +307,8 @@ impl State {
             let toggled = ui
                 .horizontal(|ui| {
                     // Mouse only: the title is the entry's one keyboard stop and its name.
-                    let (rect, arrow) = ui.allocate_exact_size(vec2(14.0, 18.0), Sense::CLICK);
+                    let (rect, arrow) =
+                        ui.allocate_exact_size(vec2(space::L, size::ICON_LARGE), Sense::CLICK);
                     paint_disclosure(ui, rect, open);
                     ui.label(RichText::new(e.key.to_string()).color(theme::c().muted));
                     let title = ui.add(
@@ -353,7 +342,7 @@ impl State {
                 let rtl = e.direction == Direction::Rtl;
                 for para in e.text.lines().map(str::trim).filter(|l| !l.is_empty()) {
                     self.guide_snippet(ui, para, ColorRole::Ink, rtl, ENTRY_LINES);
-                    ui.add_space(2.0);
+                    ui.add_space(space::XXS);
                 }
                 ui.horizontal_wrapped(|ui| {
                     if ui
@@ -364,7 +353,7 @@ impl State {
                         action = Some(Action::OpenLexicon(e.clone(), new_tab));
                     }
                     if !e.links.is_empty() {
-                        ui.label(RichText::new("See").small().color(theme::c().muted));
+                        ui.label(crate::components::hint_text("See"));
                         for n in &e.links {
                             if ui
                                 .link(n.to_string())
@@ -377,7 +366,7 @@ impl State {
                     }
                 });
             }
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         action
     }
@@ -494,11 +483,7 @@ impl State {
 /// `H1254A · verb`: the Strong's number, large, and the part of speech.
 fn strongs_line(ui: &mut Ui, number: StrongsNumber, part_of_speech: Option<&str>) {
     ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(number.to_string())
-                .font(theme::display(20.0))
-                .color(theme::c().lapis),
-        );
+        ui.label(crate::components::title_text(number.to_string()).color(theme::c().lapis));
         if let Some(p) = part_of_speech {
             ui.label(RichText::new(p).color(theme::c().muted));
         }

@@ -50,15 +50,16 @@ use super::annotate::{menu_label, paint_swatch, selection_params};
 use crate::heights::HeightIndex;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{alpha, scale, size, space, stroke};
 use crate::workers::SnippetCache;
 
 /// A card being edited saves this long after the last keystroke.
 pub(crate) const AUTOSAVE_SECS: f64 = 1.0;
 
 /// The Notebook column's width.
-const COLUMN: f32 = 210.0;
+const COLUMN: f32 = size::SIDE_LIST;
 /// Space between cards.
-const GAP: f32 = 8.0;
+const GAP: f32 = space::M;
 
 /// The text field of the card editing Note `id`.
 pub(super) fn card_editor_id(id: &str) -> egui::Id {
@@ -218,7 +219,7 @@ impl NotesUi {
 
 fn estimate(card: &Card, size: f32) -> f32 {
     let lines = 2.0 + card.annotation.body().len() as f32 / 60.0;
-    40.0 + lines * size * 1.6 + GAP
+    size::TEXT_MIN + lines * size * scale::LINE + GAP
 }
 
 impl State {
@@ -237,23 +238,23 @@ impl State {
         self.reveal_card(tab);
         let rect = ui.max_rect();
         let column = Rect::from_min_max(rect.min, pos2(rect.left() + COLUMN, rect.bottom()));
-        let cards = Rect::from_min_max(pos2(column.right() + 1.0, rect.top()), rect.max);
+        let cards = Rect::from_min_max(pos2(column.right() + stroke::HAIR, rect.top()), rect.max);
         ui.painter().rect_filled(column, 0.0, theme::c().surface);
         ui.painter().vline(
             column.right(),
             column.y_range(),
-            Stroke::new(1.0, theme::c().rule),
+            crate::components::rule_stroke(),
         );
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         let mut col = ui.new_child(
             UiBuilder::new()
-                .max_rect(column.shrink2(vec2(8.0, 6.0)))
+                .max_rect(column.shrink2(vec2(space::M, space::S)))
                 .id_salt(("notes-column", tab)),
         );
         let export = self.notebook_column(&mut col, &mut run);
         let mut list = ui.new_child(
             UiBuilder::new()
-                .max_rect(cards.shrink2(vec2(10.0, 6.0)))
+                .max_rect(cards.shrink2(vec2(space::L, space::S)))
                 .id_salt(("notes-cards", tab)),
         );
         list.set_clip_rect(cards.intersect(ui.clip_rect()));
@@ -570,18 +571,19 @@ impl State {
             .id_salt("notes-notebooks")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.label(RichText::new("Notebooks").small().color(theme::c().muted));
+                ui.label(crate::components::hint_text("Notebooks"));
                 let row = |ui: &mut Ui, selected: bool, name: &str, count: u64| {
                     ui.horizontal(|ui| {
                         let r = ui.add(
                             egui::Button::selectable(selected, name)
-                                .min_size(vec2(ui.available_width() - 34.0, 22.0)),
+                                .min_size(vec2(
+                                    ui.available_width() - space::XXXL,
+                                    size::CONTROL_COMPACT,
+                                )),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(
-                                RichText::new(count.to_string())
-                                    .small()
-                                    .color(theme::c().muted),
+                                crate::components::hint_text(count.to_string()),
                             );
                         });
                         r
@@ -589,7 +591,7 @@ impl State {
                     .inner
                 };
                 ui.horizontal(|ui| {
-                    ui.add_space(26.0);
+                    ui.add_space(space::XXL);
                     let r = row(ui, filter == NotesFilter::All, "All", total);
                     if r.clicked() {
                         run.push(("notes.notebook", json!({ "value": "all" })));
@@ -599,14 +601,14 @@ impl State {
                 let attention = filter == NotesFilter::NeedsAttention;
                 if self.notes_ui.attention > 0 || attention {
                     ui.horizontal(|ui| {
-                        ui.add_space(4.0);
+                        ui.add_space(space::XS);
                         ui.add(icons::image(
                             ui.ctx(),
                             Icon::Warning,
                             icons::BODY,
                             theme::c().warn,
                         ));
-                        ui.add_space(4.0);
+                        ui.add_space(space::XS);
                         let r = row(ui, attention, "Needs attention", self.notes_ui.attention as u64)
                             .on_hover_text(
                                 "Annotations whose text was not found after their Resource changed",
@@ -621,13 +623,13 @@ impl State {
                     let selected = filter == NotesFilter::Notebook(nb.id.clone());
                     ui.horizontal(|ui| {
                         let shown = !self.notes_ui.hidden.contains(&nb.id);
-                        let eye = egui::Button::new(if shown {
+                        let eye = crate::components::button(if shown {
                             icons::image(ui.ctx(), Icon::Shown, icons::BODY, theme::c().ink)
                         } else {
                             icons::image(ui.ctx(), Icon::Hidden, icons::BODY, theme::c().muted)
                         })
                         .frame(false)
-                        .min_size(vec2(22.0, 22.0));
+                        .min_size(egui::Vec2::splat(size::CONTROL_COMPACT));
                         let tip = if shown {
                             "Shown in the text. Click to hide this Notebook's Highlights and Notes."
                         } else {
@@ -645,7 +647,7 @@ impl State {
                             let r = ui.add(
                                 egui::TextEdit::singleline(text)
                                     .id_salt(("notebook-rename", id.as_str()))
-                                    .desired_width(ui.available_width() - 8.0),
+                                    .desired_width(ui.available_width() - space::M),
                             )
 .accessible_name("Notebook name");
                             if !*focused {
@@ -683,7 +685,7 @@ impl State {
                                 ui.close();
                             }
                             let delete = ui
-                                .add_enabled(!nb.is_default, egui::Button::new("Delete…"))
+                                .add_enabled(!nb.is_default, crate::components::button("Delete…"))
                                 .on_disabled_hover_text(
                                     "The default Notebook cannot be deleted; it can be renamed",
                                 );
@@ -699,7 +701,7 @@ impl State {
                         });
                     });
                 }
-                ui.add_space(4.0);
+                ui.add_space(space::XS);
                 match self.notes_ui.creating.as_mut() {
                     Some((text, focused)) => {
                         let r = ui.add(
@@ -723,14 +725,14 @@ impl State {
                     }
                     None => {
                         if ui
-                            .add(egui::Button::new("+ New notebook").frame(false))
+                            .add(crate::components::button("+ New notebook").frame(false))
                             .clicked()
                         {
                             self.notes_ui.creating = Some((String::new(), false));
                         }
                     }
                 }
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 let shown = match &filter {
                     NotesFilter::Notebook(id) => self.notes_ui.counts.get(id).copied().unwrap_or(0),
                     NotesFilter::All | NotesFilter::NeedsAttention => total,
@@ -762,7 +764,7 @@ impl State {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                ui.set_max_width(380.0);
+                ui.set_max_width(size::POPOVER);
                 let what = match d.count {
                     0 => "It is empty.".to_string(),
                     1 => "It holds 1 Annotation.".to_string(),
@@ -773,11 +775,7 @@ impl State {
                     ui.radio_value(&mut d.delete, false, format!("Move them to “{default}”"));
                     ui.radio_value(&mut d.delete, true, "Delete them");
                 }
-                ui.label(
-                    RichText::new(format!("{undo}."))
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text(format!("{undo}.")));
                 ui.horizontal(|ui| {
                     if ui.button("Delete").clicked() {
                         done = Some(true);
@@ -821,10 +819,10 @@ impl State {
                 } else {
                     format!("{n} Annotations")
                 };
-                ui.label(RichText::new(what).small().color(theme::c().muted));
+                ui.label(crate::components::hint_text(what));
             });
         });
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         self.notes_ui.drawn.clear();
         self.notes_ui.drawn_lines.clear();
         if cards.is_empty() {
@@ -841,7 +839,7 @@ impl State {
             } else {
                 "No Notes or Highlights yet. Select text in a Bible, then pick a colour, or Note to write one."
             };
-            ui.add_space(30.0);
+            ui.add_space(space::XXXL);
             ui.vertical_centered(|ui| {
                 ui.label(RichText::new(message).color(theme::c().muted));
             });
@@ -887,18 +885,17 @@ impl State {
     fn card(&mut self, ui: &mut Ui, card: &Card, run: &mut Vec<(&'static str, Value)>) {
         let a = &card.annotation;
         let mut body_rect = None;
-        let frame = egui::Frame::new()
+        let frame = crate::components::card_frame()
             .fill(self.palette.page)
-            .stroke(Stroke::new(1.0, theme::c().rule))
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::symmetric(10, 8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     match &a.content {
                         Content::Highlight { style } => {
-                            let (rect, r) =
-                                ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                            let (rect, r) = ui.allocate_exact_size(
+                                egui::Vec2::splat(icons::BODY),
+                                Sense::hover(),
+                            );
                             let book = self.marks.styles(&self.session);
                             let look = book.appearance(style);
                             r.on_hover_text(book.label(style));
@@ -939,16 +936,16 @@ impl State {
                         ui.label(reference);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
-                            self.card_menu(ui, card, run);
-                        })
+                        crate::components::menu(
+                            ui,
+                            RichText::new("…").color(theme::c().muted),
+                            |ui| {
+                                self.card_menu(ui, card, run);
+                            },
+                        )
                         .response
                         .accessible_name("Note menu");
-                        ui.label(
-                            RichText::new(&card.notebook)
-                                .small()
-                                .color(theme::c().muted),
-                        );
+                        ui.label(crate::components::hint_text(&card.notebook));
                     });
                 });
                 if let Some(m) = &card.missing {
@@ -999,7 +996,10 @@ impl State {
                 None => "Select the text in a reading pane first".to_string(),
             };
             let r = ui
-                .add_enabled(target.is_some(), egui::Button::new("Re-attach here"))
+                .add_enabled(
+                    target.is_some(),
+                    crate::components::button("Re-attach here"),
+                )
                 .on_hover_text(&hint)
                 .on_disabled_hover_text(&hint);
             if r.clicked()
@@ -1059,14 +1059,10 @@ impl State {
             if out.left {
                 finished = true;
             }
-            ui.label(
-                RichText::new(format!(
-                    "Saves as you type, and when you click away, press Esc or {}.",
-                    crate::key_labels::label("Ctrl+Enter")
-                ))
-                .small()
-                .color(theme::c().muted),
-            );
+            ui.label(crate::components::hint_text(format!(
+                "Saves as you type, and when you click away, press Esc or {}.",
+                crate::key_labels::label("Ctrl+Enter")
+            )));
             let mut discard = false;
             if let Some(e) = &ed.error {
                 ui.label(
@@ -1130,16 +1126,16 @@ impl State {
     ) -> bool {
         let line = &body.line;
         let size = self.session.text.size;
-        const LEVEL: f32 = 18.0;
+        const LEVEL: f32 = space::XL;
         let (scale, base, marker, gutter) = match line.kind {
             NoteLineKind::Blank => {
-                ui.add_space(size * 0.8);
+                ui.add_space(size * scale::BLANK_LINE);
                 return false;
             }
             NoteLineKind::Text => (1.0, ColorRole::Ink, None, 0.0),
             NoteLineKind::Heading(n) => {
-                ui.add_space(size * 0.25);
-                let scale = [1.35, 1.2, 1.08].get(usize::from(n) - 1).unwrap_or(&1.0);
+                ui.add_space(size * scale::HEADING_SPACE);
+                let scale = scale::HEADINGS.get(usize::from(n) - 1).unwrap_or(&1.0);
                 (*scale, ColorRole::Accent, None, 0.0)
             }
             NoteLineKind::Bullet { level } => {
@@ -1155,7 +1151,7 @@ impl State {
             }
             NoteLineKind::Numbered { level, number } => {
                 let at = f32::from(level) * LEVEL;
-                let width = 14.0 + 8.0 * number.to_string().len() as f32;
+                let width = space::L + space::M * number.to_string().len() as f32;
                 (
                     1.0,
                     ColorRole::Ink,
@@ -1163,7 +1159,7 @@ impl State {
                     at + width,
                 )
             }
-            NoteLineKind::Quote => (1.0, ColorRole::Ink, None, 14.0),
+            NoteLineKind::Quote => (1.0, ColorRole::Ink, None, space::L),
         };
         let mut styled: Vec<(Range<usize>, SnippetStyle)> = Vec::new();
         if let NoteLineKind::Heading(_) = line.kind {
@@ -1195,7 +1191,7 @@ impl State {
         }
         styled.extend(body.references.iter().map(|(r, _)| (r.clone(), link)));
         let settings = self.session.text;
-        let text_width = (width - gutter).max(40.0);
+        let text_width = (width - gutter).max(size::TEXT_MIN);
         let laid = self
             .notes_ui
             .snippets
@@ -1206,7 +1202,7 @@ impl State {
                 ColorRole::VerseNumber,
                 &[],
                 scale,
-                gutter.max(40.0),
+                gutter.max(size::TEXT_MIN),
                 &settings,
             );
             if laid.is_none() {
@@ -1215,7 +1211,7 @@ impl State {
             Some((laid?, at))
         });
         let Some(laid) = laid else {
-            ui.allocate_space(vec2(width, settings.size * 1.6 * scale));
+            ui.allocate_space(vec2(width, settings.size * scale::LINE * scale));
             ui.ctx().request_repaint();
             return false;
         };
@@ -1233,9 +1229,15 @@ impl State {
                 self.paint_laid(ui, m, rect.min + vec2(*at, 0.0));
             }
             if line.kind == NoteLineKind::Quote {
-                let bar =
-                    Rect::from_min_size(rect.min + vec2(2.0, 1.0), vec2(3.0, rect.height() - 2.0));
-                ui.painter().rect_filled(bar, 1.0, theme::c().rule);
+                let bar = Rect::from_min_max(
+                    rect.min + vec2(space::XXS, space::PX),
+                    pos2(
+                        rect.left() + space::XXS + size::DOT,
+                        rect.bottom() - space::PX,
+                    ),
+                );
+                ui.painter()
+                    .rect_filled(bar, size::DOT / 2.0, theme::c().rule);
             }
         }
         self.notes_ui.drawn_lines.push(DrawnLine {
@@ -1298,8 +1300,8 @@ impl State {
             for r in &rects {
                 ui.painter().hline(
                     r.x_range(),
-                    r.bottom() - 2.0,
-                    Stroke::new(1.0, self.palette.link.gamma_multiply(0.6)),
+                    r.bottom() - space::XXS,
+                    Stroke::new(stroke::HAIR, self.palette.link.gamma_multiply(alpha::SOFT)),
                 );
             }
             if !(pointer.is_some_and(|p| rects.iter().any(|r| r.contains(p)))
@@ -1370,11 +1372,11 @@ impl State {
             base,
             styled,
             false,
-            width.max(40.0),
+            width.max(size::TEXT_MIN),
             &settings,
         );
         let Some(laid) = laid else {
-            ui.allocate_space(vec2(width, settings.size * 1.6));
+            ui.allocate_space(vec2(width, settings.size * scale::LINE));
             ui.ctx().request_repaint();
             return None;
         };
@@ -1401,7 +1403,7 @@ impl State {
             ui.separator();
         }
         let notebooks = self.notes_ui.notebooks.clone();
-        ui.menu_button("Move to Notebook", |ui| {
+        crate::components::menu(ui, "Move to Notebook", |ui| {
             for nb in notebooks.iter().filter(|n| n.id != a.notebook_id) {
                 if ui.button(&nb.name).clicked() {
                     run.push(("annotation.move", json!({ "id": a.id, "notebook": nb.id })));
@@ -1437,11 +1439,11 @@ impl State {
         if let Content::Highlight { style } = &a.content {
             // The active palette's styles (#181).
             let book = self.marks.styles(&self.session).clone();
-            ui.menu_button("Highlight style", |ui| {
+            crate::components::menu(ui, "Highlight style", |ui| {
                 for s in book.active_styles() {
                     let label = menu_label(ui, &book.label(&s.id), &s.appearance);
                     if ui
-                        .add_enabled(s.id != *style, egui::Button::new(label))
+                        .add_enabled(s.id != *style, crate::components::button(label))
                         .clicked()
                     {
                         run.push(("annotation.style", json!({ "id": a.id, "style": s.id })));
@@ -1482,7 +1484,7 @@ fn link_tip(ui: &Ui, text: &str) {
 pub(super) fn export_menu(ui: &mut Ui, label: &str, enabled: bool) -> Option<NotesFormat> {
     let mut chosen = None;
     ui.add_enabled_ui(enabled, |ui| {
-        ui.menu_button(label, |ui| {
+        crate::components::menu(ui, label, |ui| {
             for (format, item) in [
                 (NotesFormat::Markdown, "Export as Markdown…"),
                 (NotesFormat::Html, "Export as HTML…"),

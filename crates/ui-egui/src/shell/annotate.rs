@@ -36,6 +36,7 @@ use crate::palette::Palette;
 use crate::pane::{PaneOutput, has_text};
 use crate::selection::{Selection, copy_text, selected_text};
 use crate::theme;
+use crate::tokens::{inset, mark, radius, size, space, stroke};
 
 /// The Selection keys as the user has them (Ctrl+Shift+N and Alt+1…9 by default), with what
 /// each does: each as every key report that presses it ([`pressed_as`]), so one bound to
@@ -327,45 +328,46 @@ pub(super) fn paint_swatch(
 ) {
     let p = ui.painter();
     let paint = palette.paint(style);
-    let inner = rect.shrink(rect.height() * 0.22);
+    let inner = rect.shrink(rect.height() * mark::SWATCH_INSET);
     match paint.look {
         HighlightLook::Background => {
-            p.rect_filled(rect, 3.0, paint.color);
+            p.rect_filled(rect, radius::S, paint.color);
         }
         HighlightLook::Underline => {
-            p.rect_filled(rect, 3.0, palette.page);
-            let y = rect.bottom() - rect.height() * 0.28;
+            p.rect_filled(rect, radius::S, palette.page);
+            let y = rect.bottom() - rect.height() * mark::SWATCH_UNDERLINE;
+            let pad = mark::SAMPLE_PAD.x;
             p.line_segment(
-                [pos2(rect.left() + 3.0, y), pos2(rect.right() - 3.0, y)],
-                Stroke::new(2.0, paint.color),
+                [pos2(rect.left() + pad, y), pos2(rect.right() - pad, y)],
+                Stroke::new(stroke::THICK, paint.color),
             );
         }
         HighlightLook::Box => {
-            p.rect_filled(rect, 3.0, palette.page);
+            p.rect_filled(rect, radius::S, palette.page);
             p.rect_stroke(
                 inner,
-                1.5,
-                Stroke::new(2.0, paint.color),
+                mark::RADIUS,
+                Stroke::new(stroke::THICK, paint.color),
                 egui::StrokeKind::Inside,
             );
         }
         HighlightLook::TextColor => {
-            p.rect_filled(rect, 3.0, palette.page);
+            p.rect_filled(rect, radius::S, palette.page);
             p.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
                 "A",
-                egui::FontId::proportional(rect.height() * 0.7),
+                egui::FontId::proportional(rect.height() * mark::SWATCH_LETTER),
                 paint.color,
             );
         }
     }
     let stroke = if hovered {
-        Stroke::new(1.5, theme::c().lapis)
+        Stroke::new(stroke::MEDIUM, theme::c().lapis)
     } else {
-        Stroke::new(1.0, theme::c().rule)
+        crate::components::rule_stroke()
     };
-    p.rect_stroke(rect, 3.0, stroke, egui::StrokeKind::Inside);
+    p.rect_stroke(rect, radius::S, stroke, egui::StrokeKind::Inside);
 }
 
 /// The "Highlight styles" button that opens the styles window from the toolbar.
@@ -382,17 +384,17 @@ fn toolbar_row(
 ) -> Option<Annotate> {
     let mut picked = None;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = space::XS;
         let sense = if can_annotate {
             Sense::click()
         } else {
             Sense::hover()
         };
         for (i, style) in styles.active_styles().into_iter().enumerate() {
-            let (rect, r) = ui.allocate_exact_size(vec2(22.0, 22.0), sense);
+            let (rect, r) = ui.allocate_exact_size(egui::Vec2::splat(size::CONTROL_COMPACT), sense);
             paint_swatch(
                 ui,
-                rect.shrink(2.0),
+                rect.shrink(space::XXS),
                 &style.appearance,
                 palette,
                 r.hovered(),
@@ -406,7 +408,10 @@ fn toolbar_row(
             }
         }
         if ui
-            .add_enabled(can_annotate, egui::Button::new(STYLES_BUTTON).small())
+            .add_enabled(
+                can_annotate,
+                crate::components::button(STYLES_BUTTON).small(),
+            )
             .on_hover_text("Highlight styles")
             .accessible_name("Highlight styles")
             .clicked()
@@ -417,7 +422,7 @@ fn toolbar_row(
         if ui
             .add_enabled(
                 can_annotate,
-                egui::Button::new(with_icon(ui, Icon::Note, "Note")),
+                crate::components::button(with_icon(ui, Icon::Note, "Note")),
             )
             .on_hover_text(with_key_text("Write a Note on the selection", keys.note()))
             .clicked()
@@ -425,7 +430,7 @@ fn toolbar_row(
             picked = Some(Annotate::Note);
         }
         if ui
-            .add(egui::Button::new(with_icon(ui, Icon::Copy, "Copy")))
+            .add(crate::components::button(with_icon(ui, Icon::Copy, "Copy")))
             .on_hover_text(format!(
                 "Copy the text with its reference ({})",
                 crate::key_labels::label("Ctrl+C")
@@ -435,7 +440,7 @@ fn toolbar_row(
             picked = Some(Annotate::Copy);
         }
         if ui
-            .add(egui::Button::new(with_icon(
+            .add(crate::components::button(with_icon(
                 ui,
                 Icon::Search,
                 "Search this",
@@ -471,7 +476,7 @@ pub(super) fn menu_label(
     let swatch = crate::icons::image(ui.ctx(), Icon::Swatch, crate::icons::SMALL, paint.mark);
     let mut text = TextFormat::simple(font, ink);
     if paint.look == HighlightLook::Underline {
-        text.underline = Stroke::new(2.0, paint.mark);
+        text.underline = Stroke::new(stroke::THICK, paint.mark);
     }
     job.append(name, 0.0, text);
     (swatch, job)
@@ -562,7 +567,10 @@ impl State {
         };
         let at = at.or(t.selection_rect).unwrap_or_else(|| {
             let o = view.text_origin;
-            Rect::from_min_size(pos2(o[0], o[1] + 40.0), vec2(1.0, 20.0))
+            Rect::from_min_size(
+                pos2(o[0], o[1] + space::XXXL),
+                vec2(1.0, size::CONTROL_COMPACT),
+            )
         });
         match action {
             Annotate::Copy => ctx.copy_text(copied.unwrap_or_default()),
@@ -773,11 +781,17 @@ impl State {
             out.selection_rect,
         ) {
             let pane = out.response.as_ref().map_or(sel, |r| r.rect);
-            let above = sel.top() - pane.top() > 44.0;
+            let above = sel.top() - pane.top() > size::CONTROL + space::XL;
             let (anchor, pivot) = if above {
-                (pos2(sel.left(), sel.top() - 6.0), egui::Align2::LEFT_BOTTOM)
+                (
+                    pos2(sel.left(), sel.top() - space::S),
+                    egui::Align2::LEFT_BOTTOM,
+                )
             } else {
-                (pos2(sel.left(), sel.bottom() + 6.0), egui::Align2::LEFT_TOP)
+                (
+                    pos2(sel.left(), sel.bottom() + space::S),
+                    egui::Align2::LEFT_TOP,
+                )
             };
             egui::Area::new(egui::Id::unique(("selection-toolbar", tab)))
                 .order(egui::Order::Foreground)
@@ -786,8 +800,8 @@ impl State {
                 .constrain_to(pane)
                 .fade_in(false)
                 .show(ui.ctx(), |ui| {
-                    egui::Frame::popup(ui.style())
-                        .inner_margin(egui::Margin::symmetric(6, 4))
+                    crate::components::popover_frame()
+                        .inner_margin(inset::BAR)
                         .show(ui, |ui| {
                             if let Some(a) = toolbar_row(ui, &palette, can_annotate, &keys, &styles)
                             {
@@ -827,18 +841,10 @@ impl State {
             egui::PopupAnchor::ParentRect(marker),
         )
         .show(|ui| {
-            ui.set_max_width(320.0);
-            ui.label(
-                RichText::new(format!("Note · {notebook}"))
-                    .small()
-                    .color(theme::c().muted),
-            );
+            ui.set_max_width(size::POPOVER);
+            ui.label(crate::components::hint_text(format!("Note · {notebook}")));
             note_preview_lines(ui, a.body());
-            ui.label(
-                RichText::new("Click to open it in Notes")
-                    .small()
-                    .color(theme::c().muted),
-            );
+            ui.label(crate::components::hint_text("Click to open it in Notes"));
         });
     }
 
@@ -864,15 +870,15 @@ impl State {
             return;
         }
         let screen = ctx.content_rect();
-        let below = screen.bottom() - ed.at.bottom() > 240.0;
+        let below = screen.bottom() - ed.at.bottom() > size::LIST_MAX;
         let (anchor, pivot) = if below {
             (
-                pos2(ed.at.left(), ed.at.bottom() + 6.0),
+                pos2(ed.at.left(), ed.at.bottom() + space::S),
                 egui::Align2::LEFT_TOP,
             )
         } else {
             (
-                pos2(ed.at.left(), ed.at.top() - 6.0),
+                pos2(ed.at.left(), ed.at.top() - space::S),
                 egui::Align2::LEFT_BOTTOM,
             )
         };
@@ -885,8 +891,8 @@ impl State {
             .pivot(pivot)
             .fade_in(false)
             .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_width(340.0);
+                crate::components::popover_frame().show(ui, |ui| {
+                    ui.set_width(size::POPOVER);
                     crate::icons::label(
                         ui,
                         Icon::Note,
@@ -908,7 +914,7 @@ impl State {
                         ed.focused_once = r.has_focus();
                     }
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Notebook").small().color(theme::c().muted));
+                        ui.label(crate::components::hint_text("Notebook"));
                         let current = ed
                             .notebooks
                             .iter()
@@ -927,7 +933,7 @@ impl State {
                     ui.horizontal(|ui| {
                         if ui
                             .add(
-                                egui::Button::new("Save")
+                                crate::components::button("Save")
                                     .shortcut_text(crate::key_labels::label("Ctrl+Enter")),
                             )
                             .clicked()
@@ -937,7 +943,7 @@ impl State {
                         if ui
                             .add_enabled(
                                 !ed.body.trim().is_empty(),
-                                egui::Button::new("Open in Notes"),
+                                crate::components::button("Open in Notes"),
                             )
                             .on_hover_text("Save, and go on writing in the Notes Tool")
                             .clicked()
@@ -952,14 +958,10 @@ impl State {
                             discard = true;
                         }
                     });
-                    ui.label(
-                        RichText::new(format!(
-                            "Saves when you click away, press Esc or {}.",
-                            crate::key_labels::label("Ctrl+Enter")
-                        ))
-                        .small()
-                        .color(theme::c().muted),
-                    );
+                    ui.label(crate::components::hint_text(format!(
+                        "Saves when you click away, press Esc or {}.",
+                        crate::key_labels::label("Ctrl+Enter")
+                    )));
                     if let Some(e) = &ed.error {
                         ui.label(RichText::new(e).small().color(theme::c().warn));
                     }
@@ -994,7 +996,7 @@ fn note_preview_lines(ui: &mut Ui, body: &str) {
         }
         let indent = |level: u8| "    ".repeat(usize::from(level));
         match line.kind {
-            obs_model::NoteLineKind::Blank => ui.add_space(4.0),
+            obs_model::NoteLineKind::Blank => ui.add_space(space::XS),
             obs_model::NoteLineKind::Heading(_) => {
                 ui.label(RichText::new(text).strong());
             }

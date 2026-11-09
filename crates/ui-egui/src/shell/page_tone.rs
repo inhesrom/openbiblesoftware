@@ -9,6 +9,7 @@ use serde_json::json;
 
 use super::State;
 use crate::theme;
+use crate::tokens::size;
 
 /// The Page tone hint, while it is open: the light tone the user chose.
 #[derive(Debug, Default)]
@@ -66,9 +67,13 @@ impl State {
         let mut use_auto = None;
         egui::Area::new(egui::Id::unique("page-tone-hint"))
             .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -96.0))
+            // Above a toast.
+            .anchor(
+                egui::Align2::CENTER_BOTTOM,
+                vec2(0.0, -2.0 * size::TOAST_RISE),
+            )
             .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                crate::components::popover_frame().show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(hint_text(tone)).color(theme::c().ink));
                         if ui.button("Use Auto").clicked() {

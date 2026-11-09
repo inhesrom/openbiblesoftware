@@ -19,12 +19,13 @@ use super::{HOVER_DWELL_SECS, State, TabId};
 use crate::doc::ReadingDoc;
 use crate::pane::{FootnoteHit, PaneOutput, register_footnote_widget};
 use crate::theme;
+use crate::tokens::{alpha, mark, radius, scale, size, space, stroke};
 use crate::workers::SnippetCache;
 
-/// The popover's text column, in points.
-const WIDTH: f32 = 340.0;
-/// The most the popover's text shows at once, in points: a longer note scrolls.
-const MAX_BODY_HEIGHT: f32 = 360.0;
+/// The popover's text column.
+const WIDTH: f32 = size::POPOVER_TEXT;
+/// The most the popover's text shows at once: a longer note scrolls.
+const MAX_BODY_HEIGHT: f32 = size::POPOVER;
 
 /// A Footnote as its popover shows it: the note's text unit, with each Bible reference in it
 /// a link to its Standard Passages, and the line naming it ("Footnote a · John 1:5").
@@ -476,9 +477,9 @@ impl State {
                 .markers()
                 .filter(|m| {
                     let pointed = pointer.is_some_and(|at| {
-                        m.rect.expand(6.0).contains(at)
+                        m.rect.expand(space::S).contains(at)
                             || (f.state.phase.on(m)
-                                && f.rect.is_some_and(|r| r.expand(6.0).contains(at)))
+                                && f.rect.is_some_and(|r| r.expand(space::S).contains(at)))
                     });
                     let resting = [&out.hovered_footnote, &out.focused_footnote]
                         .into_iter()
@@ -506,7 +507,8 @@ impl State {
                 send(self, FootnoteEvent::Esc);
             } else if pressed
                 && pointer.is_some_and(|at| {
-                    !m.rect.expand(3.0).contains(at) && !f.rect.is_some_and(|r| r.contains(at))
+                    !m.rect.expand(mark::HIT_SLOP).contains(at)
+                        && !f.rect.is_some_and(|r| r.contains(at))
                 })
             {
                 send(self, FootnoteEvent::ClickAway);
@@ -594,7 +596,8 @@ impl State {
             (m.rect, m.widget, f.state.phase.pinned(), f.focus_inside);
         // A long note scrolls inside the popover, which never grows past the window.
         let screen = ui.ctx().content_rect();
-        let max_body = (screen.height() - 120.0).clamp(60.0, MAX_BODY_HEIGHT);
+        let max_body =
+            (screen.height() - size::POPOVER_ROOM).clamp(size::POPOVER_BODY_MIN, MAX_BODY_HEIGHT);
         let mut close = false;
         let mut close_id = None;
         let mut go: Option<(Passage, bool)> = None;
@@ -602,11 +605,11 @@ impl State {
         let mut focus = LinkFocus::NotLaidOut;
         let shown = egui::Area::new(egui::Id::unique(("footnote-popover", tab)))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(marker.left() - 8.0, marker.bottom() + 2.0))
+            .fixed_pos(pos2(marker.left() - space::M, marker.bottom() + space::XXS))
             .constrain(true)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                crate::components::popover_frame().show(ui, |ui| {
                     ui.set_width(WIDTH);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&body.header).small().color(theme::c().muted));
@@ -686,7 +689,7 @@ impl State {
             .snippets
             .get_unit(&body.unit, body.direction, WIDTH, &settings);
         let Some(laid) = laid else {
-            ui.allocate_space(vec2(WIDTH, settings.size * 1.6));
+            ui.allocate_space(vec2(WIDTH, settings.size * scale::LINE));
             ui.ctx().request_repaint();
             return (None, Vec::new(), LinkFocus::NotLaidOut);
         };
@@ -708,7 +711,7 @@ impl State {
             );
         }
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
-        painter.rect_filled(rect.expand(4.0), 3.0, self.palette.page);
+        painter.rect_filled(rect.expand(space::XS), radius::S, self.palette.page);
         painter.add(Shape::mesh(mesh));
         let mut go = None;
         let mut drawn = Vec::new();
@@ -728,8 +731,8 @@ impl State {
             for r in &rects {
                 painter.hline(
                     r.x_range(),
-                    r.bottom() - 2.0,
-                    Stroke::new(1.0, self.palette.link.gamma_multiply(0.6)),
+                    r.bottom() - space::XXS,
+                    Stroke::new(stroke::HAIR, self.palette.link.gamma_multiply(alpha::SOFT)),
                 );
             }
             let written = body
@@ -764,8 +767,8 @@ impl State {
             if link.has_focus() {
                 for r in &rects {
                     painter.rect_stroke(
-                        r.expand(1.0),
-                        2.0,
+                        r.expand(space::PX),
+                        radius::XS,
                         ui.visuals().selection.stroke,
                         egui::StrokeKind::Outside,
                     );

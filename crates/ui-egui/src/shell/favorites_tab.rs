@@ -9,9 +9,10 @@ use serde_json::{Value, json};
 use super::State;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{size, space, text};
 
 /// Height of one History row (Visits and day headings alike).
-const HISTORY_ROW_H: f32 = 24.0;
+const HISTORY_ROW_H: f32 = size::ROW_COMPACT;
 
 /// One line of the History list.
 enum HistoryLine {
@@ -34,7 +35,10 @@ impl State {
             return;
         }
         let favorite = self.session.favorite_of(tab).map(|f| f.id);
-        let (rect, r) = ui.allocate_exact_size(vec2(20.0, 22.0), egui::Sense::click());
+        let (rect, r) = ui.allocate_exact_size(
+            egui::Vec2::splat(size::CONTROL_COMPACT),
+            egui::Sense::click(),
+        );
         let color = match (favorite.is_some(), r.hovered()) {
             (true, _) => theme::c().gilt,
             (false, true) => theme::c().lapis,
@@ -70,7 +74,7 @@ impl State {
         }
         let folders = self.session.favorite_folders();
         let mut picked: Option<String> = None;
-        ui.menu_button("Add to Favorites folder", |ui| {
+        crate::components::menu(ui, "Add to Favorites folder", |ui| {
             for f in &folders {
                 if ui.button(f).clicked() {
                     picked = Some(f.clone());
@@ -97,98 +101,92 @@ impl State {
             .unwrap_or_default();
         let split = self.split_held;
         let mut run: Option<(&'static str, Value)> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                if self.session.user.is_none() {
-                    muted(
-                        ui,
-                        "Favorites are kept in the User database, which is not open.",
-                    );
-                    return;
-                }
-                if self.session.favorites().is_empty() {
-                    let star = super::with_key(
-                        &self.session,
-                        "No Favorites yet. Click the star in a Tab's header",
-                        "favorite.add",
-                    );
-                    muted(ui, &format!("{star} to add the place it shows."));
-                    return;
-                }
-                let shown: Vec<(i64, String, String)> = self
-                    .session
-                    .favorites_matching(&filter)
-                    .into_iter()
-                    .map(|f| (f.id, f.folder.clone(), f.label.clone()))
-                    .collect();
-                if shown.is_empty() {
-                    muted(ui, "No Favorites match the filter.");
-                    return;
-                }
-                let folders = self.session.favorite_folders();
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let mut folder: Option<&str> = None;
-                        for (id, f, label) in &shown {
-                            if folder != Some(f.as_str()) {
-                                folder = Some(f.as_str());
-                                if !f.is_empty() {
-                                    ui.add_space(8.0);
-                                    heading(ui, f);
-                                }
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            if self.session.user.is_none() {
+                muted(
+                    ui,
+                    "Favorites are kept in the User database, which is not open.",
+                );
+                return;
+            }
+            if self.session.favorites().is_empty() {
+                let star = super::with_key(
+                    &self.session,
+                    "No Favorites yet. Click the star in a Tab's header",
+                    "favorite.add",
+                );
+                muted(ui, &format!("{star} to add the place it shows."));
+                return;
+            }
+            let shown: Vec<(i64, String, String)> = self
+                .session
+                .favorites_matching(&filter)
+                .into_iter()
+                .map(|f| (f.id, f.folder.clone(), f.label.clone()))
+                .collect();
+            if shown.is_empty() {
+                muted(ui, "No Favorites match the filter.");
+                return;
+            }
+            let folders = self.session.favorite_folders();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let mut folder: Option<&str> = None;
+                    for (id, f, label) in &shown {
+                        if folder != Some(f.as_str()) {
+                            folder = Some(f.as_str());
+                            if !f.is_empty() {
+                                ui.add_space(space::M);
+                                heading(ui, f);
                             }
-                            let r = ui.add(
-                                egui::Button::new(RichText::new(label).size(14.0))
-                                    .frame(false)
-                                    .min_size(vec2(ui.available_width(), 24.0)),
-                            );
-                            let r = r.on_hover_text("Open (Ctrl/Cmd-click: in a new split)");
-                            if r.clicked() {
-                                run = Some(("favorite.open", json!({ "id": id, "split": split })));
+                        }
+                        let r = ui.add(
+                            crate::components::button(RichText::new(label).size(text::BODY))
+                                .frame(false)
+                                .min_size(vec2(ui.available_width(), size::ROW_COMPACT)),
+                        );
+                        let r = r.on_hover_text("Open (Ctrl/Cmd-click: in a new split)");
+                        if r.clicked() {
+                            run = Some(("favorite.open", json!({ "id": id, "split": split })));
+                        }
+                        r.context_menu(|ui| {
+                            if ui.button("Open in a new split").clicked() {
+                                run = Some(("favorite.open", json!({ "id": id, "split": true })));
+                                ui.close();
                             }
-                            r.context_menu(|ui| {
-                                if ui.button("Open in a new split").clicked() {
+                            crate::components::menu(ui, "Move to folder", |ui| {
+                                if !f.is_empty() && ui.button("No folder").clicked() {
                                     run =
-                                        Some(("favorite.open", json!({ "id": id, "split": true })));
+                                        Some(("favorite.move", json!({ "id": id, "folder": "" })));
                                     ui.close();
                                 }
-                                ui.menu_button("Move to folder", |ui| {
-                                    if !f.is_empty() && ui.button("No folder").clicked() {
+                                for other in folders.iter().filter(|o| *o != f) {
+                                    if ui.button(other).clicked() {
                                         run = Some((
                                             "favorite.move",
-                                            json!({ "id": id, "folder": "" }),
+                                            json!({ "id": id, "folder": other }),
                                         ));
                                         ui.close();
                                     }
-                                    for other in folders.iter().filter(|o| *o != f) {
-                                        if ui.button(other).clicked() {
-                                            run = Some((
-                                                "favorite.move",
-                                                json!({ "id": id, "folder": other }),
-                                            ));
-                                            ui.close();
-                                        }
-                                    }
-                                    if let Some(name) = new_folder_field(ui, ("move", *id)) {
-                                        run = Some((
-                                            "favorite.move",
-                                            json!({ "id": id, "folder": name }),
-                                        ));
-                                        ui.close();
-                                    }
-                                });
-                                if ui.button("Remove from Favorites").clicked() {
-                                    run = Some(("favorite.remove", json!({ "id": id })));
+                                }
+                                if let Some(name) = new_folder_field(ui, ("move", *id)) {
+                                    run = Some((
+                                        "favorite.move",
+                                        json!({ "id": id, "folder": name }),
+                                    ));
                                     ui.close();
                                 }
                             });
-                        }
-                    });
-            });
+                            if ui.button("Remove from Favorites").clicked() {
+                                run = Some(("favorite.remove", json!({ "id": id })));
+                                ui.close();
+                            }
+                        });
+                    }
+                });
+        });
         if let Some((id, params)) = run {
             self.run(id, &params);
         }
@@ -204,106 +202,95 @@ impl State {
         let split = self.split_held;
         let mut run: Option<(&'static str, Value)> = None;
         let mut confirm: Option<bool> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                if self.session.user.is_none() {
-                    muted(
-                        ui,
-                        "History is kept in the User database, which is not open.",
-                    );
-                    return;
-                }
-                if self.session.history().is_empty() {
-                    muted(
-                        ui,
-                        "History is empty. The places you go in any Tab are listed here, \
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            if self.session.user.is_none() {
+                muted(
+                    ui,
+                    "History is kept in the User database, which is not open.",
+                );
+                return;
+            }
+            if self.session.history().is_empty() {
+                muted(
+                    ui,
+                    "History is empty. The places you go in any Tab are listed here, \
                          newest first.",
-                    );
-                    return;
-                }
-                ui.horizontal(|ui| {
-                    if confirming {
-                        ui.label("Clear all of History? This cannot be undone.");
-                        if ui.button("Clear").clicked() {
-                            run = Some(("history.clear", Value::Null));
-                            confirm = Some(false);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            confirm = Some(false);
-                        }
-                    } else if ui.button("Clear History…").clicked() {
-                        confirm = Some(true);
+                );
+                return;
+            }
+            ui.horizontal(|ui| {
+                if confirming {
+                    ui.label("Clear all of History? This cannot be undone.");
+                    if ui.button("Clear").clicked() {
+                        run = Some(("history.clear", Value::Null));
+                        confirm = Some(false);
                     }
-                });
-                ui.add_space(4.0);
-                let mut lines = Vec::new();
-                for day in self.session.history_days(&filter) {
-                    lines.push(HistoryLine::Day(day.heading));
-                    for v in day.visits {
-                        lines.push(HistoryLine::Visit {
-                            id: v.id,
-                            time: v.time,
-                            label: v.label,
-                        });
+                    if ui.button("Cancel").clicked() {
+                        confirm = Some(false);
                     }
+                } else if ui.button("Clear History…").clicked() {
+                    confirm = Some(true);
                 }
-                if lines.is_empty() {
-                    muted(ui, "Nothing in History matches the filter.");
-                    return;
+            });
+            ui.add_space(space::XS);
+            let mut lines = Vec::new();
+            for day in self.session.history_days(&filter) {
+                lines.push(HistoryLine::Day(day.heading));
+                for v in day.visits {
+                    lines.push(HistoryLine::Visit {
+                        id: v.id,
+                        time: v.time,
+                        label: v.label,
+                    });
                 }
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show_rows(ui, HISTORY_ROW_H, lines.len(), |ui, range| {
-                        for line in &lines[range] {
-                            match line {
-                                HistoryLine::Day(d) => {
-                                    ui.allocate_ui(
-                                        vec2(ui.available_width(), HISTORY_ROW_H),
-                                        |ui| {
-                                            ui.add_space(6.0);
-                                            ui.label(
-                                                RichText::new(d).strong().color(theme::c().ink),
-                                            );
-                                        },
-                                    );
-                                }
-                                HistoryLine::Visit { id, time, label } => {
-                                    ui.allocate_ui(
-                                        vec2(ui.available_width(), HISTORY_ROW_H),
-                                        |ui| {
-                                            ui.horizontal(|ui| {
-                                                ui.label(
-                                                    RichText::new(time)
-                                                        .size(12.0)
-                                                        .color(theme::c().muted),
-                                                );
-                                                let r = ui.add(
-                                                    egui::Button::new(
-                                                        RichText::new(label).size(14.0),
-                                                    )
-                                                    .frame(false),
-                                                );
-                                                if r.on_hover_text(
-                                                "Go back there (Ctrl/Cmd-click: in a new split)",
+            }
+            if lines.is_empty() {
+                muted(ui, "Nothing in History matches the filter.");
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show_rows(ui, HISTORY_ROW_H, lines.len(), |ui, range| {
+                    for line in &lines[range] {
+                        match line {
+                            HistoryLine::Day(d) => {
+                                ui.allocate_ui(vec2(ui.available_width(), HISTORY_ROW_H), |ui| {
+                                    ui.add_space(space::S);
+                                    ui.label(RichText::new(d).strong().color(theme::c().ink));
+                                });
+                            }
+                            HistoryLine::Visit { id, time, label } => {
+                                ui.allocate_ui(vec2(ui.available_width(), HISTORY_ROW_H), |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new(time)
+                                                .size(text::SMALL)
+                                                .color(theme::c().muted),
+                                        );
+                                        let r = ui.add(
+                                            crate::components::button(
+                                                RichText::new(label).size(text::BODY),
                                             )
-                                            .clicked()
-                                            {
-                                                run = Some((
-                                                    "history.open",
-                                                    json!({ "id": id, "split": split }),
-                                                ));
-                                            }
-                                            });
-                                        },
-                                    );
-                                }
+                                            .frame(false),
+                                        );
+                                        if r.on_hover_text(
+                                            "Go back there (Ctrl/Cmd-click: in a new split)",
+                                        )
+                                        .clicked()
+                                        {
+                                            run = Some((
+                                                "history.open",
+                                                json!({ "id": id, "split": split }),
+                                            ));
+                                        }
+                                    });
+                                });
                             }
                         }
-                    });
-            });
+                    }
+                });
+        });
         if let Some(on) = confirm
             && let Some(t) = self.tabs.get_mut(&tab)
         {
@@ -326,12 +313,12 @@ fn new_folder_field(ui: &mut Ui, salt: impl std::hash::Hash + std::fmt::Debug) -
                 egui::TextEdit::singleline(&mut text)
                     .id_salt(id)
                     .hint_text("New folder")
-                    .desired_width(140.0),
+                    .desired_width(size::FIELD),
             )
             .accessible_name("New folder");
         done |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         done |= ui
-            .add_enabled(!text.trim().is_empty(), egui::Button::new("Add"))
+            .add_enabled(!text.trim().is_empty(), crate::components::button("Add"))
             .clicked();
     });
     let name = text.trim().to_string();
@@ -348,10 +335,5 @@ fn muted(ui: &mut Ui, text: &str) {
 }
 
 fn heading(ui: &mut Ui, text: &str) {
-    ui.label(
-        RichText::new(text.to_uppercase())
-            .size(10.5)
-            .strong()
-            .color(theme::c().muted),
-    );
+    crate::components::section_header(ui, text);
 }

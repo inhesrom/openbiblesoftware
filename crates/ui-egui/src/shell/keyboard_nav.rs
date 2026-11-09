@@ -4,11 +4,12 @@
 //! Toolbar, then each Panel in screen order. The commands themselves are the engine's
 //! (`obs_engine::keyboard_navigation`); every key is the user's to rebind (#177).
 
-use egui::{Id, Modifiers, Rect, RichText, Ui};
+use egui::{Id, Modifiers, Rect, Ui};
 use obs_engine::{PanelId, TabId, WindowId};
 use serde_json::json;
 
-use super::{Shell, State, theme};
+use super::{Shell, State};
+use crate::tokens::size;
 
 /// The commands whose key opens the Tab switcher.
 pub(super) const SWITCHER_COMMANDS: [&str; 2] = ["tab.next_in_panel", "tab.previous_in_panel"];
@@ -199,13 +200,11 @@ impl Shell {
             .pivot(egui::Align2::CENTER_CENTER)
             .fixed_pos(over)
             .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(220.0);
-                    ui.label(
-                        RichText::new("Tabs in this Panel, last used first")
-                            .small()
-                            .color(theme::c().muted),
-                    );
+                crate::components::popover_frame().show(ui, |ui| {
+                    ui.set_min_width(size::SIDE_LIST);
+                    ui.label(crate::components::hint_text(
+                        "Tabs in this Panel, last used first",
+                    ));
                     for (i, title) in rows.iter().enumerate() {
                         let r = ui.selectable_label(i == at, title);
                         if i == at {

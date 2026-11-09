@@ -19,9 +19,10 @@ use serde_json::{Value, json};
 
 use super::Shell;
 use super::toolbar_look as look;
+use crate::tokens::space;
 
 /// Space between the toolbar's buttons.
-const GAP: f32 = 4.0;
+const GAP: f32 = space::XS;
 /// How near the window edge the pointer reveals an Auto-hide toolbar.
 pub(crate) const REVEAL: f32 = 6.0;
 /// How far around the toolbar the pointer keeps an Auto-hide toolbar showing.
@@ -258,8 +259,8 @@ impl Shell {
         }
         let work = self.work_rect(ui);
         let start = match self.st.session.toolbar.position {
-            ToolbarPosition::Top | ToolbarPosition::Left => work.left_top() + vec2(8.0, 0.0),
-            ToolbarPosition::Bottom => work.left_bottom() + vec2(8.0, 0.0),
+            ToolbarPosition::Top | ToolbarPosition::Left => work.left_top() + vec2(space::M, 0.0),
+            ToolbarPosition::Bottom => work.left_bottom() + vec2(space::M, 0.0),
             ToolbarPosition::Right => work.right_top(),
         };
         Rect::from_min_size(start, Vec2::ZERO)
@@ -269,7 +270,7 @@ impl Shell {
     /// at Left and Right; and how tall the pane may grow there.
     pub(super) fn place_pane(&mut self, ui: &Ui, anchor: Rect) {
         let c = ui.ctx().content_rect();
-        let gap = 6.0;
+        let gap = space::S;
         let (at, pivot) = match self.st.session.toolbar.position {
             ToolbarPosition::Top => (anchor.left_bottom() + vec2(0.0, gap), Align2::LEFT_TOP),
             ToolbarPosition::Bottom => (anchor.left_top() - vec2(0.0, gap), Align2::LEFT_BOTTOM),
@@ -307,14 +308,14 @@ impl Shell {
                 for (i, (which, shown)) in list.iter().enumerate() {
                     ui.horizontal(|ui| {
                         let mut on = *shown;
-                        if ui.checkbox(&mut on, which.title()).changed() {
+                        if crate::components::toggle(ui, &mut on, which.title()).changed() {
                             acts.push((
                                 "toolbar.show_launcher",
                                 json!({ "launcher": which.id(), "shown": on }),
                             ));
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let down = ui.add_enabled(i < last, egui::Button::new("Move down"));
+                            let down = ui.add_enabled(i < last, crate::components::button("Move down"));
                             let down = down.on_hover_text(format!("Move {} later", which.title()));
                             if down.clicked() {
                                 acts.push((
@@ -322,7 +323,7 @@ impl Shell {
                                     json!({ "launcher": which.id(), "to": i + 1 }),
                                 ));
                             }
-                            let up = ui.add_enabled(i > 0, egui::Button::new("Move up"));
+                            let up = ui.add_enabled(i > 0, crate::components::button("Move up"));
                             let up = up.on_hover_text(format!("Move {} earlier", which.title()));
                             if up.clicked() {
                                 acts.push((
@@ -340,7 +341,7 @@ impl Shell {
                     .small()
                     .color(crate::theme::c().muted),
                 );
-                ui.add_space(6.0);
+                ui.add_space(space::S);
                 ui.label(egui::RichText::new("Buttons show").strong());
                 ui.horizontal(|ui| {
                     for (labels, id, label) in LauncherLabels::ALL {
@@ -358,7 +359,7 @@ impl Shell {
                         .color(crate::theme::c().muted),
                     );
                 }
-                ui.add_space(6.0);
+                ui.add_space(space::S);
                 ui.label(egui::RichText::new("Position").strong());
                 ui.horizontal(|ui| {
                     for (position, id, label) in ToolbarPosition::ALL {
@@ -377,7 +378,7 @@ impl Shell {
                 {
                     acts.push(("view.toolbar_auto_hide", json!({})));
                 }
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 ui.horizontal(|ui| {
                     if ui.button("Reset").clicked() {
                         acts.push(("toolbar.reset", json!({})));
@@ -459,7 +460,7 @@ fn reveal_zone(window: Rect, edge: ToolbarPosition) -> Rect {
 /// The toolbar's right-click menu: Position ▸, Auto-hide, Customize….
 fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
     let mut act: Act = None;
-    ui.menu_button((crate::icons::blank(), "Position"), |ui| {
+    crate::components::menu(ui, (crate::icons::blank(), "Position"), |ui| {
         for (position, id, label) in ToolbarPosition::ALL {
             if ui
                 .selectable_label(settings.position == position, label)
@@ -480,13 +481,16 @@ fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
     } else {
         crate::icons::blank()
     };
-    let auto_hide = ui.add(egui::Button::new((check, "Auto-hide")));
+    let auto_hide = ui.add(crate::components::button((check, "Auto-hide")));
     crate::icons::announce_toggled(&auto_hide, settings.auto_hide);
     if auto_hide.clicked() {
         act = Some(("view.toolbar_auto_hide", json!({})));
     }
     if ui
-        .add(egui::Button::new((crate::icons::blank(), "Customize…")))
+        .add(crate::components::button((
+            crate::icons::blank(),
+            "Customize…",
+        )))
         .clicked()
     {
         act = Some(("view.toolbar_customize", json!({})));
