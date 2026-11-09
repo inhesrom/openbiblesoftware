@@ -1,11 +1,11 @@
 //! View → Theme editor, and Settings → Theme and Page tone (#224): the user's Custom theme.
 //!
 //! - **Start from** a built-in theme (Light, Dark, High contrast light or dark): the Custom
-//!   theme becomes that theme's colours, with none changed.
+//!   theme becomes that theme's colours, with none changed (asked first when some are).
 //! - Each colour role is a row: a colour button with egui's picker, a hex field, and Reset
 //!   when it differs from the base. Every change runs `theme.set_color`, which makes the
 //!   Custom theme the app's Theme, so the whole window is the live preview; the preview card
-//!   shows it too, whatever the Theme.
+//!   shows it too, whatever the Theme. A picker being dragged saves when let go.
 //! - **Contrast**: [`theme::contrast_shorts`] of the theme as it is now, each pair that does
 //!   not read named with its ratio and what it needs (AAA when the base is High contrast).
 //! - **Export…** and **Import…** write and read the theme as a small JSON file through the
@@ -36,8 +36,14 @@ enum FileWait {
 #[derive(Default)]
 pub(crate) struct ThemeEditorUi {
     pub(crate) open: bool,
-    /// Hex fields being typed, by role (committed on Enter or leaving the field).
+    /// Hex fields being typed, by role (committed on Enter or leaving the field; Escape
+    /// drops it).
     hex: std::collections::HashMap<ThemeRole, String>,
+    /// The role whose colour picker is being dragged: shown at once, saved when let go.
+    dragging: Option<ThemeRole>,
+    /// The built-in theme Start from was clicked for while colours are changed, until the
+    /// user says to replace them or keep them.
+    confirm_start: Option<Theme>,
     #[cfg(not(target_arch = "wasm32"))]
     file: Option<FileWait>,
 }
@@ -54,6 +60,7 @@ impl State {
     pub(super) fn theme_editor_window(&mut self, ctx: &egui::Context) {
         #[cfg(not(target_arch = "wasm32"))]
         self.poll_theme_file();
+        self.save_dragged_color(ctx);
         if !self.theme_editor.open {
             return;
         }
@@ -62,7 +69,7 @@ impl State {
         let mut open = true;
         let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<Act> = Vec::new();
-        let hex = &mut self.theme_editor.hex;
+        let editor = &mut self.theme_editor;
         let max_height = ctx.content_rect().height() - size::DIALOG_ROOM;
         let window = egui::Window::new("Theme editor")
             .open(&mut open)
@@ -77,12 +84,13 @@ impl State {
                         max_height.clamp(size::LABEL_COLUMN_WIDE, size::DIALOG_LIST),
                     )
                     .show(ui, |ui| {
-                        editor_ui(ui, &custom, in_use, hex, &mut acts);
+                        editor_ui(ui, &custom, in_use, editor, &mut acts);
                     });
             });
         if !open || escape(window.map(|r| r.response.layer_id)) {
             self.theme_editor.open = false;
             self.theme_editor.hex.clear();
+            self.theme_editor.confirm_start = None;
         }
         for act in acts {
             match act {
@@ -93,6 +101,28 @@ impl State {
                 Act::Import => self.theme_file_dialog(ctx, false),
             }
         }
+    }
+
+    /// Save the colour a picker was dragged to once the pointer is let go (dragging changes
+    /// it in memory only, so the User database is not written every frame).
+    fn save_dragged_color(&mut self, ctx: &egui::Context) {
+        let Some(role) = self.theme_editor.dragging else {
+            return;
+        };
+        if ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        self.theme_editor.dragging = None;
+        let color = self
+            .session
+            .custom_theme
+            .colors
+            .get(&role)
+            .map(Rgb::to_string);
+        self.run(
+            "theme.set_color",
+            &json!({ "role": role.id(), "color": color }),
+        );
     }
 
     /// Ask where to export the Custom theme, or which file to import, on the dialog's own
@@ -173,7 +203,7 @@ fn editor_ui(
     ui: &mut Ui,
     custom: &CustomTheme,
     in_use: bool,
-    hex: &mut std::collections::HashMap<ThemeRole, String>,
+    editor: &mut ThemeEditorUi,
     acts: &mut Vec<Act>,
 ) {
     let ch = theme::custom_chrome(custom);
@@ -190,10 +220,34 @@ fn editor_ui(
                 .accessible_name(format!("Start from {}", t.label()))
                 .on_hover_text("The Custom theme becomes this theme's colours, none changed");
             if r.clicked() {
-                acts.push(Act::Run("theme.start_from", json!({ "base": t.id() })));
+                // Changed colours are kept unless the user says to replace them; the base
+                // already chosen with none changed is left as it is.
+                if !custom.colors.is_empty() {
+                    editor.confirm_start = Some(t);
+                } else if custom.base != t {
+                    acts.push(Act::Run("theme.start_from", json!({ "base": t.id() })));
+                }
             }
         }
     });
+    if let Some(t) = editor.confirm_start {
+        ui.horizontal_wrapped(|ui| {
+            let n = custom.colors.len();
+            let colours = if n == 1 { "colour" } else { "colours" };
+            ui.label(format!(
+                "Start from {}? Your {n} changed {colours} will be lost.",
+                t.label()
+            ));
+            if ui.button("Replace").clicked() {
+                editor.hex.clear();
+                editor.confirm_start = None;
+                acts.push(Act::Run("theme.start_from", json!({ "base": t.id() })));
+            }
+            if ui.button("Keep my colours").clicked() {
+                editor.confirm_start = None;
+            }
+        });
+    }
     if !in_use {
         ui.horizontal_wrapped(|ui| {
             ui.label(crate::components::hint_text(
@@ -221,16 +275,22 @@ fn editor_ui(
                     .color_edit_button_srgb(&mut rgb)
                     .accessible_name(format!("{label} colour"));
                 if r.changed() {
-                    hex.remove(&role);
+                    editor.hex.remove(&role);
                     let [r, g, b] = rgb;
                     let c = Rgb::new(r, g, b);
+                    // While the picker is dragged the colour shows at once and is saved
+                    // when let go.
+                    let held = ui.input(|i| i.pointer.any_down());
+                    if held {
+                        editor.dragging = Some(role);
+                    }
                     acts.push(Act::Run(
                         "theme.set_color",
-                        json!({ "role": id, "color": c.to_string() }),
+                        json!({ "role": id, "color": c.to_string(), "save": !held }),
                     ));
                 }
                 let stored = to_rgb(now).to_string();
-                let text = hex.entry(role).or_insert_with(|| stored.clone());
+                let text = editor.hex.entry(role).or_insert_with(|| stored.clone());
                 let field = ui
                     .add(
                         egui::TextEdit::singleline(text)
@@ -240,8 +300,11 @@ fn editor_ui(
                     )
                     .accessible_name(format!("{label} hex colour"));
                 if field.lost_focus() {
-                    let typed = hex.remove(&role).unwrap_or_default();
-                    if typed.trim() != stored {
+                    let typed = editor.hex.remove(&role).unwrap_or_default();
+                    // Escape cancels what was typed (and closes the window) rather than
+                    // applying it.
+                    let cancelled = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                    if !cancelled && typed.trim() != stored {
                         acts.push(Act::Run(
                             "theme.set_color",
                             json!({ "role": id, "color": typed.trim() }),
@@ -257,7 +320,7 @@ fn editor_ui(
                     .on_disabled_hover_text("The base theme's colour")
                     .clicked()
                 {
-                    hex.remove(&role);
+                    editor.hex.remove(&role);
                     acts.push(Act::Run("theme.set_color", json!({ "role": id })));
                 }
                 ui.end_row();
@@ -375,6 +438,14 @@ fn preview(ui: &mut Ui, ch: &Chrome) {
     label(field, "Text in a field", ch.ink);
     let selected = row(field.bottom() + space::XS);
     p.rect_filled(selected, radius::S, ch.selection);
+    if ch.high_contrast {
+        p.rect_stroke(
+            selected,
+            radius::S,
+            Stroke::new(stroke::MEDIUM, ch.rule),
+            egui::StrokeKind::Inside,
+        );
+    }
     label(selected, "A selected row", ch.ink);
     let hovered = row(selected.bottom() + space::XS);
     p.rect_filled(hovered, radius::S, ch.hover);

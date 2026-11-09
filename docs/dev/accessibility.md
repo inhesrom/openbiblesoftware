@@ -102,8 +102,13 @@ High contrast themes (AAA, and the borders at 3:1 there).
 In High contrast the focus ring is 3 pt (2 pt otherwise); egui's controls have a 1.5 pt border
 in the Borders colour (3:1 or more on every background), so a selected selectable (which egui
 frames only when selected) shows a frame, not only a fill; and every link is underlined at
-rest (`components::link`), not only when hovered. `high_contrast_tests.rs` checks these and the
-Page tones' own High contrast colours (every ink at 7:1 on the page and every overlay, and
+rest (`components::link`, and the Verse of the day reference), not only when hovered. States
+the app paints itself are framed too: each Panel's active Tab, and every selected row or open
+button drawn with `components::selected_row` (the Command box's current suggestion, the selected
+Library row, an open Launcher) get a 1.5 pt frame in the Borders colour; selected Search
+results are framed in ink, and the selected Layout card's border is thicker. The Highlight
+styles window reports what the High contrast page draws (AAA). `high_contrast_tests.rs` checks
+these and the Page tones' own High contrast colours (every ink at 7:1 on the page and every overlay, and
 Highlight colours derived to keep 7:1).
 
 ## Findings and fixes

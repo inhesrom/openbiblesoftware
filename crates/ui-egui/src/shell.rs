@@ -3871,9 +3871,16 @@ impl egui_tiles::Behavior<TabId> for State {
         _visuals: &egui::Visuals,
         _tiles: &Tiles<TabId>,
         _tile_id: TileId,
-        _state: &egui_tiles::TabState,
+        state: &egui_tiles::TabState,
     ) -> Stroke {
-        Stroke::NONE
+        // In a High contrast theme (#224) the active Tab is framed in the Borders colour, so it
+        // shows without its fill.
+        let c = theme::c();
+        if state.active && c.high_contrast {
+            Stroke::new(stroke::MEDIUM, c.rule)
+        } else {
+            Stroke::NONE
+        }
     }
 
     fn tab_bar_hline_stroke(&self, _visuals: &egui::Visuals) -> Stroke {

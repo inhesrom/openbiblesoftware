@@ -373,6 +373,16 @@ pub fn search_pane(
         if let Some(fill) = fill {
             painter.set(background, Shape::rect_filled(row_rect, 0.0, fill));
         }
+        // In a High contrast page (#224) the selected row is framed in ink, so it shows
+        // without its fill.
+        if tab.selected == Some(i) && palette.high_contrast {
+            painter.rect_stroke(
+                row_rect,
+                0.0,
+                Stroke::new(stroke::MEDIUM, palette.ink),
+                egui::StrokeKind::Inside,
+            );
+        }
         painter.hline(
             left..=rect.right() - MARGIN - SCROLLBAR,
             y + height - ROW_GAP / 2.0,

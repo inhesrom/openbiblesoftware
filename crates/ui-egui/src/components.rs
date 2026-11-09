@@ -245,6 +245,22 @@ pub fn text_placeholder(
     painter.rect_filled(bar, corner(radius::XS), color);
 }
 
+/// A selected row or open button the app paints itself (the Command box's current suggestion,
+/// a selected Library row, an open Launcher): filled in the Selection colour and, in a High
+/// contrast theme (#224), framed in the Borders colour, so it shows without its fill.
+pub fn selected_row(painter: &egui::Painter, rect: egui::Rect, radius: f32) {
+    let c = theme::c();
+    painter.rect_filled(rect, corner(radius), c.selection);
+    if c.high_contrast {
+        painter.rect_stroke(
+            rect,
+            corner(radius),
+            Stroke::new(stroke::MEDIUM, c.rule),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
 /// The outline round a hovered card-like link (a Factbook card, a Topic Guide entry).
 pub fn hover_outline(ui: &Ui, rect: egui::Rect) {
     ui.painter().rect_stroke(

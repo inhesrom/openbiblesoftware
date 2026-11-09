@@ -788,6 +788,15 @@ impl State {
                         palette.page
                     };
                     painter.rect_filled(rect, 0.0, fill);
+                    // In a High contrast page (#224) the selected row is framed in ink.
+                    if select == Some(i) && palette.high_contrast {
+                        painter.rect_stroke(
+                            rect,
+                            0.0,
+                            Stroke::new(stroke::MEDIUM, palette.ink),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                     painter.text(
                         rect.min + vec2(space::L, space::XS),
                         egui::Align2::LEFT_TOP,

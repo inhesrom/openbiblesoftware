@@ -236,3 +236,70 @@ fn a_selected_choice_shows_a_border_in_high_contrast() {
     assert!(around(rects.0), "the chosen one is framed: {framed:?}");
     assert!(!around(rects.1), "the other is not: {framed:?}");
 }
+
+/// The states the app paints itself show in High contrast by a frame in the Borders colour,
+/// not by their fill alone: the active Tab (not the others) and the Command box's current
+/// suggestion, the row Enter runs. In Light neither is framed.
+#[test]
+fn the_active_tab_and_the_command_box_suggestion_are_framed_in_high_contrast() {
+    let ctrl = Modifiers {
+        ctrl: true,
+        command: true,
+        ..Modifiers::NONE
+    };
+    let mut h = Harness::new();
+    h.shell.run("home.open", &json!({}));
+    h.frames(2);
+    super::a11y_audit::key(&mut h, Key::Comma, ctrl);
+    h.frames(2);
+    // The Borders-coloured frame of a Tab bar's Tab whose title is at `title`.
+    let tab_framed = |h: &Harness, rule: egui::Color32, title: Pos2| {
+        strokes(h, rule).iter().any(|(r, w)| {
+            *w == stroke::MEDIUM
+                && r.contains(title)
+                && (r.height() - crate::tokens::size::TAB_BAR).abs() <= 1.0
+        })
+    };
+    // The Selection-filled rows that are also framed in the Borders colour.
+    let framed_rows = |h: &Harness, chrome: crate::theme::Chrome| {
+        let frames = strokes(h, chrome.rule);
+        (h.rects.iter())
+            .filter(|(r, c)| *c == chrome.selection && frames.iter().any(|(f, _)| f == r))
+            .count()
+    };
+    for (id, chrome, framed) in [
+        ("high_contrast_light", HIGH_CONTRAST_LIGHT, true),
+        ("high_contrast_dark", HIGH_CONTRAST_DARK, true),
+        ("light", crate::theme::LIGHT, false),
+    ] {
+        h.shell.run("view.theme", &json!({ "value": id }));
+        h.frames(2);
+        assert_eq!(crate::theme::c(), chrome, "{id}");
+        // Each Panel's active Tab (Home on the left, Settings on the right), and not the others.
+        for title in ["Home", "Settings"] {
+            let at = h.tab_at(title);
+            assert_eq!(tab_framed(&h, chrome.rule, at), framed, "{id}: {title}");
+        }
+        for title in ["TB", "Library"] {
+            let at = h.tab_at(title);
+            assert!(
+                !tab_framed(&h, chrome.rule, at),
+                "{id}: {title} is not active"
+            );
+        }
+
+        assert_eq!(framed_rows(&h, chrome), 0, "{id}: before the Command box");
+        super::a11y_audit::key(&mut h, Key::L, ctrl);
+        h.events.push(Event::Text("theme".into()));
+        h.frames(2);
+        assert!(h.shell.st.command_box.dropdown.is_some(), "{id}");
+        assert_eq!(
+            framed_rows(&h, chrome),
+            usize::from(framed),
+            "{id}: the current suggestion"
+        );
+        super::a11y_audit::key(&mut h, Key::Escape, Modifiers::NONE);
+        super::a11y_audit::key(&mut h, Key::Escape, Modifiers::NONE);
+        h.frames(2);
+    }
+}

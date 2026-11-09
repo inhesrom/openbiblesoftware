@@ -540,7 +540,7 @@ fn library_row(
     let c = theme::c();
     let painter = ui.painter_at(rect);
     if selected || dragging {
-        painter.rect_filled(rect, radius::S, c.selection);
+        crate::components::selected_row(&painter, rect, radius::S);
     } else if body.hovered() {
         painter.rect_filled(rect, radius::S, c.hover);
     }

@@ -303,14 +303,13 @@ impl State {
 
     fn verse_of_the_day_card(&mut self, ui: &mut Ui, run: &mut Run) {
         let votd = self.session.verse_of_the_day();
+        let mut label = crate::components::subtitle_text(&votd.label).color(theme::c().lapis);
+        // Underlined at rest in a High contrast theme (#224), as a Link is.
+        if theme::c().high_contrast {
+            label = label.underline();
+        }
         if ui
-            .add(
-                crate::components::button(
-                    crate::components::subtitle_text(&votd.label)
-                        .color(theme::c().lapis),
-                )
-                .frame(false),
-            )
+            .add(crate::components::button(label).frame(false))
             .on_hover_text(
                 "Read it in the first Bible of your Preferred order (Ctrl/Cmd-click: in a new split)",
             )

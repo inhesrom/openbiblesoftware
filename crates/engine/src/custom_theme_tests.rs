@@ -275,3 +275,40 @@ fn the_theme_editor_opens_from_the_view_menu_and_settings() {
         ["theme", "theme_editor"]
     );
 }
+
+/// A colour picker being dragged changes the Custom theme in memory only (`save: false`);
+/// the colour it is let go at is saved.
+#[test]
+fn a_colour_set_without_saving_is_used_but_saved_only_when_asked() {
+    let t = Temp::new("drag");
+    let mut s = launch(&t.db());
+    s.run("theme.start_from", &json!({ "base": "dark" }))
+        .unwrap();
+    for color in ["#101010", "#202020", "#303030"] {
+        s.run(
+            "theme.set_color",
+            &json!({ "role": "shell", "color": color, "save": false }),
+        )
+        .unwrap();
+    }
+    assert_eq!(s.custom_theme.colors[&ThemeRole::Shell], rgb("#303030"));
+    assert_eq!(s.appearance.theme, Theme::Custom);
+    drop(s);
+    let mut s = launch(&t.db());
+    assert!(s.custom_theme.colors.is_empty(), "not saved while dragged");
+    assert_eq!(s.custom_theme.base, Theme::Dark);
+
+    s.run(
+        "theme.set_color",
+        &json!({ "role": "shell", "color": "#303030", "save": false }),
+    )
+    .unwrap();
+    s.run(
+        "theme.set_color",
+        &json!({ "role": "shell", "color": "#303030" }),
+    )
+    .unwrap();
+    drop(s);
+    let s = launch(&t.db());
+    assert_eq!(s.custom_theme.colors[&ThemeRole::Shell], rgb("#303030"));
+}

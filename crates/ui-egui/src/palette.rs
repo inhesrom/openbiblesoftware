@@ -246,13 +246,14 @@ impl Palette {
         }
     }
 
-    /// The palette of a style tone.
-    pub fn for_style_tone(tone: StyleTone) -> Palette {
-        match tone {
-            StyleTone::Paper => Self::PAPER,
-            StyleTone::Sepia => Self::SEPIA,
-            StyleTone::Dark => Self::DARK,
-        }
+    /// The palette of a style tone in a theme that is High contrast or not (#224).
+    pub fn for_style_tone(tone: StyleTone, high_contrast: bool) -> Palette {
+        let tone = match tone {
+            StyleTone::Paper => PageTone::Paper,
+            StyleTone::Sepia => PageTone::Sepia,
+            StyleTone::Dark => PageTone::Dark,
+        };
+        Self::for_theme(tone, high_contrast)
     }
 
     /// Whether `color` can be a style's colour with `look` in this tone (#21): every ink

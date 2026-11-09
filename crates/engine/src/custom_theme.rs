@@ -187,22 +187,27 @@ impl Session {
             .unwrap_or_default();
     }
 
-    /// Make `theme` the Custom theme and the app's Theme, and save both.
+    /// Make `theme` the Custom theme and the app's Theme, and save both unless `save` is
+    /// false (a colour picker being dragged saves once, when let go). Each is changed in
+    /// memory only once it is saved, so a failed write leaves the app as the database has it.
     fn use_custom_theme(
         &mut self,
         cmd: &'static str,
         theme: CustomTheme,
+        save: bool,
     ) -> Result<Value, CommandError> {
-        self.custom_theme = theme;
-        self.appearance.theme = Theme::Custom;
-        let file = self.custom_theme.to_file();
-        if let Some(user) = &self.user {
+        let file = theme.to_file();
+        if save && let Some(user) = &self.user {
             let text = serde_json::to_string(&file).map_err(|e| failed(cmd, e))?;
             user.set_preference(CUSTOM_THEME_PREF, &text)
                 .map_err(|e| failed(cmd, format!("saving the Custom theme: {e}")))?;
         }
-        self.save_view_preferences()
-            .map_err(|e| failed(cmd, format!("saving preferences: {e}")))?;
+        self.custom_theme = theme;
+        let previous = std::mem::replace(&mut self.appearance.theme, Theme::Custom);
+        if save && let Err(e) = self.save_view_preferences() {
+            self.appearance.theme = previous;
+            return Err(failed(cmd, format!("saving preferences: {e}")));
+        }
         Ok(json!({ "theme": file }))
     }
 }
@@ -269,6 +274,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: false,
                 help: "#rrggbb; empty or absent puts the base theme's colour back",
             },
+            ParamSpec {
+                name: "save",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "false: in memory only, while a colour picker is dragged (default true)",
+            },
         ],
         enabled: always,
         run: run_set_color,
@@ -313,6 +324,7 @@ fn run_start_from(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError>
             base,
             colors: BTreeMap::new(),
         },
+        true,
     )
 }
 
@@ -332,7 +344,7 @@ fn run_set_color(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
             theme.colors.remove(&role);
         }
     }
-    s.use_custom_theme(CMD, theme)
+    s.use_custom_theme(CMD, theme, p.bool("save").unwrap_or(true))
 }
 
 fn run_export(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
@@ -358,5 +370,5 @@ fn run_import(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let file: ThemeFile = serde_json::from_str(&text)
         .map_err(|e| failed(CMD, format!("This is not a theme file: {e}")))?;
     let theme = CustomTheme::from_file(&file).map_err(|e| failed(CMD, e))?;
-    s.use_custom_theme(CMD, theme)
+    s.use_custom_theme(CMD, theme, true)
 }

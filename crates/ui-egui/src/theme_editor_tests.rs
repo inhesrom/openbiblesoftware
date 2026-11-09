@@ -63,6 +63,13 @@ fn start_from(h: &mut Harness, label: &str) {
     h.frames(2);
 }
 
+/// Press the button named `name` from the keyboard.
+fn press(h: &mut Harness, name: &str) {
+    tab_to(h, name);
+    key(h, Key::Enter, Modifiers::NONE);
+    h.frames(2);
+}
+
 fn warnings(h: &Harness) -> Vec<String> {
     (h.texts().into_iter())
         .filter(|t| t.starts_with("Low contrast: "))
@@ -168,8 +175,11 @@ fn a_custom_theme_round_trips_through_export_and_import_and_survives_a_restart()
     assert!(text.contains("\"base\": \"dark\""), "{text}");
     assert!(text.contains("\"shell\": \"#10141c\""), "{text}");
 
-    // Somewhere else entirely, then the file back.
+    // Somewhere else entirely (replacing the changed colours, as asked), then the file back.
     start_from(&mut h, "Light");
+    assert_eq!(h.shell.st.session.custom_theme, made, "asked first");
+    press(&mut h, "Replace");
+    assert_eq!(h.shell.st.session.custom_theme.base, Theme::Light);
     h.shell.run("view.theme", &json!({ "value": "light" }));
     h.frames(2);
     assert_eq!(theme::c(), theme::LIGHT);
@@ -184,6 +194,55 @@ fn a_custom_theme_round_trips_through_export_and_import_and_survives_a_restart()
     assert_eq!(h.shell.st.session.custom_theme, made, "after a restart");
     assert_eq!(h.shell.st.session.appearance.theme, Theme::Custom);
     assert_eq!(theme::c(), chrome, "drawn in it after a restart");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Start from never throws changed colours away unasked: with some changed it asks, and Keep
+/// my colours keeps them; with none changed it starts at once. Escape in a hex field drops
+/// what was typed rather than applying it.
+#[test]
+fn start_from_asks_before_replacing_changed_colours_and_escape_cancels_a_hex_field() {
+    let dir = folder("start-from");
+    let mut h = launch(&dir);
+    open_from_settings(&mut h);
+    start_from(&mut h, "Dark");
+    assert_eq!(h.shell.st.session.custom_theme.base, Theme::Dark);
+    type_hex(&mut h, "Text hex colour", "#e0e0e0");
+    let made = h.shell.st.session.custom_theme.clone();
+    assert_eq!(made.colors.len(), 1);
+
+    start_from(&mut h, "Light");
+    assert_eq!(h.shell.st.session.custom_theme, made, "asked first");
+    assert!(
+        h.find("Start from Light? Your 1 changed colour will be lost.")
+            .is_some(),
+        "{:?}",
+        h.texts()
+    );
+    press(&mut h, "Keep my colours");
+    assert_eq!(h.shell.st.session.custom_theme, made);
+    assert!(!h.texts().iter().any(|t| t.starts_with("Start from Light?")));
+
+    // Typed, then Escape: nothing applied (and the window closes, as Escape does).
+    tab_to(&mut h, "Window background hex colour");
+    key(&mut h, Key::A, CTRL);
+    h.events.push(Event::Text("#ff0000".into()));
+    h.frames(2);
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert_eq!(h.shell.st.session.custom_theme, made, "Escape cancels");
+    assert!(!h.shell.st.theme_editor.open);
+
+    open_from_settings(&mut h);
+    tab_to(&mut h, "Reset Text");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.shell.st.session.custom_theme.colors.is_empty());
+    start_from(&mut h, "Light");
+    assert_eq!(h.shell.st.session.custom_theme, CustomTheme::default());
+    assert!(
+        !h.texts().iter().any(|t| t.starts_with("Start from Light?")),
+        "none changed: not asked"
+    );
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
