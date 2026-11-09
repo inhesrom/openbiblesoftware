@@ -20,10 +20,16 @@ guide to using them.
 | `chart` | Timeline, Atlas and Search charts | rows, bars, markers, tints |
 | `share` | Fractions of the room | side panes, dialogs, lists |
 | `scale` | Multiples of the Resource text size | line height, headwords, Note headings, placeholders |
+| `motion` | Durations (seconds) and easings (#225) | `POPOVER` 0.12 (and egui's own transitions), `PANEL` 0.18, `JUMP` 0.28, `SCROLL` 0.14, `FLASH` 1.2, `SHIMMER` 1.4; `ease_out`, `ease_in_out`, `progress` |
 
 Colour roles: `tokens::Chrome` with `LIGHT` and `DARK` (read the current one with
 `theme::c()`), `MAP_LIGHT`/`MAP_DARK` for the Atlas, `HIGHLIGHT_PRESETS` for the Highlight
 style swatches. Page colours (ink, paper, Highlight tones) are `Palette`.
+
+Motion is driven by frame time (egui's input time) and never runs with Reduce motion on
+(`crate::motion`: `reduced(ctx)`, the pop-up, scroll and shimmer helpers); a new animation
+takes its duration and easing from `tokens::motion` and checks `motion::reduced` (or is only
+started when motion is not reduced).
 
 ## Components
 

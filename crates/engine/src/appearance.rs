@@ -176,6 +176,9 @@ pub struct Appearance {
     /// View → Show Highlights (#18 rule 3): Highlights are drawn in Resource text (on by
     /// default). Notes follow their Notebook's Show in text only.
     pub show_highlights: bool,
+    /// View → Reduce motion (#225): the in-app half of Reduce motion (the operating system's
+    /// setting is the other). Off by default.
+    pub reduce_motion: bool,
 }
 
 impl Default for Appearance {
@@ -185,6 +188,7 @@ impl Default for Appearance {
             page_tone: PageTone::default(),
             interface_size: InterfaceSize::default(),
             show_highlights: true,
+            reduce_motion: false,
         }
     }
 }
@@ -324,6 +328,7 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Valu
         "red_letter": t.red_letter,
         "verse_numbers": verse_numbers_id(t.verse_numbers),
         "highlights": a.show_highlights,
+        "reduce_motion": a.reduce_motion,
         "fonts": f.to_json(),
         "reading_layout": serde_json::to_value(t.layout).unwrap_or(Value::Null),
     })
@@ -375,6 +380,9 @@ pub(crate) fn apply_json(
     }
     if let Some(b) = v["highlights"].as_bool() {
         a.show_highlights = b;
+    }
+    if let Some(b) = v["reduce_motion"].as_bool() {
+        a.reduce_motion = b;
     }
     if let Ok(layout) = serde_json::from_value(v["reading_layout"].clone()) {
         t.layout = layout;

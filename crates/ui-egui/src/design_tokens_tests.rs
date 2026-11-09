@@ -659,12 +659,6 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell.rs",
-        "const FLASH_SECS: f64 = 1.2;",
-        "1.2",
-        "seconds a jump's flash lasts",
-    ),
-    (
-        "shell.rs",
         "l.shares.set_share(a, 2.0);",
         "2.0",
         "the shares of a two-to-one split",
@@ -686,12 +680,6 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         ".filter_map(|c| Some((dock_node(tree, panels, *c)?, 1.0)))",
         "1.0",
         "a docked Panel's share: all equal",
-    ),
-    (
-        "shell.rs",
-        "let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0) as f32;",
-        "1.0",
-        "the flash's fading strength, 0 to 1",
     ),
     (
         "shell.rs",

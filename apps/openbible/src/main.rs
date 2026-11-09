@@ -16,6 +16,7 @@ mod fetch;
 mod fonts;
 #[cfg(test)]
 mod live_tests;
+mod system_motion;
 
 fn bench(args: &[String]) -> ExitCode {
     let mut cfg = BenchConfig::default();
@@ -47,6 +48,8 @@ fn bench(args: &[String]) -> ExitCode {
                 cfg.tool_steps = 2;
             }
             "--no-shell-scenarios" => cfg.shell_scenarios = false,
+            // Jumps land at once, as with Reduce motion on (#225).
+            "--reduce-motion" => cfg.motion = false,
             _ => {}
         }
     }
@@ -279,6 +282,7 @@ fn main() -> ExitCode {
                     .with_fetch(Arc::new(fetch::HttpFetch::new()))
                     .with_system_language(sys_locale::get_locale())
                     .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))
+                    .with_system_motion(Arc::new(system_motion::OsMotion::start()))
                     .with_rich_clipboard(Arc::new(clipboard::SystemClipboard::default()))
                     .with_automation_from_env(),
             ))

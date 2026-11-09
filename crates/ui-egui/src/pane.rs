@@ -14,7 +14,7 @@ use crate::palette::Palette;
 use crate::selection::{
     DocPos, Granularity, Selection, range_rects, selection_rects, text_range_rects,
 };
-use crate::tokens::{alpha, mark, radius, scale, size, space, stroke};
+use crate::tokens::{alpha, mark, motion, radius, scale, size, space, stroke};
 use crate::view::{FootnoteMarker, MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
@@ -223,6 +223,7 @@ pub fn reading_pane(
     view.set_width(text_rect.width());
     view.text_origin = [text_rect.left(), rect.top()];
     view.pane_rect = [rect.left(), rect.top(), rect.right(), rect.bottom()];
+    view.set_clock(ui.input(|i| i.time));
     let before = view.position().0;
 
     // Input: wheel and trackpad, keys, scrollbar drag.
@@ -236,6 +237,8 @@ pub fn reading_pane(
         // activates it, and is for no pane: not this one (paging would carry the marker,
         // and its popover with it, out of view), nor another under the pointer.
         let footnote_focused = footnote_widget_focused(ui.ctx());
+        // A key's scroll eases to its place (#225), unless motion is reduced.
+        let (shown, at) = (view.shown_position(), view.position().0);
         ui.input(|i| {
             if i.key_pressed(egui::Key::PageDown)
                 || (i.key_pressed(egui::Key::Space) && !footnote_focused)
@@ -252,6 +255,9 @@ pub fn reading_pane(
                 view.scroll_by(-40.0);
             }
         });
+        if view.position().0 != at && !crate::motion::reduced(ui.ctx()) {
+            view.glide_from(shown, motion::SCROLL, motion::ease_in_out);
+        }
     }
     let track = Rect::from_min_max(pos2(rect.right() - SCROLLBAR, rect.top()), rect.max);
     if response.drag_started()
@@ -304,7 +310,7 @@ pub fn reading_pane(
             }
         }
     }
-    if view.has_pending() {
+    if view.has_pending() || view.is_gliding() {
         ui.ctx().request_repaint();
     }
     let filtered = match pane_marks.filters {
@@ -579,8 +585,10 @@ pub fn reading_pane(
     let (y, total) = view.position();
     if total > f64::from(rect.height()) {
         let frac = (y / total) as f32;
-        let thumb_h =
-            (rect.height() * rect.height() / total as f32).clamp(size::THUMB_MIN, rect.height());
+        // Never taller than the track: a Panel growing in (#225) starts shorter than a thumb.
+        let thumb_h = (rect.height() * rect.height() / total as f32)
+            .max(size::THUMB_MIN)
+            .min(rect.height());
         let thumb_top = track.top() + frac * (track.height() - thumb_h);
         let thumb_w = SCROLLBAR - 2.0 * space::XXS;
         painter.rect_filled(

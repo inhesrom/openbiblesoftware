@@ -167,6 +167,8 @@ pub const MENUS: &[Menu] = &[
             },
             C("view.toolbar_auto_hide"),
             C("view.toolbar_customize"),
+            Separator,
+            C("view.reduce_motion"),
         ],
     },
     Menu {
@@ -828,6 +830,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             view_saved(s, json!({ "on": s.appearance.show_highlights }))
         },
     ),
+    CommandSpec {
+        id: "view.reduce_motion",
+        label: "Reduce motion",
+        shortcut: None,
+        params: &[ParamSpec {
+            name: "on",
+            kind: ParamKind::Boolean,
+            required: false,
+            help: "Turn it on (true) or off (false); without it, toggle",
+        }],
+        enabled: always,
+        run: |s, p| {
+            s.appearance.reduce_motion = p.bool("on").unwrap_or(!s.appearance.reduce_motion);
+            view_saved(s, json!({ "on": s.appearance.reduce_motion }))
+        },
+    },
     simple("help.about", "About Open Bible", None, always, about),
     open_cmd("help.credits", "Credits", None, |s, p| {
         open(s, p, TabKind::Credits)

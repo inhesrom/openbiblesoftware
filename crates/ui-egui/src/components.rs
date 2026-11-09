@@ -174,7 +174,8 @@ pub fn scroll_thumb(
 }
 
 /// Where a line of text will be once its layout arrives: a faint bar across the line's
-/// x-height, `width` long, at `origin` (the line's top left), `line` tall.
+/// x-height, `width` long, at `origin` (the line's top left), `line` tall, with the loading
+/// shimmer passing over it ([`crate::motion::shimmer`]).
 pub fn text_placeholder(
     painter: &egui::Painter,
     origin: egui::Pos2,
@@ -182,14 +183,13 @@ pub fn text_placeholder(
     line: f32,
     color: egui::Color32,
 ) {
-    painter.rect_filled(
-        egui::Rect::from_min_size(
-            origin + egui::vec2(0.0, line * scale::PLACEHOLDER_TOP),
-            egui::vec2(width, line * scale::PLACEHOLDER_HEIGHT),
-        ),
-        corner(radius::XS),
-        color,
+    let bar = egui::Rect::from_min_size(
+        origin + egui::vec2(0.0, line * scale::PLACEHOLDER_TOP),
+        egui::vec2(width, line * scale::PLACEHOLDER_HEIGHT),
     );
+    // The skeleton shimmer (#225) sweeps down the area the placeholders are drawn in.
+    let color = crate::motion::shimmer(painter.ctx(), painter.clip_rect(), bar.center().y, color);
+    painter.rect_filled(bar, corner(radius::XS), color);
 }
 
 /// The outline round a hovered card-like link (a Factbook card, a Topic Guide entry).

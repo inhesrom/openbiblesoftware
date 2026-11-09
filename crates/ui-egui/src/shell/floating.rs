@@ -480,6 +480,7 @@ impl Shell {
         // window has its own keyboard focus: Tab's target here is scrolled into view, and
         // ringed below, as in the main window (#182).
         if native {
+            crate::motion::instant_scrolling(&ctx);
             super::scroll_focus_into_view(&ctx);
             self.shortcuts(ui, Some(id));
         }
@@ -532,6 +533,7 @@ impl Shell {
         }
         if native {
             super::focus_ring(&ctx);
+            crate::motion::ease_popups(&ctx);
         }
         self.st.split_held = split_held;
         self.apply_effects();

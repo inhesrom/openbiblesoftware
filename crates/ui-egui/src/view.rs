@@ -13,7 +13,7 @@ use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
 use crate::interlinear::InterlinearSource;
 use crate::selection::{DocPos, Selection};
-use crate::tokens::{mark, size, space};
+use crate::tokens::{mark, motion, size, space};
 use crate::workers::{LayoutClient, lay_out};
 
 /// UI-thread layout per frame. #19 allows 2 ms; one block may overrun the check, so stop
@@ -90,6 +90,17 @@ pub struct TextAnchor {
     pub into: f32,
 }
 
+/// A jump or keyboard scroll easing into place (#225). The view is already at its new place
+/// (its anchor and Current location); it is drawn `offset` points from there, the offset
+/// easing to nothing over `duration` seconds of frame time from `start`.
+#[derive(Debug, Clone, Copy)]
+struct Glide {
+    offset: f32,
+    start: f64,
+    duration: f64,
+    ease: fn(f32) -> f32,
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pub blocks: Vec<FrameBlock>,
@@ -131,6 +142,12 @@ pub struct ReadingView {
     pub(crate) pane_rect: [f32; 4],
     /// The interlinear lines under its Tagged words, when the Tab shows them (#143).
     interlinear: Option<Arc<InterlinearSource>>,
+    /// A jump or keyboard scroll still easing into place (#225).
+    glide: Option<Glide>,
+    /// Frame time (egui's input time, in seconds), which drives the glide.
+    clock: f64,
+    /// The height of the viewport last drawn.
+    viewport: f32,
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
@@ -181,6 +198,9 @@ impl ReadingView {
             text_origin: [0.0, 0.0],
             pane_rect: [0.0; 4],
             interlinear: None,
+            glide: None,
+            clock: 0.0,
+            viewport: 0.0,
         };
         view.set_width(600.0);
         view
@@ -237,6 +257,7 @@ impl ReadingView {
     }
 
     fn reset_heights(&mut self) {
+        self.glide = None;
         // Keep the reader on the same verse across a relayout.
         let keep = self.current_location_opt();
         let doc = Arc::clone(&self.doc);
@@ -286,11 +307,106 @@ impl ReadingView {
         if dy == 0.0 {
             return;
         }
+        // Scrolling during a glide starts from where the text is drawn.
+        self.anchor.1 += self.glide_offset();
+        self.glide = None;
         self.sticky = None;
         self.sticky_text = None;
         self.pending_follow = None;
         self.anchor.1 += dy;
         self.normalize();
+    }
+
+    /// Set the frame time (egui's input time, in seconds), which drives a glide.
+    pub fn set_clock(&mut self, now: f64) {
+        self.clock = now;
+    }
+
+    /// How far from its anchor the view is drawn now: a glide's offset, eased (0: none).
+    fn glide_offset(&self) -> f32 {
+        self.glide.map_or(0.0, |g| {
+            let p = motion::progress(self.clock, g.start, g.duration);
+            g.offset * (1.0 - (g.ease)(p))
+        })
+    }
+
+    /// Whether a jump or scroll is still easing into place, so the pane draws again.
+    pub fn is_gliding(&self) -> bool {
+        self.glide
+            .is_some_and(|g| !motion::is_done(self.clock, g.start, g.duration))
+    }
+
+    /// The document position of the viewport top as drawn now (during a glide, short of
+    /// [`Self::position`]): where a new glide starts from.
+    pub fn shown_position(&mut self) -> f64 {
+        self.position().0 + f64::from(self.glide_offset())
+    }
+
+    /// Ease the view from document position `from` (where it was drawn, [`Self::shown_position`])
+    /// to where it is now (#225): over `duration` seconds of frame time, eased by `ease`. A
+    /// long way glides only its last [`motion::JUMP_REACH`] pane heights, and only through
+    /// text already laid out, so a glide never draws a placeholder; what is left lands at
+    /// once. The view's place (and Current location) is the new one from the start.
+    pub fn glide_from(&mut self, from: f64, duration: f64, ease: fn(f32) -> f32) {
+        let to = self.position().0;
+        let reach = motion::JUMP_REACH * self.viewport;
+        let offset = ((from - to) as f32).clamp(-reach, reach);
+        let offset = if offset < 0.0 {
+            offset.max(-self.laid_above())
+        } else {
+            offset.min(self.laid_below())
+        };
+        self.glide = (offset.abs() >= space::PX).then_some(Glide {
+            offset,
+            start: self.clock,
+            duration,
+            ease,
+        });
+    }
+
+    /// How far above the viewport top the text is laid out without a gap.
+    fn laid_above(&self) -> f32 {
+        if !self.laid.contains_key(&self.anchor.0) {
+            return 0.0;
+        }
+        let mut room = self.anchor.1;
+        let mut i = self.anchor.0;
+        while i > 0 && self.laid.contains_key(&(i - 1)) {
+            i -= 1;
+            room += self.height_of(i);
+        }
+        room
+    }
+
+    /// How far below the viewport bottom the text is laid out without a gap.
+    fn laid_below(&self) -> f32 {
+        let mut bottom = -self.anchor.1;
+        let mut i = self.anchor.0;
+        while self.laid.contains_key(&i) {
+            bottom += self.height_of(i);
+            i += 1;
+        }
+        (bottom - self.viewport).max(0.0)
+    }
+
+    /// The block at the top of the viewport as drawn now, and how far its top is above the
+    /// viewport top: the anchor, moved by a glide's offset.
+    fn shown_anchor(&self) -> (usize, f32) {
+        let offset = self.glide_offset();
+        if offset == 0.0 {
+            return self.anchor;
+        }
+        let (mut i, mut y) = (self.anchor.0, self.anchor.1 + offset);
+        while y < 0.0 && i > 0 {
+            i -= 1;
+            y += self.height_of(i);
+        }
+        let n = self.doc.blocks.len();
+        while i + 1 < n && y >= self.height_of(i) {
+            y -= self.height_of(i);
+            i += 1;
+        }
+        (i, y.max(0.0))
     }
 
     /// Move the anchor so its offset lies within its block, laying out blocks it passes so
@@ -332,6 +448,7 @@ impl ReadingView {
 
     /// Jump to a document position (scrollbar drag).
     pub fn scroll_to_position(&mut self, y: f64) {
+        self.glide = None;
         self.sticky = None;
         self.sticky_text = None;
         self.anchor = self.heights.at(y.max(0.0));
@@ -381,8 +498,8 @@ impl ReadingView {
     /// Laid-out blocks in a viewport `height` tall, with their tops (no layout happens).
     pub fn laid_in_view(&self, height: f32) -> Vec<(usize, f32, Arc<LaidBlock>)> {
         let mut out = Vec::new();
-        let mut i = self.anchor.0;
-        let mut top = -self.anchor.1;
+        let (mut i, top) = self.shown_anchor();
+        let mut top = -top;
         while top < height && i < self.doc.blocks.len() {
             if let Some(l) = self.laid.get(&i) {
                 out.push((i, top, Arc::clone(l)));
@@ -445,8 +562,8 @@ impl ReadingView {
     /// viewport top), on a grapheme boundary. Points above or below the document clamp to it.
     pub fn pos_at(&mut self, x: f32, y: f32) -> Option<DocPos> {
         let n = self.doc.blocks.len();
-        let mut i = self.anchor.0;
-        let mut top = -self.anchor.1;
+        let (mut i, top) = self.shown_anchor();
+        let mut top = -top;
         loop {
             if i >= n {
                 return None;
@@ -571,10 +688,14 @@ impl ReadingView {
                 self.jump_to(v);
             }
         }
+        self.viewport = height;
+        if !self.is_gliding() {
+            self.glide = None;
+        }
         let n = self.doc.blocks.len();
         let mut blocks = Vec::new();
-        let mut i = self.anchor.0;
-        let mut top = -self.anchor.1;
+        let (mut i, top) = self.shown_anchor();
+        let mut top = -top;
         let cost_per_byte = if self.interlinear.is_some() {
             LAYOUT_COST_PER_BYTE * INTERLINEAR_COST
         } else {
@@ -672,6 +793,7 @@ impl ReadingView {
             return self.jump_to(verse);
         }
         self.prefetch(block);
+        self.glide = None;
         self.anchor = (block, 0.0);
         self.sticky = Some(verse);
         self.sticky_text = None;
@@ -695,6 +817,7 @@ impl ReadingView {
             .from_unit(byte)
             .and_then(|p| laid.lines.iter().find(|l| l.bytes.end > p))
             .map_or(0.0, |l| l.top);
+        self.glide = None;
         self.anchor = (block, top);
         self.sticky = Some(verse);
         self.sticky_text = None;
@@ -744,6 +867,7 @@ impl ReadingView {
             .from_unit(at.byte)
             .and_then(|p| laid.lines.iter().find(|l| l.bytes.end > p))
             .map_or(0.0, |l| l.top);
+        self.glide = None;
         self.anchor = (block, top);
         if at.into != 0.0 {
             self.anchor.1 += at.into;
