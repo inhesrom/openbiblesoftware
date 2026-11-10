@@ -445,11 +445,11 @@ fn a_failed_import_says_what_went_wrong_in_plain_words_with_a_way_on() {
     for raw in ["os error", "not built"] {
         assert!(!texts.iter().any(|t| t.contains(raw)), "{raw:?}: {texts:?}");
     }
-    // The error itself is one click away.
+    // The error itself is one click away ("os error 2", or 3 on Windows).
     h.click_text(crate::components::DETAILS);
     h.frames(2);
     assert!(
-        h.texts().iter().any(|t| t.contains("os error 2")),
+        h.texts().iter().any(|t| t.contains("os error")),
         "{:?}",
         h.texts()
     );
