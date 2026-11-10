@@ -975,8 +975,9 @@ fn selecting_mixed_hebrew_and_ltr_text_highlights_the_right_glyphs() {
         granularity: Granularity::Grapheme,
     };
     let rects = selection_rects(&view, &sel, 600.0);
-    // Right-to-left with a left-to-right island: the highlight breaks into several pieces.
-    assert!(rects.len() >= 3, "{rects:?}");
+    // Right-to-left with a left-to-right island: the selected pieces of the three runs meet
+    // on screen, so they are one band (#305), not a band a word.
+    assert_eq!(rects.len(), 1, "{rects:?}");
     // Every cluster is highlighted exactly when its source byte is selected.
     let mut checked = 0;
     for (index, top, laid) in view.laid_in_view(600.0) {

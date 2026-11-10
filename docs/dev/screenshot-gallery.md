@@ -14,7 +14,7 @@ compared with its golden image (ADR 0019). The goldens are in
 `cargo xtask ci` runs the same tests in its `test` gate, so CI fails on a difference. The tests
 are `crates/ui-egui/src/gallery_tests.rs` (`shell::tests::gallery::`); one test per section
 (Tabs; toolbar panes, menus and windows; dialogs and popovers; menus and choosers in Tabs and
-windows) so they run in parallel.
+windows; empty, loading and error states; reading text) so they run in parallel.
 
 ## Reading a failure
 
@@ -64,6 +64,11 @@ fetch that fails), and what shows it is on screen. A surface that gains a new st
 there. The same file's tests check that no error state shows the error itself before Details,
 that Retry asks again, that each empty state's Button fills its Tab, and that no Tab is blank in
 an empty Library.
+
+The reading text section (#305) is `reading_text` in `gallery_tests.rs`: the reading pane's text
+where the visual QA sweep found it drawn wrong (a Commentary's italic words as the Starter's
+converter makes them, a Highlight and the jump flash over several lines, a Note marker before
+the next verse number). A rendering fix of the reading pane adds its case there.
 
 `every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
 each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo
