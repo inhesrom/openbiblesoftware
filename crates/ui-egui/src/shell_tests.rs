@@ -1858,7 +1858,8 @@ mod library {
             "BIBLES",
             "Test Bible",
             "hbo",
-            "LicenseRef-PD",
+            // The licence in words; its SPDX id is in the tooltip and the About Tab (#302).
+            "Public domain",
             "English",
             "Hebrew",
         ] {
