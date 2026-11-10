@@ -98,7 +98,9 @@ index, the same search as the Search Tool's (`bible_search::desktop::run`, Word 
 set), with snippets for the first rows only. The UI never waits: it asks to be drawn again
 when the debounce ends (`search_preview_due_in`) and while the job runs. The last hits stay
 until new ones arrive, so the list does not jump while the user types. A text whose search
-was cancelled by more typing is searched again if the user types back to it.
+was cancelled by more typing is searched again if the user types back to it. When new rows
+arrive the highlight stays on the row it was on and is scrolled to where that row went; a
+highlighted Verse opens as shown, even when Enter lands in the frame that replaces it.
 
 The time to hits is gated in wall-clock time by the `search-preview` bench scenario
 (`cargo xtask bench`, [bench.md](bench.md)): each query typed a key at a time over a
@@ -175,8 +177,10 @@ moves it to the top.
   empty text gives the recent entries. `obs-cli run command_box.suggest text=agape`.
 - `command_box.run {text, choice?, new_tab?}` — run suggestion `choice` (default 0, the best)
   for `text` and remember the text.
-- `command_box.open_hit {hit, new_tab?}` — open Verse `hit` (from 0) of the Search preview
-  shown.
+- `command_box.open_hit {bible, verse, standard?, new_tab?}` — open a Search preview Verse:
+  `verse` in Bible `bible`'s own numbering and its Standard Verse `standard` (OSIS ids,
+  `PreviewHit::open_params`). The Verse is named rather than counted from the preview's top,
+  so the one shown opens even when the next text's Verses replace it before the pick runs.
 
 Tests: `crates/engine/src/command_box_tests.rs` (the parser and ranking, each action, recent
 entries across a restart, the headings, on a real `.obr` library with the Starter Lexicons'
@@ -187,6 +191,7 @@ text typed again, an Unmapped hit opened from a linked Bible, a right-to-left �
 Alt+Enter, Esc, click, recent entries after a relaunch; the panel's size at every Toolbar
 position, window size and Interface size; the scroll bar and "N more"; cut labels and their
 tooltips; "N of M" for screen readers; the Search preview's debounce and frame scheduling
-(on the harness's 60 Hz clock), its keys and clicks, Show all, Get Bibles and Indexing; its
+(on the harness's 60 Hz clock), its keys and clicks, the highlight kept in view as Verses
+arrive, a shown Verse opened as Verses replace it, Show all, Get Bibles and Indexing; its
 Verses drawn by the text pipeline, a right-to-left Bible's from the right, a cut one whole on
 hover; their contrast in every Theme and Page tone).

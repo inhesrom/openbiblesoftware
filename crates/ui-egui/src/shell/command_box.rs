@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align2, Key, Modifiers, Rect, Sense, Ui, pos2, vec2};
-use obs_engine::{CommandBoxAction, SearchPreview, Suggestion};
+use obs_engine::{CommandBoxAction, PreviewHit, SearchPreview, Suggestion};
 use obs_layout::{ColorRole, TextSettings};
 use serde_json::json;
 
@@ -60,8 +60,9 @@ pub(crate) enum Row {
     Heading { title: String, count: usize },
     /// Suggestion `i` of [`CommandBoxUi::suggestions`].
     Suggestion(usize),
-    /// Verse `i` of the Search preview.
-    Hit(usize),
+    /// A Search preview Verse, as shown: the Verse it opens stays the one shown when the
+    /// preview's next Verses replace it before the pick runs.
+    Hit(PreviewHit),
     /// Show all the Search preview's results in the Search Tool: the box's Search suggestion,
     /// `i`, with how many Verses match.
     ShowAll { search: usize, total: usize },
@@ -121,7 +122,7 @@ fn preview_rows(search: usize, preview: &SearchPreview, out: &mut Vec<Row>) {
                 title: format!("Verses in {}", h.bible),
                 count: h.total,
             });
-            out.extend((0..h.hits.len()).map(Row::Hit));
+            out.extend(h.hits.iter().cloned().map(Row::Hit));
             out.push(Row::ShowAll {
                 search,
                 total: h.total,
@@ -193,14 +194,36 @@ impl CommandBoxUi {
         self.picks().get(self.selected).copied()
     }
 
-    /// Show `rows`, the highlight staying on the row it was on (unless that row is gone).
+    /// Show `rows`, the highlight staying on the row it was on (unless that row is gone). Rows
+    /// put in or taken out above it move it: it is scrolled to where it went, so it does not
+    /// slip out of view.
     fn set_rows(&mut self, rows: Vec<Row>) {
         let held = self.selected_row().cloned();
+        let was_at = self.selected_top();
         self.rows = rows;
         let picks = self.picks();
         let last = picks.len().saturating_sub(1);
         let moved = held.and_then(|h| picks.iter().position(|r| **r == h));
         self.selected = moved.unwrap_or(self.selected).min(last);
+        if was_at.is_some() && self.selected_top() != was_at {
+            self.scroll_to_selected = true;
+        }
+    }
+
+    /// How far down the list the highlighted row starts.
+    fn selected_top(&self) -> Option<f32> {
+        let mut top = 0.0;
+        let mut pick = 0;
+        for row in &self.rows {
+            if row.is_pickable() {
+                if pick == self.selected {
+                    return Some(top);
+                }
+                pick += 1;
+            }
+            top += row.height();
+        }
+        None
     }
 
     /// The text the Search preview previews: the Search suggestion's.
@@ -353,11 +376,8 @@ impl Shell {
         let details: Vec<String> = (cb.suggestions.iter())
             .map(|s| shown_detail(session, s))
             .collect();
-        let preview = match session.search_preview() {
-            SearchPreview::Hits(h) => Some(Arc::clone(h)),
-            _ => None,
-        };
-        let rtl = preview.as_ref().is_some_and(|p| p.rtl);
+        // The rows were made from this preview this frame.
+        let rtl = matches!(session.search_preview(), SearchPreview::Hits(h) if h.rtl);
         let screen = ui.ctx().content_rect();
         let frame = crate::components::popover_frame().inner_margin(inset::BAR);
         let margin = frame.total_margin();
@@ -462,11 +482,7 @@ impl Shell {
                                     };
                                     (format!("{} · {detail}", s.label), resp)
                                 }
-                                Row::Hit(k) => {
-                                    let hit = preview.as_ref().and_then(|p| p.hits.get(*k));
-                                    let Some(hit) = hit else {
-                                        continue;
-                                    };
+                                Row::Hit(hit) => {
                                     let drawn = paint_hit(ui, rect, hit, rtl, &mut verses);
                                     verses_drawn += usize::from(drawn.is_some());
                                     // The whole Verse, through the text pipeline too.
@@ -533,10 +549,7 @@ impl Shell {
             Row::Suggestion(i) | Row::ShowAll { search: i, .. } => {
                 return self.run_choice(ui, i, new_tab);
             }
-            Row::Hit(k) => self.run(
-                "command_box.open_hit",
-                &json!({ "hit": k, "new_tab": new_tab }),
-            ),
+            Row::Hit(hit) => self.run("command_box.open_hit", &hit.open_params(new_tab)),
             Row::AddBible => self.run("library.get_bibles", &json!({})),
             Row::Heading { .. } | Row::Note(_) => None,
         };

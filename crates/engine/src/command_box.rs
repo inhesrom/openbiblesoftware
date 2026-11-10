@@ -22,7 +22,9 @@
 //! the commands only (#226): every one the box can run, each with its Keyboard shortcut.
 
 use obs_model::ResourceType;
-use obs_scripture::{Passage, RefStyle, Standard, StrongsNumber, format_passage, parse_reference};
+use obs_scripture::{
+    Passage, RefStyle, Standard, StrongsNumber, Verse, format_passage, parse_reference,
+};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
@@ -1066,10 +1068,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         shortcut: None,
         params: &[
             ParamSpec {
-                name: "hit",
-                kind: ParamKind::Integer,
+                name: "bible",
+                kind: ParamKind::String,
                 required: true,
-                help: "Which Verse of the Command box's Search preview, from 0",
+                help: "The resource id of the Bible the Search preview found the Verse in",
+            },
+            ParamSpec {
+                name: "verse",
+                kind: ParamKind::String,
+                required: true,
+                help: "The Verse in that Bible's own numbering, as an OSIS id (`Ps.119.2`)",
+            },
+            ParamSpec {
+                name: "standard",
+                kind: ParamKind::String,
+                required: false,
+                help: "Its Standard Verse, as an OSIS id; without it the Verse is Unmapped and opens in its own Bible",
             },
             ParamSpec {
                 name: "new_tab",
@@ -1085,46 +1099,49 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
 
 const OPEN_HIT: &str = "command_box.open_hit";
 
-/// Open Verse `hit` of the Search preview (#295) as Go to does: its Standard Verse in the
-/// focused Bible (else the most recent Bible Tab, else the ★ Bible). An Unmapped verse, which
-/// only its own Bible has, opens there.
+/// Open a Search preview Verse (#295), as [`crate::PreviewHit::open_params`] names it, as Go
+/// to does: its Standard Verse in the focused Bible (else the most recent Bible Tab, else the
+/// ★ Bible). An Unmapped verse, which only its own Bible has, opens there. The Verse is named,
+/// not counted from the preview's top, so the one the user picked opens even when the preview
+/// has changed under it.
 fn open_preview_hit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
-    let i = (p.i64("hit").and_then(|i| usize::try_from(i).ok())).unwrap_or(usize::MAX);
+    let osis = |name: &str| -> Result<Option<Verse>, CommandError> {
+        (p.str(name))
+            .map(|id| {
+                Verse::from_osis(id).ok_or_else(|| failed(OPEN_HIT, format!("not a Verse: “{id}”")))
+            })
+            .transpose()
+    };
+    let native = osis("verse")?.ok_or_else(|| failed(OPEN_HIT, "no Verse"))?;
+    let standard = osis("standard")?;
+    let bible = p.str("bible").unwrap_or_default().to_string();
     let new_tab = p.bool("new_tab").unwrap_or(false);
-    let hit = match s.search_preview() {
-        crate::search_preview::SearchPreview::Hits(h) => h.hits.get(i).cloned(),
-        _ => None,
-    }
-    .ok_or_else(|| failed(OPEN_HIT, "no such Search preview hit"))?;
-    if let Some(v) = hit.standard {
+    if let Some(v) = standard {
         return go_to(s, Passage::verse(v), new_tab);
     }
-    let kind = TabKind::Resource(hit.bible.clone());
+    let kind = TabKind::Resource(bible.clone());
     let open = (!new_tab)
         .then(|| s.workspace.most_recent(|t| t.kind == kind))
         .flatten();
     if let Some(tab) = open {
         s.workspace.focus(tab);
-        s.workspace.navigate(tab, hit.native);
-        return Ok(json!({ "tab": tab.0, "verse": hit.native.osis() }));
+        s.workspace.navigate(tab, native);
+        return Ok(json!({ "tab": tab.0, "verse": native.osis() }));
     }
-    let out = s.run(
-        "resource.open",
-        &json!({ "id": hit.bible, "split": new_tab }),
-    )?;
+    let out = s.run("resource.open", &json!({ "id": bible, "split": new_tab }))?;
     let tab = (out["tab"].as_u64().map(TabId)).ok_or_else(|| failed(OPEN_HIT, "no Tab opened"))?;
     // A new Tab has no Verse map yet: its Link set, which it may have joined, would take the
     // Unmapped verse for a Standard one. It starts there, and jumps once the UI has loaded it
     // (as a Favorite opens), so the set stays put.
     if let Some(t) = s.workspace.tab_mut(tab) {
-        t.visit(hit.native, None);
+        t.visit(native, None);
     }
     s.workspace.push_effect(Effect::NavigateOpened {
         tab,
-        verse: Some(hit.native),
+        verse: Some(native),
         key: None,
     });
-    Ok(json!({ "tab": tab.0, "verse": hit.native.osis() }))
+    Ok(json!({ "tab": tab.0, "verse": native.osis() }))
 }
 
 fn run_from_box(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {

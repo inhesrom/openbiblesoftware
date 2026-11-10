@@ -235,18 +235,34 @@ fn while_the_star_bible_is_indexed_the_preview_says_so_and_fills_in_when_ready()
 #[test]
 fn opening_a_preview_hit_goes_to_its_verse_in_a_bible() {
     let (mut s, root) = fixture("open", &[psalms(12), kjv()], true);
-    let err = s.run("command_box.open_hit", &json!({ "hit": 0 }));
-    assert!(err.is_err(), "no preview yet");
     s.update_search_preview(Some("love"), 0.0);
     s.update_search_preview(Some("love"), PREVIEW_DEBOUNCE);
     settle(&mut s);
-    let out = s.run("command_box.open_hit", &json!({ "hit": 2 })).unwrap();
+    let hit = hits(&s).hits[2].clone();
+    assert_eq!(
+        hit.open_params(false),
+        json!({ "bible": "psalms", "verse": "Ps.119.3", "standard": "Ps.119.3", "new_tab": false })
+    );
+    // The preview moving on to another text leaves the Verse it named to open.
+    s.update_search_preview(Some("statutes"), 1.0);
+    s.update_search_preview(Some("statutes"), 1.0 + PREVIEW_DEBOUNCE);
+    settle(&mut s);
+    assert!(!hits(&s).hits.contains(&hit));
+    let out = s
+        .run("command_box.open_hit", &hit.open_params(false))
+        .unwrap();
     assert_eq!(out["verse"], "Ps.119.3");
     let tab = TabId(out["tab"].as_u64().unwrap());
     let t = s.workspace.tab(tab).unwrap();
     assert_eq!(t.kind, TabKind::Resource("psalms".into()));
     assert_eq!(s.workspace.focused(), Some(tab));
-    assert!(s.run("command_box.open_hit", &json!({ "hit": 5 })).is_err());
+    for bad in [
+        json!({ "bible": "psalms" }),
+        json!({ "bible": "psalms", "verse": "Ps.119" }),
+        json!({ "bible": "psalms", "verse": "Ps.119.3", "standard": "Psalm 119:3" }),
+    ] {
+        assert!(s.run("command_box.open_hit", &bad).is_err(), "{bad}");
+    }
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -288,7 +304,7 @@ fn an_unmapped_hit_opened_from_a_linked_bible_leaves_the_link_set_still() {
         "Esther 10:4 (ADD, no Standard equivalent)"
     );
 
-    let out = s.run("command_box.open_hit", &json!({ "hit": 0 })).unwrap();
+    let out = (s.run("command_box.open_hit", &hits(&s).hits[0].open_params(false))).unwrap();
     let tab = TabId(out["tab"].as_u64().unwrap());
     assert_ne!(tab, kjv_tab);
     let t = s.workspace.tab(tab).unwrap();

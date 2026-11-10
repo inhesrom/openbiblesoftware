@@ -71,6 +71,22 @@ pub struct PreviewHit {
     pub(crate) bible: String,
 }
 
+impl PreviewHit {
+    /// The `command_box.open_hit` parameters that open this Verse, whatever the Search
+    /// preview shows by the time they run.
+    pub fn open_params(&self, new_tab: bool) -> serde_json::Value {
+        let mut params = serde_json::json!({
+            "bible": self.bible,
+            "verse": self.native.osis(),
+            "new_tab": new_tab,
+        });
+        if let Some(standard) = self.standard {
+            params["standard"] = standard.osis().into();
+        }
+        params
+    }
+}
+
 /// The Search preview's state.
 #[derive(Debug, Default)]
 pub(crate) struct Preview {
