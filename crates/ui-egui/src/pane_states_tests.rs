@@ -296,6 +296,44 @@ pub(super) fn pane_states() -> Vec<Overlay> {
             },
             |h| focused(h, &TabKind::Tool(Tool::Search)) && error_shown(h),
         ),
+        // What was typed is wrong: one style under its field (#308).
+        (
+            "Search: unknown book in the Scope",
+            |h| {
+                open_split(h, "tool.search", json!({}));
+                let tab = focused_tab(h);
+                h.shell.run(
+                    "search.run",
+                    &json!({ "tab": tab.0, "text": "love", "scope": "Foo 3" }),
+                );
+            },
+            |h| shows(h, "Unknown book “Foo”"),
+        ),
+        (
+            "Search: empty query",
+            |h| {
+                open_split(h, "tool.search", json!({}));
+                let tab = focused_tab(h);
+                h.shell
+                    .run("search.run", &json!({ "tab": tab.0, "text": "" }));
+            },
+            |h| shows(h, "Type something to search for"),
+        ),
+        (
+            "Search: unknown Morphology",
+            |h| {
+                open_split(h, "tool.search", json!({}));
+                let tab = focused_tab(h);
+                h.shell
+                    .run("search.run", &json!({ "tab": tab.0, "text": "@aorst" }));
+            },
+            |h| {
+                shows(
+                    h,
+                    "“aorst” is not Morphology (try verb, aorist, imperative, genitive or Qal)",
+                )
+            },
+        ),
         (
             "Search: nothing matches",
             |h| {

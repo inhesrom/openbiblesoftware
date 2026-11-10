@@ -609,6 +609,39 @@ fn dialogs_and_popovers() -> Vec<Run> {
             |h| shows(h, "Gen 1:3"),
         ),
         (
+            // Cut at 20 Verses and at the popup's height: one notice (#308).
+            "Reference preview, shortened",
+            |h| {
+                let psalm = super::footnotes_ui::long_psalm_119();
+                let library = &mut h.shell.st.session.library;
+                let path = library.directory().unwrap().join("psalm-119.obr");
+                obs_store::write_obr(&psalm, &path).unwrap();
+                library.add_file(&path).unwrap();
+                h.shell
+                    .run("library.move", &json!({ "id": "psalm-119", "to": 0 }));
+                let tab = h
+                    .shell
+                    .run(
+                        "resource.open",
+                        &json!({ "id": "psalm-119", "split": true }),
+                    )
+                    .unwrap()["tab"]
+                    .as_u64()
+                    .unwrap();
+                h.shell
+                    .run("tab.go", &json!({ "tab": tab, "text": "Ps 119:1" }));
+                settle_all(h);
+                super::footnotes_ui::hover_note_link(
+                    h,
+                    TabId(tab),
+                    "Psalm 119:1-26",
+                    "Ps 119:1-26",
+                );
+                h.frames(10);
+            },
+            |h| shows(h, "Ps 119:1-26") && shows(h, crate::shell::references::PREVIEW_SHORTENED),
+        ),
+        (
             "Tab switcher",
             |h| {
                 for id in ["tool.search", "tool.history"] {
