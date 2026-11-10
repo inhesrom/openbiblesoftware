@@ -177,15 +177,47 @@ fn without_it_the_menu_bar_is_drawn_as_before() {
 
 #[test]
 fn in_full_screen_the_menu_bar_starts_at_the_left_edge() {
-    let (mut h, _) = mac();
+    let (mut h, system) = mac();
     h.root_info.fullscreen = Some(true);
     h.frames(3);
     let name = h.find("Open Bible").unwrap();
     assert_eq!(name.left(), f32::from(inset::BAND.left));
-    // Out of full screen (or Split View) again, the traffic lights' room is back.
+    // Its empty space is no title bar there: the system has none to drag, and a zoom asked
+    // for in full screen would be applied on leaving it.
+    let bar = menus(&h);
+    let launchers = h
+        .shell
+        .st
+        .toolbar
+        .bar
+        .expect("the Launchers in the menu bar");
+    let gap = pos2(launchers.right() + 8.0, bar.center().y);
+    press_drag(&mut h, gap, gap + vec2(-200.0, 300.0));
+    assert!(h.commands.is_empty(), "{:?}", h.commands);
+    for action in [TitleBarDoubleClick::Zoom, TitleBarDoubleClick::Minimize] {
+        system.set(action);
+        double_click(&mut h, gap);
+        assert!(h.commands.is_empty(), "{action:?}: {:?}", h.commands);
+    }
+    // Out of full screen (or Split View) again, the traffic lights' room is back, and the
+    // same space zooms the window.
     h.root_info.fullscreen = Some(false);
     h.frames(3);
     assert!(h.find("Open Bible").unwrap().left() >= lights(&h).right());
+    let launchers = h
+        .shell
+        .st
+        .toolbar
+        .bar
+        .expect("the Launchers in the menu bar");
+    let gap = pos2(launchers.right() + 8.0, bar.center().y);
+    system.set(TitleBarDoubleClick::Zoom);
+    double_click(&mut h, gap);
+    assert!(
+        asked(&h, &ViewportCommand::Maximized(true)),
+        "{:?}",
+        h.commands
+    );
 }
 
 #[test]
@@ -311,11 +343,6 @@ fn double_clicking_the_menu_bar_zooms_or_minimizes_as_the_system_says() {
     assert!(!h.commands.iter().any(window), "{:?}", h.commands);
 }
 
-/// A floating window's room beside its traffic lights, in its own points.
-fn window_lights(h: &Harness) -> Rect {
-    lights(h)
-}
-
 /// Where floating window `w` painted `text` topmost (a Tab's title in its top tab bar).
 fn topmost_in(h: &Harness, w: WindowId, text: &str) -> Rect {
     (h.window(w).shapes.iter())
@@ -347,7 +374,8 @@ fn a_floating_windows_top_tab_bar_is_its_title_bar() {
     }
     // Its tab bar is at the top, the Tab after the traffic lights.
     let tab = topmost_in(&h, w, "HEB");
-    let room = window_lights(&h);
+    // The room beside its traffic lights, in its own points (the main window's zoom).
+    let room = lights(&h);
     assert!(tab.left() >= room.right(), "{tab:?}");
     assert!(
         tab.top() < room.bottom(),
@@ -364,6 +392,7 @@ fn a_floating_windows_top_tab_bar_is_its_title_bar() {
         h.window(w).commands
     );
     h.window(w).commands.clear();
+    h.commands.clear();
     h.click_in(w, beside, 2);
     assert!(
         h.window(w)
@@ -372,7 +401,8 @@ fn a_floating_windows_top_tab_bar_is_its_title_bar() {
         "{:?}",
         h.window(w).commands
     );
-    assert!(h.commands.is_empty() || !h.commands.contains(&ViewportCommand::Maximized(true)));
+    // Only the Floating window zooms, not the main window.
+    assert!(h.commands.is_empty(), "{:?}", h.commands);
     system.set(TitleBarDoubleClick::Minimize);
     h.window(w).commands.clear();
     h.click_in(w, beside, 2);
@@ -386,6 +416,23 @@ fn a_floating_windows_top_tab_bar_is_its_title_bar() {
     h.frames(3);
     let tab = topmost_in(&h, w, "HEB");
     assert!(tab.left() < room.right() - 20.0, "{tab:?}");
+    // And no room there moves or zooms the window.
+    system.set(TitleBarDoubleClick::Zoom);
+    h.window(w).commands.clear();
+    h.click_in(w, beside, 2);
+    let window = |c: &ViewportCommand| {
+        matches!(
+            c,
+            ViewportCommand::StartDrag
+                | ViewportCommand::Maximized(_)
+                | ViewportCommand::Minimized(_)
+        )
+    };
+    assert!(
+        !h.window(w).commands.iter().any(window),
+        "{:?}",
+        h.window(w).commands
+    );
 }
 
 /// Writes `target/previews/title-bar-floating-{before,after}-{light,dark}-kittest.ppm` when

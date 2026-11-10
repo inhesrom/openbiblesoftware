@@ -31,7 +31,7 @@ Linux and Windows keep the system's title bar and draw the menu bar exactly as b
   `App::with_unified_title_bar` (`apps/openbible/src/title_bar.rs`). The window keeps its
   title, so the Window menu, Mission Control, the Dock and VoiceOver still name it.
 - The row leaves the traffic lights their room (`tokens::size::TRAFFIC_LIGHTS`, 78 pt) and is
-  at least the system's title bar's height (`tokens::size::TITLE_BAR`, 32 pt on macOS 26),
+  at least the system's title bar's height (`tokens::size::TITLE_BAR`, 32 pt on macOS 27),
   with its controls centred on the traffic lights as near as they fit. Both are in the
   system's points, so in egui points they are divided by the Interface size's zoom: the room
   is the same on screen at every Interface size. At Larger the controls are taller than the

@@ -139,9 +139,9 @@ pub mod size {
     /// The Panels' tab bar.
     pub const TAB_BAR: f32 = 31.0;
     /// macOS (#297): the system's title bar, in its own points (not the zoomed ones), as
-    /// macOS 26 draws it over a window whose content fills it, the traffic lights (three
-    /// 14 pt buttons from 9 pt in, 9 pt apart) centred on its height. macOS 11 to 15 draws a
-    /// 28 pt bar with them from 7 pt in, which the same room covers.
+    /// macOS 27 draws it (measured on 27.0.1) over a window whose content fills it, the
+    /// traffic lights (three 14 pt buttons from 9 pt in, 9 pt apart) centred on its height.
+    /// macOS 11 to 15 draws a 28 pt bar with them from 7 pt in, which the same room covers.
     pub const TITLE_BAR: f32 = 32.0;
     /// macOS (#297): from the window's left edge to past the traffic lights' zoom button, with
     /// the gap before the close button kept after it too, in the system's own points.

@@ -161,15 +161,27 @@ mod tests {
     #[test]
     fn the_setting_is_read_on_a_worker_and_can_be_read_again() {
         let bar = OsTitleBar::start();
-        for _ in 0..200 {
-            if !bar.reading.load(Ordering::Acquire) {
-                break;
+        let finished = |bar: &OsTitleBar| {
+            for _ in 0..1000 {
+                if !bar.reading.load(Ordering::Acquire) {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        let first = bar.double_click();
+            false
+        };
+        assert!(finished(&bar), "the first read never finished");
+        assert_eq!(bar.double_click(), read());
+        // While a read is running, asking again starts no second one.
+        bar.action.store(99, Ordering::Relaxed);
+        bar.reading.store(true, Ordering::Release);
         bar.refresh();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert_eq!(bar.action.load(Ordering::Relaxed), 99);
+        // Once it is done, it is read again.
+        bar.reading.store(false, Ordering::Release);
         bar.refresh();
-        assert_eq!(first, read());
+        assert!(finished(&bar), "the second read never finished");
+        assert_eq!(bar.action.load(Ordering::Relaxed), code(read()));
     }
 }

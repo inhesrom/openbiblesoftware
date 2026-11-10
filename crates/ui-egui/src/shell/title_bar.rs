@@ -69,8 +69,13 @@ pub(crate) fn sense() -> Sense {
 
 /// Make `response`, a top row's own background (or the room beside the traffic lights), act
 /// as the title bar: a drag that starts on it, not on a widget drawn over it, moves the
-/// window, and a double-click on it does what the system setting says.
+/// window, and a double-click on it does what the system setting says. Not in full screen:
+/// there the system has no title bar to drag, and winit would keep a zoom asked for then and
+/// apply it on leaving full screen.
 pub(crate) fn act_as_title_bar(ctx: &Context, response: &Response, system: &dyn SystemTitleBar) {
+    if traffic_lights(ctx).is_none() {
+        return;
+    }
     let pressed_here = response.id.with("obs-title-bar-pressed");
     if ctx.input(|i| i.pointer.primary_pressed()) && response.contains_pointer() {
         // The press is on empty space when no widget drawn over the row takes its click.
