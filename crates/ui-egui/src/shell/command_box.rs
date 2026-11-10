@@ -498,20 +498,28 @@ impl Shell {
                                 Row::Suggestion(i) => {
                                     let s = &cb.suggestions[*i];
                                     let detail = &details[*i];
-                                    let elided = match pipeline_span(ui, &s.label) {
-                                        Some(span) => paint_mixed_line(
-                                            ui,
-                                            rect,
-                                            (&s.label, span),
-                                            detail,
-                                            &mut verses,
-                                        ),
-                                        None => paint_line(ui, rect, &s.label, detail),
-                                    };
-                                    let resp = if elided {
-                                        resp.on_hover_text(s.label.clone())
-                                    } else {
-                                        resp
+                                    let resp = match pipeline_span(ui, &s.label) {
+                                        Some(span) => {
+                                            let elided = paint_mixed_line(
+                                                ui,
+                                                rect,
+                                                (&s.label, span),
+                                                detail,
+                                                &mut verses,
+                                            );
+                                            // Whole, through the text pipeline too.
+                                            if elided {
+                                                resp.on_hover_ui(|ui| {
+                                                    paint_whole_label(ui, &s.label, &mut verses);
+                                                })
+                                            } else {
+                                                resp
+                                            }
+                                        }
+                                        None if paint_line(ui, rect, &s.label, detail) => {
+                                            resp.on_hover_text(s.label.clone())
+                                        }
+                                        None => resp,
                                     };
                                     (format!("{} · {detail}", s.label), resp)
                                 }
@@ -697,9 +705,11 @@ fn pipeline_span(ui: &Ui, label: &str) -> Option<std::ops::Range<usize>> {
 
 /// A one-line row like [`paint_line`] whose label's `span` the text pipeline draws (a font for
 /// every script, and bidi: "חֶסֶד · H2617A" reads as written, the Lemma then its number), the
-/// rest chrome text on the same baseline; clipped where it would reach the detail. Until a
-/// worker has laid the span out, a placeholder bar stands in for it. Returns whether it was
-/// cut.
+/// rest chrome text on the same baseline. The span is laid out as wide as the room left
+/// before the detail, so a long one (a Hebrew Resource title) wraps there: its first line
+/// shows, ended with "…", and the rest of the label does not. A label too wide on one line is
+/// cut with "…" before the detail too. Until a worker has laid the span out, a placeholder
+/// bar stands in for it. Returns whether the label was cut.
 fn paint_mixed_line(
     ui: &Ui,
     rect: Rect,
@@ -712,10 +722,10 @@ fn paint_mixed_line(
     let room = paint_detail(ui, rect, detail).max(0.0);
     let left = rect.left() + space::M;
     let right = left + room;
-    let clip = Rect::from_x_y_ranges(left..=right, rect.y_range()).intersect(ui.clip_rect());
-    let painter = ui.painter().with_clip_rect(clip);
     let chrome =
         |text: &str| ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), c.ink));
+    let ellipsis = chrome("…");
+    let for_ellipsis = ellipsis.size().x + space::XXS;
     // The chrome text's baseline, its line centred in the row.
     let probe = chrome("H");
     let ascent = probe
@@ -725,46 +735,87 @@ fn paint_mixed_line(
         .unwrap_or(probe.size().y);
     let top = rect.center().y - probe.size().y / 2.0;
     let baseline = top + ascent;
-    let mut x = left;
     let before = chrome(&label[..span.start]);
-    x += before.size().x;
-    painter.galley(pos2(left, top), before, c.ink);
+    let at = left + before.size().x;
+    let wrap = (right - at - for_ellipsis).max(size::TEXT_MIN);
     let laid = text.snippets.get(
         &label[span.clone()],
         ColorRole::Ink,
         false,
-        rect.width(),
+        wrap,
         &text.settings,
     );
-    match laid
-        .as_ref()
-        .and_then(|l| l.lines.first().map(|line| (l, line)))
-    {
-        Some((laid, line)) => {
-            let width = (line.items.iter())
+    let first = (laid.as_ref()).and_then(|l| l.lines.first().map(|line| (l, line)));
+    let (width, wrapped) = match first {
+        Some((laid, line)) => (
+            (line.items.iter())
                 .map(|i| i.x + i.width)
-                .fold(0.0_f32, f32::max);
-            let origin = pos2(x, baseline - line.baseline);
+                .fold(0.0_f32, f32::max),
+            laid.lines.len() > 1,
+        ),
+        None => (
+            font.size * crate::tokens::scale::PLACEHOLDER_EMS / 2.0,
+            false,
+        ),
+    };
+    // A wrapped span's other lines and whatever follows it are left out.
+    let after = (!wrapped).then(|| chrome(&label[span.end..]));
+    let end = at + width + after.as_ref().map_or(0.0, |a| a.size().x);
+    let cut = wrapped || end > right;
+    let shown = if cut { right - for_ellipsis } else { right };
+    let clip =
+        Rect::from_x_y_ranges(left..=shown.max(left), rect.y_range()).intersect(ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
+    painter.galley(pos2(left, top), before, c.ink);
+    match first {
+        Some((laid, line)) => {
+            let origin = pos2(at, baseline - line.baseline);
+            // Only the first line: the next would show under it in a tall row.
+            let line_rect =
+                Rect::from_x_y_ranges(rect.x_range(), origin.y + line.top..=origin.y + line.bottom);
+            let painter = painter.with_clip_rect(clip.intersect(line_rect));
             text.atlas.paint(&painter, laid, origin, &text.palette);
-            x += width;
         }
         None => {
-            let width = font.size * crate::tokens::scale::PLACEHOLDER_EMS / 2.0;
             crate::components::text_placeholder(
                 &painter,
-                pos2(x, top),
+                pos2(at, top),
                 width,
                 probe.size().y,
                 c.rule,
             );
             ui.ctx().request_repaint();
-            x += width;
         }
     }
-    let after = chrome(&label[span.end..]);
-    let end = x + after.size().x;
-    painter.galley(pos2(x, top), after, c.ink);
-    end > right
+    if let Some(after) = after {
+        painter.galley(pos2(at + width, top), after, c.ink);
+    }
+    if cut {
+        let x = end.min(shown) + space::XXS;
+        ui.painter_at(rect).galley(pos2(x, top), ellipsis, c.ink);
+    }
+    cut
+}
+
+/// A cut label whole, for its hover popup: laid out by the text pipeline as wide as a
+/// popover's text, as the row draws its Resource text.
+fn paint_whole_label(ui: &mut Ui, label: &str, text: &mut VerseText<'_>) {
+    let width = size::POPOVER_TEXT;
+    let laid = (text.snippets).get(label, ColorRole::Ink, false, width, &text.settings);
+    let Some(laid) = laid else {
+        ui.ctx().request_repaint();
+        let line = text.settings.size * text.settings.line_spacing;
+        let (rect, _) = ui.allocate_exact_size(vec2(width, line), Sense::hover());
+        let color = theme::c().rule;
+        crate::components::text_placeholder(ui.painter(), rect.min, width, line, color);
+        return;
+    };
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, laid.height), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
+    let painter = ui
+        .painter()
+        .with_clip_rect(rect.expand(space::XS).intersect(ui.clip_rect()));
+    text.atlas.paint(&painter, &laid, rect.min, &text.palette);
 }
 
 /// The Page palette the Search preview's Verses are drawn in: as dark (and as High contrast)

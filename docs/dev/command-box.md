@@ -83,7 +83,11 @@ The dropdown is a results panel under the box, its right edge under the box's:
   baseline. So `בָּרָא · H1254A` reads as written, the Lemma then its Strong's number. egui
   has no bidi and the Interface font no Hebrew, so drawn as chrome text it came out as empty
   boxes with the number mirrored. Until a layout worker has the Lemma (a frame or two), a
-  placeholder bar stands in. Greek and Latin labels are all chrome text.
+  placeholder bar stands in. Greek and Latin labels are all chrome text. The span is laid
+  out as wide as the room left before the detail, so a long one (a Hebrew Resource title)
+  wraps there: its first line shows, ended with "…", and the rest is left out. Hovering a
+  cut label shows it whole, laid out by the text pipeline at a popover's width
+  (`paint_whole_label`), never as chrome text.
 - **Two-line rows.** A Search preview Verse shows its reference, then the first line of its
   text with the match highlighted. The text is Resource text, so the text pipeline lays it
   out and draws it (ADR 0004), like the Search Tool's: in the Reading fonts at Body size,

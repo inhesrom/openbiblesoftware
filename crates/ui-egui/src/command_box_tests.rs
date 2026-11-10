@@ -1166,6 +1166,98 @@ fn the_search_preview_without_a_bible_and_while_indexing() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// A Resource title in Hebrew too long for its row (#308 review): the text pipeline lays it
+/// out as wide as the room before the detail, so it wraps there. Its first line shows ended
+/// with "…" (no line lost without a sign), and hovering the row shows the whole label, drawn
+/// by the pipeline too.
+#[test]
+fn a_long_hebrew_title_is_cut_with_an_ellipsis_and_shown_whole_on_hover() {
+    let title = "ספר תהלים עם פירוש קצר לכל מזמור ומזמור ועם הערות על כל פסוק ופסוק";
+    let mut psalms = obs_engine::testing::bibles::psalms(12);
+    psalms.manifest.title = title.to_string();
+    let (mut h, _files) = super::search::harness_of("command-box-long-hebrew", &[psalms]);
+    h.ctx.enable_accesskit();
+    // A narrow window: a narrow dropdown.
+    h.screen = egui::vec2(900.0, 700.0);
+    h.frames(2);
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "psa");
+    let label = format!("PSA — {title}");
+    assert!(
+        (h.shell.st.command_box.suggestions.iter()).any(|s| s.label == label),
+        "{:?}",
+        h.shell.st.command_box.suggestions
+    );
+    let row = |h: &Harness| {
+        let tree = h.tree.clone().expect("an AccessKit tree");
+        let bounds = (tree.nodes.iter())
+            .find(|(_, n)| {
+                n.role() == egui::accesskit::Role::ListBoxOption
+                    && n.label().is_some_and(|l| l.starts_with(&label))
+            })
+            .and_then(|(_, n)| n.bounds())
+            .expect("the Hebrew title's row");
+        egui::Rect::from_min_max(
+            egui::pos2(bounds.x0 as f32, bounds.y0 as f32),
+            egui::pos2(bounds.x1 as f32, bounds.y1 as f32),
+        )
+    };
+    let mut glyphs = Vec::new();
+    for _ in 0..120 {
+        h.paced_frame();
+        glyphs = glyph_quads_in(&h, row(&h));
+        if !glyphs.is_empty() {
+            break;
+        }
+    }
+    h.frames(2);
+    let row = row(&h);
+    assert!(dropdown(&h).width() < 640.0, "{:?}", dropdown(&h));
+    assert!(!glyphs.is_empty(), "no pipeline glyphs in {row:?}");
+    let detail = h.find("Open Bible").expect("its detail");
+    let ellipsis = (h.shapes.iter())
+        .find(|(r, t)| t == "…" && row.contains(r.center()))
+        .map(|(r, _)| *r)
+        .unwrap_or_else(|| panic!("the cut title ends with \"…\": {:?}", h.texts()));
+    assert!(ellipsis.right() < detail.left(), "{ellipsis:?} {detail:?}");
+    let glyphs = glyph_quads_in(&h, row);
+    assert!(
+        glyphs.iter().all(|p| p.x <= ellipsis.left() + 1.0),
+        "the title's first line left of its \"…\": {ellipsis:?}, {glyphs:?}"
+    );
+    // The Library lists the title as chrome text; the dropdown does not.
+    let hebrew = |h: &Harness| {
+        (h.shapes.iter())
+            .filter(|(_, t)| obs_layout::has_rtl(t))
+            .map(|(r, _)| *r)
+            .collect::<Vec<_>>()
+    };
+    let library = hebrew(&h);
+    assert!(
+        library.iter().all(|r| !dropdown(&h).intersects(*r)),
+        "no chrome text in the dropdown holds Hebrew: {:?}",
+        h.texts()
+    );
+
+    let before = h.glyphs.len();
+    h.events.push(Event::PointerMoved(row.center()));
+    let whole = |h: &Harness| {
+        let tree = h.tree.clone().expect("an AccessKit tree");
+        (tree.nodes.iter()).any(|(_, n)| {
+            n.role() == egui::accesskit::Role::Label && n.value().is_some_and(|l| l == label)
+        })
+    };
+    for _ in 0..120 {
+        h.paced_frame();
+        if whole(&h) && h.glyphs.len() > before {
+            break;
+        }
+    }
+    assert!(h.glyphs.len() > before, "drawn by the text pipeline");
+    assert!(whole(&h), "the whole title on hover");
+    assert_eq!(hebrew(&h), library, "the tooltip is not chrome text");
+}
+
 /// The glyph quads' corners (textured meshes: text the pipeline draws) drawn last frame in
 /// `region`.
 fn glyph_quads_in(h: &Harness, region: egui::Rect) -> Vec<egui::Pos2> {
