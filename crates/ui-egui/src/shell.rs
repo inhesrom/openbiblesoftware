@@ -948,6 +948,7 @@ impl Shell {
             ctx.set_zoom_factor(zoom);
         }
         crate::motion::set(ctx, self.motion_reduced());
+        crate::motion::set_scroll_speed(ctx, self.st.session.appearance.scroll_speed);
         let dark = theme::c().dark;
         let tone = self.st.session.appearance.page_tone.resolve(dark);
         self.st.palette = Palette::for_theme(tone, theme::c().high_contrast);
@@ -1066,7 +1067,7 @@ impl Shell {
             self.system_motion.refresh();
         }
         self.apply_appearance(ui.ctx());
-        crate::motion::instant_scrolling(ui.ctx());
+        crate::motion::scroll_input(ui.ctx());
         self.st.apply_fonts(ui.ctx());
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);

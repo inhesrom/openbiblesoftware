@@ -167,15 +167,9 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "pane.rs",
-        "view.scroll_by(40.0);",
+        "pub(crate) const ARROW_STEP: f32 = 40.0;",
         "40.0",
-        "how far an arrow key scrolls",
-    ),
-    (
-        "pane.rs",
-        "view.scroll_by(-40.0);",
-        "40.0",
-        "how far an arrow key scrolls",
+        "how far an arrow key scrolls at a Scroll speed of 1×",
     ),
     (
         "pane.rs",
@@ -599,7 +593,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell/timeline_tab.rs",
-        "let factor = f64::from(pinch) * (f64::from(scroll.y) / 300.0).exp();",
+        "let factor = f64::from(pinch) * (f64::from(zoom) / 300.0).exp();",
         "300.0",
         "how fast the wheel zooms",
     ),
@@ -1354,11 +1348,26 @@ let ok = ink.lerp_to_gamma(lapis, 1.0 - t);
 #[test]
 fn an_allowlist_entry_matches_its_whole_line_and_literal_only() {
     let entry = |file: &str, text: &str, literal: &str| allowed_entry(file, text, literal);
-    assert!(entry("pane.rs", "        view.scroll_by(40.0);", "40.0").is_some());
-    assert!(entry("pane.rs", "view.scroll_by(40.0 + 6.0);", "6.0").is_none());
-    assert!(entry("pane.rs", "view.scroll_by(40.0).expand(1.0);", "40.0").is_none());
-    assert!(entry("view.rs", "view.scroll_by(40.0);", "40.0").is_none());
-    assert!(entry("pane.rs", "view.scroll_by(40.0);", "4.0").is_none());
+    let line = "pub(crate) const ARROW_STEP: f32 = 40.0;";
+    assert!(entry("pane.rs", &format!("    {line}"), "40.0").is_some());
+    assert!(
+        entry(
+            "pane.rs",
+            "pub(crate) const ARROW_STEP: f32 = 40.0 + 6.0;",
+            "6.0"
+        )
+        .is_none()
+    );
+    assert!(
+        entry(
+            "pane.rs",
+            "pub(crate) const ARROW_STEP: f32 = 40.0.max(1.0);",
+            "40.0"
+        )
+        .is_none()
+    );
+    assert!(entry("view.rs", line, "40.0").is_none());
+    assert!(entry("pane.rs", line, "4.0").is_none());
 }
 
 /// A one-point size is a measurement inside a sink too: a focus ring pushed out, a clip

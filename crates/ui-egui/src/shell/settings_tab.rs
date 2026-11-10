@@ -13,7 +13,7 @@ use super::State;
 use super::library_tab::section;
 use crate::icons::{self, Icon};
 use crate::theme;
-use crate::tokens::space;
+use crate::tokens::{size, space};
 
 /// A command a row asked for.
 type Run = Option<(&'static str, Value)>;
@@ -222,6 +222,31 @@ impl State {
                         run = Some(("view.text_larger", json!({})));
                     }
                 });
+            }
+            SettingKind::ScrollSpeed => {
+                use obs_engine::appearance::{SCROLL_SPEED_MAX, SCROLL_SPEED_MIN};
+                let before = self.session.appearance.scroll_speed;
+                let mut speed = before;
+                // Logarithmic, so 1× sits in the middle of 0.25× and 4×. Scrolling this Tab
+                // uses a new speed from the next frame: its own live preview.
+                ui.scope(|ui| {
+                    // egui paints the rail in the field colour, which is the Tab's own: draw
+                    // it in the rule colour so the track shows in every theme.
+                    ui.visuals_mut().widgets.inactive.bg_fill = theme::c().rule;
+                    ui.spacing_mut().slider_width = size::FIELD;
+                    ui.add(
+                        egui::Slider::new(&mut speed, SCROLL_SPEED_MIN..=SCROLL_SPEED_MAX)
+                            .logarithmic(true)
+                            .custom_formatter(|v, _| obs_engine::appearance::scroll_speed_label(v))
+                            .custom_parser(|t| {
+                                t.trim().trim_end_matches(['×', 'x']).trim().parse().ok()
+                            }),
+                    )
+                    .accessible_name(setting.label);
+                });
+                if speed != before {
+                    run = Some(("view.scroll_speed", json!({ "value": f64::from(speed) })));
+                }
             }
             SettingKind::Font(slot) => {
                 ui.horizontal(|ui| {

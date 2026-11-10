@@ -88,6 +88,8 @@ pub enum SettingKind {
     },
     /// The Text size, a step at a time (`view.text_smaller`, `view.text_larger`).
     TextSize,
+    /// The Scroll speed, a slider from 0.25× to 4× (`view.scroll_speed {value}`).
+    ScrollSpeed,
     /// The font chosen for a slot (`view.font`); View → Fonts chooses it.
     Font(FontSlot),
     /// Each Notebook's Show in text (`notebook.show_in_text`), on by default.
@@ -239,6 +241,15 @@ pub const SETTINGS: &[Setting] = &[
             default: false,
             get: |s| s.appearance.reduce_motion,
         },
+    ),
+    setting(
+        "scroll_speed",
+        S::Motion,
+        "Scroll speed",
+        "How far a mouse-wheel step, a trackpad swipe or an arrow key scrolls, everywhere in \
+         the app; Page Up and Page Down still move one page",
+        "scroll scrolling wheel mouse trackpad touchpad speed fast faster slow slower arrow keys",
+        SettingKind::ScrollSpeed,
     ),
     setting(
         "line_spacing",
@@ -634,6 +645,9 @@ impl Session {
             SettingKind::Choice { command, default } => crate::choices(self, command).1 == default,
             SettingKind::Toggle { default, get, .. } => get(self) == default,
             SettingKind::TextSize => self.text.size == obs_layout::TextSettings::default().size,
+            SettingKind::ScrollSpeed => {
+                self.appearance.scroll_speed == crate::appearance::SCROLL_SPEED_DEFAULT
+            }
             SettingKind::Font(slot) => self.fonts.get(slot).is_none(),
             SettingKind::NotebooksInText => (self.notebooks().ok()?.iter()).all(|n| n.show_in_text),
             SettingKind::HomeCards => self.home.cards == crate::home::HomeSettings::default().cards,
@@ -688,6 +702,10 @@ fn reset(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         }
         SettingKind::TextSize => {
             s.run("view.text_reset", &Value::Null)?;
+        }
+        SettingKind::ScrollSpeed => {
+            let value = f64::from(crate::appearance::SCROLL_SPEED_DEFAULT);
+            s.run("view.scroll_speed", &json!({ "value": value }))?;
         }
         SettingKind::Font(slot) => {
             s.run("view.font", &json!({ "slot": slot.id() }))?;

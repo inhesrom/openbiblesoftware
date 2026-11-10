@@ -7,6 +7,10 @@
 //! each wheel step at once, jumps land at once (the flash shows without fading), pop-ups and
 //! panels appear at their final size, placeholders rest, and egui's own transitions take no
 //! time. [`set`] installs the frame's choice; the rest read it back with [`reduced`].
+//!
+//! **Scroll speed** (#293) is the user's multiplier on wheel, trackpad and arrow-key scrolling;
+//! [`scroll_input`] applies it (with Reduce motion's instant scrolling) once a frame in every
+//! viewport.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -15,6 +19,7 @@ use egui::emath::TSTransform;
 use egui::{Context, Event, Id, LayerId, MouseWheelUnit, Order, Rect, Vec2, vec2};
 
 use crate::tokens::motion;
+use obs_engine::appearance::SCROLL_SPEED_DEFAULT;
 
 /// The operating system's reduce motion setting, as the desktop app reads it.
 pub trait SystemMotion: Send + Sync {
@@ -36,6 +41,10 @@ impl SystemMotion for NoSystemMotion {
 
 fn reduced_id() -> Id {
     Id::unique("obs-reduce-motion")
+}
+
+fn scroll_speed_id() -> Id {
+    Id::unique("obs-scroll-speed")
 }
 
 fn eased_layers_id() -> Id {
@@ -65,11 +74,30 @@ pub(crate) fn set(ctx: &Context, reduce: bool) {
     }
 }
 
-/// With motion reduced, scrolling is instant: this frame's wheel and trackpad input in whole,
-/// where egui spreads a mouse-wheel step over the next frames. Call at the start of a
-/// viewport's frame, before any widget reads it.
-pub(crate) fn instant_scrolling(ctx: &Context) {
+/// Install this frame's Scroll speed (#293): the multiplier [`scroll_input`] puts on wheel
+/// and trackpad scrolling, and arrow keys on their steps.
+pub(crate) fn set_scroll_speed(ctx: &Context, speed: f32) {
+    ctx.data_mut(|d| d.insert_temp(scroll_speed_id(), speed));
+}
+
+/// This frame's Scroll speed (1×: egui's own steps).
+pub fn scroll_speed(ctx: &Context) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(scroll_speed_id()))
+        .unwrap_or(SCROLL_SPEED_DEFAULT)
+}
+
+/// This frame's wheel and trackpad scrolling, as every scrollable area reads it
+/// (`smooth_scroll_delta`): at the Scroll speed, mouse-wheel lines and trackpad points alike.
+/// With motion reduced it is also instant: this frame's input in whole, where egui spreads a
+/// mouse-wheel step over the next frames. Ctrl+wheel zoom is left alone (egui turns it into
+/// `zoom_delta`, never a scroll). Call at the start of a viewport's frame, before any widget
+/// reads it; once per frame, in the main window and in each Floating window.
+pub(crate) fn scroll_input(ctx: &Context) {
+    let speed = scroll_speed(ctx);
     if !reduced(ctx) {
+        if speed != SCROLL_SPEED_DEFAULT {
+            ctx.input_mut(|i| i.smooth_scroll_delta *= speed);
+        }
         return;
     }
     let (line, zoom, sideways) = ctx.options(|o| {
@@ -106,8 +134,14 @@ pub(crate) fn instant_scrolling(ctx: &Context) {
                 };
             }
         }
-        i.smooth_scroll_delta = sum;
+        i.smooth_scroll_delta = sum * speed;
     });
+}
+
+/// This frame's wheel and trackpad scrolling without the Scroll speed: what the Atlas and the
+/// Timeline zoom by, so their wheel zoom is the same at every Scroll speed.
+pub(crate) fn unscaled_scroll_delta(ctx: &Context) -> Vec2 {
+    ctx.input(|i| i.smooth_scroll_delta) / scroll_speed(ctx)
 }
 
 /// How a pop-up that became visible at `since` is drawn at `now`: scaled up from

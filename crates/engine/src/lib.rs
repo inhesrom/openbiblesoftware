@@ -139,6 +139,8 @@ pub mod resource_navigation;
 pub mod saved_searches;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod saved_searches_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod scroll_speed_tests;
 pub mod search;
 #[cfg(test)]
 mod search_tests;

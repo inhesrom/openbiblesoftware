@@ -317,3 +317,68 @@ fn the_atlas_follows_its_link_sets_bible_to_another_chapter() {
         h.texts().contains(&"Acts 21 · 2 places") && !all_in(h, atlas, "Acco").is_empty()
     });
 }
+
+/// #293: the wheel zooms the map as much at every Scroll speed; a Scroll speed is for
+/// scrolling, not for the Atlas's zoom.
+#[test]
+fn the_wheel_zooms_the_map_the_same_at_every_scroll_speed() {
+    let (mut h, _files) = harness("scroll-speed", false);
+    let atlas = TabId(
+        h.shell
+            .run(
+                "tool.atlas",
+                &json!({ "passage": "Acts 13", "split": true }),
+            )
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    until(&mut h, "Iconium on the map", |h| {
+        !all_in(h, atlas, "Iconium").is_empty()
+    });
+    let scale = |h: &Harness| {
+        (h.shell.st.tabs.get(&atlas))
+            .and_then(|t| t.map.as_ref())
+            .and_then(|m| m.view())
+            .expect("the map's view")
+            .scale
+    };
+    let over = label(&h, atlas, "Iconium").center();
+    let mut zooms = Vec::new();
+    for speed in [1.0, 0.5, 2.0] {
+        h.shell.run("view.scroll_speed", &json!({ "value": speed }));
+        h.frames(2);
+        for unit in [egui::MouseWheelUnit::Line, egui::MouseWheelUnit::Point] {
+            let before = scale(&h);
+            h.events.push(Event::PointerMoved(over));
+            h.events.push(Event::MouseWheel {
+                unit,
+                delta: vec2(
+                    0.0,
+                    if unit == egui::MouseWheelUnit::Line {
+                        1.0
+                    } else {
+                        40.0
+                    },
+                ),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.frames(60);
+            zooms.push((speed, unit, scale(&h) / before));
+        }
+    }
+    for (speed, unit, zoom) in &zooms {
+        assert!(
+            *zoom > 1.05,
+            "{speed}× {unit:?}: the wheel zooms in ({zoom})"
+        );
+        let at_one = zooms.iter().find(|z| z.0 == 1.0 && z.1 == *unit).unwrap().2;
+        assert!(
+            (zoom - at_one).abs() < 1e-3,
+            "{speed}× {unit:?}: {zoom}, at 1×: {at_one}"
+        );
+    }
+}

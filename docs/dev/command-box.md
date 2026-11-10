@@ -22,6 +22,7 @@ draws the list and runs `command_box.run`. Ranks, highest first (equal ranks kee
 | 95 | `tg`, `topic`, `topic guide` + text (#148) | Topic Guide's chooser for it | `guide.topic_guide {text}` |
 | 95 | `open` + Resource | Open … | as below |
 | 95 | `search` + text | Search | `search.run` |
+| 95 | `scroll speed` + 0.25 to 4 (`scroll speed 2`, `1.5x`, `0.5×`, `150%`, #293) | Scroll speed 2× · Setting · Motion | `view.scroll_speed {value}` |
 | 92 | a Resource's abbreviation or title (any case) | Open Bible, Open Lexicon … | focuses its most recent Tab, else `resource.open` |
 | 90 | a Bible reference: `jn 3:16`, `jn 3 16`, `1 jn 4 8`, `Rom 5:8; Jn 3:16` (first Passage) | Go to · *Bible* | see below |
 | 90 | a Strong's number: `G26`, `h1254a` | Word Study | `word_study.open` |

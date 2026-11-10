@@ -466,6 +466,10 @@ _Avoid_: Page colour, Background, Reading theme
 Makes every change of the interface instant: scrolling takes each wheel step at once, a jump lands at once with its flash held rather than fading, pop-ups and Panels appear at their final size, and loading placeholders rest. It is on when the user turns it on (View → Reduce motion, or Settings → Motion) or when the operating system's own reduce motion setting is on. Off, these changes ease over a fraction of a second (the motion tokens).
 _Avoid_: Animations off, Disable animations, Accessibility mode
 
+**Scroll speed**:
+How far a mouse-wheel step, a trackpad swipe or an arrow key scrolls, everywhere in the app (Resource text, Text Comparison, Search results, Notes, the Library, Settings, menus and Floating windows): one multiplier from 0.25× to 4×, 1× by default, set in Settings → Motion. It is kept in the User database with the other preferences, never in a Layout. Page Up and Page Down still move one page, and zooming with Ctrl+wheel or in the Atlas and the Timeline is not affected.
+_Avoid_: Scroll sensitivity, Wheel speed, Scroll rate
+
 **Empty state**:
 What a Tab or pane shows when it has nothing to show yet: one plain sentence saying why (nothing typed, nothing in the library, nothing matches the filter) and one Button that fills it — Show an example (Show John 3:16-18, Show G26 (love), Search for “love”), Clear the filter, Open the Library, or, when a Resource is missing, the buttons that get it (Add the Starter library…, Get Lexicons…). No pane is left blank.
 _Avoid_: Placeholder, Blank slate, Zero state
