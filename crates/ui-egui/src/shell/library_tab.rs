@@ -182,6 +182,7 @@ impl State {
                         }
                     }
                     let columns = RowColumns::fit(Widest::of(ui, in_view), width);
+                    let needle = filter.text.trim().to_lowercase();
                     let mut top = 0.0;
                     for item in &items {
                         let h = height(item);
@@ -232,6 +233,7 @@ impl State {
                                     tab,
                                     m,
                                     &columns,
+                                    &needle,
                                     position == 0,
                                     selected.as_deref() == Some(id.as_str()),
                                     dragged_row,
@@ -593,9 +595,9 @@ impl Widest {
 
 /// Where the parts of the Library rows in view go, as x ranges from a row's left edge (#302):
 /// one abbreviation, title, language and licence badge column for every row, so they line
-/// up. A narrow Panel (or a Larger Interface size) drops the badge, then the language, before
-/// the title gets narrower than [`size::TITLE_MIN`]; the abbreviation takes at most half the
-/// row; and text that still does not fit ends in "…".
+/// up. A narrow Panel (or a Larger Interface size) drops the badge, then the language, then
+/// narrows the abbreviation (to [`size::FIELD_NUMBER`]), before the title gets narrower than
+/// [`size::TITLE_MIN`]; text that still does not fit ends in "…".
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct RowColumns {
     abbreviation: Rangef,
@@ -608,12 +610,14 @@ impl RowColumns {
     fn fit(widest: Widest, width: f32) -> Self {
         let left = HANDLE_W + space::XL;
         let right = (width - space::XS).max(left);
+        // The abbreviation yields to the title, down to a short abbreviation's width.
+        let room = right - left;
         let abbreviation = Rangef::new(
             left,
             left + widest
                 .abbreviation
                 .min(size::FIELD_NARROW)
-                .min((right - left) / 2.0),
+                .min((room - space::M - size::TITLE_MIN).max(size::FIELD_NUMBER)),
         );
         let title_left = abbreviation.max + space::M;
         // A column's width with the gap before it; an empty column takes none.
@@ -649,12 +653,31 @@ impl RowColumns {
 /// The space between a licence badge's edge and its text.
 const BADGE_PAD: f32 = space::S;
 
+/// Where the Filter's `needle` (lower case) first matches in `title`, ignoring case: the
+/// match's end, in chars, and the title from the start of the word it is in.
+fn filter_match<'t>(title: &'t str, needle: &str) -> Option<(usize, &'t str)> {
+    if needle.is_empty() {
+        return None;
+    }
+    let (chars_before, (at, _)) = title
+        .char_indices()
+        .enumerate()
+        .find(|(_, (i, _))| title[*i..].to_lowercase().starts_with(needle))?;
+    let word = title[..at].rfind(char::is_whitespace).map_or(0, |w| {
+        w + title[w..].chars().next().map_or(0, char::len_utf8)
+    });
+    Some((chars_before + needle.chars().count(), &title[word..]))
+}
+
 /// Draw one row: [handle] [★] abbreviation, title, language, licence badge, in `columns`.
+/// A title cut short before the part the Filter's `needle` matched shows from that word on.
+#[allow(clippy::too_many_arguments)]
 fn library_row(
     ui: &mut Ui,
     tab: TabId,
     m: &Manifest,
     columns: &RowColumns,
+    needle: &str,
     first: bool,
     selected: bool,
     dragging: bool,
@@ -697,16 +720,28 @@ fn library_row(
         );
     }
     // Each part on one line in its column, left-aligned and centred on the row.
-    let paint = |column: Rangef, text: &str, size: f32, color: egui::Color32| {
-        let galley =
-            crate::components::elided(&painter, text, FontId::proportional(size), color, column.span());
-        let at = pos2(rect.left() + column.min, y - galley.size().y / 2.0);
-        painter.galley(at, galley, color);
+    let layout = |column: Rangef, text: &str, size: f32, color: egui::Color32| {
+        crate::components::elided(&painter, text, FontId::proportional(size), color, column.span())
     };
-    paint(columns.abbreviation, &m.abbreviation, text::BODY, c.ink);
-    paint(columns.title, &m.title, text::LABEL, c.ink);
+    let paint = |column: Rangef, galley: std::sync::Arc<egui::Galley>| {
+        let at = pos2(rect.left() + column.min, y - galley.size().y / 2.0);
+        painter.galley(at, galley, c.ink);
+    };
+    paint(
+        columns.abbreviation,
+        layout(columns.abbreviation, &m.abbreviation, text::BODY, c.ink),
+    );
+    let mut title = layout(columns.title, &m.title, text::LABEL, c.ink);
+    if title.elided
+        && let Some((end, from_word)) = filter_match(&m.title, needle)
+        // What shows, less the "…".
+        && end + 1 > title.rows.iter().map(|r| r.glyphs.len()).sum::<usize>()
+    {
+        title = layout(columns.title, &format!("…{from_word}"), text::LABEL, c.ink);
+    }
+    paint(columns.title, title);
     if let Some(column) = columns.language {
-        paint(column, &m.language, text::SMALL, c.muted);
+        paint(column, layout(column, &m.language, text::SMALL, c.muted));
     }
     let (licence, _) = spdx_badge(&m.license);
     if let Some(column) = columns.badge {
@@ -1008,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_abbreviation_takes_at_most_half_the_row() {
+    fn a_long_abbreviation_yields_to_the_title() {
         let long = Widest {
             abbreviation: 300.0,
             ..WIDEST
@@ -1017,9 +1052,30 @@ mod tests {
             RowColumns::fit(long, 600.0).abbreviation.span(),
             size::FIELD_NARROW
         );
-        let c = RowColumns::fit(long, 200.0);
-        let room = 200.0 - space::XS - HANDLE_W - space::XL;
-        assert_eq!(c.abbreviation.span(), room / 2.0);
-        assert!(c.title.span() > 0.0, "{c:?}");
+        let c = RowColumns::fit(long, 260.0);
+        assert_eq!(c.title.span(), size::TITLE_MIN, "{c:?}");
+        assert_apart(&c, 260.0);
+        let c = RowColumns::fit(long, 180.0);
+        assert_eq!(c.abbreviation.span(), size::FIELD_NUMBER);
+        assert!(c.title.span() > size::FIELD_NUMBER, "{c:?}");
+        assert_apart(&c, 180.0);
+    }
+
+    #[test]
+    fn a_filter_match_starts_at_its_word() {
+        let kjv = "King James Version with Strong's Numbers";
+        assert_eq!(
+            filter_match(kjv, "strong"),
+            Some((30, "Strong's Numbers"))
+        );
+        assert_eq!(filter_match(kjv, "king"), Some((4, kjv)));
+        assert_eq!(
+            filter_match(kjv, "ames"),
+            Some((10, "James Version with Strong's Numbers"))
+        );
+        assert_eq!(filter_match(kjv, "s ver"), Some((14, "James Version with Strong's Numbers")));
+        assert_eq!(filter_match(kjv, "hebrew"), None);
+        assert_eq!(filter_match(kjv, ""), None);
+        assert_eq!(filter_match("Ἀρχὴ Λόγος", "λόγ"), Some((8, "Λόγος")));
     }
 }

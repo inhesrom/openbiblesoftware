@@ -58,6 +58,14 @@ impl PaintedRow {
     fn part(&self, text: &str) -> Option<&Painted> {
         self.parts.iter().find(|p| p.text == text)
     }
+
+    /// The title as painted: whole, cut short, or from the Filter's match on.
+    fn title_part(&self) -> &Painted {
+        self.parts
+            .iter()
+            .find(|p| p.text == self.title || p.text.starts_with('…'))
+            .expect("a title")
+    }
 }
 
 /// Every Library row in view, top to bottom, found by its title.
@@ -78,13 +86,20 @@ fn painted_rows(h: &Harness) -> Vec<PaintedRow> {
             m.language.as_str(),
             badge,
         ];
-        for title in painted.iter().filter(|p| p.text == m.title) {
+        // A title cut short before the Filter's match shows from the matched word on.
+        let is_title = |p: &&Painted| {
+            p.text == m.title
+                || p.text
+                    .strip_prefix('…')
+                    .is_some_and(|tail| m.title.ends_with(tail))
+        };
+        for title in painted.iter().filter(is_title) {
             let y = title.rect.center().y;
             let mut parts: Vec<Painted> = painted
                 .iter()
                 .filter(|p| {
                     (p.rect.center().y - y).abs() < super::super::library_tab::ROW_H / 2.0
-                        && words.contains(&p.text.as_str())
+                        && (words.contains(&p.text.as_str()) || p.rect == title.rect)
                 })
                 .cloned()
                 .collect();
@@ -128,8 +143,11 @@ fn assert_no_overlap(h: &Harness, rows: &[PaintedRow]) {
 /// A title's visible text: the start of the title, and "…" when it is cut short.
 fn assert_ellipsis_when_cut(rows: &[PaintedRow]) {
     for row in rows {
-        let title = row.part(&row.title).expect("a title");
-        if title.elided {
+        let title = row.title_part();
+        if title.text.starts_with('…') {
+            let middle = title.shown.trim_matches('…');
+            assert!(row.title.contains(middle), "{:?}", title.shown);
+        } else if title.elided {
             assert!(
                 title.shown.ends_with('…'),
                 "{:?} is cut without an ellipsis: {:?}",
@@ -155,16 +173,29 @@ fn larger(h: &mut Harness) {
     h.frames(4);
 }
 
+/// The Filter set to "hebrew" in a narrow Panel: titles cut short before "Hebrew" show it.
+fn narrow_filtered(h: &mut Harness) {
+    let tab = h.tab_id("Library");
+    h.shell.st.tabs.get_mut(&tab).unwrap().filter = "hebrew".into();
+    narrow(h);
+}
+
 fn library_shown(h: &Harness) -> bool {
     !painted_rows(h).is_empty()
 }
 
-/// The gallery's regression images of Library rows (#302): in a narrow Panel and at a Larger
-/// Interface size (the default layout's Library Tab is in the Tabs section already).
+/// The gallery's regression images of Library rows (#302): in a narrow Panel, at a Larger
+/// Interface size, and filtered in a narrow Panel (the default layout's Library Tab is in the
+/// Tabs section already).
 pub(super) fn library_rows() -> Vec<Overlay> {
     vec![
         ("Library rows: narrow Panel", narrow, library_shown),
         ("Library rows: Larger Interface size", larger, library_shown),
+        (
+            "Library rows: Filter match in a cut title",
+            narrow_filtered,
+            library_shown,
+        ),
     ]
 }
 
@@ -228,7 +259,7 @@ fn library_rows_in_a_narrow_panel_drop_the_badge_and_language_not_the_title() {
         }
     }
     assert!(
-        rows.iter().any(|r| r.part(&r.title).unwrap().elided),
+        rows.iter().any(|r| r.title_part().elided),
         "no title cut short at this width: {rows:?}"
     );
 }
@@ -242,7 +273,7 @@ fn library_titles_stay_readable_at_the_larger_interface_size() {
     assert_no_overlap(&h, &rows);
     assert_ellipsis_when_cut(&rows);
     for row in &rows {
-        let title = row.part(&row.title).unwrap();
+        let title = row.title_part();
         let shown = title.shown.trim_end_matches('…').chars().count();
         assert!(
             shown >= 15 || !title.elided,
@@ -251,4 +282,22 @@ fn library_titles_stay_readable_at_the_larger_interface_size() {
             title.shown
         );
     }
+}
+
+#[test]
+fn a_cut_library_title_shows_the_part_the_filter_matched() {
+    let (mut h, _lab) = launch("library-rows-filtered", dark());
+    narrow_filtered(&mut h);
+    let rows = painted_rows(&h);
+    assert!(rows.len() > 1, "{rows:?}");
+    assert_no_overlap(&h, &rows);
+    assert_ellipsis_when_cut(&rows);
+    for row in rows.iter().filter(|r| r.title.to_lowercase().contains("hebrew")) {
+        let shown = &row.title_part().shown;
+        assert!(shown.contains("Hebrew"), "{:?} shows {shown:?}", row.title);
+    }
+    assert!(
+        rows.iter().any(|r| r.title_part().text.starts_with('…')),
+        "no title shown from its match: {rows:?}"
+    );
 }
