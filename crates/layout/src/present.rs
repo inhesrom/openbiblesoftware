@@ -111,12 +111,31 @@ pub(crate) struct Flags {
     pub(crate) role: Option<ColorRole>,
 }
 
+/// The size of the em space that makes a Note marker's room, as a share of the block's
+/// text size. Gentium Plus's em space is 0.77 em wide, so the room is about 0.65 em: the
+/// marker (0.42 em) with a little space on each side.
+pub const NOTE_ROOM_SIZE: f32 = 0.85;
+
 /// Lay a block's text out as runs.
 pub fn block_paragraph(
     unit: &TextUnit,
     block: &BlockSource,
     direction: Direction,
     settings: &TextSettings,
+) -> Paragraph {
+    block_paragraph_with_note_room(unit, block, direction, settings, &[])
+}
+
+/// [`block_paragraph`] with room for a Note marker ([`InlineObject::NoteRoom`]) at each of
+/// `note_ends`, the unit bytes where one of the user's Notes ends. The room comes after the
+/// text before it and before any verse number or Footnote marker there; an end at the
+/// block's start belongs to the block before.
+pub fn block_paragraph_with_note_room(
+    unit: &TextUnit,
+    block: &BlockSource,
+    direction: Direction,
+    settings: &TextSettings,
+    note_ends: &[usize],
 ) -> Paragraph {
     let size = settings.size;
     let reading = settings.layout;
@@ -245,6 +264,10 @@ pub fn block_paragraph(
             }
         }
     }
+    let note_ends: Vec<usize> = (note_ends.iter().copied())
+        .filter(|&p| range.start < p && p <= range.end)
+        .collect();
+    cuts.extend(note_ends.iter().copied().filter(|&p| p < range.end));
     cuts.sort_unstable();
     cuts.dedup();
 
@@ -253,6 +276,9 @@ pub fn block_paragraph(
         .map(|w| (w[0], w[1]))
         .chain(std::iter::once((range.end, range.end)));
     for (a, b) in pieces {
+        if note_ends.contains(&a) {
+            out.runs.push(note_room(a, body));
+        }
         let objects = Objects {
             spans: &local,
             footnotes: &footnotes,
@@ -318,6 +344,25 @@ pub fn block_paragraph(
         line_starts: out.line_starts,
         drop_numeral: out.drop_numeral,
         hidden: false,
+    }
+}
+
+/// Room for a Note marker at unit byte `a`: an em space at [`NOTE_ROOM_SIZE`] of the text
+/// size. It may end a line, but never starts one after the word it follows.
+fn note_room(a: usize, body: f32) -> Run {
+    Run {
+        text: "\u{2003}".into(),
+        style: RunStyle {
+            face: FaceId::Regular,
+            size: body * NOTE_ROOM_SIZE,
+            small_caps: false,
+            raise: 0.0,
+            role: ColorRole::Ink,
+        },
+        source: RunSource::Object {
+            anchor: a,
+            object: InlineObject::NoteRoom,
+        },
     }
 }
 

@@ -538,6 +538,55 @@ fn an_empty_note_is_not_saved_and_esc_saves_a_written_one() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// PERSONAL-5 (#305): a Note on a verse's text ends where the next verse's number is. Its
+/// marker has room of its own in the text there, clear of that number and of every glyph.
+#[test]
+fn a_notes_marker_has_room_of_its_own_before_the_next_verse_number() {
+    let dir = folder("note-room");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, b) = {
+        let doc = &view(&h, tb).doc;
+        let verse = obs_scripture::Verse::new(obs_scripture::Book::Genesis, 30, 2);
+        let (unit, byte) = doc.verse_position(verse).unwrap();
+        let range = doc.verse_range_at(unit, byte).unwrap();
+        let at = |byte| DocPos { unit, byte };
+        (at(range.start), at(range.end))
+    };
+    let v = h.shell.st.tabs.get_mut(&tb).unwrap().view.as_mut().unwrap();
+    v.selection = Some(crate::Selection {
+        anchor: a,
+        head: b,
+        granularity: Default::default(),
+    });
+    h.frame();
+    press_key(&mut h, egui::Key::N, cmd_shift());
+    h.events.push(Event::Text("Room of its own.".into()));
+    h.frame();
+    press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
+    assert_eq!(h.shell.st.session.annotations(None).unwrap().len(), 1);
+    h.frames(2);
+    let marker = h.shell.st.palette.note_marker;
+    let markers = painted_any(&h, marker);
+    let [marker] = markers[..] else {
+        panic!("one Note marker: {markers:?}");
+    };
+    // Gen 30:3's number follows on the marker's line.
+    let after: Vec<&Rect> = (h.glyphs.iter())
+        .filter(|g| g.left() >= marker.left() && (g.center().y - marker.center().y).abs() < 12.0)
+        .collect();
+    assert!(!after.is_empty(), "text follows the marker on its line");
+    let covered: Vec<&Rect> = (h.glyphs.iter())
+        .filter(|g| {
+            let i = g.intersect(marker);
+            i.width() > 0.5 && i.height() > 0.5
+        })
+        .collect();
+    assert!(covered.is_empty(), "{marker:?} covers glyphs {covered:?}");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// The Note editor saves its text as typed (#186 review): white space is CommonMark, so four
 /// leading spaces make a code block whose `**` shows as typed, and trimming them would turn
 /// it bold.

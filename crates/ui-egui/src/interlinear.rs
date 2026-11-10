@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use obs_engine::word_info::lexicon_excerpt;
 use obs_engine::{InterlinearKind, InterlinearLine, LexiconWord, cell_gloss, cell_texts};
 use obs_layout::{
-    BlockKind, BlockSource, Interlinear, Paragraph, TextSettings, add_interlinear, block_paragraph,
-    tagged_words,
+    BlockKind, BlockSource, Interlinear, Paragraph, TextSettings, add_interlinear,
+    block_paragraph_with_note_room, tagged_words,
 };
 use obs_model::{Key, MorphemePart};
 use obs_scripture::StrongsNumber;
@@ -224,17 +224,20 @@ impl InterlinearSource {
     }
 
     /// Block `i` of `doc` as a paragraph with its interlinear lines, or (`estimate`) with
-    /// room for them only, for a height estimate that looks nothing up.
+    /// room for them only, for a height estimate that looks nothing up; with room for the
+    /// markers of Notes ending at unit bytes `note_ends` (#305).
     pub fn paragraph(
         &self,
         doc: &ReadingDoc,
         i: usize,
         settings: &TextSettings,
+        note_ends: &[usize],
         estimate: bool,
     ) -> Option<Paragraph> {
         let b = doc.blocks.get(i)?;
         let unit = doc.units.get(b.unit)?;
-        let mut p = block_paragraph(unit, &b.source, doc.direction(), settings);
+        let mut p =
+            block_paragraph_with_note_room(unit, &b.source, doc.direction(), settings, note_ends);
         if estimate {
             // Headings have no Tagged words; any other block may.
             if !matches!(b.source.kind, BlockKind::Heading(_)) {

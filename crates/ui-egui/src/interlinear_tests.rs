@@ -1164,7 +1164,7 @@ fn bsb_interlinear_spacing_goldens() {
             if b.unit != unit {
                 continue;
             }
-            let para = source.paragraph(&doc, i, &settings, false).unwrap();
+            let para = source.paragraph(&doc, i, &settings, &[], false).unwrap();
             let laid = obs_layout::layout(&para, 620.0, obs_fonts::ShapeCache::shared());
             if laid.cells.is_empty() {
                 continue;
