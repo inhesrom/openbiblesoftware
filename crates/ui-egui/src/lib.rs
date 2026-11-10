@@ -47,7 +47,9 @@ pub use rich_clipboard::RichClipboard;
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
-pub use shell::{DesktopUnits, Shell, parse_shortcut};
+pub use shell::{
+    DesktopUnits, Shell, SystemTitleBar, TitleBarDoubleClick, parse_shortcut, unified_title_bar,
+};
 pub use system_fonts::{FontFile, InstalledFamily, NoSystemFonts, SystemFonts};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
@@ -224,6 +226,14 @@ impl App {
     /// motion reduces motion.
     pub fn with_system_motion(mut self, motion: std::sync::Arc<dyn SystemMotion>) -> Self {
         self.shell.set_system_motion(motion);
+        self
+    }
+
+    /// macOS (#297): every window's title bar is the app's own top row, the menu bar in the
+    /// main window, whose viewport the app builds with [`unified_title_bar`]. `system` is the
+    /// system's setting for double-clicking a title bar.
+    pub fn with_unified_title_bar(mut self, system: std::sync::Arc<dyn SystemTitleBar>) -> Self {
+        self.shell.set_unified_title_bar(system);
         self
     }
 

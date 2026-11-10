@@ -76,6 +76,8 @@ mod text_size_controls;
 mod theme_editor_window;
 mod tile_handles;
 mod timeline_tab;
+mod title_bar;
+pub use title_bar::{SystemTitleBar, TitleBarDoubleClick, unified_title_bar};
 mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
@@ -302,6 +304,12 @@ pub(crate) struct State {
     pub(crate) user_guide_ui: user_guide_tab::UserGuideUi,
     /// Where the First-run tour's Coach marks point (#218).
     pub(crate) tour_ui: tour_ui::TourUi,
+    /// macOS: the windows' title bars are the app's top rows, and this is the system's
+    /// setting for double-clicking them (#297). None: the system draws its own title bars.
+    title_bar: Option<Arc<dyn SystemTitleBar>>,
+    /// The traffic lights' room while a Floating window whose top tab bars are its title bar
+    /// is drawn (#297): the tab bar under them leaves it empty.
+    traffic_lights: Option<egui::Rect>,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -350,6 +358,9 @@ pub struct Shell {
     system_motion: Arc<dyn crate::SystemMotion>,
     /// The main dock's Panels settling into a new arrangement (#225).
     panel_motion: panel_motion::PanelMotion,
+    /// macOS (#297): the menu bar's controls' height last frame, which the title bar's
+    /// centring room around them is worked out from.
+    menu_row_height: f32,
     /// Tests: frames leave the inline job queue alone, so Guide sections, Word Study headers
     /// and the People & places directory stay loading (#223's loading states).
     #[cfg(test)]
@@ -415,6 +426,8 @@ impl Shell {
                 updates_ui: update_notice::UpdateUi::default(),
                 user_guide_ui: Default::default(),
                 tour_ui: Default::default(),
+                title_bar: None,
+                traffic_lights: None,
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -430,6 +443,7 @@ impl Shell {
             copy_out: None,
             system_motion: Arc::new(crate::NoSystemMotion),
             panel_motion: Default::default(),
+            menu_row_height: size::CONTROL,
             #[cfg(test)]
             hold_jobs: false,
         }
@@ -438,6 +452,13 @@ impl Shell {
     /// Where the operating system's reduce motion setting comes from (#225).
     pub fn set_system_motion(&mut self, motion: Arc<dyn crate::SystemMotion>) {
         self.system_motion = motion;
+    }
+
+    /// macOS (#297): every window's title bar is the app's own top row (the main window's
+    /// viewport is built with [`unified_title_bar`] too), and double-clicking it does what
+    /// `system` says.
+    pub fn set_unified_title_bar(&mut self, system: Arc<dyn SystemTitleBar>) {
+        self.st.title_bar = Some(system);
     }
 
     /// Whether motion is reduced: View → Reduce motion, or the operating system's setting.
@@ -1069,6 +1090,9 @@ impl Shell {
         // Back at the front, the user may have changed the system's reduce motion setting.
         if ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true)))) {
             self.system_motion.refresh();
+            if let Some(t) = &self.st.title_bar {
+                t.refresh();
+            }
         }
         self.apply_appearance(ui.ctx());
         crate::motion::scroll_input(ui.ctx());
@@ -1117,13 +1141,16 @@ impl Shell {
         self.st.areas = Default::default();
         self.st.toolbar.begin_frame();
         self.st.tour_ui.begin_frame();
-        let menus = egui::Panel::top("menus")
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::c().surface)
-                    .inner_margin(inset::BAND),
-            )
-            .show(ui, |ui| self.menu_bar(ui));
+        let menus = match self.st.title_bar.clone() {
+            None => egui::Panel::top("menus")
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::c().surface)
+                        .inner_margin(inset::BAND),
+                )
+                .show(ui, |ui| self.menu_bar(ui, None)),
+            Some(system) => self.title_bar_menus(ui, system.as_ref()),
+        };
         self.st.areas.menus = menus.inner.map(|id| (id, menus.response.rect));
         self.st.toolbar.menus_bottom = menus.response.rect.bottom();
         (self.st.tour_ui).target(TourTarget::Toolbar, menus.response.rect, false);
@@ -1326,13 +1353,54 @@ impl Shell {
         }
     }
 
+    /// macOS (#297): the menu bar as the main window's title bar. It starts after the traffic
+    /// lights' room and is at least as tall as the system's title bar, with its controls
+    /// centred on the traffic lights (as near as they fit); its empty space moves and zooms the
+    /// window.
+    fn title_bar_menus(
+        &mut self,
+        ui: &mut Ui,
+        system: &dyn SystemTitleBar,
+    ) -> egui::InnerResponse<Option<egui::Id>> {
+        let ctx = ui.ctx().clone();
+        let centre = size::TITLE_BAR / 2.0 / ctx.zoom_factor();
+        let pad = (centre - self.menu_row_height / 2.0).max(0.0).round() as i8;
+        let side = f32::from(inset::BAND.left);
+        let lead = title_bar::traffic_lights(&ctx).map_or(0.0, |l| (l.right() - side).max(0.0));
+        let menus = egui::Panel::top("menus")
+            .frame(egui::Frame::new().fill(theme::c().surface))
+            .show(ui, |ui| {
+                let sense = egui::UiBuilder::new().sense(title_bar::sense());
+                let bar = ui.scope_builder(sense, |ui| {
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(inset::BAND.left, pad))
+                        .show(ui, |ui| self.menu_bar(ui, Some(lead)))
+                        .inner
+                });
+                title_bar::act_as_title_bar(&ctx, &bar.response, system);
+                bar.inner
+            });
+        egui::InnerResponse::new(menus.inner, menus.response)
+    }
+
     /// The menu bar: the app's name, the menus (File · Edit · View · Go · Tools · Window · Help,
     /// #226), the Launchers (#140) when the toolbar is at the Top (#141), and the Command box
     /// on the right. Returns the first menu's id, where F6 puts the keyboard (#215).
-    fn menu_bar(&mut self, ui: &mut Ui) -> Option<egui::Id> {
+    ///
+    /// `lead` (macOS, #297): the menu bar is the title bar, and this much room is left at its
+    /// start for the traffic lights.
+    fn menu_bar(&mut self, ui: &mut Ui, lead: Option<f32>) -> Option<egui::Id> {
         let mut first = None;
-        ui.horizontal(|ui| {
-            ui.label(crate::components::title_text("Open Bible"));
+        let row = ui.horizontal(|ui| {
+            match lead {
+                None => ui.label(crate::components::title_text("Open Bible")),
+                Some(lead) => {
+                    ui.add_space(lead);
+                    // Part of the title bar: a click on it is the window's, not a selection's.
+                    let name = egui::Label::new(crate::components::title_text("Open Bible"));
+                    ui.add(name.selectable(false))
+                }
+            };
             ui.add_space(space::L);
             ui.spacing_mut().item_spacing.x = space::XS;
             ui.scope(|ui| {
@@ -1370,6 +1438,9 @@ impl Shell {
             // What the Launchers leave room for next frame: the right side and gaps.
             self.st.toolbar.reserve = right.inner + space::M + 2.0 * ui.spacing().item_spacing.x;
         });
+        if lead.is_some() {
+            self.menu_row_height = row.response.rect.height();
+        }
         first
     }
 
@@ -4095,6 +4166,28 @@ impl egui_tiles::Behavior<TabId> for State {
 
     fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
         size::TAB_BAR
+    }
+
+    /// macOS (#297): in a Floating window, the tab bar under the traffic lights starts after
+    /// them, and that room is the window's title bar (drag it to move the window,
+    /// double-click it to zoom or minimize). Nothing elsewhere.
+    fn tab_bar_left_ui(
+        &mut self,
+        _tiles: &Tiles<TabId>,
+        ui: &mut Ui,
+        _tile_id: TileId,
+        _tabs: &egui_tiles::Tabs,
+    ) {
+        let (Some(lights), Some(system)) = (self.traffic_lights, self.title_bar.clone()) else {
+            return;
+        };
+        let bar = ui.max_rect();
+        if !bar.intersects(lights) || bar.left() >= lights.right() {
+            return;
+        }
+        let room = egui::vec2(lights.right() - bar.left(), bar.height());
+        let (_, r) = ui.allocate_exact_size(room, title_bar::sense());
+        title_bar::act_as_title_bar(ui.ctx(), &r, system.as_ref());
     }
 
     fn gap_width(&self, _style: &egui::Style) -> f32 {

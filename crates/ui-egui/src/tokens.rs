@@ -138,6 +138,14 @@ pub mod size {
     pub const HEADER_TITLE_MIN: f32 = 72.0;
     /// The Panels' tab bar.
     pub const TAB_BAR: f32 = 31.0;
+    /// macOS (#297): the system's title bar, in its own points (not the zoomed ones), as
+    /// macOS 26 draws it over a window whose content fills it, the traffic lights (three
+    /// 14 pt buttons from 9 pt in, 9 pt apart) centred on its height. macOS 11 to 15 draws a
+    /// 28 pt bar with them from 7 pt in, which the same room covers.
+    pub const TITLE_BAR: f32 = 32.0;
+    /// macOS (#297): from the window's left edge to past the traffic lights' zoom button, with
+    /// the gap before the close button kept after it too, in the system's own points.
+    pub const TRAFFIC_LIGHTS: f32 = 78.0;
     /// Room kept for a scroll bar beside custom-drawn content.
     pub const SCROLLBAR: f32 = 10.0;
     /// The shortest a scroll bar's thumb gets.

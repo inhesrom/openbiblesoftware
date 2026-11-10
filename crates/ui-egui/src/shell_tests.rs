@@ -37,6 +37,8 @@ struct Harness {
     last_shapes: Vec<egui::epaint::ClippedShape>,
     /// URLs the app asked the platform to open (hyperlinks clicked), oldest first.
     opened: Vec<String>,
+    /// What the app asked of the main window (move, zoom …), oldest first.
+    commands: Vec<egui::ViewportCommand>,
     /// Text the app put on the clipboard, oldest first.
     copied: Vec<String>,
     /// The window's size in points (1400 × 900 unless a test makes it smaller).
@@ -202,6 +204,7 @@ impl Harness {
             textures: std::collections::HashMap::new(),
             last_shapes: Vec::new(),
             opened: Vec::new(),
+            commands: Vec::new(),
             copied: Vec::new(),
             screen: vec2(1400.0, 900.0),
             root_info: egui::ViewportInfo::default(),
@@ -261,27 +264,16 @@ impl Harness {
             }
             self.root_info.focused = Some(here);
         }
-        // No GPU here: texture uploads are kept as images, for screenshots only.
-        for (id, deltas) in std::mem::take(&mut out.textures_delta.set) {
-            for delta in deltas {
-                let egui::ImageData::Color(img) = delta.image;
-                match (delta.pos, self.textures.get_mut(&id)) {
-                    (Some([x0, y0]), Some(tex)) => {
-                        for y in 0..img.size[1] {
-                            for x in 0..img.size[0] {
-                                tex.pixels[(y0 + y) * tex.size[0] + x0 + x] =
-                                    img.pixels[y * img.size[0] + x];
-                            }
-                        }
-                    }
-                    _ => {
-                        self.textures.insert(id, (*img).clone());
-                    }
-                }
-            }
+        // No GPU here: texture uploads are kept as images, for screenshots only (floating
+        // windows' too, which share the main window's textures).
+        let floating = (self.native.as_ref()).map(|n| std::mem::take(&mut n.borrow_mut().textures));
+        for delta in floating.into_iter().flatten() {
+            self.keep_textures(delta);
         }
-        out.textures_delta.clear();
-        self.repaint_delay = out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        self.keep_textures(std::mem::take(&mut out.textures_delta));
+        let root = &out.viewport_output[&egui::ViewportId::ROOT];
+        self.repaint_delay = root.repaint_delay;
+        self.commands.extend(root.commands.iter().cloned());
         self.last_shapes = out.shapes.clone();
         for c in &out.platform_output.commands {
             match c {
@@ -304,6 +296,30 @@ impl Harness {
             collect_rects(&c.shape, &mut self.rects);
             collect_icons(&self.ctx, &c.shape, &mut self.shapes);
         }
+    }
+
+    /// Texture uploads, applied to the images kept for screenshots.
+    fn keep_textures(&mut self, mut delta: egui::TexturesDelta) {
+        for (id, deltas) in std::mem::take(&mut delta.set) {
+            for delta in deltas {
+                let egui::ImageData::Color(img) = delta.image;
+                match (delta.pos, self.textures.get_mut(&id)) {
+                    (Some([x0, y0]), Some(tex)) => {
+                        for y in 0..img.size[1] {
+                            for x in 0..img.size[0] {
+                                tex.pixels[(y0 + y) * tex.size[0] + x0 + x] =
+                                    img.pixels[y * img.size[0] + x];
+                            }
+                        }
+                    }
+                    _ => {
+                        self.textures.insert(id, (*img).clone());
+                    }
+                }
+            }
+        }
+        // Freed textures stay: the screenshots only read the ones still drawn.
+        delta.clear();
     }
 
     /// A frame after a 60 Hz frame interval, so workers get the time a real frame gives them.
@@ -450,12 +466,21 @@ impl Harness {
     /// height and 8-bit RGB rows, top to bottom.
     fn pixels(&self) -> (usize, usize, Vec<u8>) {
         // In device pixels: a 2× window (`root_info.native_pixels_per_point`) shoots at 2×.
-        let ppp = self.ctx.pixels_per_point();
+        self.rasterize(&self.last_shapes, self.screen, self.ctx.pixels_per_point())
+    }
+
+    /// `shapes`, a window `screen` points large drawn at `ppp`, rasterized as [`Self::pixels`].
+    fn rasterize(
+        &self,
+        shapes: &[egui::epaint::ClippedShape],
+        screen: egui::Vec2,
+        ppp: f32,
+    ) -> (usize, usize, Vec<u8>) {
         let (w, h) = (
-            (self.screen.x * ppp).round() as usize,
-            (self.screen.y * ppp).round() as usize,
+            (screen.x * ppp).round() as usize,
+            (screen.y * ppp).round() as usize,
         );
-        let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
+        let prims = self.ctx.tessellate(shapes.to_vec(), ppp);
         let mut px = vec![[0.0f32; 3]; w * h];
         for p in &prims {
             let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
@@ -3645,6 +3670,8 @@ mod settings;
 mod tab_focus;
 #[path = "theme_editor_tests.rs"]
 mod theme_editor;
+#[path = "title_bar_tests.rs"]
+mod title_bar;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]

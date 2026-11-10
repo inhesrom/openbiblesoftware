@@ -20,6 +20,35 @@ Rarely used items are grouped: View's choices (Theme, Page tone …) and Window 
 (Panels 1–9) are submenus. A menu command that needs a Tab (Close Tab, Back, Find in
 Resource …) runs on the focused Tab, and is greyed out with no Tab open.
 
+## The macOS title bar (#297)
+
+On macOS the menu bar **is** the main window's title bar, as in Safari or Xcode: one row at
+the top of the window with the traffic lights at its left, and no empty title strip above it.
+Linux and Windows keep the system's title bar and draw the menu bar exactly as before.
+
+- The desktop app builds the main window with `obs_ui_egui::unified_title_bar` (full-size
+  content view, transparent title bar, title not shown) and hands the shell
+  `App::with_unified_title_bar` (`apps/openbible/src/title_bar.rs`). The window keeps its
+  title, so the Window menu, Mission Control, the Dock and VoiceOver still name it.
+- The row leaves the traffic lights their room (`tokens::size::TRAFFIC_LIGHTS`, 78 pt) and is
+  at least the system's title bar's height (`tokens::size::TITLE_BAR`, 32 pt on macOS 26),
+  with its controls centred on the traffic lights as near as they fit. Both are in the
+  system's points, so in egui points they are divided by the Interface size's zoom: the room
+  is the same on screen at every Interface size. At Larger the controls are taller than the
+  bar, so they sit a few points below the traffic lights' centre.
+- In native full screen (and Split View) the system hides the traffic lights, and the room
+  collapses: the row starts at the left edge.
+- Dragging empty space in the row (beside the traffic lights, the app's name, between the
+  Launchers and Home) moves the window (`ViewportCommand::StartDrag`); a drag that starts on
+  a menu, a Launcher, the Toolbar's grip or the Command box is theirs. Double-clicking empty
+  space does what System Settings → Desktop & Dock → "Double-click a window's title bar to"
+  says (`defaults read -g AppleActionOnDoubleClick`, read at launch and when the window comes
+  back to the front): Zoom (and Fill) toggles `ViewportCommand::Maximized`, Minimize sends
+  `Minimized(true)`, Do Nothing nothing.
+- Floating windows: see [floating-windows.md](floating-windows.md).
+- Tests: `title_bar_tests.rs` (`crates/ui-egui/src`), and the app's `title_bar.rs` tests for
+  the setting and the main window's viewport.
+
 ## Where every command is
 
 Every registered command is in exactly one of these places (the test

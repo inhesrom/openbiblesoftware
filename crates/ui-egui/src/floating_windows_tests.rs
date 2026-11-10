@@ -32,21 +32,23 @@ pub(super) struct NativeWindows {
     open_scale: Option<f32>,
     /// What the app asked of the main window, oldest first.
     pub(super) root_commands: Vec<egui::ViewportCommand>,
+    /// Texture uploads made in floating windows' frames, for the harness's screenshots.
+    pub(super) textures: Vec<egui::TexturesDelta>,
 }
 
 /// One floating OS window.
 pub(super) struct NativeWindow {
     /// Its place and scale, as the window system reports them.
-    info: egui::ViewportInfo,
+    pub(super) info: egui::ViewportInfo,
     /// Input typed or clicked in it since its last frame.
     pub(super) events: Vec<Event>,
     modifiers: Modifiers,
     /// How the app last asked for it to be made.
-    builder: egui::ViewportBuilder,
+    pub(super) builder: egui::ViewportBuilder,
     /// What the app asked of its window, oldest first.
     pub(super) commands: Vec<egui::ViewportCommand>,
     /// The text it painted last frame.
-    shapes: Vec<(Rect, String)>,
+    pub(super) shapes: Vec<(Rect, String)>,
     /// What it painted last frame, and its last AccessKit tree update (when AccessKit is on).
     pub(super) last_shapes: Vec<egui::epaint::ClippedShape>,
     pub(super) tree: Option<egui::accesskit::TreeUpdate>,
@@ -93,7 +95,7 @@ impl NativeWindow {
             .collect()
     }
 
-    fn size(&self) -> egui::Vec2 {
+    pub(super) fn size(&self) -> egui::Vec2 {
         self.info
             .inner_rect
             .map_or(vec2(640.0, 720.0), |r| r.size())
@@ -150,8 +152,8 @@ impl NativeWindows {
 
     /// After its frame: what it painted.
     fn output(&mut self, id: egui::ViewportId, mut out: egui::FullOutput) {
-        // No GPU, and no screenshots of floating windows: their texture uploads are dropped.
-        out.textures_delta.clear();
+        // No GPU: texture uploads are kept for the harness's screenshots.
+        self.textures.push(std::mem::take(&mut out.textures_delta));
         let Some(w) = self.windows.get_mut(&id) else {
             return;
         };
@@ -233,6 +235,21 @@ impl Harness {
         let id = d.viewport_id();
         let native = self.native.as_ref().expect("native windows");
         RefMut::map(native.borrow_mut(), |n| n.windows.get_mut(&id).unwrap())
+    }
+
+    /// Rasterize floating window `w`'s last frame, as [`Harness::screenshot`] does the main
+    /// window's, into a PPM.
+    pub(super) fn window_screenshot(&self, w: WindowId, path: &std::path::Path) {
+        let (shapes, size, ppp) = {
+            let win = self.window(w);
+            let ppp = win.info.native_pixels_per_point.unwrap_or(1.0) * self.ctx.zoom_factor();
+            (win.last_shapes.clone(), win.size(), ppp)
+        };
+        let (width, height, rgb) = self.rasterize(&shapes, size, ppp);
+        let mut out = format!("P6\n{width} {height}\n255\n").into_bytes();
+        out.extend(rgb);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, out).unwrap();
     }
 
     /// The scale factor the next floating window opens at.
@@ -586,7 +603,7 @@ fn previews() {
 }
 
 /// HEB floated into an OS window of its own, TB focused in the main window first.
-fn native_heb() -> (Harness, TabId, TabId, WindowId) {
+pub(super) fn native_heb() -> (Harness, TabId, TabId, WindowId) {
     let mut h = Harness::new();
     h.native_windows();
     h.shell.run("resource.open", &json!({ "id": "heb-test" }));
@@ -727,7 +744,7 @@ fn a_note_on_a_floating_bible_is_written_in_its_window() {
 
 /// A drag with the primary button in a floating window, from `from` to `to`, with that
 /// window's input only.
-fn drag_in(h: &mut Harness, w: WindowId, from: Pos2, to: Pos2) {
+pub(super) fn drag_in(h: &mut Harness, w: WindowId, from: Pos2, to: Pos2) {
     h.window(w).events.push(Event::PointerMoved(from));
     h.frame();
     let button = |pos, pressed| Event::PointerButton {
