@@ -2,7 +2,7 @@
 
 <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); do not edit. -->
 
-Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
+Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
 
 ## Tabs
 
@@ -1198,3 +1198,40 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![A Note marker before the next verse number, Light](gallery/a-note-marker-before-the-next-verse-number-light-1x.png) | ![A Note marker before the next verse number, Dark](gallery/a-note-marker-before-the-next-verse-number-dark-1x.png) | ![A Note marker before the next verse number, Sepia](gallery/a-note-marker-before-the-next-verse-number-sepia-1x.png) |
 | [2×](gallery/a-note-marker-before-the-next-verse-number-light-2x.png) | [2×](gallery/a-note-marker-before-the-next-verse-number-dark-2x.png) | [2×](gallery/a-note-marker-before-the-next-verse-number-sepia-2x.png) |
+
+## Narrow Panels
+
+### Passage Guide in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Passage Guide in a side Panel, Light](gallery/passage-guide-in-a-side-panel-light-1x.png) | ![Passage Guide in a side Panel, Dark](gallery/passage-guide-in-a-side-panel-dark-1x.png) | ![Passage Guide in a side Panel, Sepia](gallery/passage-guide-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/passage-guide-in-a-side-panel-light-2x.png) | [2×](gallery/passage-guide-in-a-side-panel-dark-2x.png) | [2×](gallery/passage-guide-in-a-side-panel-sepia-2x.png) |
+
+### About page in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![About page in a side Panel, Light](gallery/about-page-in-a-side-panel-light-1x.png) | ![About page in a side Panel, Dark](gallery/about-page-in-a-side-panel-dark-1x.png) | ![About page in a side Panel, Sepia](gallery/about-page-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/about-page-in-a-side-panel-light-2x.png) | [2×](gallery/about-page-in-a-side-panel-dark-2x.png) | [2×](gallery/about-page-in-a-side-panel-sepia-2x.png) |
+
+### Text Comparison beside a Passage Guide
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Text Comparison beside a Passage Guide, Light](gallery/text-comparison-beside-a-passage-guide-light-1x.png) | ![Text Comparison beside a Passage Guide, Dark](gallery/text-comparison-beside-a-passage-guide-dark-1x.png) | ![Text Comparison beside a Passage Guide, Sepia](gallery/text-comparison-beside-a-passage-guide-sepia-1x.png) |
+| [2×](gallery/text-comparison-beside-a-passage-guide-light-2x.png) | [2×](gallery/text-comparison-beside-a-passage-guide-dark-2x.png) | [2×](gallery/text-comparison-beside-a-passage-guide-sepia-2x.png) |
+
+### Atlas in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Atlas in a side Panel, Light](gallery/atlas-in-a-side-panel-light-1x.png) | ![Atlas in a side Panel, Dark](gallery/atlas-in-a-side-panel-dark-1x.png) | ![Atlas in a side Panel, Sepia](gallery/atlas-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/atlas-in-a-side-panel-light-2x.png) | [2×](gallery/atlas-in-a-side-panel-dark-2x.png) | [2×](gallery/atlas-in-a-side-panel-sepia-2x.png) |
+
+### Timeline in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline in a side Panel, Light](gallery/timeline-in-a-side-panel-light-1x.png) | ![Timeline in a side Panel, Dark](gallery/timeline-in-a-side-panel-dark-1x.png) | ![Timeline in a side Panel, Sepia](gallery/timeline-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/timeline-in-a-side-panel-light-2x.png) | [2×](gallery/timeline-in-a-side-panel-dark-2x.png) | [2×](gallery/timeline-in-a-side-panel-sepia-2x.png) |

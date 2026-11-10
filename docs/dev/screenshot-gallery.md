@@ -1,7 +1,7 @@
 # Screenshot gallery (#222)
 
-Every Tab kind, toolbar pane, menu, window, dialog and popover, and each surface's empty,
-loading and error states (#223), drawn headlessly in Light, Dark and Sepia at 1× and 2×, and
+Every Tab kind, toolbar pane, menu, window, dialog and popover, each surface's empty,
+loading and error states (#223), and Tabs in a narrow side Panel (#301), drawn headlessly in Light, Dark and Sepia at 1× and 2×, and
 compared with its golden image (ADR 0019). The goldens are in
 `docs/previews/gallery/`; [`docs/previews/gallery.md`](../previews/gallery.md) shows them all.
 
@@ -75,6 +75,12 @@ with `crowded_events` (`timeline_tests.rs`: more Events and Lifespans than the a
 for, in the Tabs section, and a "+N" chip's menu in the menus section) and the Factbook Map of a
 place with several Place locations (`factbook_maps` in `atlas_tests.rs`: Arimathea from the
 geocoding excerpt). Each writes its index into the launch's library folder and adds it.
+
+The Narrow Panels section is `narrow_panels` in `narrow_panels_tests.rs`: a Passage Guide, an
+About page, a Text Comparison, the Atlas and the Timeline in a side Panel at its default width,
+with the long titles, fields and summaries that once ran past its edge. The same file's tests
+open each in the QA sweep's 1280 × 800 window and fail on any text or Resource-text glyph drawn
+past the Panel's right edge, on a summary cut short, and on an Atlas label over a marker.
 
 `every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
 each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo

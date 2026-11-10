@@ -106,6 +106,27 @@ fn label(h: &Harness, tab: TabId, name: &str) -> Rect {
         .unwrap_or_else(|| panic!("no {name} on the map: {:?}", h.texts()))
 }
 
+/// The centre of the map marker a label sits beside (left or right of it, level with it).
+fn marker_beside(h: &Harness, label: Rect) -> Pos2 {
+    fn circles(shape: &Shape, out: &mut Vec<Pos2>) {
+        match shape {
+            Shape::Vec(v) => v.iter().for_each(|s| circles(s, out)),
+            Shape::Circle(c) => out.push(c.center),
+            _ => {}
+        }
+    }
+    let mut centres = Vec::new();
+    for c in &h.last_shapes {
+        circles(&c.shape, &mut centres);
+    }
+    let gap = |p: &Pos2| (p.x - label.left()).abs().min((p.x - label.right()).abs());
+    centres
+        .into_iter()
+        .filter(|p| (p.y - label.center().y).abs() < 1.0)
+        .min_by(|a, b| gap(a).total_cmp(&gap(b)))
+        .unwrap_or_else(|| panic!("no marker beside {label:?}"))
+}
+
 /// The acceptance check: opening Acts 13 shows the places of Paul's first journey, each
 /// where it is (Cyrene west, Jerusalem south-east, Iconium north), and a click on a place
 /// opens its Factbook, whose Map says where it was and how sure that is.
@@ -229,9 +250,9 @@ fn a_picked_place_sharing_a_spot_is_the_one_clicked() {
     until(&mut h, "Pisidia on the map", |h| {
         all_in(h, atlas, "Pisidia").len() == 2
     });
-    // Its label is right of its marker.
+    // Click its marker: the one its label sits beside.
     let pisidia = label(&h, atlas, "Pisidia");
-    h.click(pos2(pisidia.left() - 8.0, pisidia.center().y));
+    h.click(marker_beside(&h, pisidia));
     h.frames(3);
     let ws = &h.shell.session().workspace;
     let t = ws.tab(ws.focused().unwrap()).unwrap();

@@ -80,16 +80,19 @@ enum Section {
     /// Text as the reading pane draws it where the visual QA sweep found it drawn wrong
     /// (#305).
     ReadingText,
+    /// Tabs in a side Panel at its default width, with long text (#301).
+    NarrowPanels,
 }
 
 impl Section {
-    const ALL: [Section; 6] = [
+    const ALL: [Section; 7] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
         Section::MenusAndChoosers,
         Section::States,
         Section::ReadingText,
+        Section::NarrowPanels,
     ];
 
     fn heading(self) -> &'static str {
@@ -100,6 +103,7 @@ impl Section {
             Section::MenusAndChoosers => "Menus and choosers in Tabs and windows",
             Section::States => "Empty, loading and error states",
             Section::ReadingText => "Reading text",
+            Section::NarrowPanels => "Narrow Panels",
         }
     }
 }
@@ -178,6 +182,7 @@ fn surfaces() -> Vec<Surface> {
             Section::MenusAndChoosers,
             super::timeline::crowded_timeline_menus(),
         ),
+        (Section::NarrowPanels, super::narrow_panels::narrow_panels()),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -1632,6 +1637,11 @@ fn gallery_reading_text() {
     gallery(Section::ReadingText);
 }
 
+#[test]
+fn gallery_narrow_panels() {
+    gallery(Section::NarrowPanels);
+}
+
 // ---------------------------------------------------------------------------------------
 // The page.
 
@@ -1643,7 +1653,7 @@ fn page() -> String {
          <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); \
          do not edit. -->\n\n\
          Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each \
-         surface's empty, loading and error states, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see \
+         surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see \
          [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).\n",
     );
     for section in Section::ALL {
