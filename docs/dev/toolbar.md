@@ -142,9 +142,11 @@ Nothing is clipped.
 
 At the Left and Right the toolbar is **Collapsed** (icons only, the labels in the tooltips,
 as above) or **Expanded**: a wider column where each Launcher's row shows its icon, its label
-and under it a detail line, its shortcut as the platform writes it and its status (the
-Library's "2 updates"; the Collapsed column shows that count as a badge on the icon). Top and
-Bottom are unchanged and ignore the choice.
+and beside it, muted, a detail line: its shortcut as the platform writes it and its status
+("Library ⌥L · 2 updates" on macOS; the Collapsed column shows the count as a badge on the
+icon). The rows are as tall as the Collapsed buttons, so the pop-out control stays under the
+pointer: clicking it again at once undoes the click. Top and Bottom are unchanged and ignore
+the choice.
 
 - **The pop-out control** is the last button of a side toolbar, after the Launchers and the »
   button: one click flips Collapsed ↔ Expanded. Its double chevron points the way the
@@ -161,9 +163,9 @@ Bottom are unchanged and ignore the choice.
   pop-out control's "Collapse") at the current Interface size, up to a maximum (a 180-point
   text column, `toolbar_look::expanded_width`); longer text ends in "…".
 - **Room:** the Expanded column pushes the Workspace over, and panes open beside the wider
-  column. With Auto-hide it is drawn over the Workspace like the Collapsed one. A row is taller
-  than a Collapsed button, so a short window moves Launchers into » sooner; the pop-out control
-  always keeps its place at the end.
+  column. With Auto-hide it is drawn over the Workspace like the Collapsed one. A short window
+  moves the Launchers it has no room for into », as Collapsed; the pop-out control always keeps
+  its place at the end.
 - Expanded is the `expanded` field of the `toolbar` preference, kept across launches and never
   part of a Layout.
 
@@ -191,4 +193,6 @@ Positions and customization (#141), by `toolbar_position_tests` (`UPDATE_PREVIEW
 The real app (macOS, `OBS_SCRIPT` with `view.toolbar_position` then `toolbar.library`,
 `toolbar.layouts` or `toolbar.guides`): `toolbar-real-left.png`, `toolbar-real-bottom-dark.png`,
 `toolbar-real-right.png`; Expanded (#291, then `view.toolbar_expanded`):
-`toolbar-real-left-expanded.png`, `toolbar-real-right-expanded-dark.png`.
+`toolbar-real-left-expanded.png`, `toolbar-real-right-expanded-dark.png`, and
+`toolbar-real-left-expanded-restart-shortcut.png` (a relaunch keeps it Expanded; ⇧⌘B collapses
+it).

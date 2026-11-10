@@ -195,14 +195,13 @@ pub(super) fn launcher_button(
     resp
 }
 
-/// A Launcher's row on an Expanded side Toolbar (#291): taller than a button, for its label
-/// over its detail line.
-pub(super) const EXPANDED_ROW: f32 = size::LAUNCHER + space::L;
 /// The widest an Expanded side Toolbar's text gets; longer text ends in "…".
 const EXPANDED_TEXT_MAX: f32 = size::FIELD;
+/// Between an Expanded row's label and its detail.
+const DETAIL_GAP: f32 = space::S;
 
-/// How wide the text of an Expanded row is: its label or its detail line, whichever is
-/// wider, at most [`EXPANDED_TEXT_MAX`].
+/// How wide the text of an Expanded row is: its label and, beside it, its detail, at most
+/// [`EXPANDED_TEXT_MAX`].
 pub(super) fn expanded_text_width(ui: &Ui, label: &str, detail: &str) -> f32 {
     let width = |text: &str, font: FontId| {
         (ui.painter())
@@ -210,7 +209,12 @@ pub(super) fn expanded_text_width(ui: &Ui, label: &str, detail: &str) -> f32 {
             .size()
             .x
     };
-    (width(label, label_font()).max(width(detail, small_font()))).min(EXPANDED_TEXT_MAX)
+    let detail = if detail.is_empty() {
+        0.0
+    } else {
+        DETAIL_GAP + width(detail, small_font())
+    };
+    (width(label, label_font()) + detail).min(EXPANDED_TEXT_MAX)
 }
 
 /// The width of an Expanded side Toolbar's rows, for its widest `text`: the icon, the text and
@@ -219,8 +223,9 @@ pub(super) fn expanded_width(text: f32) -> f32 {
     BUTTON_PAD * 2.0 + ICON + ICON_GAP + text.min(EXPANDED_TEXT_MAX)
 }
 
-/// Draw a Launcher's row on an Expanded side Toolbar, `width` wide: its icon, its label and
-/// under it the detail line (its shortcut and status), each ending in "…" when too long.
+/// Draw a Launcher's row on an Expanded side Toolbar, `width` wide and as tall as a button, so
+/// the pop-out control stays where it was: its icon, its label and beside it, muted, its
+/// detail (shortcut and status), ending in "…" when too long.
 pub(super) fn expanded_launcher(
     ui: &mut Ui,
     which: Launcher,
@@ -229,7 +234,7 @@ pub(super) fn expanded_launcher(
     detail: &str,
 ) -> Response {
     let lk = look();
-    let (rect, resp) = ui.allocate_exact_size(vec2(width, EXPANDED_ROW), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, BUTTON_HEIGHT), Sense::click());
     let p = ui.painter();
     if open {
         crate::components::selected_row(p, rect, RADIUS);
@@ -251,19 +256,21 @@ pub(super) fn expanded_launcher(
     let room = rect.right() - BUTTON_PAD - left;
     let color = if open { lk.accent } else { lk.ink };
     let label = elided(p, which.title().to_string(), label_font(), room, color);
-    if detail.is_empty() {
+    let after = left + label.size().x + DETAIL_GAP;
+    p.galley(
+        pos2(left, rect.center().y - label.size().y / 2.0),
+        label,
+        color,
+    );
+    let rest = rect.right() - BUTTON_PAD - after;
+    if !detail.is_empty() && rest > 0.0 {
+        let line = elided(p, detail.to_string(), small_font(), rest, lk.muted);
         p.galley(
-            pos2(left, rect.center().y - label.size().y / 2.0),
-            label,
-            color,
+            pos2(after, rect.center().y - line.size().y / 2.0),
+            line,
+            lk.muted,
         );
-        return resp;
     }
-    let line = elided(p, detail.to_string(), small_font(), room, lk.muted);
-    let top = rect.center().y - (label.size().y + line.size().y) / 2.0;
-    let under = top + label.size().y;
-    p.galley(pos2(left, top), label, color);
-    p.galley(pos2(left, under), line, lk.muted);
     resp
 }
 

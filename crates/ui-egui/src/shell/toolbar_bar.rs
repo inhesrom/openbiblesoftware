@@ -54,12 +54,16 @@ impl Shell {
         let along = |v: Vec2| if vertical { v.y } else { v.x };
         let sizes: Vec<(Launcher, f32)> = (settings.shown().into_iter())
             .map(|w| {
-                let length = if expanded {
-                    look::EXPANDED_ROW
+                // Expanded rows are as tall as icon-only buttons.
+                let shows = if expanded {
+                    look::ButtonShows {
+                        icon: true,
+                        label: false,
+                    }
                 } else {
-                    along(look::launcher_size(ui, w, shows, badge(w)))
+                    shows
                 };
-                (w, length)
+                (w, along(look::launcher_size(ui, w, shows, badge(w))))
             })
             .collect();
         let lengths: Vec<f32> = sizes.iter().map(|(_, l)| *l).collect();

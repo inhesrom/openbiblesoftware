@@ -592,6 +592,8 @@ fn one_click_on_the_pop_out_control_expands_and_collapses_a_side_toolbar() {
         assert!(bar(&h).contains_rect(control), "{control:?}");
         h.click(control.center());
         assert!(expanded(&h), "{label}: one click expands");
+        // The control is still under the pointer: a second click there would undo it.
+        assert!(pop_out(&h).contains(control.center()), "{:?}", pop_out(&h));
         assert!(
             workspace(&h).width() < narrow.width() - 40.0,
             "the Workspace is pushed over"
