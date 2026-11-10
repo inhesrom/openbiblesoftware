@@ -243,7 +243,9 @@ fn one_click_downloads_an_open_catalogue_bible_and_credits_it() {
     }
     assert!(seen.contains("DOWNLOADED OPEN RESOURCES"), "{seen:?}");
     assert!(seen.contains(OPEN_ROW), "{seen:?}");
-    assert!(seen.contains(&source.spdx), "{seen:?}");
+    // The licence in words (#307), its SPDX id on hover.
+    let licence = super::super::get_bibles_tab::licence_name(&source.spdx);
+    assert!(seen.contains(&licence), "{seen:?}");
     drop(h);
     std::fs::remove_dir_all(root).unwrap();
 }

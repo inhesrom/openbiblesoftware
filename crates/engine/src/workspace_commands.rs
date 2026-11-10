@@ -1113,7 +1113,11 @@ fn request(p: &Params<'_>) -> OpenRequest {
 pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
-        TabKind::ImportReport(_) => "Import report".into(),
+        TabKind::ImportReport(id) => crate::import::report_title(
+            s.library
+                .get(id)
+                .map_or(id.as_str(), |e| e.manifest.abbreviation.as_str()),
+        ),
         TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
         TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),
