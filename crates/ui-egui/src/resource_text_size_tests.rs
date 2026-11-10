@@ -469,3 +469,106 @@ fn settings_lists_own_sizes_with_reset_and_reset_all() {
     drop(h);
     let _ = std::fs::remove_dir_all(db.parent().unwrap());
 }
+
+/// Decision: a Search Tab draws each Bible's hits at that Bible's own size, and its Aa button
+/// changes the first Bible searched until a hit of another is clicked into, then that one.
+#[test]
+fn a_search_draws_each_bibles_hits_at_its_size_and_sizes_the_one_clicked_into() {
+    use super::search::{harness, search_tab, settle, type_query};
+    let (mut h, files) = harness("resource-text-size", 3);
+    h.ctx.enable_accesskit();
+    h.shell.run("tool.search", &json!({}));
+    h.frames(2);
+    h.click_text("+ Bible");
+    h.click_text("WEB — WEB (test)");
+    type_query(&mut h, "love");
+    settle(&mut h);
+    let tab = search_tab(&h);
+    let session = &h.shell.st.session;
+    let st = session.search_tab(tab).unwrap();
+    assert_eq!(st.bibles(&session.library), ["kjv", "web"]);
+    // The first Bible searched until a hit is clicked into.
+    assert_eq!(session.text_size_resource(tab).as_deref(), Some("kjv"));
+    assert!(node_in(&h, tab, "Text size for KJV").is_some());
+
+    // Click into WEB's hit in the first row: the Aa button now names WEB.
+    let (web_hit, ..) = node_in(&h, tab, "WEB — Leviticus 19:18").expect("WEB's hit");
+    h.click(web_hit.center());
+    settle(&mut h);
+    assert_eq!(
+        h.shell.st.session.text_size_resource(tab).as_deref(),
+        Some("web")
+    );
+    let heights = |h: &Harness| {
+        ["KJV", "WEB"].map(|b| {
+            let (r, ..) = node_in(h, tab, &format!("{b} — Leviticus 19:18")).expect(b);
+            r.height()
+        })
+    };
+    let before = heights(&h);
+    let (aa, ..) = node_in(&h, tab, "Text size for WEB").expect("the Aa button names WEB");
+    h.click(aa.center());
+    assert!(h.find("Text size · WEB").is_some(), "{:?}", h.texts());
+    for _ in 0..8 {
+        h.click_text("A+");
+    }
+    settle(&mut h);
+    let default = h.shell.st.session.text.size;
+    assert_eq!(size_of(&h, "web"), default + 8.0);
+    assert_eq!(size_of(&h, "kjv"), default, "only WEB");
+    let view = h.shell.st.tabs[&tab].search.as_ref().unwrap();
+    assert_eq!(view.settings_of("web").size, default + 8.0);
+    assert_eq!(view.settings_of("kjv").size, default);
+    // WEB's hits are laid out again, taller; KJV's are as they were.
+    let after = heights(&h);
+    assert_eq!(after[0], before[0], "KJV's hit: {before:?} → {after:?}");
+    assert!(after[1] > before[1], "WEB's hit: {before:?} → {after:?}");
+    drop(h);
+    drop(files);
+}
+
+/// Decision: in Library mode the Aa button changes the first Resource's group until a hit of
+/// another Resource is clicked into, and only that Resource's hits change size.
+#[test]
+fn a_library_search_sizes_the_resource_clicked_into() {
+    use super::search::{library_harness, search_tab, settle, type_query_in};
+    let (mut h, files) = library_harness("resource-text-size-library");
+    h.ctx.enable_accesskit();
+    h.screen = vec2(1400.0, 1100.0);
+    type_query_in(&mut h, obs_engine::SearchMode::Library, "covenant");
+    settle(&mut h);
+    let tab = search_tab(&h);
+    assert_eq!(
+        h.shell.st.session.text_size_resource(tab).as_deref(),
+        Some("tcc"),
+        "the first group's Resource"
+    );
+    assert!(node_in(&h, tab, "Text size for TCC").is_some());
+    // TCC has rows 0–2, TC2 row 3: click into TC2's.
+    let row = (h.shell.st.tabs[&tab]
+        .search
+        .as_ref()
+        .unwrap()
+        .row_rects
+        .iter())
+    .find(|(i, _)| *i == 3)
+    .map(|(_, r)| *r)
+    .expect("TC2's row in view");
+    h.click(row.center());
+    settle(&mut h);
+    assert_eq!(
+        h.shell.st.session.text_size_resource(tab).as_deref(),
+        Some("tc2")
+    );
+    let (aa, ..) = node_in(&h, tab, "Text size for TC2").expect("the Aa button names TC2");
+    h.click(aa.center());
+    h.click_text("A+");
+    settle(&mut h);
+    let default = h.shell.st.session.text.size;
+    assert_eq!(size_of(&h, "tc2"), default + 1.0);
+    let view = h.shell.st.tabs[&tab].search.as_ref().unwrap();
+    assert_eq!(view.settings_of("tc2").size, default + 1.0);
+    assert_eq!(view.settings_of("tcc").size, default);
+    drop(h);
+    drop(files);
+}
