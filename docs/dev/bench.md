@@ -71,8 +71,9 @@ missed at 60 Hz.
   thread, about 700 ms.
 - `search-preview` (#295) times each query in milliseconds the same way, from its last key's
   frame starting to the end of the first frame drawing the Command box's Search preview hits
-  for it: the 100 ms debounce, the search on a worker (`JobMode::default_for_host`, as the
-  app runs it) and the frame showing it. The synchronous work timed is the Bible Tab under
+  for it, every Verse's text laid out: the 100 ms debounce, the search on a worker
+  (`JobMode::default_for_host`, as the app runs it), the text pipeline's layout of the Verses
+  on its workers and the frame showing them. The synchronous work timed is the Bible Tab under
   the dropdown's; the dropdown itself is held to the missed-frame budget with the whole
   Shell. About 120 ms on a 16-thread Ryzen (#295).
 

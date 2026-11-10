@@ -154,6 +154,33 @@ fn the_preview_shows_the_first_five_verses_of_the_star_bible_and_how_many_match(
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// A right-to-left ★ Bible's hits say so, for the dropdown to lay them out from the right
+/// as the Search Tool does; a left-to-right one's do not.
+#[test]
+fn the_preview_keeps_the_star_bibles_direction() {
+    use crate::testing::bibles::hebrew_love;
+    let (mut s, root) = fixture("direction", &[hebrew_love(), psalms(12)], true);
+    s.update_search_preview(Some("love"), 0.0);
+    s.update_search_preview(Some("love"), PREVIEW_DEBOUNCE);
+    settle(&mut s);
+    let h = hits(&s);
+    assert_eq!(h.bible, "HEB");
+    assert!(h.rtl, "a right-to-left Bible");
+    assert_eq!(h.hits.len(), 3);
+    assert!(h.hits[0].snippet.text.starts_with("love בְּרֵאשִׁית"));
+    assert_eq!(shown(&h)[0].1, ["love"]);
+
+    s.library
+        .set_preferred_order(["psalms", "heb-love"].map(String::from).to_vec());
+    s.update_search_preview(Some("law"), 1.0);
+    s.update_search_preview(Some("law"), 1.0 + PREVIEW_DEBOUNCE);
+    settle(&mut s);
+    let h = hits(&s);
+    assert_eq!(h.bible, "PSA");
+    assert!(!h.rtl, "a left-to-right Bible");
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn going_back_to_a_text_whose_search_was_cancelled_searches_it_again() {
     let (mut s, root) = fixture("retype", &[psalms(12), kjv()], true);

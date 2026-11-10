@@ -1,9 +1,10 @@
 //! The Search preview scenario (#295): the Command box typed into, a key at a time, over a
 //! library whose ★ Bible is a whole Bible (verses of 15–35 words, its Search index built). Each
 //! query is timed from the frame its last key is typed in to the end of the first frame that
-//! draws the preview's hits for it: the debounce, the background search on a worker thread as
-//! the app runs it (`JobMode::default_for_host`), and the frame that shows them, in wall-clock
-//! time. The queries include one that matches nearly every Verse (`LORD`), the costliest to
+//! draws the preview's hits for it, every Verse's text laid out: the debounce, the background
+//! search on a worker thread as the app runs it (`JobMode::default_for_host`), the text
+//! pipeline's layout of the Verses on its workers, and the frame that shows them, in
+//! wall-clock time. The queries include one that matches nearly every Verse (`LORD`), the costliest to
 //! count.
 //!
 //! The frames are timed as every feature scenario's: the whole Shell (the dropdown included)
@@ -82,11 +83,13 @@ pub(crate) fn search_preview(cfg: &BenchConfig) -> Result<Samples, String> {
     b.measured(s)
 }
 
-/// Whether the last frame drew the Search preview's hits for `query`.
+/// Whether the last frame drew the Search preview's hits for `query`, each with its text.
 fn shows_hits(b: &ShellBench, query: &str) -> bool {
     match b.shell.session().search_preview() {
         SearchPreview::Hits(h) => {
-            h.query == query && h.hits.first().is_some_and(|hit| b.has_text(&hit.reference))
+            h.query == query
+                && h.hits.first().is_some_and(|hit| b.has_text(&hit.reference))
+                && b.shell.st.command_box.verses_drawn == h.hits.len()
         }
         _ => false,
     }

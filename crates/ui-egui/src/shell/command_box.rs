@@ -6,7 +6,9 @@
 //! the window tall, never off-screen; the suggestions under headings with their counts, and
 //! under the Search row the Search preview (the ★ Bible's first Verses for the text, searched
 //! in the background once the typing stops). When its rows do not all fit, a scroll bar shows
-//! and the bottom edge fades with "N more".
+//! and the bottom edge fades with "N more". A Verse's text is Resource text: it is laid out and
+//! drawn by the text pipeline (ADR 0004), right to left for a right-to-left Bible, in the row
+//! and in its hover popup alike.
 //!
 //! Keyboard first: Ctrl+L (the `command_box.focus` command) puts the keyboard in the box and
 //! selects its text; ↑/↓, PgUp/PgDn and Home/End move the highlight through every row; Enter
@@ -16,15 +18,19 @@
 
 use std::sync::Arc;
 
-use egui::text::{LayoutJob, TextFormat, TextWrapping};
+use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align2, Key, Modifiers, Rect, Sense, Ui, pos2, vec2};
 use obs_engine::{CommandBoxAction, SearchPreview, Suggestion};
+use obs_layout::{ColorRole, TextSettings};
 use serde_json::json;
 
 use super::Shell;
 use crate::icons::{self, Icon};
+use crate::palette::Palette;
+use crate::pane::AtlasTexture;
 use crate::theme;
 use crate::tokens::{inset, radius, share, size, space, text};
+use crate::workers::SnippetCache;
 
 /// The box's widget id.
 pub(crate) const BOX_ID: &str = "command-box";
@@ -159,6 +165,11 @@ pub(crate) struct CommandBoxUi {
     /// Pickable rows below the list's bottom edge last frame ("N more"); `None` when every
     /// row fitted and there is no scroll bar.
     pub(crate) more: Option<usize>,
+    /// The Search preview's Verse texts, laid out off the UI thread by the text pipeline.
+    snippets: SnippetCache,
+    /// The Search preview's Verses whose text was drawn last frame (the others still wait for
+    /// their layout).
+    pub(crate) verses_drawn: usize,
 }
 
 impl CommandBoxUi {
@@ -310,8 +321,15 @@ impl Shell {
     /// The results panel under the box, right edges aligned, inside the window. Returns the
     /// pickable row clicked (and whether Alt was held).
     fn dropdown(&mut self, ui: &Ui, field: Rect) -> Option<(usize, bool)> {
-        let session = &self.st.session;
-        let cb = &mut self.st.command_box;
+        let st = &mut self.st;
+        let session = &st.session;
+        let cb = &mut st.command_box;
+        let mut verses = VerseText {
+            snippets: &mut cb.snippets,
+            atlas: &mut st.atlas,
+            settings: preview_settings(session.text),
+            palette: hit_palette(&theme::c()),
+        };
         let details: Vec<String> = (cb.suggestions.iter())
             .map(|s| shown_detail(session, s))
             .collect();
@@ -319,6 +337,7 @@ impl Shell {
             SearchPreview::Hits(h) => Some(Arc::clone(h)),
             _ => None,
         };
+        let rtl = preview.as_ref().is_some_and(|p| p.rtl);
         let screen = ui.ctx().content_rect();
         let frame = crate::components::popover_frame().inner_margin(inset::BAR);
         let margin = frame.total_margin();
@@ -337,6 +356,7 @@ impl Shell {
         let mut clicked = None;
         let mut more = None;
         let mut fitted = 0;
+        let mut verses_drawn = 0;
         let shown = egui::Area::new(egui::Id::unique(BOX_ID).with("dropdown"))
             .order(egui::Order::Foreground)
             .fixed_pos(pos2(right, top))
@@ -410,39 +430,46 @@ impl Shell {
                             } else if resp.hovered() {
                                 painter.rect_filled(rect, radius::S, theme::c().hover);
                             }
-                            let (name, full) = match row {
+                            let (name, resp) = match row {
                                 Row::Suggestion(i) => {
                                     let s = &cb.suggestions[*i];
                                     let detail = &details[*i];
                                     let elided = paint_line(ui, rect, &s.label, detail);
-                                    (
-                                        format!("{} · {detail}", s.label),
-                                        elided.then(|| s.label.clone()),
-                                    )
+                                    let resp = if elided {
+                                        resp.on_hover_text(s.label.clone())
+                                    } else {
+                                        resp
+                                    };
+                                    (format!("{} · {detail}", s.label), resp)
                                 }
                                 Row::Hit(k) => {
                                     let hit = preview.as_ref().and_then(|p| p.hits.get(*k));
                                     let Some(hit) = hit else {
                                         continue;
                                     };
-                                    let elided = paint_hit(ui, rect, hit);
+                                    let drawn = paint_hit(ui, rect, hit, rtl, &mut verses);
+                                    verses_drawn += usize::from(drawn.is_some());
+                                    // The whole Verse, through the text pipeline too.
+                                    let resp = if drawn == Some(true) {
+                                        resp.on_hover_ui(|ui| {
+                                            paint_whole_hit(ui, hit, rtl, &mut verses);
+                                        })
+                                    } else {
+                                        resp
+                                    };
                                     let name = format!("{} · {}", hit.reference, hit.snippet.text);
-                                    (name, elided.then(|| hit.snippet.text.clone()))
+                                    (name, resp)
                                 }
                                 Row::ShowAll { total, .. } => {
                                     let label = show_all_label(*total);
                                     paint_line(ui, rect, &label, "Search");
-                                    (label, None)
+                                    (label, resp)
                                 }
                                 Row::AddBible => {
                                     paint_line(ui, rect, ADD_A_BIBLE, "Get Bibles");
-                                    (format!("{ADD_A_BIBLE} · Get Bibles"), None)
+                                    (format!("{ADD_A_BIBLE} · Get Bibles"), resp)
                                 }
                                 Row::Heading { .. } | Row::Note(_) => continue,
-                            };
-                            let resp = match full {
-                                Some(full) => resp.on_hover_text(full),
-                                None => resp,
                             };
                             let at = pick;
                             resp.widget_info(|| {
@@ -470,6 +497,7 @@ impl Shell {
                 });
             });
         cb.from_the_top = false;
+        cb.verses_drawn = verses_drawn;
         cb.dropdown = Some(shown.response.rect);
         cb.more = more;
         cb.page = fitted.max(1);
@@ -580,54 +608,159 @@ fn paint_line(ui: &Ui, rect: Rect, label: &str, detail: &str) -> bool {
     elided
 }
 
-/// The background and ink of a Search preview hit in the dropdown: the Search hit tint and ink
-/// of the Page palette as dark (and as High contrast) as the Theme, never the Page tone's own,
-/// so the pair reads whatever Page tone sits beside the chrome.
-pub(crate) fn hit_colors(c: &crate::tokens::Chrome) -> (egui::Color32, egui::Color32) {
+/// The Page palette the Search preview's Verses are drawn in: as dark (and as High contrast)
+/// as the Theme, never the Page tone's own, so its ink and Search hit tint read on the chrome
+/// whatever Page tone sits beside it.
+pub(crate) fn hit_palette(c: &crate::tokens::Chrome) -> Palette {
     let tone = if c.dark {
         obs_engine::PageTone::Dark
     } else {
         obs_engine::PageTone::Paper
     };
-    let palette = crate::palette::Palette::for_theme(tone, c.high_contrast);
-    (palette.search_hit, palette.ink)
+    Palette::for_theme(tone, c.high_contrast)
 }
 
-/// A Search preview Verse: its reference, then its text with the hits tinted, cut with "…".
-/// Returns whether the text was cut.
-fn paint_hit(ui: &Ui, rect: Rect, hit: &obs_engine::PreviewHit) -> bool {
+/// The Search preview's Verse texts in Body size: Resource text in the Reading fonts, sized to
+/// the chrome around it.
+fn preview_settings(reading: TextSettings) -> TextSettings {
+    TextSettings {
+        size: text::BODY,
+        ..reading
+    }
+}
+
+/// What the Search preview's Verses are laid out and drawn with: the text pipeline's snippet
+/// layouts and glyph atlas, in [`preview_settings`] and [`hit_palette`].
+struct VerseText<'a> {
+    snippets: &'a mut SnippetCache,
+    atlas: &'a mut AtlasTexture,
+    settings: TextSettings,
+    palette: Palette,
+}
+
+impl VerseText<'_> {
+    /// `hit`'s text laid out `width` wide, or `None` (and a frame asked for) while a worker
+    /// lays it out.
+    fn laid(
+        &mut self,
+        ui: &Ui,
+        hit: &obs_engine::PreviewHit,
+        rtl: bool,
+        width: f32,
+    ) -> Option<Arc<obs_layout::LaidBlock>> {
+        let text = &hit.snippet.text;
+        let laid = (self.snippets).get(text, ColorRole::Ink, rtl, width, &self.settings);
+        if laid.is_none() {
+            ui.ctx().request_repaint();
+        }
+        laid
+    }
+
+    /// Draw `laid` at `origin` as far as `painter`'s clip rect shows it, `hit`'s matches
+    /// tinted behind it.
+    fn paint(
+        &mut self,
+        painter: &egui::Painter,
+        laid: &obs_layout::LaidBlock,
+        hit: &obs_engine::PreviewHit,
+        origin: egui::Pos2,
+    ) {
+        for r in &hit.snippet.highlights {
+            for [x0, y0, x1, y1] in crate::compare_view::range_rects(laid, r) {
+                let tint = Rect::from_min_max(origin + vec2(x0, y0), origin + vec2(x1, y1));
+                painter.rect_filled(tint, 0.0, self.palette.search_hit);
+            }
+        }
+        self.atlas.paint(painter, laid, origin, &self.palette);
+    }
+
+    /// A grey bar where the text will be.
+    fn placeholder(&self, painter: &egui::Painter, origin: egui::Pos2, width: f32) {
+        let line = self.settings.size * self.settings.line_spacing;
+        let color = theme::c().rule;
+        crate::components::text_placeholder(painter, origin, width, line, color);
+    }
+}
+
+/// A Search preview Verse: its reference, then the first line of its text, flush with the
+/// Bible's direction, the matches tinted and a cut line ended with "…". Returns whether the
+/// text was cut, or `None` while it waits for its layout.
+fn paint_hit(
+    ui: &Ui,
+    rect: Rect,
+    hit: &obs_engine::PreviewHit,
+    rtl: bool,
+    verses: &mut VerseText<'_>,
+) -> Option<bool> {
     let c = theme::c();
-    let (tint, tint_ink) = hit_colors(&c);
     let painter = ui.painter();
     let body = egui::TextStyle::Body.resolve(ui.style());
     let width = rect.width() - 2.0 * space::M;
     let reference = one_line(ui, &hit.reference, body.clone(), c.ink, width);
     let left = rect.left() + space::M;
-    let top = rect.top() + space::XS;
-    let line = reference.size().y;
-    painter.galley(pos2(left, top), reference, c.ink);
-    let text = &hit.snippet.text;
-    let mut job = LayoutJob::default();
-    let mut at = 0;
-    let plain = TextFormat::simple(body.clone(), c.muted);
-    let marked = TextFormat {
-        background: tint,
-        ..TextFormat::simple(body, tint_ink)
+    let top = rect.top() + space::XS + reference.size().y;
+    painter.galley(pos2(left, rect.top() + space::XS), reference, c.ink);
+    let ink = verses.palette.ink;
+    let ellipsis = painter.layout_no_wrap("…".to_string(), body, ink);
+    // Room for the "…" at the line's end: its right in left-to-right text, its left in
+    // right-to-left text.
+    let room = ellipsis.size().x + space::XS;
+    let text_width = (width - room).max(size::TEXT_MIN);
+    let origin = pos2(if rtl { left + room } else { left }, top);
+    let Some(laid) = verses.laid(ui, hit, rtl, text_width) else {
+        verses.placeholder(painter, origin, text_width.min(size::POPOVER_TEXT));
+        return None;
     };
-    for r in &hit.snippet.highlights {
-        if r.start < at || r.end > text.len() {
-            continue;
-        }
-        job.append(&text[at..r.start], 0.0, plain.clone());
-        job.append(&text[r.clone()], 0.0, marked.clone());
-        at = r.end;
+    let Some(first) = laid.lines.first() else {
+        return Some(false);
+    };
+    let line = Rect::from_min_max(
+        pos2(rect.left(), top + first.top),
+        pos2(rect.right(), top + first.bottom),
+    );
+    let clipped = painter.with_clip_rect(line.intersect(painter.clip_rect()));
+    verses.paint(&clipped, &laid, hit, origin);
+    let cut = laid.lines.len() > 1;
+    if cut {
+        let (start, end) = (first.items.iter()).fold((f32::MAX, f32::MIN), |(a, b), item| {
+            (a.min(item.x), b.max(item.x + item.width))
+        });
+        let (x, align) = if rtl {
+            (origin.x + start - space::XXS, Align2::RIGHT_CENTER)
+        } else {
+            (origin.x + end + space::XXS, Align2::LEFT_CENTER)
+        };
+        let at = align.align_size_within_rect(
+            ellipsis.size(),
+            Rect::from_x_y_ranges(x..=x, line.y_range()),
+        );
+        painter.galley(at.min, ellipsis, ink);
     }
-    job.append(&text[at..], 0.0, plain);
-    job.wrap = TextWrapping::truncate_at_width(width);
-    let galley = ui.fonts_mut(|f| f.layout_job(job));
-    let elided = galley.elided;
-    painter.galley(pos2(left, top + line), galley, c.muted);
-    elided
+    Some(cut)
+}
+
+/// A cut Verse whole, for its hover popup: the text pipeline's layout of it, as wide as a
+/// popover's text.
+fn paint_whole_hit(
+    ui: &mut Ui,
+    hit: &obs_engine::PreviewHit,
+    rtl: bool,
+    verses: &mut VerseText<'_>,
+) {
+    let width = size::POPOVER_TEXT;
+    let Some(laid) = verses.laid(ui, hit, rtl, width) else {
+        let line = verses.settings.size * verses.settings.line_spacing;
+        let (rect, _) = ui.allocate_exact_size(vec2(width, line), Sense::hover());
+        verses.placeholder(ui.painter(), rect.min, width);
+        return;
+    };
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, laid.height), Sense::hover());
+    let text = &hit.snippet.text;
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
+    let painter = ui
+        .painter()
+        .with_clip_rect(rect.expand(space::XS).intersect(ui.clip_rect()));
+    verses.paint(&painter, &laid, hit, rect.min);
 }
 
 /// A heading (its title and count) or a note that cannot be picked.

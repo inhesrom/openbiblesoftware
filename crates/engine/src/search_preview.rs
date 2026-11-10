@@ -47,6 +47,9 @@ pub struct PreviewHits {
     pub query: String,
     /// The ★ Bible's abbreviation.
     pub bible: String,
+    /// Whether the ★ Bible is written right to left: its Verses are laid out from the right,
+    /// as the Search Tool lays them out.
+    pub rtl: bool,
     /// How many Verses match in all.
     pub total: usize,
     /// The first [`PREVIEW_HITS`] of them, in canonical order.
@@ -281,6 +284,7 @@ fn preview_of(out: crate::jobs::JobOutput) -> SearchPreview {
     SearchPreview::Hits(Arc::new(PreviewHits {
         query: results.query.clone(),
         bible: bible.abbreviation.clone(),
+        rtl: bible.rtl,
         total: results.rows.len(),
         hits,
     }))

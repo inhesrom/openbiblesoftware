@@ -249,10 +249,7 @@ fn command_box_results_previews() {
         h.frames(2);
         key(&mut h, Key::L, CTRL);
         type_text(&mut h, "love");
-        for _ in 0..40 {
-            h.shell.st.session.jobs().pump(16);
-            h.frame();
-        }
+        settle_verses(&mut h);
         h.screenshot(&out.join(format!("results-{theme}.ppm")));
         // All commands: more rows than fit.
         key(&mut h, Key::L, CTRL);
@@ -273,8 +270,24 @@ fn command_box_results_previews() {
         h.frames(2);
         key(&mut h, Key::L, CTRL);
         type_text(&mut h, "love");
-        pump_frames(&mut h, 40);
+        settle_verses(&mut h);
         h.screenshot(&out.join(format!("results-{theme}-{tone}.ppm")));
+    }
+    // A right-to-left ★ Bible: its Verses laid out from the right by the text pipeline.
+    for theme in ["light", "dark"] {
+        let (mut h, _files) = super::search::harness_of(
+            &format!("command-box-preview-hebrew-{theme}"),
+            &[
+                obs_engine::testing::bibles::hebrew_love(),
+                obs_engine::testing::bibles::psalms(12),
+            ],
+        );
+        h.shell.run("view.theme", &json!({ "value": theme }));
+        h.frames(2);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "love");
+        settle_verses(&mut h);
+        h.screenshot(&out.join(format!("results-hebrew-{theme}.ppm")));
     }
 }
 
@@ -623,8 +636,9 @@ fn the_search_preview_shows_the_star_bibles_hits_as_you_type() {
     assert_eq!(h.shell.st.session.search_tab(tab).unwrap().query, "love");
 }
 
-/// The Search preview's highlighted words read in every Theme beside every Page tone (#295):
-/// the hit's ink and tint are a pair (WCAG AA, AAA in High contrast), whatever the Page tone.
+/// The Search preview's Verses read in every Theme beside every Page tone (#295): their ink
+/// and the tint behind their matches are a pair (WCAG AA, AAA in High contrast) that also
+/// reads on the panel, whatever the Page tone.
 #[test]
 fn the_search_preview_highlights_read_in_every_theme_and_page_tone() {
     let (mut h, _files) = love_harness("command-box-hit-contrast");
@@ -637,47 +651,231 @@ fn the_search_preview_highlights_read_in_every_theme_and_page_tone() {
         for (_, tone, _) in obs_engine::PageTone::ALL {
             h.shell.run("view.theme", &json!({ "value": theme }));
             h.shell.run("view.page_tone", &json!({ "value": tone }));
-            pump_frames(&mut h, 3);
+            settle_verses(&mut h);
             let chrome = crate::theme::c();
             assert_eq!(chrome.high_contrast, theme.starts_with("high_contrast"));
             let needs = if chrome.high_contrast { 7.0 } else { 4.5 };
-            let mut marked = Vec::new();
-            for clipped in &h.last_shapes {
-                collect_marked(&clipped.shape, &mut marked);
+            let palette = crate::shell::command_box::hit_palette(&chrome);
+            let (glyphs, rects) = verse_paint(&h);
+            let tints: Vec<Rect> = (rects.iter())
+                .filter(|(_, fill)| *fill == palette.search_hit)
+                .map(|(r, _)| *r)
+                .collect();
+            assert!(tints.len() >= 5, "{theme}, {tone}: the matches are tinted");
+            assert!(!glyphs.is_empty(), "{theme}, {tone}: no Verse text");
+            for (glyph, ink) in &glyphs {
+                assert_eq!(*ink, palette.ink, "{theme}, {tone}: {glyph:?}");
             }
-            assert!(!marked.is_empty(), "{theme}, {tone}: no highlighted words");
-            for (word, ink, background) in marked {
-                assert_eq!(
-                    (background, ink),
-                    crate::shell::command_box::hit_colors(&chrome)
-                );
-                let ratio = crate::palette::contrast(ink, background);
+            let marked = (glyphs.iter())
+                .filter(|(g, _)| tints.iter().any(|t| t.contains(g.center())))
+                .count();
+            assert!(
+                marked >= 5 * 4,
+                "{theme}, {tone}: \"love\" on its tint: {marked}"
+            );
+            for (on, background) in [("tint", palette.search_hit), ("panel", chrome.field)] {
+                let ratio = crate::palette::contrast(palette.ink, background);
                 assert!(
                     ratio >= needs,
-                    "{theme}, {tone}: {word:?} {ink:?} on {background:?} is {ratio:.2}:1"
+                    "{theme}, {tone}: {:?} on the {on} {background:?} is {ratio:.2}:1",
+                    palette.ink
                 );
-                checked += 1;
             }
+            checked += 1;
         }
     }
-    assert!(checked >= 4 * 4 * 5, "{checked}");
+    assert_eq!(checked, 4 * obs_engine::PageTone::ALL.len());
 }
 
-/// The text runs painted on a background of their own: (text, ink, background).
-fn collect_marked(shape: &egui::Shape, out: &mut Vec<(String, egui::Color32, egui::Color32)>) {
-    match shape {
-        egui::Shape::Vec(v) => v.iter().for_each(|s| collect_marked(s, out)),
-        egui::Shape::Text(t) => {
-            let job = &t.galley.job;
-            for s in &job.sections {
-                if s.format.background.a() > 0 {
-                    let text = &job.text[s.byte_range.start.0..s.byte_range.end.0];
-                    out.push((text.to_string(), s.format.color, s.format.background));
+/// Draw frames until the Search preview's Verses are laid out and drawn (the text pipeline
+/// lays them out on worker threads).
+fn settle_verses(h: &mut Harness) {
+    for _ in 0..200 {
+        h.shell.st.session.jobs().pump(16);
+        h.paced_frame();
+        let hits = match h.shell.st.session.search_preview() {
+            obs_engine::SearchPreview::Hits(p) => p.hits.len(),
+            _ => 0,
+        };
+        if hits > 0 && h.shell.st.command_box.verses_drawn == hits {
+            h.frames(2);
+            return;
+        }
+    }
+    panic!("the Verses were never drawn");
+}
+
+/// What the dropdown's list drew last frame between the Search preview's heading and Show
+/// all: glyph quads of the text pipeline with their ink, and filled rectangles with their fill.
+#[allow(clippy::type_complexity)]
+fn verse_paint(h: &Harness) -> (Vec<(Rect, egui::Color32)>, Vec<(Rect, egui::Color32)>) {
+    let heading = (h.shapes.iter()).find(|(_, t)| t.starts_with("Verses in "));
+    let show_all = (h.shapes.iter()).find(|(_, t)| t.starts_with("Show all "));
+    let (Some((heading, _)), Some((show_all, _))) = (heading, show_all) else {
+        return (Vec::new(), Vec::new());
+    };
+    let between = |r: &Rect| r.center().y > heading.bottom() && r.center().y < show_all.top();
+    let (glyphs, rects) = list_paint(h);
+    (
+        glyphs.into_iter().filter(|(r, _)| between(r)).collect(),
+        rects.into_iter().filter(|(r, _)| between(r)).collect(),
+    )
+}
+
+/// What the dropdown's list drew last frame (its shapes are clipped to the list, or to a line
+/// of it, inside the dropdown; a Panel's under it are clipped further right): textured quads (glyphs and icons) with their colour, and filled rectangles with their fill.
+#[allow(clippy::type_complexity)]
+fn list_paint(h: &Harness) -> (Vec<(Rect, egui::Color32)>, Vec<(Rect, egui::Color32)>) {
+    fn walk(
+        shape: &egui::Shape,
+        glyphs: &mut Vec<(Rect, egui::Color32)>,
+        rects: &mut Vec<(Rect, egui::Color32)>,
+    ) {
+        match shape {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, glyphs, rects)),
+            egui::Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
+                for q in m.vertices.chunks(4) {
+                    let at: Vec<Pos2> = q.iter().map(|v| v.pos).collect();
+                    glyphs.push((Rect::from_points(&at), q[0].color));
                 }
             }
+            egui::Shape::Rect(r) => rects.push((r.rect, r.fill)),
+            _ => {}
         }
-        _ => {}
     }
+    let Some(d) = h.shell.st.command_box.dropdown else {
+        return (Vec::new(), Vec::new());
+    };
+    let (mut glyphs, mut rects) = (Vec::new(), Vec::new());
+    for clipped in &h.last_shapes {
+        let clip = clipped.clip_rect;
+        if d.contains_rect(clip) && clip.left() - d.left() < size::ROW {
+            walk(&clipped.shape, &mut glyphs, &mut rects);
+        }
+    }
+    (glyphs, rects)
+}
+
+/// A Search preview Verse is Resource text (ADR 0004): drawn by the text pipeline, never as
+/// egui text, and a right-to-left Bible's laid out from the right: in a Hebrew Verse that
+/// begins with the Latin \"love\", the tinted \"love\" is at the right end of the line and the
+/// Hebrew to its left (#295).
+#[test]
+fn a_right_to_left_bibles_hits_are_laid_out_from_the_right() {
+    let (mut h, _files) = super::search::harness_of(
+        "command-box-rtl",
+        &[
+            obs_engine::testing::bibles::hebrew_love(),
+            obs_engine::testing::bibles::psalms(12),
+        ],
+    );
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    settle_verses(&mut h);
+    assert!(h.find("Verses in HEB").is_some(), "{:?}", h.texts());
+    assert!(
+        !h.texts()
+            .iter()
+            .any(|t| t.contains('\u{05d0}') || t.contains("love \u{05d1}")),
+        "no Verse text through egui: {:?}",
+        h.texts()
+    );
+    let palette = crate::shell::command_box::hit_palette(&crate::theme::c());
+    let d = dropdown(&h);
+    let (glyphs, rects) = verse_paint(&h);
+    let reference = h.find("Genesis 1:1").expect("the first Verse");
+    let next = h.find("Genesis 1:2").expect("the second Verse");
+    let line = |r: &Rect| r.center().y > reference.bottom() && r.center().y < next.top();
+    let glyphs: Vec<Rect> = (glyphs.iter()).map(|(r, _)| *r).filter(line).collect();
+    let tint = (rects.iter())
+        .find(|(r, fill)| *fill == palette.search_hit && line(r))
+        .map(|(r, _)| *r)
+        .expect("\"love\" is tinted");
+    let (marked, hebrew): (Vec<Rect>, Vec<Rect>) =
+        (glyphs.iter()).partition(|g| tint.contains(g.center()));
+    assert_eq!(marked.len(), 4, "l o v e: {marked:?}");
+    assert!(hebrew.len() >= 10, "{hebrew:?}");
+    let right = glyphs.iter().map(|g| g.right()).fold(f32::MIN, f32::max);
+    let left = glyphs.iter().map(|g| g.left()).fold(f32::MAX, f32::min);
+    assert!(
+        d.right() - right < size::ROW * 2.0,
+        "flush right: {right} in {d:?}"
+    );
+    assert!(
+        left > d.center().x,
+        "a short line, not from the left: {left} in {d:?}"
+    );
+    for g in &hebrew {
+        assert!(
+            g.right() <= tint.left() + 1.0,
+            "the Hebrew left of \"love\": {g:?} {tint:?}"
+        );
+    }
+
+    // A left-to-right Bible's Verses start at the left.
+    h.shell
+        .st
+        .session
+        .library
+        .set_preferred_order(["psalms", "heb-love"].map(String::from).to_vec());
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "law");
+    settle_verses(&mut h);
+    assert!(h.find("Verses in PSA").is_some(), "{:?}", h.texts());
+    let (glyphs, _) = verse_paint(&h);
+    let left = glyphs
+        .iter()
+        .map(|(g, _)| g.left())
+        .fold(f32::MAX, f32::min);
+    assert!(
+        left - d.left() < size::ROW * 2.0,
+        "flush left: {left} in {d:?}"
+    );
+}
+
+/// A Verse too long for its row shows its first line ended with "…"; hovering it shows the
+/// whole Verse, drawn by the text pipeline too (#295).
+#[test]
+fn a_cut_hit_is_shown_whole_on_hover_through_the_text_pipeline() {
+    use obs_engine::testing::bibles::{bible, v};
+    let long = "Blessed are the undefiled in the way, who walk in the law of the LORD, who love it \
+                and keep his testimonies, and that seek him with the whole heart, all the day long, \
+                every morning and every evening, in the house and by the way, love without end.";
+    let verses = [(v(Book::Psalms, 119, 1), long)];
+    let (mut h, _files) = super::search::harness_of(
+        "command-box-cut",
+        &[bible("long", "LNG", &verses, None, &[])],
+    );
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    settle_verses(&mut h);
+    let reference = h.find("Psalms 119:1").expect("the Verse");
+    let cut = (h.shapes.iter()).any(|(r, t)| {
+        t == "…" && r.top() >= reference.bottom() - 1.0 && r.top() < reference.bottom() + size::ROW
+    });
+    assert!(cut, "the line ends with \"…\": {:?}", h.texts());
+    let (row, _) = verse_paint(&h);
+    let before = h.glyphs.len();
+    h.events.push(Event::PointerMoved(reference.center()));
+    let mut shown = 0;
+    for _ in 0..120 {
+        h.paced_frame();
+        shown = h.glyphs.len() - before.min(h.glyphs.len());
+        if shown > row.len() {
+            break;
+        }
+    }
+    assert!(
+        shown > row.len(),
+        "the whole Verse ({shown} more glyphs) beyond the row's {}",
+        row.len()
+    );
+    assert!(
+        !h.texts().iter().any(|t| t.contains("undefiled")),
+        "not as egui text: {:?}",
+        h.texts()
+    );
 }
 
 /// Without a Bible the preview offers Get Bibles; while the ★ Bible is indexed it says so

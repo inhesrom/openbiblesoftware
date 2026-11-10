@@ -10,6 +10,7 @@ suggestions, and when it is full Search keeps the last slot. Under the Search ro
 |---|---|
 | ![The results panel for "love": headings with counts, the Search row, the first five Verses of the ★ Bible with "love" highlighted, Show all 6 results in Search](../previews/command-box-results-light.png) | ![The same in the Dark theme](../previews/command-box-results-dark.png) |
 | ![All commands (`>`): 99 commands, a scroll bar and "81 more" at the bottom edge](../previews/command-box-commands-light.png) | ![The same in the Dark theme](../previews/command-box-commands-dark.png) |
+| ![A right-to-left ★ Bible: its Hebrew Verses laid out from the right, the Latin "love" that begins each at the right end](../previews/command-box-results-hebrew-light.png) | ![The same in the Dark theme](../previews/command-box-results-hebrew-dark.png) |
 
 `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui command_box_results_previews` draws these
 (`target/previews/command-box/`); `ffmpeg -i results-light.ppm results-light.png` converts
@@ -75,9 +76,15 @@ The dropdown is a results panel under the box, its right edge under the box's:
   not) and the bottom edge fades under a "N more" pill (with a chevron) counting the rows below it; with
   every row shown there is neither.
 - **Long labels** are cut with "…" before their detail and shown whole in a tooltip on hover.
-- **Two-line rows.** A Search preview Verse shows its reference, then its text with the
-  match highlighted: the Search hit tint and ink of the Page palette as dark (and as High
-  contrast) as the Theme (`hit_colors`), a pair that reads in the chrome beside any Page tone.
+- **Two-line rows.** A Search preview Verse shows its reference, then the first line of its
+  text with the match highlighted. The text is Resource text, so the text pipeline lays it
+  out and draws it (ADR 0004), like the Search Tool's: in the Reading fonts at Body size,
+  right to left for a right-to-left Bible (`PreviewHits::rtl`), laid out off the UI thread
+  (`SnippetCache`; a grey bar until it is) and painted from the glyph atlas. A line that is
+  cut ends with "…" (at its left in right-to-left text), and hovering the row shows the whole
+  Verse, drawn by the pipeline too. Ink and tint are the Page palette as dark (and as High
+  contrast) as the Theme (`hit_palette`), a pair that reads in the chrome beside any Page
+  tone.
 - **Screen readers** hear each row as `label · detail, 3 of 12`: its place among the rows
   that can be picked (headings and notes cannot).
 
@@ -175,10 +182,11 @@ Tests: `crates/engine/src/command_box_tests.rs` (the parser and ranking, each ac
 entries across a restart, the headings, on a real `.obr` library with the Starter Lexicons'
 excerpts), `crates/engine/src/search_preview_tests.rs` (the debounced query, the ★ Bible's
 first five Verses and the count, no Bible, an index being built, opening a hit, a cancelled
-text typed again, an Unmapped hit opened from a linked Bible) and
+text typed again, an Unmapped hit opened from a linked Bible, a right-to-left ★ Bible) and
 `crates/ui-egui/src/command_box_tests.rs` (Ctrl+L, typing, ↑/↓, PgUp/PgDn, Home/End, Enter,
 Alt+Enter, Esc, click, recent entries after a relaunch; the panel's size at every Toolbar
 position, window size and Interface size; the scroll bar and "N more"; cut labels and their
 tooltips; "N of M" for screen readers; the Search preview's debounce and frame scheduling
 (on the harness's 60 Hz clock), its keys and clicks, Show all, Get Bibles and Indexing; its
-highlights' contrast in every Theme and Page tone).
+Verses drawn by the text pipeline, a right-to-left Bible's from the right, a cut one whole on
+hover; their contrast in every Theme and Page tone).
