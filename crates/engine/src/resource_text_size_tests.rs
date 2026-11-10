@@ -87,7 +87,11 @@ fn a_resources_own_size_is_shared_by_its_tabs_and_the_global_size_does_not_move_
         messages(&mut s).last().map(String::as_str),
         Some("TAHOT text 22 pt")
     );
-    assert_eq!(s.text_size_of("kjv"), TEXT_SIZE_DEFAULT, "only that Resource");
+    assert_eq!(
+        s.text_size_of("kjv"),
+        TEXT_SIZE_DEFAULT,
+        "only that Resource"
+    );
 
     // Every Tab of a Resource shares its size: either Tab's controls change it.
     s.run(
@@ -184,7 +188,8 @@ fn an_own_size_survives_a_restart_and_layout_loads() {
     );
 
     // A Layout saved before the size was chosen keeps nothing of it: loading it leaves it.
-    s.run("layout.restore", &json!({ "name": "Study" })).unwrap();
+    s.run("layout.restore", &json!({ "name": "Study" }))
+        .unwrap();
     let kjv = (s.workspace.tabs())
         .find(|t| t.kind == TabKind::Resource("kjv".into()))
         .map(|t| t.id)
@@ -205,27 +210,39 @@ fn own_sizes_are_backed_up_and_restored() {
     let with = t.0.join("with.obsbackup");
     s.run("data.back_up", &json!({ "path": with.to_str().unwrap() }))
         .unwrap();
-    s.run("settings.reset", &json!({ "setting": "resource_text_sizes" }))
-        .unwrap();
+    s.run(
+        "settings.reset",
+        &json!({ "setting": "resource_text_sizes" }),
+    )
+    .unwrap();
     let without = t.0.join("without.obsbackup");
-    s.run("data.back_up", &json!({ "path": without.to_str().unwrap() }))
-        .unwrap();
+    s.run(
+        "data.back_up",
+        &json!({ "path": without.to_str().unwrap() }),
+    )
+    .unwrap();
     set(&mut s, "tahot", 32);
 
     s.run("data.restore", &json!({ "path": with.to_str().unwrap() }))
         .unwrap();
     assert_eq!(s.text_size_of("kjv"), 24.0);
     assert_eq!(s.text_size_of("tahot"), TEXT_SIZE_DEFAULT);
-    s.run("data.restore", &json!({ "path": without.to_str().unwrap() }))
-        .unwrap();
+    s.run(
+        "data.restore",
+        &json!({ "path": without.to_str().unwrap() }),
+    )
+    .unwrap();
     assert!(s.resource_text_sizes().is_empty());
 
     let user = s.user.as_ref().unwrap();
     user.set_preference(RESOURCE_TEXT_SIZES_PREF, r#"{"kjv": 9.0}"#)
         .unwrap();
     let damaged = t.0.join("damaged.obsbackup");
-    s.run("data.back_up", &json!({ "path": damaged.to_str().unwrap() }))
-        .unwrap();
+    s.run(
+        "data.back_up",
+        &json!({ "path": damaged.to_str().unwrap() }),
+    )
+    .unwrap();
     let (opened, _) = s.user.as_ref().unwrap().open_backup(&damaged).unwrap();
     assert_eq!(
         s.trial_restore(&*opened).unwrap(),
@@ -314,7 +331,10 @@ fn the_commands_have_keys_and_the_command_box_finds_them() {
 fn settings_lists_own_sizes_resets_them_and_its_search_finds_them() {
     let (mut s, _t) = launch("settings");
     let setting = setting_by_id("resource_text_sizes").unwrap();
-    assert_eq!(setting.section, crate::settings::SettingsSection::TextAndFonts);
+    assert_eq!(
+        setting.section,
+        crate::settings::SettingsSection::TextAndFonts
+    );
     for query in ["font size", "zoom", "text size", "own"] {
         assert!(
             settings_matching(&s, query)
@@ -338,8 +358,11 @@ fn settings_lists_own_sizes_resets_them_and_its_search_finds_them() {
     assert_eq!(s.resource_text_sizes().get("kjv"), None);
     assert_eq!(s.resource_text_sizes().iter().count(), 1);
     // Reset all.
-    s.run("settings.reset", &json!({ "setting": "resource_text_sizes" }))
-        .unwrap();
+    s.run(
+        "settings.reset",
+        &json!({ "setting": "resource_text_sizes" }),
+    )
+    .unwrap();
     assert!(s.resource_text_sizes().is_empty());
     assert_eq!(s.setting_is_default("resource_text_sizes"), Some(true));
 }

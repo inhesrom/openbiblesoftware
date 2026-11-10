@@ -5,8 +5,8 @@
 //! laid out again at the new size while the slider is dragged and the menu stays open.
 
 use egui::{RichText, Ui};
-use obs_engine::appearance::{TEXT_SIZE_MAX, TEXT_SIZE_MIN, TEXT_SIZE_STEP};
 use obs_engine::TabId;
+use obs_engine::appearance::{TEXT_SIZE_MAX, TEXT_SIZE_MIN, TEXT_SIZE_STEP};
 use serde_json::{Value, json};
 
 use super::State;
@@ -139,6 +139,6 @@ impl State {
         })
         .response
         .accessible_name(format!("Text size for {name}"))
-            .on_hover_text(format!("Text size for {name}: {size:.0} pt"));
+        .on_hover_text(format!("Text size for {name}: {size:.0} pt"));
     }
 }

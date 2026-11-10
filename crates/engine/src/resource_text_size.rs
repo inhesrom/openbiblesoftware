@@ -99,8 +99,7 @@ impl Session {
         let shown: Vec<String> = match &t.kind {
             TabKind::Resource(id) => return Some(id.clone()),
             TabKind::Tool(Tool::TextComparison) => t.comparison.bibles(&self.library),
-            TabKind::Tool(Tool::Search) => match (&t.search.results, &t.search.library_results)
-            {
+            TabKind::Tool(Tool::Search) => match (&t.search.results, &t.search.library_results) {
                 (Some(r), _) => r.bibles.iter().map(|b| b.id.clone()).collect(),
                 (None, Some(r)) => r.groups.iter().map(|g| g.id.clone()).collect(),
                 (None, None) => Vec::new(),
@@ -213,7 +212,12 @@ fn focused_has_text_size_resource(s: &Session) -> bool {
 
 /// A step up or down from the size the Resource is drawn at now, and the size shown briefly
 /// ("KJV text 22 pt").
-fn step(s: &mut Session, p: Params<'_>, command: &'static str, by: f32) -> Result<Value, CommandError> {
+fn step(
+    s: &mut Session,
+    p: Params<'_>,
+    command: &'static str,
+    by: f32,
+) -> Result<Value, CommandError> {
     let resource = target(s, command, &p)?;
     let size = s.text_size_of(&resource) + by;
     let out = s.set_resource_text_size(command, &resource, Some(size))?;

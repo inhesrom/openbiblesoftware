@@ -81,7 +81,10 @@ fn node(h: &Harness, name: &str) -> Option<(Rect, Role, String)> {
         let b = n.bounds()?;
         label.starts_with(name).then(|| {
             (
-                Rect::from_min_max(pos2(b.x0 as f32, b.y0 as f32), pos2(b.x1 as f32, b.y1 as f32)),
+                Rect::from_min_max(
+                    pos2(b.x0 as f32, b.y0 as f32),
+                    pos2(b.x1 as f32, b.y1 as f32),
+                ),
                 n.role(),
                 label.to_string(),
             )
@@ -95,7 +98,10 @@ fn node_in(h: &Harness, tab: TabId, name: &str) -> Option<(Rect, Role, String)> 
     nodes(h).values().find_map(|n| {
         let label = n.label()?;
         let b = n.bounds()?;
-        let r = Rect::from_min_max(pos2(b.x0 as f32, b.y0 as f32), pos2(b.x1 as f32, b.y1 as f32));
+        let r = Rect::from_min_max(
+            pos2(b.x0 as f32, b.y0 as f32),
+            pos2(b.x1 as f32, b.y1 as f32),
+        );
         (label.starts_with(name) && pane.contains(r.center()))
             .then(|| (r, n.role(), label.to_string()))
     })
@@ -155,7 +161,11 @@ fn the_tab_menu_row_changes_the_resources_size_live_and_the_menu_stays_open() {
     h.click_text("A+");
     settle_all(&mut h);
     assert_eq!(size_of(&h, TB), default + 2.0);
-    assert_eq!(view_size(&h, tb), default + 2.0, "the text is laid out at it");
+    assert_eq!(
+        view_size(&h, tb),
+        default + 2.0,
+        "the text is laid out at it"
+    );
     assert_eq!(view_size(&h, heb), default, "only TB's Resource");
     assert!(h.find("Close Tab").is_some(), "the menu stays open");
 
@@ -163,8 +173,14 @@ fn the_tab_menu_row_changes_the_resources_size_live_and_the_menu_stays_open() {
     // follows on the same frame, so the reader sees it while dragging.
     let (slider, role, label) = node(&h, "Text size for TB,").expect("the slider");
     assert_eq!(role, Role::Slider);
-    assert_eq!(label, format!("Text size for TB, {:.0} points", default + 2.0));
-    let (from, to) = (slider.center(), pos2(slider.right() + 40.0, slider.center().y));
+    assert_eq!(
+        label,
+        format!("Text size for TB, {:.0} points", default + 2.0)
+    );
+    let (from, to) = (
+        slider.center(),
+        pos2(slider.right() + 40.0, slider.center().y),
+    );
     h.events.push(Event::PointerMoved(from));
     h.frame();
     h.button(from, true);
@@ -175,7 +191,11 @@ fn the_tab_menu_row_changes_the_resources_size_live_and_the_menu_stays_open() {
             .push(Event::PointerMoved(from + (to - from) * (i as f32 / 10.0)));
         h.frame();
         let size = size_of(&h, TB);
-        assert_eq!(view_size(&h, tb), size, "the view is at the size on every frame");
+        assert_eq!(
+            view_size(&h, tb),
+            size,
+            "the view is at the size on every frame"
+        );
         if seen.last() != Some(&size) {
             seen.push(size);
         }
@@ -253,10 +273,7 @@ fn ctrl_alt_keys_size_the_focused_resource_and_ctrl_keys_the_global_size() {
         let tb = h.tab_id("TB");
         let default = h.shell.st.session.text.size;
         let alt = Modifiers { alt: true, ..held };
-        let shift_alt = Modifiers {
-            shift: true,
-            ..alt
-        };
+        let shift_alt = Modifiers { shift: true, ..alt };
         press(&mut h, Key::Equals, Key::Equals, alt);
         assert_eq!(size_of(&h, TB), default + 1.0, "Ctrl+Alt+=");
         press(&mut h, Key::Plus, Key::Equals, shift_alt);
@@ -271,7 +288,15 @@ fn ctrl_alt_keys_size_the_focused_resource_and_ctrl_keys_the_global_size() {
 
         // The global keys still work, with Shift as a US keyboard holds it for +, and move
         // HEB, which follows, but not TB.
-        press(&mut h, Key::Plus, Key::Equals, Modifiers { shift: true, ..held });
+        press(
+            &mut h,
+            Key::Plus,
+            Key::Equals,
+            Modifiers {
+                shift: true,
+                ..held
+            },
+        );
         press(&mut h, Key::Equals, Key::Equals, held);
         assert_eq!(h.shell.st.session.text.size, default + 2.0, "Ctrl+Plus");
         assert_eq!(size_of(&h, HEB), default + 2.0);
@@ -281,8 +306,16 @@ fn ctrl_alt_keys_size_the_focused_resource_and_ctrl_keys_the_global_size() {
         assert_eq!(size_of(&h, TB), default + 2.0);
 
         press(&mut h, Key::Num0, Key::Num0, alt);
-        assert_eq!(h.shell.st.session.resource_text_sizes().get(TB), None, "Ctrl+Alt+0");
-        assert_eq!(size_of(&h, TB), default + 1.0, "follows the global size again");
+        assert_eq!(
+            h.shell.st.session.resource_text_sizes().get(TB),
+            None,
+            "Ctrl+Alt+0"
+        );
+        assert_eq!(
+            size_of(&h, TB),
+            default + 1.0,
+            "follows the global size again"
+        );
         press(&mut h, Key::Num0, Key::Num0, held);
         assert_eq!(size_of(&h, TB), default, "Ctrl+0");
         settle_all(&mut h);
@@ -313,7 +346,11 @@ fn every_tab_of_the_resource_keeps_its_current_location() {
     h.shell
         .run("tab.go", &json!({ "tab": tb2.0, "text": "Gen 2:4" }));
     settle_all(&mut h);
-    let before = [location(&mut h, tb), location(&mut h, tb2), location(&mut h, hn)];
+    let before = [
+        location(&mut h, tb),
+        location(&mut h, tb2),
+        location(&mut h, hn),
+    ];
     assert!(before.iter().all(Option::is_some), "{before:?}");
     for value in [30, 14, 26] {
         h.shell.run(
@@ -325,7 +362,11 @@ fn every_tab_of_the_resource_keeps_its_current_location() {
             assert_eq!(view_size(&h, t), value as f32);
         }
         assert_eq!(
-            [location(&mut h, tb), location(&mut h, tb2), location(&mut h, hn)],
+            [
+                location(&mut h, tb),
+                location(&mut h, tb2),
+                location(&mut h, hn)
+            ],
             before,
             "at {value} pt"
         );
