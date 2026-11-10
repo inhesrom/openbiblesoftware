@@ -426,15 +426,16 @@ pub struct ComparisonRow {
 
 /// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes reach
 /// into `range` (all of a ligature when the range starts or ends inside it), merged along
-/// each line.
+/// each line: one rectangle per stretch of a line, not per word, so a band has no notches
+/// where words meet (#305).
 pub fn range_rects(laid: &LaidBlock, range: &Range<usize>) -> Vec<[f32; 4]> {
     let mut out = Vec::new();
     if range.is_empty() {
         return out;
     }
     for line in &laid.lines {
+        let mut run: Option<[f32; 4]> = None;
         for item in &line.items {
-            let mut run: Option<[f32; 4]> = None;
             for (bytes, x0, x1) in item.clusters() {
                 let inside = matches!(laid.to_unit(bytes.start),
                     Some(UnitPos::Text(b)) if b < range.end && range.start < b + bytes.len());
@@ -450,8 +451,8 @@ pub fn range_rects(laid: &LaidBlock, range: &Range<usize>) -> Vec<[f32; 4]> {
                     (_, false) => out.extend(run.take()),
                 }
             }
-            out.extend(run);
         }
+        out.extend(run);
     }
     out
 }

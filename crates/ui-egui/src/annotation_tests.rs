@@ -837,6 +837,66 @@ fn assert_aligned(h: &Harness, color: Color32, word: &str) -> Rect {
     union(&rects)
 }
 
+/// A block wholly in TB's pane with text on three lines or more: its range and how many
+/// lines it takes.
+fn block_of_three_lines(h: &Harness, tab: TabId) -> (DocPos, DocPos, usize) {
+    let v = view(h, tab);
+    let pane = pane(h);
+    let [_, oy] = v.text_origin;
+    for (index, top, laid) in v.laid_in_view(900.0) {
+        let lines = laid.lines.iter().filter(|l| !l.items.is_empty()).count();
+        if lines < 3 || oy + top < pane.top() || oy + top + laid.height > pane.bottom() - 60.0 {
+            continue;
+        }
+        let block = &v.doc.blocks[index];
+        let at = |byte| DocPos {
+            unit: block.unit,
+            byte,
+        };
+        return (
+            at(block.source.range.start),
+            at(block.source.range.end),
+            lines,
+        );
+    }
+    panic!("no block of three lines in view");
+}
+
+/// One rect per line top.
+fn one_per_line(rects: &[Rect], lines: usize) {
+    assert_eq!(rects.len(), lines, "{rects:?}");
+    let mut tops: Vec<i32> = rects.iter().map(|r| r.top().round() as i32).collect();
+    tops.dedup();
+    assert_eq!(tops.len(), lines, "{rects:?}");
+}
+
+/// READING-8 (#305): the selection, the jump flash and a Background Highlight over many words
+/// are one band per line, not one per word: rounded, anti-aliased bands a word long left a
+/// notch wherever two met.
+#[test]
+fn a_selection_and_highlight_over_many_words_are_one_band_per_line() {
+    let dir = folder("bands");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, b, lines) = block_of_three_lines(&h, tb);
+    // The rects the selection, the flash and Highlights are painted from.
+    one_per_line(&screen_rects(&h, tb, a, b), lines);
+    let v = h.shell.st.tabs.get_mut(&tb).unwrap().view.as_mut().unwrap();
+    v.selection = Some(crate::Selection {
+        anchor: a,
+        head: b,
+        granularity: Default::default(),
+    });
+    h.frame();
+    let selection = h.shell.st.palette.selection;
+    one_per_line(&painted(&h, selection), lines);
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT);
+    let yellow = h.shell.st.palette.built_in_color("yellow");
+    one_per_line(&painted(&h, yellow), lines);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn highlights_stay_aligned_with_their_glyphs_while_scrolling_and_after_a_text_size_change() {
     let dir = folder("aligned");
