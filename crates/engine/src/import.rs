@@ -163,15 +163,17 @@ pub(crate) fn report_title(name: &str) -> String {
 }
 
 /// What a failed Import's report says, in plain words; the error itself shows only under
-/// Details. `error` is the job's message, as [`ImportRecord::error`] keeps it.
+/// Details. `error` is the job's message, as [`ImportRecord::error`] keeps it: the source's
+/// description, ": ", then the error. Only the error is read, so a file or folder whose name
+/// holds one of the phrases below is not mistaken for that failure.
 pub fn failure_message(error: &str) -> &'static str {
-    let e = error.to_ascii_lowercase();
+    let e = error
+        .split_once(": ")
+        .map_or(error, |(_, e)| e)
+        .to_ascii_lowercase();
     if e.ends_with("import cancelled") {
         "The Import was cancelled."
-    } else if e.contains("os error 2")
-        || e.contains("no such file or directory")
-        || e.contains("cannot find the")
-    {
+    } else if e.contains("no such file or directory") || e.contains("cannot find the") {
         "That file or folder does not exist. It may have been moved, renamed or deleted."
     } else if e.contains("permission denied") || e.contains("access is denied") {
         "The app is not allowed to read that file or folder."

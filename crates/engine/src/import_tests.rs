@@ -407,6 +407,19 @@ fn failed_imports_say_what_went_wrong_in_plain_words() {
         for raw in ["os error", "\\id", "README.md", "foo.usfm"] {
             assert!(!message.contains(raw), "{message:?}");
         }
+        // A failed Import never reaches the Library; its report reopened later is still
+        // named after the source, not the internal Resource id.
+        for t in s.workspace.tabs().map(|t| t.id).collect::<Vec<_>>() {
+            s.workspace.close(t);
+        }
+        s.run("import.report", &json!({"id": id})).unwrap();
+        let stem = path.file_stem().unwrap().to_string_lossy();
+        assert!(
+            s.workspace
+                .tabs()
+                .any(|t| t.title == format!("Import report · {stem}")),
+            "{id}"
+        );
     }
     assert_eq!(
         failure_message("x: Import cancelled"),
@@ -416,10 +429,26 @@ fn failed_imports_say_what_went_wrong_in_plain_words() {
         failure_message("KJV from CrossWire: download from CrossWire: timed out")
             .starts_with("The download did not finish")
     );
-    // A local file's error starts with its path; one in a Downloads folder was not a download.
+    // A full disk, a folder where a file should be, too many open files: the file is still
+    // there, so none of them reads as missing ("os error 2" is a prefix of each).
+    for other in [
+        "/x/GEN.usfm: No space left on device (os error 28)",
+        "/x/GEN.usfm: Is a directory (os error 21)",
+        "/x/GEN.usfm: Not a directory (os error 20)",
+        "/x/GEN.usfm: Too many open files (os error 24)",
+    ] {
+        assert!(
+            !failure_message(other).starts_with("That file or folder does not exist"),
+            "{other}"
+        );
+    }
+    // A local file's error starts with its path; a path naming a failure is not that failure.
     for local in [
         "/Users/me/Downloads/x.usfm: invalid data",
         "C:\\Users\\me\\Downloads\\x.usfm: invalid data",
+        "/Users/me/download from church/GEN.usfm: invalid data",
+        "/Users/me/Permission denied/GEN.usfm: invalid data",
+        "/Users/me/No such file or directory/GEN.usfm: invalid data",
     ] {
         assert_eq!(
             failure_message(local),
