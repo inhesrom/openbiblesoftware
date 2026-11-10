@@ -68,8 +68,8 @@ The dropdown is a results panel under the box, its right edge under the box's:
   size. It is measured in points, so it grows and shrinks with the Interface size. Its size
   is fixed: it cannot be resized.
 - **Headings.** The suggestions sit under headings with their counts (Go to, Guides, Tools,
-  Word Study, Resources, Layouts, Favorites, Saved searches, Commands, Search, Recent:
-  `CommandBoxAction::group`). A heading comes where its best suggestion ranks
+  Word Study, Resources, Layouts, Favorites, Saved searches, Commands, Settings (Scroll
+  speed), Search, Recent: `CommandBoxAction::group`). A heading comes where its best suggestion ranks
   (`suggestion_groups`), so the best suggestion of all is still first and Enter runs it.
 - **Scrolling shows.** When the rows do not all fit, a solid scroll bar shows (hovered or
   not) and the bottom edge fades under a "N more" pill (with a chevron) counting the rows below it; with

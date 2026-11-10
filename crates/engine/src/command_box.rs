@@ -151,6 +151,7 @@ impl CommandBoxAction {
             Self::OpenFavorite(_) => "Favorites",
             Self::OpenSavedSearch(_) => "Saved searches",
             Self::Command(_) => "Commands",
+            Self::ScrollSpeed(_) => "Settings",
             Self::Search(_) => "Search",
             Self::Recent(_) => "Recent",
         }

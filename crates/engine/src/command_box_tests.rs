@@ -581,6 +581,7 @@ fn suggestions_group_under_headings_best_first() {
         (CommandBoxAction::WordStudy(strongs("G26")), "Word Study"),
         (CommandBoxAction::OpenResource("bsb".into()), "Resources"),
         (CommandBoxAction::RestoreLayout("x".into()), "Layouts"),
+        (CommandBoxAction::ScrollSpeed(150), "Settings"),
         (CommandBoxAction::Recent("x".into()), "Recent"),
     ] {
         assert_eq!(action.group(), heading);
