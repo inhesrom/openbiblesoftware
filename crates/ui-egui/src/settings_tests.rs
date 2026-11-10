@@ -531,7 +531,8 @@ fn the_scroll_speed_slider_applies_at_once_and_resets_to_1x() {
 
     // The whole Tab at 1×: a wheel line moves it this far.
     search(&mut h, tab, "");
-    let anchor = setting_by_id("interface_size").unwrap().help;
+    // A help line well inside the first screen of the Tab.
+    let anchor = setting_by_id("font_interface").unwrap().help;
     let at_one = wheel_settings(&mut h, tab, anchor);
     assert!(at_one > 10.0, "{at_one}");
 
