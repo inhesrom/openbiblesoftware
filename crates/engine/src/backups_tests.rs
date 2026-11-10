@@ -1971,3 +1971,143 @@ fn a_restore_running_searches_again_keeps_the_backups_recent_searches() {
     s.run("data.undo_restore", &Value::Null).unwrap();
     assert_eq!(s.recent_searches(SearchMode::Notes), before);
 }
+
+/// #290 proof: a Backup whose Layout has a Tab, its Panel and a floating window at id
+/// `u64::MAX` (and a second Tab and Panel just below) and whose Visual filter counter is
+/// `u64::MAX` restores, every loader keeping those ids exactly. Opening a Tab, splitting a
+/// Panel, floating a Tab and saving Visual filters after that take free ids: nothing
+/// overflows (test builds check overflow, so it would panic) and no id in use is taken again.
+/// A Backup made after the Visual filter counter wraps restores, and a relaunch keeps it.
+#[test]
+fn ids_at_their_maximum_give_way_to_free_ids_after_a_restore() {
+    const MAX: u64 = u64::MAX;
+    let f = Fixture::new("max-ids");
+    let mut s = f.session();
+    for id in ["kjv", "web"] {
+        s.run("resource.open", &json!({ "id": id })).unwrap();
+    }
+    s.run("filter.save", &json!({ "name": "Grace", "query": "grace" }))
+        .unwrap();
+    s.run("layout.save", &json!({ "name": "Study" })).unwrap();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("max-ids.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        let json = db.layout("Study").unwrap().unwrap();
+        let mut snap = WorkspaceSnapshot::from_json(&json).unwrap();
+        for t in &mut snap.tabs {
+            t.id = if t.kind.resource_id() == Some("kjv") {
+                MAX
+            } else {
+                MAX - 1
+            };
+        }
+        let panel = |id: u64| LayoutNode::Panel {
+            panel: id,
+            tabs: vec![id],
+            active: Some(id),
+        };
+        // KJV in the main window's Panel, WEB in a floating window's.
+        snap.layout = Some(panel(MAX));
+        snap.windows = vec![WindowSnapshot {
+            id: MAX,
+            layout: panel(MAX - 1),
+            placement: None,
+        }];
+        snap.focused = Some(MAX);
+        snap.remembered.clear();
+        snap.last_reading_panel = Some(MAX);
+        snap.last_other_panel = None;
+        db.save_layout("Study", &snap.to_json()).unwrap();
+        db.set_preference(
+            crate::visual_filters::VISUAL_FILTERS_NEXT_ID_PREF,
+            &MAX.to_string(),
+        )
+        .unwrap();
+    });
+    s.run("data.restore", &path(&backup)).unwrap();
+    assert_eq!(s.visual_filters.next_id, MAX);
+    s.run("layout.restore", &json!({ "name": "Study" }))
+        .unwrap();
+    let ids = |s: &Session| -> Vec<u64> { s.workspace.tabs().map(|t| t.id.0).collect() };
+    assert_eq!(ids(&s), [MAX - 1, MAX]);
+    assert_eq!(panel_of_tab(&s, MAX), PanelId(MAX));
+    assert_eq!(panel_of_tab(&s, MAX - 1), PanelId(MAX - 1));
+    assert_eq!(s.workspace.window_of(TabId(MAX - 1)), Some(WindowId(MAX)));
+
+    // Opening a Tab: it joins the main window's Panel, under an id of its own.
+    let opened = s.run("resource.open", &json!({ "id": "kjv" })).unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    assert!(opened < MAX - 1, "{opened}");
+    assert_eq!(ids(&s).len(), 3);
+    assert_eq!(panel_of_tab(&s, opened), PanelId(MAX));
+
+    // Splitting a Panel: a new Panel of its own.
+    let split = s
+        .run("resource.open", &json!({ "id": "web", "split": true }))
+        .unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(ids(&s).len(), 4);
+    let new_panel = panel_of_tab(&s, split);
+    assert!(new_panel.0 < MAX - 1, "{new_panel:?}");
+    let in_panel: Vec<TabId> = s
+        .workspace
+        .panels()
+        .find(|(p, _)| *p == new_panel)
+        .map(|(_, tabs)| tabs.to_vec())
+        .unwrap();
+    assert_eq!(in_panel, [TabId(split)]);
+
+    // Opening a floating window: a new window, beside the one at the maximum.
+    s.run("tab.float", &json!({ "tab": opened })).unwrap();
+    let window = s.workspace.window_of(TabId(opened)).unwrap();
+    assert_ne!(window, WindowId(MAX));
+    let windows: Vec<WindowId> = s.workspace.floating.iter().map(|w| w.id).collect();
+    assert_eq!(windows, [WindowId(MAX), window]);
+    assert_eq!(s.workspace.window_of(TabId(MAX - 1)), Some(WindowId(MAX)));
+    let panels: std::collections::BTreeSet<PanelId> =
+        s.workspace.panels().map(|(p, _)| p).collect();
+    assert_eq!(panels.len(), 4, "{panels:?}");
+
+    // Saving Visual filters: the one at the maximum, then the next free one after it wraps.
+    let saved = |s: &mut Session, name: &str| -> String {
+        let out = s
+            .run("filter.save", &json!({ "name": name, "query": "love" }))
+            .unwrap();
+        out["id"].as_str().unwrap().to_string()
+    };
+    assert_eq!(saved(&mut s, "Love"), format!("filter-{MAX}"));
+    assert_eq!(saved(&mut s, "Love again"), "filter-2");
+    let filters: Vec<&str> = s
+        .visual_filters
+        .list
+        .iter()
+        .map(|f| f.id.as_str())
+        .filter(|id| id.starts_with("filter-"))
+        .collect();
+    assert_eq!(filters, ["filter-1", &format!("filter-{MAX}"), "filter-2"]);
+    // The counter stays at the maximum: loading raises a lower one back there while
+    // `filter-<MAX>` exists, and a Backup's check compares the stored counter exactly.
+    assert_eq!(s.visual_filters.next_id, MAX);
+
+    // A Backup made after the wrap passes its checks and restores, and a relaunch keeps it all.
+    let after_wrap = f.file("after-wrap.obsbackup");
+    s.run("data.back_up", &path(&after_wrap)).unwrap();
+    s.restore_preview(&after_wrap).unwrap();
+    s.run("data.restore", &path(&after_wrap)).unwrap();
+    assert_eq!(s.visual_filters.next_id, MAX);
+    let relaunched = f.launched_on(&after_wrap);
+    assert_eq!(relaunched.visual_filters.list, s.visual_filters.list);
+    assert_eq!(relaunched.visual_filters.next_id, MAX);
+    drop(s);
+    let mut s = f.session();
+    assert_eq!(s.visual_filters.next_id, MAX);
+    assert_eq!(saved(&mut s, "Love once more"), "filter-3");
+    assert_eq!(s.visual_filters.next_id, MAX);
+}
+
+fn panel_of_tab(s: &Session, tab: u64) -> PanelId {
+    s.workspace.panel_of(TabId(tab)).unwrap()
+}

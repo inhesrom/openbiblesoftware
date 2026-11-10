@@ -198,8 +198,22 @@ pub(crate) struct VisualFilters {
     pub(crate) list: Vec<VisualFilter>,
     /// Bumped by every change to `list`.
     pub(crate) revision: u64,
-    /// The number of the next new filter's id (`filter-<n>`): ids are never reused.
+    /// The number of the next new filter's id (`filter-<n>`): ids are never reused, until the
+    /// counter reaches `u64::MAX`. There it stays (#290), so the stored counter still loads as
+    /// itself while `filter-<u64::MAX>` exists (a Backup's check compares it exactly).
     pub(crate) next_id: u64,
+}
+
+impl VisualFilters {
+    /// The number of the next new filter's id: from the kept counter on, the first number no
+    /// filter's id has, wrapping past its maximum (a counter from a hand-edited User database or
+    /// Backup can be there, #290).
+    fn free_id(&self) -> u64 {
+        crate::workspace::first_free_id(self.next_id, |n| {
+            let id = format!("filter-{n}");
+            self.list.iter().any(|f| f.id == id)
+        })
+    }
 }
 
 impl Default for VisualFilters {
@@ -997,7 +1011,7 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let mut f = match existing {
         Some(i) => s.visual_filters.list[i].clone(),
         None => VisualFilter {
-            id: format!("filter-{}", s.visual_filters.next_id),
+            id: format!("filter-{}", s.visual_filters.free_id()),
             name: String::new(),
             query: String::new(),
             marked: None,
@@ -1050,8 +1064,11 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     match existing {
         Some(i) => s.visual_filters.list[i] = f,
         None => {
+            // Past an id wrapped below the counter, the counter stays where it was (at the
+            // maximum): `load_visual_filters` raises a lower one back to it anyway.
+            let id = s.visual_filters.free_id();
+            s.visual_filters.next_id = s.visual_filters.next_id.max(id.saturating_add(1));
             s.visual_filters.list.push(f);
-            s.visual_filters.next_id += 1;
         }
     }
     s.save_visual_filters();

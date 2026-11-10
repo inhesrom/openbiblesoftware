@@ -587,6 +587,58 @@ fn a_deleted_filters_id_is_never_reused_so_restored_layouts_do_not_switch_new_fi
     assert_eq!(third["id"], "filter-3");
 }
 
+/// #290: a hand-edited User database whose filter has the id `filter-<u64::MAX>` (which also
+/// puts the counter there at launch) neither panics nor collides on the next new filter: the
+/// counter wraps to the first number no filter's id has, and stays at the maximum across a
+/// relaunch.
+#[test]
+fn a_filter_id_at_the_maximum_wraps_the_counter_to_a_free_number() {
+    let (mut s, t) = launch("max-id");
+    for (name, query) in [("Love", "love"), ("Grace", "grace")] {
+        s.run("filter.save", &json!({ "name": name, "query": query }))
+            .unwrap();
+    }
+    let user = s.user.as_ref().unwrap();
+    let list = user
+        .preference(crate::visual_filters::VISUAL_FILTERS_PREF)
+        .unwrap()
+        .unwrap();
+    let max = format!("filter-{}", u64::MAX);
+    user.set_preference(
+        crate::visual_filters::VISUAL_FILTERS_PREF,
+        &list.replace("\"filter-2\"", &format!("\"{max}\"")),
+    )
+    .unwrap();
+    let mut s = reopen(&t.0);
+    assert_eq!(s.visual_filters.next_id, u64::MAX);
+    let mut made = Vec::new();
+    for (name, query) in [("Peace", "peace"), ("Joy", "joy")] {
+        let out = s
+            .run("filter.save", &json!({ "name": name, "query": query }))
+            .unwrap();
+        made.push(out["id"].as_str().unwrap().to_string());
+    }
+    assert_eq!(made, ["filter-2", "filter-3"]);
+    let ids: Vec<&str> = s
+        .visual_filters
+        .list
+        .iter()
+        .map(|f| f.id.as_str())
+        .filter(|id| id.starts_with("filter-"))
+        .collect();
+    assert_eq!(ids, ["filter-1", &max, "filter-2", "filter-3"]);
+    // The stored counter stays at the maximum, so it loads as itself and a relaunch goes on
+    // with the next free number.
+    assert_eq!(s.visual_filters.next_id, u64::MAX);
+    drop(s);
+    let mut s = reopen(&t.0);
+    assert_eq!(s.visual_filters.next_id, u64::MAX);
+    let out = s
+        .run("filter.save", &json!({ "name": "Hope", "query": "hope" }))
+        .unwrap();
+    assert_eq!(out["id"], "filter-4");
+}
+
 // ------------------------------------------------------- review of #211: scope and reach
 
 /// A unit of one word per Verse (Romans 1:1, 1:2, …), and its Verses as documents.
