@@ -736,14 +736,11 @@ fn reset(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         }
         SettingKind::ResourceTextSizes => {
             // One Resource's Reset, or Reset all.
-            let own: Vec<String> = match p.str("resource") {
-                Some(id) => vec![id.to_string()],
-                None => (s.resource_text_sizes().iter())
-                    .map(|(id, _)| id.to_string())
-                    .collect(),
-            };
-            for id in own {
-                s.set_resource_text_size("settings.reset", &id, None)?;
+            match p.str("resource") {
+                Some(id) => {
+                    s.set_resource_text_size("settings.reset", id, None)?;
+                }
+                None => s.clear_resource_text_sizes("settings.reset")?,
             }
         }
         SettingKind::Font(slot) => {

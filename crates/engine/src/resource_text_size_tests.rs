@@ -156,6 +156,16 @@ fn an_own_size_is_absolute_and_kept_in_the_readable_range() {
     s.run("view.resource_text_smaller", &json!({ "resource": "web" }))
         .unwrap();
     assert_eq!(s.text_size_of("web"), TEXT_SIZE_DEFAULT - 1.0);
+    // At the end of the range, a Resource following the global size keeps following it.
+    while s.text.size < TEXT_SIZE_MAX {
+        s.run("view.text_larger", &json!({})).unwrap();
+    }
+    let out = s
+        .run("view.resource_text_larger", &json!({ "resource": "tahot" }))
+        .unwrap();
+    assert_eq!(out["own"], false);
+    assert_eq!(s.resource_text_sizes().get("tahot"), None);
+    assert_eq!(s.text_size_of("tahot"), TEXT_SIZE_MAX);
 }
 
 /// Acceptance: kept in the User database, so it survives a restart and Layout loads (a
@@ -196,8 +206,14 @@ fn an_own_size_survives_a_restart_and_layout_loads() {
         .unwrap();
     assert_eq!(s.text_size_resource(kjv).as_deref(), Some("kjv"));
     assert_eq!(s.text_size_of("kjv"), 28.0);
+    // Nothing of a size is in the Layout: another one leaves the snapshot as it was.
     let snapshot = s.workspace.snapshot().to_json();
-    assert!(!snapshot.contains("28"), "not kept in Layouts: {snapshot}");
+    set(&mut s, "kjv", 33);
+    assert_eq!(
+        s.workspace.snapshot().to_json(),
+        snapshot,
+        "not kept in Layouts"
+    );
 }
 
 /// Acceptance: a Backup holds the sizes and a restore brings them back; a restore of a

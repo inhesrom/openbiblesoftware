@@ -12,7 +12,7 @@ Everything in the app can be reached from the keyboard. On macOS, Ctrl in this g
 - **Ctrl+Shift+N**: a Note on the selection. **Alt+1…9**: Highlight it.
 - **Ctrl+Z**, **Ctrl+Shift+Z**: Undo and Redo.
 - **Ctrl+Plus**, **Ctrl+Minus**, **Ctrl+0**: Larger, smaller and default Text size.
-- **Ctrl+Alt+Plus**, **Ctrl+Alt+Minus**, **Ctrl+Alt+0**: the same for the focused Tab's Resource only, which then keeps its Own Text size (⌥⌘ on macOS).
+- **Ctrl+Alt+Plus**, **Ctrl+Alt+Minus**, **Ctrl+Alt+0**: the same for the focused Tab's Resource only, which then keeps its Own Text size (⌥⌘ on macOS). When macOS Zoom's keyboard shortcuts are on (System Settings → Accessibility → Zoom), macOS takes ⌥⌘= and ⌥⌘− before the app sees them: use the Tab's Aa button or ⋯ menu, or give the commands other keys under Change a key below.
 
 ## Move around the window
 

@@ -151,7 +151,12 @@ impl SearchView {
     }
 
     fn line_height(&self) -> f32 {
-        self.settings.size * self.settings.line_spacing * scale::ROW_LINE
+        line_height(&self.settings)
+    }
+
+    /// The row line height of Resource `resource`'s hits (at its own Text size, #292).
+    fn line_height_of(&self, resource: &str) -> f32 {
+        line_height(&self.settings_of(resource))
     }
 
     fn text_width(&self) -> f32 {
@@ -160,25 +165,39 @@ impl SearchView {
 
     /// Rows are estimated at two lines per hit until laid out.
     fn estimate(&self, hits: usize) -> f32 {
-        ROW_HEAD + hits as f32 * (2.0 * self.line_height() + HIT_GAP) + ROW_GAP
+        ROW_HEAD + hits as f32 * hit_estimate(self.line_height()) + ROW_GAP
     }
 
     /// A Library row: its label and three lines of excerpt (and its group's header).
-    fn library_estimate(&self, starts_group: bool) -> f32 {
+    fn library_estimate(&self, starts_group: bool, line_height: f32) -> f32 {
         let head = if starts_group { GROUP_HEAD } else { 0.0 };
-        head + self.line_height() * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP
+        head + line_height * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP
     }
 
-    /// Estimated heights of the Tab's result rows.
+    /// Estimated heights of the Tab's result rows, each hit at its Resource's Text size.
     fn estimates(&self, tab: &SearchTab) -> Vec<f32> {
         match (&tab.results, &tab.library_results) {
-            (Some(r), _) => r
-                .rows
-                .iter()
-                .map(|row| self.estimate(row.hits.len()))
+            (Some(r), _) => (r.rows.iter())
+                .map(|row| {
+                    let hits: f32 = (row.hits.iter())
+                        .map(|h| {
+                            let line = r
+                                .bibles
+                                .get(h.bible)
+                                .map_or_else(|| self.line_height(), |b| self.line_height_of(&b.id));
+                            hit_estimate(line)
+                        })
+                        .sum();
+                    ROW_HEAD + hits + ROW_GAP
+                })
                 .collect(),
             (None, Some(r)) => (0..r.rows.len())
-                .map(|i| self.library_estimate(r.starts_group(i)))
+                .map(|i| {
+                    let line = r
+                        .group_of(i)
+                        .map_or_else(|| self.line_height(), |g| self.line_height_of(&g.id));
+                    self.library_estimate(r.starts_group(i), line)
+                })
                 .collect(),
             (None, None) => Vec::new(),
         }
@@ -537,6 +556,16 @@ fn placeholder(paint: &mut Paint<'_>, origin: Pos2, width: f32, height: f32) {
     );
 }
 
+/// A row line's height at `settings`.
+fn line_height(settings: &TextSettings) -> f32 {
+    settings.size * settings.line_spacing * scale::ROW_LINE
+}
+
+/// A hit is estimated at two lines until laid out.
+fn hit_estimate(line_height: f32) -> f32 {
+    2.0 * line_height + HIT_GAP
+}
+
 /// One Verse row: the reference, then each Bible's label and text. Returns its height,
 /// whether it is fully laid out, and where its highlight area starts.
 #[allow(clippy::too_many_arguments)]
@@ -589,7 +618,7 @@ fn bible_row(
             );
             label_h += text::CAPTION_LINE;
         }
-        let mut height = settings.size * settings.line_spacing * scale::ROW_LINE;
+        let mut height = line_height(&settings);
         let origin = pos2(text_left, row_y);
         let snippet = tab.snippet(i, j);
         let laid = snippet.and_then(|s| {
@@ -647,7 +676,7 @@ fn library_row(
     let row = &results.rows[i];
     let group = results.group_of(i);
     let settings = group.map_or(view.settings, |g| view.settings_of(&g.id));
-    let line_height = settings.size * settings.line_spacing * scale::ROW_LINE;
+    let line_height = line_height(&settings);
     let mut label_settings = settings;
     label_settings.size *= LABEL_SCALE;
     let mut row_y = y;

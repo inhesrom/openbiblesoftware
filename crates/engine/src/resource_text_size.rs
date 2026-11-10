@@ -129,6 +129,20 @@ impl Session {
             .unwrap_or_default();
     }
 
+    /// Every Resource follows the global Text size again (Settings' Reset all), saved in one
+    /// write: a failed save leaves every own size as it was.
+    pub(crate) fn clear_resource_text_sizes(
+        &mut self,
+        command: &'static str,
+    ) -> Result<(), CommandError> {
+        let before = std::mem::take(&mut self.resource_text_sizes);
+        if let Err(e) = self.save_resource_text_sizes(command) {
+            self.resource_text_sizes = before;
+            return Err(e);
+        }
+        Ok(())
+    }
+
     fn save_resource_text_sizes(&self, command: &'static str) -> Result<(), CommandError> {
         let Some(user) = &self.user else {
             return Ok(());
@@ -219,8 +233,14 @@ fn step(
     by: f32,
 ) -> Result<Value, CommandError> {
     let resource = target(s, command, &p)?;
-    let size = s.text_size_of(&resource) + by;
-    let out = s.set_resource_text_size(command, &resource, Some(size))?;
+    let now = s.text_size_of(&resource);
+    // At the end of the range a Resource that follows the global size keeps following it:
+    // an own size equal to it would change nothing the reader sees.
+    if s.resource_text_sizes.get(&resource).is_none() && clamp(now + by) == now {
+        announce(s, &resource);
+        return Ok(json!({ "resource": resource, "size": now, "own": false }));
+    }
+    let out = s.set_resource_text_size(command, &resource, Some(now + by))?;
     announce(s, &resource);
     Ok(out)
 }

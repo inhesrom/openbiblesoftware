@@ -227,7 +227,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "search_view.rs",
-        "head + self.line_height() * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP",
+        "head + line_height * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP",
         "3.0",
         "a Library hit's excerpt is three lines",
     ),
