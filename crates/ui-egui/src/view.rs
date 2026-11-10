@@ -154,6 +154,8 @@ pub struct ReadingView {
     /// (their keys) it was measured with: a new width only does the arithmetic (#255).
     estimates: Vec<HeightEstimate>,
     estimates_key: Option<(u64, Option<u64>)>,
+    /// What the last frame since the text was last laid out anew cost (`None`: none yet).
+    drawn: Option<FrameStats>,
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
@@ -210,6 +212,7 @@ impl ReadingView {
             viewport: 0.0,
             estimates: Vec::new(),
             estimates_key: None,
+            drawn: None,
         };
         view.set_width(600.0);
         view
@@ -287,6 +290,7 @@ impl ReadingView {
         let width = self.width;
         self.heights = HeightIndex::new(self.estimates.iter().map(|e| e.at(width)).collect());
         self.laid.clear();
+        self.drawn = None;
         self.generation += 1;
         self.client.forget_pending();
         if let Some(at) = self.sticky_text {
@@ -675,6 +679,13 @@ impl ReadingView {
         self.laid.contains_key(&self.anchor.0)
     }
 
+    /// Whether a frame has drawn every block in view since the text was last laid out anew (a
+    /// new size, say), none as a placeholder: the Text size bench's "change shown" (#299).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn drew_all_text(&self) -> bool {
+        self.drawn.is_some_and(|s| s.placeholders == 0)
+    }
+
     /// Whether workers still have layouts for this view in flight.
     pub fn has_pending(&self) -> bool {
         self.client.pending() > 0
@@ -772,6 +783,7 @@ impl ReadingView {
             }
             above += self.height_of(above_index);
         }
+        self.drawn = Some(stats);
         // Keep layouts around the prefetch window, drop the rest.
         if self.laid.len() > 2 * (below - above_index) + 200 {
             let from = above_index.saturating_sub(100);

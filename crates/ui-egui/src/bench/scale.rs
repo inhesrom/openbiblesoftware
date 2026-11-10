@@ -455,7 +455,7 @@ fn paragraph(rng: &mut Rng, words: u64, lord: u64) -> String {
 
 /// A Commentary on the whole Bible (about JFB's size): a unit per Bible book, a section every
 /// 1–6 Verses of 60–200 words, each with its Passage Key.
-fn commentary(id: &str, seed: u64) -> Option<Resource> {
+pub(crate) fn commentary(id: &str, seed: u64) -> Option<Resource> {
     let mut m = Manifest::new(
         id,
         "Template Commentary",
