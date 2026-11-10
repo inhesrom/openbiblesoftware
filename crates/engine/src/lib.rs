@@ -145,6 +145,9 @@ mod saved_searches_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod scroll_speed_tests;
 pub mod search;
+pub mod search_preview;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod search_preview_tests;
 #[cfg(test)]
 mod search_tests;
 pub mod search_views;
@@ -220,7 +223,8 @@ pub use bible_search::{
 pub use collections::{Collection, CollectionRule, CollectionSet, parse_rules, rules_text};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use command_box::{
-    COMMANDS_PREFIX, CommandBoxAction, IN_PLACE_COMMANDS, SCRIPTING_COMMANDS, Suggestion, is_listed,
+    COMMANDS_PREFIX, CommandBoxAction, IN_PLACE_COMMANDS, SCRIPTING_COMMANDS, Suggestion,
+    SuggestionGroup, is_listed, suggestion_groups,
 };
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
@@ -306,6 +310,7 @@ pub use search::{
     INDEX_VERSION, IndexStatus, ResourceHits, SearchIndexes, SearchRequest, SearchResults,
     default_search_cache_dir,
 };
+pub use search_preview::{PREVIEW_DEBOUNCE, PREVIEW_HITS, PreviewHit, PreviewHits, SearchPreview};
 pub use search_views::{
     AnalysisColumn, AnalysisRow, AnalysisSort, ChartBar, ChartBy, HitGrid, ResultsFilter,
     ResultsView, SearchAnalysis, chart_bars,

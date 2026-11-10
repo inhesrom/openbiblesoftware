@@ -178,6 +178,9 @@ pub mod size {
     pub const PROSE: f32 = 460.0;
     /// A hover card or a preview pop-up.
     pub const POPOVER: f32 = 360.0;
+    /// The Command box's dropdown, at most (#295): wider than the box, for long titles and
+    /// the Search preview's Verses.
+    pub const RESULTS: f32 = 640.0;
     /// The text column of a pop-up showing Resource text beside its marker (a Footnote).
     pub const POPOVER_TEXT: f32 = 340.0;
     /// A pop-up's scrolling text: the room it leaves for its header and the window's edges,
@@ -724,6 +727,10 @@ pub mod share {
     pub const LIST: f32 = 0.4;
     /// A dialog: at most this much of the window's height or width.
     pub const DIALOG: f32 = 0.75;
+    /// The Command box's dropdown (#295): at most this much of the window's width, and of
+    /// its height.
+    pub const RESULTS_WIDTH: f32 = 0.5;
+    pub const RESULTS_HEIGHT: f32 = 0.6;
     /// A loading skeleton's lines (#223), each this much of the skeleton's width: a short
     /// paragraph's ragged right edge.
     pub const SKELETON: [f32; 3] = [1.0, 0.85, 0.55];

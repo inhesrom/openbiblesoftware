@@ -61,7 +61,7 @@ pub(super) fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
 
 /// The Harness with a library of `resources` (in this Preferred order) written as real
 /// `.obr` files, their Search indexes built.
-fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files) {
+pub(super) fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files) {
     let root = std::env::temp_dir().join(format!("obs-ui-search-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let files = Files(root.clone());

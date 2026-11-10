@@ -360,8 +360,12 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name or a command's name ("close tab") runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database; `>` lists All commands.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name or a command's name ("close tab") runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database; `>` lists All commands. Its dropdown is a results panel: the suggestions under headings with their counts, and the Search preview under the Search row.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
+
+**Search preview**:
+The first five Verses of the ★ Bible that match what is typed in the Command box, shown under its Search row as the user types (once the typing stops), each with its reference and its text with the match highlighted, and how many Verses match in all. Clicking one goes there as Go to does; "Show all N results in Search" opens the Search Tool as Enter on the Search row does. Without a Bible it offers Get Bibles; while the ★ Bible's Search index is being built it says so and fills in when it is ready.
+_Avoid_: Live search, Instant results, Quick search
 
 **All commands**:
 The Command box listing only commands (Help → All commands, Ctrl+Shift+P, or `>` typed in the box): every command it can run, menu commands first, each with its Keyboard shortcut; typing after `>` filters them, and a command that acts on a Tab acts on the focused one. Commands that need what only their own place has (a selection, a dropped item) and commands for scripts are not in it.

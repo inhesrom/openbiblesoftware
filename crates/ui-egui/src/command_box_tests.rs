@@ -6,7 +6,8 @@ use obs_engine::{Guide, TabId};
 use obs_scripture::{Book, Verse};
 
 use super::*;
-use crate::shell::command_box::{BOX_ID, HINT};
+use crate::shell::command_box::{ADD_A_BIBLE, BOX_ID, HINT, Row, show_all_label};
+use crate::tokens::{share, size};
 
 /// Ctrl as Linux and Windows report it.
 const CTRL: Modifiers = Modifiers {
@@ -221,4 +222,433 @@ fn the_hint_names_the_current_command_box_key() {
         .run("keys.clear", &json!({ "command": "command_box.focus" }));
     h.frames(2);
     assert!(h.find(HINT).is_some(), "{:?}", h.texts());
+}
+
+/// Light and dark previews of the dropdown for "love" over a library whose ★ Bible has
+/// more hits than the Search preview shows (#295):
+/// `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui command_box_results_previews` writes
+/// `target/previews/command-box/results-{light,dark}.ppm`, and All commands (`>`) as
+/// `commands-{light,dark}.ppm`.
+#[test]
+fn command_box_results_previews() {
+    if std::env::var_os("UPDATE_PREVIEWS").is_none() {
+        return;
+    }
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/command-box");
+    for theme in ["light", "dark"] {
+        let (mut h, _files) = super::search::harness_of(
+            &format!("command-box-preview-{theme}"),
+            &[
+                obs_engine::testing::kjv_love(),
+                obs_engine::testing::bibles::psalms(12),
+            ],
+        );
+        h.shell.run("view.theme", &json!({ "value": theme }));
+        h.frames(2);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "love");
+        for _ in 0..40 {
+            h.shell.st.session.jobs().pump(16);
+            h.frame();
+        }
+        h.screenshot(&out.join(format!("results-{theme}.ppm")));
+        // All commands: more rows than fit.
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, ">");
+        h.frames(10);
+        h.screenshot(&out.join(format!("commands-{theme}.ppm")));
+    }
+}
+
+// ------------------------------------------------------------- the results panel (#295)
+
+/// Draw `n` frames, running the queued jobs (Inline mode) before each.
+fn pump_frames(h: &mut Harness, n: usize) {
+    for _ in 0..n {
+        h.shell.st.session.jobs().pump(16);
+        h.frame();
+    }
+}
+
+fn dropdown(h: &Harness) -> Rect {
+    h.shell
+        .st
+        .command_box
+        .dropdown
+        .expect("the dropdown is open")
+}
+
+/// The window as egui sees it, in points (smaller at a larger Interface size).
+fn window(h: &Harness) -> Rect {
+    h.ctx.content_rect()
+}
+
+/// The library's ★ Bible is a Psalm whose 12 Verses all say "love", its Search index
+/// built; KJV is second.
+fn love_harness(name: &str) -> (Harness, super::search::Files) {
+    super::search::harness_of(
+        name,
+        &[
+            obs_engine::testing::bibles::psalms(12),
+            obs_engine::testing::kjv_love(),
+        ],
+    )
+}
+
+/// The scroll bar's handle: a filled rectangle at most a scroll bar wide at the dropdown's
+/// right edge.
+fn scroll_handle(h: &Harness) -> Option<Rect> {
+    let d = dropdown(h);
+    h.rects.iter().map(|(r, _)| *r).find(|r| {
+        d.contains_rect(*r)
+            && r.width() <= size::SCROLLBAR
+            && r.height() >= size::ROW
+            && r.right() > d.right() - size::ROW
+    })
+}
+
+/// The dropdown is a results panel (#295): min(640 pt, half the window) wide and up to 60%
+/// of the window tall, right edge under the box, inside the window at every Toolbar position,
+/// in a small window and at every Interface size.
+#[test]
+fn the_dropdown_is_wider_and_taller_and_stays_in_the_window() {
+    let mut h = Harness::new();
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, ">");
+    let d = dropdown(&h);
+    let screen = window(&h);
+    // Before: as wide as the box or 360 pt, and 12 rows (≈ 350 pt) tall.
+    assert_eq!(d.width(), size::RESULTS, "{d:?}");
+    assert!(
+        (d.height() - screen.height() * share::RESULTS_HEIGHT).abs() < 1.0,
+        "{d:?} in {screen:?}"
+    );
+    // The box ends the menu bar, at the window's right edge.
+    assert!(
+        screen.right() - d.right() < size::ROW,
+        "under the box: {d:?}"
+    );
+
+    for position in ["bottom", "left", "right", "top"] {
+        h.shell
+            .run("view.toolbar_position", &json!({ "value": position }));
+        h.frames(2);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, ">");
+        let d = dropdown(&h);
+        assert!(window(&h).contains_rect(d), "{position}: {d:?}");
+        assert_eq!(d.width(), size::RESULTS, "{position}");
+        key(&mut h, Key::Escape, Modifiers::NONE);
+    }
+
+    // A small window: half its width, still inside it.
+    h.screen = vec2(700.0, 420.0);
+    h.frames(2);
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, ">");
+    let d = dropdown(&h);
+    let screen = window(&h);
+    assert!(screen.contains_rect(d), "{d:?} in {screen:?}");
+    assert!(
+        (d.width() - screen.width() * share::RESULTS_WIDTH).abs() < 1.0,
+        "{d:?}"
+    );
+    key(&mut h, Key::Escape, Modifiers::NONE);
+
+    // Interface size scales it with everything else: the same points, more pixels.
+    h.screen = vec2(1400.0, 900.0);
+    for size in ["larger", "smaller", "default"] {
+        h.shell
+            .run("view.interface_size", &json!({ "value": size }));
+        h.frames(3);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, ">");
+        let d = dropdown(&h);
+        let screen = window(&h);
+        assert!(screen.contains_rect(d), "{size}: {d:?} in {screen:?}");
+        let wide = size::RESULTS.min(screen.width() * share::RESULTS_WIDTH);
+        assert!((d.width() - wide).abs() < 1.0, "{size}: {d:?}");
+        key(&mut h, Key::Escape, Modifiers::NONE);
+    }
+}
+
+/// Rows that do not fit show a scroll bar and, at the bottom edge, how many more follow;
+/// with every row shown there is neither (#295).
+#[test]
+fn rows_that_overflow_show_a_scroll_bar_and_how_many_more_follow() {
+    let mut h = Harness::new();
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, ">");
+    h.frames(2);
+    let more = h.shell.st.command_box.more.expect("the commands overflow");
+    assert!(more > 10, "{more}");
+    assert!(h.find(&format!("{more} more")).is_some(), "{:?}", h.texts());
+    assert!(scroll_handle(&h).is_some(), "an always-visible scroll bar");
+    // At the end nothing more follows: the bar stays, the cue goes.
+    key(&mut h, Key::End, Modifiers::NONE);
+    h.frames(3);
+    assert_eq!(h.shell.st.command_box.more, Some(0));
+    assert!(!h.texts().iter().any(|t| t.ends_with(" more")));
+    assert!(scroll_handle(&h).is_some());
+
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "zzz");
+    assert!(h.find("Search for “zzz”").is_some());
+    assert_eq!(h.shell.st.command_box.more, None);
+    assert!(!h.texts().iter().any(|t| t.ends_with(" more")));
+    assert!(
+        scroll_handle(&h).is_none(),
+        "no scroll bar when everything shows"
+    );
+}
+
+/// Suggestions sit under headings with their counts, the best one first (#295).
+#[test]
+fn suggestions_are_grouped_under_headings_with_counts() {
+    let mut h = Harness::new();
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "gen 31:3");
+    let rows = &h.shell.st.command_box.rows;
+    assert_eq!(
+        rows[..2],
+        [
+            Row::Heading {
+                title: "Go to".into(),
+                count: 1
+            },
+            Row::Suggestion(0)
+        ]
+    );
+    let go_to = h.at("Go to");
+    let genesis = h.at("Genesis 31:3");
+    let search = h.at("Search for “gen 31:3”");
+    assert!(go_to.y < genesis.y && genesis.y < search.y);
+    assert!(rows.contains(&Row::Heading {
+        title: "Search".into(),
+        count: 1
+    }));
+}
+
+/// Long labels are cut with "…" before their detail and shown whole on hover; a Resource
+/// title fits whole at a normal window width (#295).
+#[test]
+fn long_labels_are_cut_and_shown_whole_on_hover() {
+    let title = "The Psalms of Ascent with the Hebrew text beside it, two commentaries, a lexicon and notes on every verse";
+    let mut psalms = obs_engine::testing::bibles::psalms(12);
+    psalms.manifest.title = title.to_string();
+    let (mut h, _files) = super::search::harness_of(
+        "command-box-long",
+        &[psalms, obs_engine::testing::kjv_love()],
+    );
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "king james");
+    let whole = "KJV — King James Version with Strong's (test)";
+    assert!(h.find(whole).is_some(), "{:?}", h.texts());
+    key(&mut h, Key::Escape, Modifiers::NONE);
+
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "psa");
+    let long = format!("PSA — {title}");
+    let long = long.as_str();
+    let label = (h.find(long)).unwrap_or_else(|| panic!("the Bible's row: {:?}", h.texts()));
+    let detail = h.find("Open Bible").expect("its detail");
+    let d = dropdown(&h);
+    assert!(
+        label.right() < detail.left(),
+        "cut before the detail: {label:?} {detail:?}"
+    );
+    assert!(d.contains_rect(label));
+    h.events.push(Event::PointerMoved(label.center()));
+    h.frames(60);
+    let shown = h.texts().iter().filter(|t| **t == long).count();
+    assert_eq!(shown, 2, "the row and its tooltip: {:?}", h.texts());
+}
+
+/// ↑/↓, PgUp/PgDn and Home/End reach every row and keep the highlight in view; Esc closes;
+/// screen readers hear where it is ("3 of 99") (#295).
+#[test]
+fn the_keys_reach_every_row_and_screen_readers_hear_the_count() {
+    let mut h = Harness::new();
+    h.ctx.enable_accesskit();
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, ">");
+    h.frames(2);
+    let n = h.shell.st.command_box.suggestions.len();
+    let in_view = |h: &Harness| {
+        let cb = &h.shell.st.command_box;
+        let Some(Row::Suggestion(i)) = cb.selected_row() else {
+            panic!("a suggestion is highlighted");
+        };
+        let label = &cb.suggestions[*i].label;
+        let r = h.find(label).unwrap_or_else(|| panic!("{label} drawn"));
+        dropdown(h).contains_rect(r)
+    };
+    key(&mut h, Key::PageDown, Modifiers::NONE);
+    let page = h.shell.st.command_box.selected;
+    assert!(page > 10, "a page is the rows that fit: {page}");
+    assert!(in_view(&h));
+    key(&mut h, Key::End, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(h.shell.st.command_box.selected, n - 1);
+    assert!(in_view(&h), "the last row scrolled into view");
+    let names: Vec<String> = (h.tree.as_ref().unwrap().nodes.iter())
+        .filter(|(_, node)| node.role() == egui::accesskit::Role::ListBoxOption)
+        .filter_map(|(_, node)| node.label().map(str::to_string))
+        .collect();
+    assert!(
+        names.iter().any(|l| l.ends_with(&format!(", {n} of {n}"))),
+        "{names:?}"
+    );
+    key(&mut h, Key::PageUp, Modifiers::NONE);
+    assert_eq!(h.shell.st.command_box.selected, n - 1 - page);
+    key(&mut h, Key::Home, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(h.shell.st.command_box.selected, 0);
+    assert!(in_view(&h));
+    assert!(
+        h.find("Commands").is_some(),
+        "the heading scrolled back too"
+    );
+    key(&mut h, Key::ArrowUp, Modifiers::NONE);
+    assert_eq!(h.shell.st.command_box.selected, 0);
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(h.shell.st.command_box.dropdown.is_none());
+}
+
+/// The Search preview (#295): the ★ Bible's first five Verses with "love" highlighted show
+/// under the Search row within 150 ms of the typing stopping, with Show all; a click on one
+/// goes there, and Show all opens the Search Tool.
+#[test]
+fn the_search_preview_shows_the_star_bibles_hits_as_you_type() {
+    let (mut h, _files) = love_harness("command-box-preview");
+    key(&mut h, Key::L, CTRL);
+    let typed_at = h.time;
+    type_text(&mut h, "love");
+    // Not yet: the typing may go on.
+    assert!(h.find("Psalms 119:1").is_none(), "{:?}", h.texts());
+    let mut shown_at = None;
+    for _ in 0..30 {
+        pump_frames(&mut h, 1);
+        if h.find("Psalms 119:1").is_some() {
+            shown_at = Some(h.time);
+            break;
+        }
+    }
+    let shown_at = shown_at.expect("the hits came");
+    assert!(
+        shown_at - typed_at <= 0.15 + 1.0 / 60.0,
+        "{}",
+        shown_at - typed_at
+    );
+    for text in [
+        "Search for “love”",
+        "Verses in PSA",
+        "12",
+        "Psalms 119:1",
+        "Psalms 119:5",
+        &show_all_label(12),
+    ] {
+        assert!(h.find(text).is_some(), "{text}: {:?}", h.texts());
+    }
+    assert!(h.find("Psalms 119:6").is_none(), "five only");
+    let search = h.at("Search for “love”");
+    let first = h.at("Psalms 119:1");
+    assert!(search.y < first.y, "under the Search row");
+    assert_eq!(
+        show_all_label(1),
+        "Show all 1 result in Search",
+        "one result"
+    );
+
+    // The keys reach the hits: Search, then the five Verses.
+    key(&mut h, Key::ArrowDown, Modifiers::NONE);
+    key(&mut h, Key::ArrowDown, Modifiers::NONE);
+    assert_eq!(h.shell.st.command_box.selected_row(), Some(&Row::Hit(1)));
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    pump_frames(&mut h, 3);
+    let ps = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource("psalms".into()))
+        .map(|t| t.id)
+        .expect("the ★ Bible opened");
+    assert_eq!(location(&mut h, ps), Some(Verse::new(Book::Psalms, 119, 2)));
+    assert!(h.shell.st.command_box.text.is_empty());
+    assert!(!box_focused(&h));
+
+    // A click on a hit, then Show all.
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    pump_frames(&mut h, 10);
+    h.click_text("Psalms 119:4");
+    pump_frames(&mut h, 2);
+    assert_eq!(location(&mut h, ps), Some(Verse::new(Book::Psalms, 119, 4)));
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    pump_frames(&mut h, 10);
+    h.click_text(&show_all_label(12));
+    pump_frames(&mut h, 2);
+    let tab = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Tool(Tool::Search))
+        .map(|t| t.id)
+        .expect("a Search Tab");
+    assert_eq!(h.shell.st.session.search_tab(tab).unwrap().query, "love");
+}
+
+/// Without a Bible the preview offers Get Bibles; while the ★ Bible is indexed it says so
+/// and fills in when the index is ready. The Search row stays in both (#295).
+#[test]
+fn the_search_preview_without_a_bible_and_while_indexing() {
+    let (mut h, _files) = super::search::harness_of("command-box-no-bible", &[]);
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    pump_frames(&mut h, 10);
+    assert!(h.find("Search for “love”").is_some());
+    h.click_text(ADD_A_BIBLE);
+    pump_frames(&mut h, 2);
+    let ws = &h.shell.st.session.workspace;
+    let focused = ws.focused().and_then(|t| ws.tab(t)).map(|t| t.kind.clone());
+    assert_eq!(focused, Some(TabKind::GetBibles));
+
+    // A library whose ★ Bible's index is being built in the background.
+    let root =
+        std::env::temp_dir().join(format!("obs-command-box-indexing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    obs_engine::testing::bibles::write_library(
+        &root.join("library"),
+        &[obs_engine::testing::bibles::psalms(12)],
+    );
+    let mut h = Harness::new();
+    let s = &mut h.shell.st.session;
+    s.library = obs_engine::Library::new();
+    assert!(s.library.scan(&root.join("library")).is_empty());
+    s.set_search_cache_dir(root.join("cache"));
+    s.refresh_search_indexes();
+    assert!(s.search.is_building());
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    h.frames(10);
+    let indexing = "Indexing PSA… results will appear here";
+    assert!(h.find(indexing).is_some(), "{:?}", h.texts());
+    assert!(h.find("Search for “love”").is_some());
+    for _ in 0..200 {
+        pump_frames(&mut h, 1);
+        if h.find("Psalms 119:1").is_some() {
+            break;
+        }
+    }
+    assert!(h.find("Psalms 119:1").is_some(), "{:?}", h.texts());
+    assert!(h.find(indexing).is_none());
+    drop(h);
+    let _ = std::fs::remove_dir_all(root);
 }

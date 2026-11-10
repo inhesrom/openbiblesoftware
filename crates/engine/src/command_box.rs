@@ -138,6 +138,49 @@ impl CommandBoxAction {
             Self::Recent(_) => "recent",
         }
     }
+
+    /// The heading the dropdown lists it under (#295).
+    pub fn group(&self) -> &'static str {
+        match self {
+            Self::GoTo(_) => "Go to",
+            Self::PassageGuide(_) | Self::ExegeticalGuide(_) | Self::TopicGuide(_) => "Guides",
+            Self::TextComparison(_) | Self::CrossReferences(_) => "Tools",
+            Self::WordStudy(_) | Self::WordStudyWords(_) => "Word Study",
+            Self::OpenResource(_) => "Resources",
+            Self::RestoreLayout(_) => "Layouts",
+            Self::OpenFavorite(_) => "Favorites",
+            Self::OpenSavedSearch(_) => "Saved searches",
+            Self::Command(_) => "Commands",
+            Self::Search(_) => "Search",
+            Self::Recent(_) => "Recent",
+        }
+    }
+}
+
+/// Suggestions under one heading of the dropdown (#295).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuggestionGroup {
+    /// The heading: [`CommandBoxAction::group`].
+    pub heading: &'static str,
+    /// The suggestions' places in the list, best first.
+    pub suggestions: Vec<usize>,
+}
+
+/// `suggestions` (best first) under their headings: each heading where its best suggestion
+/// ranks, so the best suggestion of all still comes first.
+pub fn suggestion_groups(suggestions: &[Suggestion]) -> Vec<SuggestionGroup> {
+    let mut groups: Vec<SuggestionGroup> = Vec::new();
+    for (i, s) in suggestions.iter().enumerate() {
+        let heading = s.action.group();
+        match groups.iter_mut().find(|g| g.heading == heading) {
+            Some(g) => g.suggestions.push(i),
+            None => groups.push(SuggestionGroup {
+                heading,
+                suggestions: vec![i],
+            }),
+        }
+    }
+    groups
 }
 
 /// One line of the Command box's dropdown.
@@ -168,6 +211,8 @@ impl Suggestion {
 #[derive(Debug, Default)]
 pub struct CommandBox {
     recent: Option<Vec<String>>,
+    /// The Search preview under the dropdown's Search row (#295).
+    pub(crate) preview: crate::search_preview::Preview,
 }
 
 impl CommandBox {
@@ -1014,7 +1059,68 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: run_from_box,
     },
+    CommandSpec {
+        id: OPEN_HIT,
+        label: "Open a Search preview hit",
+        shortcut: None,
+        params: &[
+            ParamSpec {
+                name: "hit",
+                kind: ParamKind::Integer,
+                required: true,
+                help: "Which Verse of the Command box's Search preview, from 0",
+            },
+            ParamSpec {
+                name: "new_tab",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "Open a new Tab instead of moving an open one (Alt held)",
+            },
+        ],
+        enabled: always,
+        run: open_preview_hit,
+    },
 ];
+
+const OPEN_HIT: &str = "command_box.open_hit";
+
+/// Open Verse `hit` of the Search preview (#295) as Go to does: its Standard Verse in the
+/// focused Bible (else the most recent Bible Tab, else the ★ Bible). An Unmapped verse, which
+/// only its own Bible has, opens there.
+fn open_preview_hit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let i = (p.i64("hit").and_then(|i| usize::try_from(i).ok())).unwrap_or(usize::MAX);
+    let new_tab = p.bool("new_tab").unwrap_or(false);
+    let hit = match s.search_preview() {
+        crate::search_preview::SearchPreview::Hits(h) => h.hits.get(i).cloned(),
+        _ => None,
+    }
+    .ok_or_else(|| failed(OPEN_HIT, "no such Search preview hit"))?;
+    if let Some(v) = hit.standard {
+        return go_to(s, Passage::verse(v), new_tab);
+    }
+    let kind = TabKind::Resource(hit.bible.clone());
+    let open = (!new_tab)
+        .then(|| s.workspace.most_recent(|t| t.kind == kind))
+        .flatten();
+    let tab = match open {
+        Some(tab) => {
+            s.workspace.focus(tab);
+            tab
+        }
+        None => {
+            let out = s.run(
+                "resource.open",
+                &json!({ "id": hit.bible, "split": new_tab }),
+            )?;
+            out["tab"]
+                .as_u64()
+                .map(TabId)
+                .ok_or_else(|| failed(OPEN_HIT, "no Tab opened"))?
+        }
+    };
+    s.workspace.navigate(tab, hit.native);
+    Ok(json!({ "tab": tab.0, "verse": hit.native.osis() }))
+}
 
 fn run_from_box(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let text = p.str("text").unwrap_or_default().trim().to_string();
