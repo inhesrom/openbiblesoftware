@@ -470,6 +470,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Toolbar menu, Position, Light](gallery/toolbar-menu-position-light-1x.png) | ![Toolbar menu, Position, Dark](gallery/toolbar-menu-position-dark-1x.png) | ![Toolbar menu, Position, Sepia](gallery/toolbar-menu-position-sepia-1x.png) |
 | [2×](gallery/toolbar-menu-position-light-2x.png) | [2×](gallery/toolbar-menu-position-dark-2x.png) | [2×](gallery/toolbar-menu-position-sepia-2x.png) |
 
+### Toolbar menu, left, expanded
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Toolbar menu, left, expanded, Light](gallery/toolbar-menu-left-expanded-light-1x.png) | ![Toolbar menu, left, expanded, Dark](gallery/toolbar-menu-left-expanded-dark-1x.png) | ![Toolbar menu, left, expanded, Sepia](gallery/toolbar-menu-left-expanded-sepia-1x.png) |
+| [2×](gallery/toolbar-menu-left-expanded-light-2x.png) | [2×](gallery/toolbar-menu-left-expanded-dark-2x.png) | [2×](gallery/toolbar-menu-left-expanded-sepia-2x.png) |
+
 ### More launchers
 
 | Light | Dark | Sepia |

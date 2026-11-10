@@ -72,6 +72,8 @@ pub(crate) struct ToolbarUi {
     /// the » button holding those a small window has no room for (#141).
     pub(crate) bar: Option<Rect>,
     pub(crate) overflow: Option<Rect>,
+    /// Where a side Toolbar's pop-out control was drawn this frame (#291).
+    pub(crate) pop_out: Option<Rect>,
     /// The bottom of the menu bar, where the Workspace starts.
     pub(crate) menus_bottom: f32,
     /// Top position: the menu bar's width besides the Launchers (View, Help, the Command box …),
@@ -114,6 +116,7 @@ impl ToolbarUi {
         self.buttons.clear();
         self.last_bar = self.bar.take();
         self.overflow = None;
+        self.pop_out = None;
         self.menu_was_open = std::mem::take(&mut self.menu_open);
     }
 

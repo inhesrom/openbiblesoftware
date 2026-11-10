@@ -132,7 +132,10 @@ fn expanded_survives_a_restart_and_only_applies_at_the_left_and_right() {
     drop(s);
 
     let mut s = launch(&t.db());
-    assert!(s.toolbar.expanded && s.toolbar.is_expanded(), "after a restart");
+    assert!(
+        s.toolbar.expanded && s.toolbar.is_expanded(),
+        "after a restart"
+    );
     let saved = s.user.as_ref().unwrap().preference(TOOLBAR_PREF).unwrap();
     let saved: Value = serde_json::from_str(&saved.unwrap()).unwrap();
     assert_eq!(saved["expanded"], true);

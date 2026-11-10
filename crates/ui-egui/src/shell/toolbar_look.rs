@@ -195,6 +195,120 @@ pub(super) fn launcher_button(
     resp
 }
 
+/// A Launcher's row on an Expanded side Toolbar (#291): taller than a button, for its label
+/// over its detail line.
+pub(super) const EXPANDED_ROW: f32 = size::LAUNCHER + space::L;
+/// The widest an Expanded side Toolbar's text gets; longer text ends in "…".
+const EXPANDED_TEXT_MAX: f32 = size::FIELD;
+
+/// How wide the text of an Expanded row is: its label or its detail line, whichever is
+/// wider, at most [`EXPANDED_TEXT_MAX`].
+pub(super) fn expanded_text_width(ui: &Ui, label: &str, detail: &str) -> f32 {
+    let width = |text: &str, font: FontId| {
+        (ui.painter())
+            .layout_no_wrap(text.to_string(), font, Color32::PLACEHOLDER)
+            .size()
+            .x
+    };
+    (width(label, label_font()).max(width(detail, small_font()))).min(EXPANDED_TEXT_MAX)
+}
+
+/// The width of an Expanded side Toolbar's rows, for its widest `text`: the icon, the text and
+/// the padding.
+pub(super) fn expanded_width(text: f32) -> f32 {
+    BUTTON_PAD * 2.0 + ICON + ICON_GAP + text.min(EXPANDED_TEXT_MAX)
+}
+
+/// Draw a Launcher's row on an Expanded side Toolbar, `width` wide: its icon, its label and
+/// under it the detail line (its shortcut and status), each ending in "…" when too long.
+pub(super) fn expanded_launcher(
+    ui: &mut Ui,
+    which: Launcher,
+    open: bool,
+    width: f32,
+    detail: &str,
+) -> Response {
+    let lk = look();
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, EXPANDED_ROW), Sense::click());
+    let p = ui.painter();
+    if open {
+        crate::components::selected_row(p, rect, RADIUS);
+    } else if resp.hovered() {
+        p.rect_filled(rect, RADIUS, lk.hover);
+    }
+    if resp.has_focus() {
+        p.rect_stroke(
+            rect,
+            RADIUS,
+            Stroke::new(stroke::MEDIUM, lk.accent),
+            StrokeKind::Inside,
+        );
+    }
+    let x = rect.left() + BUTTON_PAD;
+    let icon = Rect::from_center_size(pos2(x + ICON / 2.0, rect.center().y), vec2(ICON, ICON));
+    paint_icon(p, which, icon, &lk);
+    let left = icon.right() + ICON_GAP;
+    let room = rect.right() - BUTTON_PAD - left;
+    let color = if open { lk.accent } else { lk.ink };
+    let label = elided(p, which.title().to_string(), label_font(), room, color);
+    if detail.is_empty() {
+        p.galley(
+            pos2(left, rect.center().y - label.size().y / 2.0),
+            label,
+            color,
+        );
+        return resp;
+    }
+    let line = elided(p, detail.to_string(), small_font(), room, lk.muted);
+    let top = rect.center().y - (label.size().y + line.size().y) / 2.0;
+    let under = top + label.size().y;
+    p.galley(pos2(left, top), label, color);
+    p.galley(pos2(left, under), line, lk.muted);
+    resp
+}
+
+/// The pop-out control at a side Toolbar's end (#291): a double chevron pointing the way the
+/// toolbar's inner edge moves. Collapsed it is a square like the » button; Expanded it is a row
+/// `width` wide with `label` beside the chevron.
+pub(super) fn pop_out_button(ui: &mut Ui, icon: Icon, label: Option<&str>, width: f32) -> Response {
+    let lk = look();
+    let size = match label {
+        Some(_) => vec2(width, BUTTON_HEIGHT),
+        None => overflow_size(),
+    };
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(rect, RADIUS, lk.hover);
+    }
+    if resp.has_focus() {
+        p.rect_stroke(
+            rect,
+            RADIUS,
+            Stroke::new(stroke::MEDIUM, lk.accent),
+            StrokeKind::Inside,
+        );
+    }
+    let square = Rect::from_min_size(rect.min, overflow_size());
+    icons::paint(p, icon, square, icons::LARGE, lk.accent);
+    if let Some(label) = label {
+        let left = square.right() - BUTTON_PAD + ICON_GAP;
+        let text = elided(
+            p,
+            label.to_string(),
+            label_font(),
+            rect.right() - BUTTON_PAD - left,
+            lk.muted,
+        );
+        p.galley(
+            pos2(left, rect.center().y - text.size().y / 2.0),
+            text,
+            lk.muted,
+        );
+    }
+    resp
+}
+
 const BAR_MARGIN: f32 = space::S;
 
 /// How thick a toolbar is across, with its frame: a launcher button (icons only when
@@ -205,6 +319,11 @@ pub(super) fn bar_thickness(vertical: bool) -> f32 {
     } else {
         BUTTON_HEIGHT
     };
+    bar_thickness_around(button)
+}
+
+/// How thick a toolbar is across, with its frame, around buttons `button` thick.
+pub(super) fn bar_thickness_around(button: f32) -> f32 {
     button + 2.0 * BAR_MARGIN + space::XXS
 }
 /// The grip's length along the toolbar.

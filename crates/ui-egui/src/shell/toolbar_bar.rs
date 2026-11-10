@@ -1,12 +1,18 @@
 //! Where the toolbar's Launchers are drawn (#141): at the Top inside the menu bar (the
 //! default), or docked on the Bottom, Left or Right edge as a panel of its own. Left and Right
-//! show icons only, with the labels in the tooltips. What the toolbar shows and where are
-//! app preferences ([`obs_engine::ToolbarSettings`]); this file only draws them and runs the
-//! commands that change them.
+//! show icons only, with the labels in the tooltips, unless Expanded. What the toolbar shows
+//! and where are app preferences ([`obs_engine::ToolbarSettings`]); this file only draws them
+//! and runs the commands that change them.
 //!
+//! - **Pop-out (#291):** at the Left and Right, a button at the toolbar's end flips it between
+//!   Collapsed (icons only) and Expanded (a wider column: each Launcher's icon, label and
+//!   detail line, its shortcut and status), `view.toolbar_expanded`. Expanded, the column is as
+//!   wide as its widest row, up to a maximum, and pushes the Workspace over (Auto-hide: drawn
+//!   over it).
 //! - **Grip:** the dots at the toolbar's start. Dragging it marks the window edge nearest the
 //!   pointer, and letting go moves the toolbar there (`view.toolbar_position`).
-//! - **Right-click** on the toolbar: Position ▸, Auto-hide, Customize….
+//! - **Right-click** on the toolbar: Position ▸, Expanded and Collapsed (Left and Right only),
+//!   Auto-hide, Customize….
 //! - **Auto-hide:** the toolbar is drawn over the Workspace, and only while the pointer is at
 //!   its window edge (or on the toolbar), Alt is held, or one of its panes or menus is open.
 //! - **Overflow:** Launchers a small window has no room for go into a » button's menu.
@@ -19,6 +25,7 @@ use serde_json::{Value, json};
 
 use super::Shell;
 use super::toolbar_look as look;
+use crate::icons::Icon;
 use crate::tokens::space;
 
 /// Space between the toolbar's buttons.
@@ -37,6 +44,7 @@ impl Shell {
     pub(super) fn launcher_strip(&mut self, ui: &mut Ui, room: f32, fill: bool) {
         let settings = self.st.session.toolbar.clone();
         let vertical = settings.position.is_vertical();
+        let expanded = settings.is_expanded();
         let shows = look::ButtonShows {
             icon: settings.shows_icons(),
             label: settings.shows_labels(),
@@ -45,18 +53,36 @@ impl Shell {
         let badge = |w: Launcher| if w == Launcher::Library { updates } else { 0 };
         let along = |v: Vec2| if vertical { v.y } else { v.x };
         let sizes: Vec<(Launcher, f32)> = (settings.shown().into_iter())
-            .map(|w| (w, along(look::launcher_size(ui, w, shows, badge(w)))))
+            .map(|w| {
+                let length = if expanded {
+                    look::EXPANDED_ROW
+                } else {
+                    along(look::launcher_size(ui, w, shows, badge(w)))
+                };
+                (w, length)
+            })
             .collect();
         let lengths: Vec<f32> = sizes.iter().map(|(_, l)| *l).collect();
+        // A side Toolbar keeps room for its pop-out control at its end, whatever overflows.
+        let pop_out = if vertical {
+            GAP + look::BUTTON_HEIGHT
+        } else {
+            0.0
+        };
         let (fitting, needed) = fit(
             &lengths,
-            along(look::grip_size(vertical)),
+            along(look::grip_size(vertical)) + pop_out,
             along(look::overflow_size()),
             room,
         );
         let length = if fill { room.max(needed) } else { needed };
+        let across = if expanded {
+            self.expanded_width(ui, &settings)
+        } else {
+            look::grip_size(true).x
+        };
         let size = if vertical {
-            vec2(look::grip_size(true).x, length)
+            vec2(across, length)
         } else {
             vec2(length, look::BUTTON_HEIGHT)
         };
@@ -112,10 +138,15 @@ impl Shell {
             for (which, _) in &sizes[..fitting] {
                 let which = *which;
                 let open = self.st.toolbar.open == Some(which);
-                let resp = look::launcher_button(ui, which, open, badge(which), shows);
+                let resp = if expanded {
+                    let detail = self.launcher_detail(which, updates);
+                    look::expanded_launcher(ui, which, open, across, &detail)
+                } else {
+                    look::launcher_button(ui, which, open, badge(which), shows)
+                };
                 let name = which.title();
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-                let tip = self.launcher_tip(which, shows.label);
+                let tip = self.launcher_tip(which, shows.label || expanded);
                 let resp = resp.on_hover_text(tip);
                 self.st.toolbar.buttons.insert(which, resp.rect);
                 first = first.or(Some(resp.id));
@@ -151,6 +182,17 @@ impl Shell {
                     }
                 });
             }
+
+            if vertical {
+                let resp = self.pop_out_control(ui, &settings, across);
+                if resp.clicked() {
+                    act = Some(("view.toolbar_expanded", json!({ "on": !expanded })));
+                }
+                resp.context_menu(|ui| {
+                    menu_open = true;
+                    act = toolbar_menu(ui, &settings).or(act.take());
+                });
+            }
         });
         self.st.toolbar.bar = Some(strip.response.rect);
         // F6 puts the keyboard on the first Launcher, or the overflow button (#215).
@@ -162,6 +204,68 @@ impl Shell {
         if let Some((id, params)) = act {
             self.run(id, &params);
         }
+    }
+
+    /// The pop-out control at a side Toolbar's end (#291): » or « by the edge and the state,
+    /// named for what it does and the state it is in.
+    fn pop_out_control(
+        &mut self,
+        ui: &mut Ui,
+        settings: &ToolbarSettings,
+        width: f32,
+    ) -> egui::Response {
+        let expanded = settings.is_expanded();
+        let left = settings.position == ToolbarPosition::Left;
+        // The chevrons point the way the toolbar's inner edge moves.
+        let icon = if left != expanded {
+            Icon::PopOutRight
+        } else {
+            Icon::PopOutLeft
+        };
+        let label = expanded.then_some(POP_OUT_COLLAPSE);
+        let resp = look::pop_out_button(ui, icon, label, width);
+        let name = pop_out_name(expanded);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+        crate::icons::announce_toggled(&resp, expanded);
+        let tip = if expanded {
+            "Collapse the toolbar to icons only"
+        } else {
+            "Expand the toolbar: each Launcher's label, shortcut and status"
+        };
+        let tip = super::with_key(&self.st.session, tip, "view.toolbar_expanded");
+        let resp = resp.on_hover_text(tip);
+        self.st.toolbar.pop_out = Some(resp.rect);
+        resp
+    }
+
+    /// An Expanded row's detail line (#291): the Launcher's shortcut as the platform writes it
+    /// and its status (the Library's count of updates), whichever it has.
+    pub(super) fn launcher_detail(&self, which: Launcher, updates: usize) -> String {
+        let mut parts = Vec::new();
+        let key = super::key_of(&self.st.session, which.command());
+        if !key.is_empty() {
+            parts.push(key);
+        }
+        if which == Launcher::Library && updates > 0 {
+            parts.push(match updates {
+                1 => "1 update".to_string(),
+                n => format!("{n} updates"),
+            });
+        }
+        parts.join(" · ")
+    }
+
+    /// How wide an Expanded side Toolbar's rows are: the widest of the shown Launchers' rows
+    /// and the pop-out control's, at this Interface size, up to the maximum.
+    fn expanded_width(&self, ui: &Ui, settings: &ToolbarSettings) -> f32 {
+        let updates = self.st.session.resource_updates().updates.len();
+        let text = (settings.shown().into_iter())
+            .map(|w| look::expanded_text_width(ui, w.title(), &self.launcher_detail(w, updates)))
+            .fold(
+                look::expanded_text_width(ui, POP_OUT_COLLAPSE, ""),
+                f32::max,
+            );
+        look::expanded_width(text)
     }
 
     /// A Launcher's tooltip: what it offers and its shortcut, after its name when the button
@@ -195,10 +299,15 @@ impl Shell {
                 ToolbarPosition::Left => egui::Panel::left("toolbar"),
                 ToolbarPosition::Right => egui::Panel::right("toolbar"),
             };
+            let thickness = if settings.is_expanded() {
+                look::bar_thickness_around(self.expanded_width(ui, &settings))
+            } else {
+                look::bar_thickness(vertical)
+            };
             panel
                 .resizable(false)
                 .show_separator_line(false)
-                .exact_size(look::bar_thickness(vertical))
+                .exact_size(thickness)
                 .frame(look::bar_frame())
                 .show(ui, |ui| {
                     let room = if vertical {
@@ -350,15 +459,22 @@ impl Shell {
                         }
                     }
                 });
-                if settings.position.is_vertical() {
-                    ui.label(
-                        egui::RichText::new(
-                            "At the left or right, the toolbar shows icons only; labels are in the tooltips.",
-                        )
-                        .small()
-                        .color(crate::theme::c().muted),
-                    );
-                }
+                ui.add_space(space::S);
+                ui.label(egui::RichText::new("At the left or right").strong());
+                ui.horizontal(|ui| {
+                    for (on, label) in [(false, "Collapsed"), (true, "Expanded")] {
+                        if ui.radio(settings.expanded == on, label).clicked() {
+                            acts.push(("view.toolbar_expanded", json!({ "on": on })));
+                        }
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(
+                        "Collapsed shows icons only, with the labels in the tooltips; Expanded shows each Launcher's label, shortcut and status.",
+                    )
+                    .small()
+                    .color(crate::theme::c().muted),
+                );
                 ui.add_space(space::S);
                 ui.label(egui::RichText::new("Position").strong());
                 ui.horizontal(|ui| {
@@ -456,7 +572,37 @@ fn reveal_zone(window: Rect, edge: ToolbarPosition) -> Rect {
     }
 }
 
-/// The toolbar's right-click menu: Position ▸, Auto-hide, Customize….
+/// The pop-out control's label while Expanded.
+const POP_OUT_COLLAPSE: &str = "Collapse";
+
+/// The pop-out control's accessible name: what it does, and the state the toolbar is in.
+pub(crate) fn pop_out_name(expanded: bool) -> &'static str {
+    if expanded {
+        "Collapse toolbar (now expanded)"
+    } else {
+        "Expand toolbar (now collapsed)"
+    }
+}
+
+/// A menu item with a check while `on` (Auto-hide, Expanded, Collapsed).
+fn check_item(ui: &mut Ui, on: bool, label: &str) -> egui::Response {
+    let check = if on {
+        egui::Atom::from(crate::icons::image(
+            ui.ctx(),
+            crate::icons::Icon::Check,
+            crate::icons::BODY,
+            crate::theme::c().muted,
+        ))
+    } else {
+        crate::icons::blank()
+    };
+    let item = ui.add(crate::components::button((check, label)));
+    crate::icons::announce_toggled(&item, on);
+    item
+}
+
+/// The toolbar's right-click menu: Position ▸, Expanded and Collapsed (at the Left and
+/// Right), Auto-hide, Customize….
 fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
     let mut act: Act = None;
     crate::components::menu(ui, (crate::icons::blank(), "Position"), |ui| {
@@ -470,18 +616,14 @@ fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
             }
         }
     });
-    let check = if settings.auto_hide {
-        egui::Atom::from(crate::icons::image(
-            ui.ctx(),
-            crate::icons::Icon::Check,
-            crate::icons::BODY,
-            crate::theme::c().muted,
-        ))
-    } else {
-        crate::icons::blank()
-    };
-    let auto_hide = ui.add(crate::components::button((check, "Auto-hide")));
-    crate::icons::announce_toggled(&auto_hide, settings.auto_hide);
+    if settings.position.is_vertical() {
+        for (on, label) in [(true, "Expanded"), (false, "Collapsed")] {
+            if check_item(ui, settings.expanded == on, label).clicked() {
+                act = Some(("view.toolbar_expanded", json!({ "on": on })));
+            }
+        }
+    }
+    let auto_hide = check_item(ui, settings.auto_hide, "Auto-hide");
     if auto_hide.clicked() {
         act = Some(("view.toolbar_auto_hide", json!({})));
     }
