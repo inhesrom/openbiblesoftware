@@ -160,6 +160,18 @@ pub(super) fn licence_badge(licence: Option<&str>) -> (&'static str, Color32) {
     (licence_badge_text(licence), licence_class_colour(class))
 }
 
+/// A short licence badge and its colour, from a manifest's SPDX expression: "Public domain"
+/// for `LicenseRef-PublicDomain` and SWORD's `LicenseRef-PD`, the raw id at most in a tooltip.
+pub(super) fn spdx_badge(spdx: &str) -> (&'static str, Color32) {
+    if spdx.contains("PublicDomain") || spdx.split_whitespace().any(|t| t == "LicenseRef-PD") {
+        licence_badge(Some("public domain"))
+    } else if spdx == obs_model::LICENSE_UNKNOWN {
+        licence_badge(None)
+    } else {
+        licence_badge(Some(spdx).filter(|s| !s.is_empty()))
+    }
+}
+
 fn licence_class_colour(class: LicenceClass) -> Color32 {
     match class {
         LicenceClass::FreeToShare => theme::c().verdigris,
