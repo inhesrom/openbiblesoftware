@@ -350,8 +350,8 @@ fn width_changes_keep_the_reader_on_the_same_verse() {
 }
 
 /// AUD-LAYOUT-TEXT-9 (#255): a Panel's edge dragged re-estimates every block's height from
-/// what was measured of it once, without styling its paragraph again; new text settings
-/// measure again.
+/// what was measured of it once, without styling its paragraph again; so does a new Text size
+/// (#299), while other new text settings measure again.
 #[test]
 fn width_changes_estimate_heights_without_styling_paragraphs_again() {
     let mut view = view();
@@ -372,7 +372,129 @@ fn width_changes_estimate_heights_without_styling_paragraphs_again() {
         size: 24.0,
         ..TextSettings::default()
     });
+    assert_eq!(
+        view.estimated, blocks,
+        "a Text size styled paragraphs again"
+    );
+    view.set_settings(TextSettings {
+        size: 24.0,
+        line_spacing: 1.5,
+        ..TextSettings::default()
+    });
     assert_eq!(view.estimated, 2 * blocks);
+}
+
+/// A new Text size (#299) gives every block the height estimate a view opened at that size
+/// gives it, without styling a paragraph: the document is as tall as it would be.
+#[test]
+fn a_text_size_change_estimates_heights_as_a_view_opened_at_that_size() {
+    let mut view = view();
+    for size in [21.0, 30.0, 12.0, 40.0] {
+        let settings = TextSettings {
+            size,
+            ..TextSettings::default()
+        };
+        view.set_settings(settings);
+        let mut fresh = ReadingView::new(bible(), settings);
+        fresh.set_width(450.0);
+        let (_, scaled) = view.position();
+        let (_, styled) = fresh.position();
+        assert!(
+            (scaled - styled).abs() <= styled * 1e-4,
+            "{size} pt: {scaled} scaled, {styled} styled"
+        );
+    }
+    assert_eq!(view.estimated, view.doc.blocks.len() as u64);
+}
+
+/// The Current location stays the same Verse across Text size changes (#299), once the
+/// heights have settled: after a jump, and after the reader scrolled there.
+#[test]
+fn text_size_changes_keep_the_current_location() {
+    for scrolled in [false, true] {
+        let mut view = view();
+        view.jump_to(Verse::new(Book::Genesis, 31, 20));
+        settle(&mut view, 600.0);
+        if scrolled {
+            view.scroll_by(57.0);
+            settle(&mut view, 600.0);
+        }
+        let at = view.current_location().unwrap();
+        for size in [21.0, 26.0, 31.0, 14.0, 20.0] {
+            view.set_settings(TextSettings {
+                size,
+                ..TextSettings::default()
+            });
+            settle(&mut view, 600.0);
+            assert_eq!(view.current_location(), Some(at), "{size} pt, {scrolled}");
+            // Its line is at the top of the view.
+            let top = view.verse_top(at, 600.0).unwrap();
+            assert!(top.abs() < size * 1.6, "{size} pt: {at:?} at {top}");
+        }
+    }
+}
+
+/// A Resource without Verses (a Commentary) keeps the text at the top of the view there across
+/// a Text size change (#299).
+#[test]
+fn text_size_changes_keep_a_commentarys_line_at_the_top() {
+    let doc = Arc::new(ReadingDoc::from_resource(
+        bench::scale::commentary("text-size-commentary", 7).unwrap(),
+    ));
+    let mut view = ReadingView::new(doc, TextSettings::default());
+    view.set_width(450.0);
+    let unit = view.doc.units.len() / 2;
+    assert!(view.jump_to_pos(unit, view.doc.units[unit].text.len() / 2));
+    view.scroll_by(41.0);
+    settle(&mut view, 600.0);
+    for size in [24.0, 32.0, 16.0] {
+        let at = view.text_anchor().unwrap();
+        view.set_settings(TextSettings {
+            size,
+            ..TextSettings::default()
+        });
+        settle(&mut view, 600.0);
+        // Lines break elsewhere at another size: the line holding the old top line's start.
+        let top = view.text_top(at.unit, at.byte, 600.0).unwrap();
+        assert!(top.abs() < 0.5, "{size} pt: the old top line is at {top}");
+    }
+}
+
+/// Holding Ctrl+Plus for 10 steps (#299) leaves no queue of stale layouts: each step's
+/// layouts still waiting for a worker when the next comes are skipped, not done, so only the
+/// final size is laid out by the workers and none of their layouts is thrown away.
+#[test]
+fn holding_ctrl_plus_queues_no_stale_layouts() {
+    let mut view = ReadingView::new(bench::synthetic_bible(), TextSettings::default());
+    view.set_width(450.0);
+    view.jump_to(Verse::new(Book::Exodus, 20, 1));
+    settle(&mut view, 900.0);
+    let (ran, stale) = (view.worker_layouts(), view.stale_layouts);
+    // The workers are busy elsewhere while the key repeats: every step's layouts queue up.
+    view.hold_layouts();
+    let mut submitted = 0;
+    let mut size = TextSettings::default().size;
+    for _ in 0..10 {
+        size += 1.0;
+        view.set_settings(TextSettings {
+            size,
+            ..TextSettings::default()
+        });
+        submitted = view.frame(900.0, Some(SYNC_BUDGET)).stats.submitted;
+        assert!(submitted > 0, "{size} pt: nothing for the workers");
+    }
+    view.release_layouts();
+    settle(&mut view, 900.0);
+    assert_eq!(view.stale_layouts, stale, "stale layouts came back");
+    let done = view.worker_layouts() - ran;
+    // The final size's layouts, and what settling it asked for since: not the 9 steps before.
+    assert!(done >= submitted as u64, "{done} of {submitted}");
+    assert!(
+        done < 4 * submitted as u64,
+        "{done} layouts for {submitted}"
+    );
+    assert_eq!(view.settings().size, size);
+    assert!(view.drew_all_text());
 }
 
 #[test]
@@ -673,8 +795,9 @@ fn the_find_scenarios_word_is_sparse() {
 /// Every Shell-driven feature scenario (#183) sets up, shows its feature with realistic data
 /// and measures it: the Atlas on a chapter of 120 places, a whole-Bible search's Grid and
 /// Chart, the Exegetical Guide on Genesis 24, the Topic Guide on Prayer with every subtopic,
-/// and Get Resources over 3,000 rows. Each waits for what it must show, so a scenario that
-/// shows nothing fails here rather than measuring an empty Tab. Each times its feature Tab's
+/// Get Resources over 3,000 rows, and Text size changes over whole-Bible Tabs (#299). Each
+/// waits for what it must show, so a scenario that shows nothing fails here rather than
+/// measuring an empty Tab. Each times its feature Tab's
 /// synchronous work every frame: a seeded 3 ms there (within a 60 Hz frame, over #19's 2 ms
 /// budget) shows in every scenario's p99, where the gate catches it.
 #[test]
@@ -697,6 +820,9 @@ fn every_shell_scenario_shows_its_feature_and_measures_it() {
         assert!(settle < bench::SETTLE_LIMIT, "{r:?}");
         assert!(r.sync_layout_p50_ms >= 3.0, "{r:?}");
         assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
+        // The Text size scenarios (#299) also time each press in milliseconds, for the gate.
+        let timed = r.name.starts_with("text-size");
+        assert_eq!(r.action_ms_max.is_some(), timed, "{r:?}");
     }
 }
 

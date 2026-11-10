@@ -72,6 +72,9 @@ pub struct FeatureLimits {
     /// Frames an action may take to show its result (0: its own frame).
     pub max_settle_frames: Option<usize>,
     pub max_placeholder_frames: Option<usize>,
+    /// Milliseconds an action may take to show its result, from its frame starting (#299: a
+    /// Text size change in every open Tab, 100 ms).
+    pub max_action_ms: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +111,9 @@ pub struct Scenario {
     /// Feature scenarios: most frames an action took to show its result.
     #[serde(default)]
     pub settle_frames_max: Option<usize>,
+    /// Feature scenarios timed in milliseconds: longest an action took to show its result.
+    #[serde(default)]
+    pub action_ms_max: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,6 +244,15 @@ fn feature_violations(name: &str, s: &Scenario, limits: &FeatureLimits) -> Vec<S
                 format!("{name}: an action took {n} frames to show (max {max})"),
             ),
             None => check(false, format!("{name}: no settle frames measured")),
+        }
+    }
+    if let Some(max) = limits.max_action_ms {
+        match s.action_ms_max {
+            Some(ms) => check(
+                ms <= max,
+                format!("{name}: an action took {ms:.1} ms to show (max {max})"),
+            ),
+            None => check(false, format!("{name}: no action time measured")),
         }
     }
     if let Some(max) = limits.max_placeholder_frames {
@@ -459,8 +474,11 @@ pub fn run(root: &Path) -> Result<()> {
         let sync = s
             .sync_layout_p99_ms
             .map_or(String::new(), |ms| format!("  sync p99 {ms:>5.2} ms"));
+        let action = s
+            .action_ms_max
+            .map_or(String::new(), |ms| format!("  action max {ms:.1} ms"));
         eprintln!(
-            "  {:<16} missed {:>5.2}%  placeholder frames {:>3}  frame CPU p50 {:>5.2} ms, p99 {:>5.2} ms{sync}{settle}",
+            "  {:<16} missed {:>5.2}%  placeholder frames {:>3}  frame CPU p50 {:>5.2} ms, p99 {:>5.2} ms{sync}{settle}{action}",
             s.name, s.missed_pct, s.placeholder_frames, s.cpu_p50_ms, s.cpu_p99_ms
         );
     }
@@ -508,6 +526,7 @@ mod tests {
             cpu_p99_ms: 2.0,
             sync_layout_p99_ms: Some(1.0),
             settle_frames_max: settle,
+            action_ms_max: Some(10.0),
         }
     }
 
@@ -567,6 +586,8 @@ mod tests {
             "filters",
             "get-resources",
             "resize",
+            "text-size",
+            "text-size-tools",
         ] {
             assert!(
                 names.contains(&feature),
@@ -605,6 +626,31 @@ mod tests {
             );
         }
         assert_eq!(v.len(), 5, "{v:?}");
+    }
+
+    /// A Text size change (#299) shows in every open Tab within 100 ms of the key press, in
+    /// reading Tabs and in Text Comparison and Search Tabs alike; slower, or not timed, fails.
+    #[test]
+    fn a_text_size_change_slower_than_100_ms_fails_the_gate() {
+        let t = thresholds();
+        for name in ["text-size", "text-size-tools"] {
+            assert_eq!(t.features[name].max_action_ms, Some(100.0), "{name}");
+        }
+        let mut r = report(0.0, 0, 1.2);
+        for s in &mut r.scenarios {
+            match s.name.as_str() {
+                "text-size" => s.action_ms_max = Some(530.0),
+                "text-size-tools" => s.action_ms_max = None,
+                _ => {}
+            }
+        }
+        assert_eq!(
+            violations(&r, &t),
+            [
+                "text-size: an action took 530.0 ms to show (max 100)",
+                "text-size-tools: no action time measured",
+            ]
+        );
     }
 
     fn scale_report() -> ScaleReport {

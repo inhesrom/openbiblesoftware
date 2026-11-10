@@ -514,6 +514,39 @@ fn estimates_are_close_to_real_heights() {
     }
 }
 
+/// A new Text size scales a block's height estimate rather than styling it again (#299): the
+/// scaled estimate is what styling the block at the new size would measure, for English and
+/// Hebrew blocks of every kind, with interlinear rows too.
+#[test]
+fn a_scaled_height_estimate_is_the_estimate_at_the_new_size() {
+    let base = TextSettings::default();
+    for (unit, direction) in [
+        (english_unit(), Direction::Ltr),
+        (hebrew_unit(), Direction::Rtl),
+    ] {
+        for block in unit_blocks(&unit) {
+            for size in [12.0, 21.0, 40.0] {
+                let at = TextSettings { size, ..base };
+                let mut from = block_paragraph(&unit, &block, direction, &base);
+                let mut fresh = block_paragraph(&unit, &block, direction, &at);
+                for (p, s) in [(&mut from, &base), (&mut fresh, &at)] {
+                    p.interlinear = Some(Interlinear::rows_only(2, s));
+                }
+                let scaled = HeightEstimate::of(&from).scaled(size / base.size);
+                let expected = HeightEstimate::of(&fresh);
+                for width in [200.0, 360.0, 600.0] {
+                    let (a, b) = (scaled.at(width), expected.at(width));
+                    assert!(
+                        (a - b).abs() <= b * 1e-4,
+                        "{:?} at {size} pt, {width} px: scaled {a}, styled {b}",
+                        block.kind
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Colour stays a role all the way through layout (#21 rule 4).
 #[test]
 fn no_layout_type_holds_a_colour_value() {

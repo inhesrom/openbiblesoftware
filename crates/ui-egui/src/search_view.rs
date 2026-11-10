@@ -106,8 +106,22 @@ impl SearchView {
     pub fn set_settings(&mut self, settings: TextSettings) {
         if settings != self.settings {
             self.settings = settings;
+            // Hits queued for layout at the old settings are not wanted any more (#299).
+            self.snippets.forget_pending();
+            self.last = SearchFrame::default();
             self.reset_heights();
         }
+    }
+
+    pub fn settings(&self) -> &TextSettings {
+        &self.settings
+    }
+
+    /// Whether the last frame drew hits in view, every one with its text (none as a
+    /// placeholder), since the text settings last changed (the Text size bench, #299).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn drew_all_text(&self) -> bool {
+        self.last.drawn > 0 && self.last.placeholders == 0
     }
 
     fn line_height(&self) -> f32 {

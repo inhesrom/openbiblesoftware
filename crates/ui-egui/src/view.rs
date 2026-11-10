@@ -126,6 +126,9 @@ pub struct ReadingView {
     pub layouts: u64,
     /// Blocks styled for a height estimate so far (for tests).
     pub estimated: u64,
+    /// Worker layouts that arrived after the text was laid out anew (a new size, say), and
+    /// so were thrown away (for tests).
+    pub stale_layouts: u64,
     client: LayoutClient,
     /// Bumped when width or settings change; worker results from older generations are dropped.
     generation: u64,
@@ -151,9 +154,14 @@ pub struct ReadingView {
     /// The height of the viewport last drawn.
     viewport: f32,
     /// Every block's height estimate at any width, for the settings and interlinear lines
-    /// (their keys) it was measured with: a new width only does the arithmetic (#255).
+    /// (their keys) it was measured with: a new width only does the arithmetic (#255), and so
+    /// does a new Text size (#299).
     estimates: Vec<HeightEstimate>,
     estimates_key: Option<(u64, Option<u64>)>,
+    /// The Text size the estimates were measured at: other sizes scale them (#299).
+    estimates_size: f32,
+    /// What the last frame since the text was last laid out anew cost (`None`: none yet).
+    drawn: Option<FrameStats>,
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
@@ -196,6 +204,7 @@ impl ReadingView {
             sticky_text: None,
             layouts: 0,
             estimated: 0,
+            stale_layouts: 0,
             client: LayoutClient::default(),
             generation: 0,
             pending_follow: None,
@@ -210,6 +219,8 @@ impl ReadingView {
             viewport: 0.0,
             estimates: Vec::new(),
             estimates_key: None,
+            estimates_size: TextSettings::DEFAULT_SIZE,
+            drawn: None,
         };
         view.set_width(600.0);
         view
@@ -267,32 +278,51 @@ impl ReadingView {
 
     fn reset_heights(&mut self) {
         self.glide = None;
-        // Keep the reader on the same verse across a relayout.
-        let keep = self.current_location_opt();
-        let key = (
-            self.settings.key(),
-            self.interlinear.as_ref().map(|s| s.key()),
-        );
-        if self.estimates_key != Some(key) {
-            let interlinear = self.interlinear.as_deref();
+        // Keep the reader on the same verse across a relayout. A Commentary scrolled by hand
+        // (its verse is its section's, which may start far above) and a Resource without
+        // verses keep the same text at the top instead.
+        let commentary = self.doc.manifest.resource_type == obs_model::ResourceType::Commentary;
+        let by_verse = self.sticky.is_some() || !commentary;
+        let keep = self.current_location_opt().filter(|_| by_verse);
+        let keep_text = (keep.is_none() && self.sticky_text.is_none() && !self.heights.is_empty())
+            .then(|| self.text_anchor())
+            .flatten();
+        let interlinear = self.interlinear.as_ref().map(|s| s.key());
+        // A new Text size scales the estimates measured at another size (#299): styling every
+        // block of a whole Bible again takes hundreds of milliseconds.
+        let measured_at = TextSettings {
+            size: self.estimates_size,
+            ..self.settings
+        };
+        if self.estimates_key != Some((measured_at.key(), interlinear)) {
+            let source = self.interlinear.as_deref();
             self.estimates = (0..self.doc.blocks.len())
                 .map(|i| {
-                    paragraph(&self.doc, i, &self.settings, interlinear, true)
+                    paragraph(&self.doc, i, &self.settings, source, true)
                         .map_or_else(HeightEstimate::default, |p| HeightEstimate::of(&p))
                 })
                 .collect();
-            self.estimates_key = Some(key);
+            self.estimates_key = Some((self.settings.key(), interlinear));
+            self.estimates_size = self.settings.size;
             self.estimated += self.estimates.len() as u64;
         }
-        let width = self.width;
-        self.heights = HeightIndex::new(self.estimates.iter().map(|e| e.at(width)).collect());
+        let (width, k) = (self.width, self.settings.size / self.estimates_size);
+        self.heights = HeightIndex::new(
+            (self.estimates.iter())
+                .map(|e| e.scaled(k).at(width))
+                .collect(),
+        );
         self.laid.clear();
+        self.drawn = None;
         self.generation += 1;
+        // Layouts queued at the old settings are not wanted: the workers skip them (#299).
         self.client.forget_pending();
         if let Some(at) = self.sticky_text {
             self.place_text(at);
         } else if let Some(v) = keep {
             self.jump_to(v);
+        } else if let Some(at) = keep_text {
+            self.place_text(TextAnchor { into: 0.0, ..at });
         }
     }
 
@@ -675,6 +705,31 @@ impl ReadingView {
         self.laid.contains_key(&self.anchor.0)
     }
 
+    /// Whether a frame has drawn every block in view since the text was last laid out anew (a
+    /// new size, say), none as a placeholder: the Text size bench's "change shown" (#299).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn drew_all_text(&self) -> bool {
+        self.drawn.is_some_and(|s| s.placeholders == 0)
+    }
+
+    /// Layouts the workers did for this view, stale ones included (tests).
+    #[cfg(test)]
+    pub(crate) fn worker_layouts(&self) -> u64 {
+        self.client.ran()
+    }
+
+    /// Keep this view's layouts back from the workers until [`Self::release_layouts`], as a
+    /// pool busy with other work would (tests).
+    #[cfg(test)]
+    pub(crate) fn hold_layouts(&mut self) {
+        self.client.hold();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn release_layouts(&mut self) {
+        self.client.release();
+    }
+
     /// Whether workers still have layouts for this view in flight.
     pub fn has_pending(&self) -> bool {
         self.client.pending() > 0
@@ -692,6 +747,8 @@ impl ReadingView {
                 self.laid.insert(i, laid);
                 self.layouts += 1;
                 stats.applied += 1;
+            } else {
+                self.stale_layouts += 1;
             }
         }
         // Finish a follow once its block has arrived.
@@ -772,6 +829,7 @@ impl ReadingView {
             }
             above += self.height_of(above_index);
         }
+        self.drawn = Some(stats);
         // Keep layouts around the prefetch window, drop the rest.
         if self.laid.len() > 2 * (below - above_index) + 200 {
             let from = above_index.saturating_sub(100);

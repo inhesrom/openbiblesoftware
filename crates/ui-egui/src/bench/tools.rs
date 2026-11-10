@@ -86,6 +86,8 @@ pub(super) struct ShellBench {
     action_slowdown: Duration,
     /// Timed frames in which the feature Tab was not drawn.
     undrawn_frames: usize,
+    /// When the last frame's work ended, before any pacing.
+    frame_end: Instant,
     /// The next frame is an action's own ([`Self::settle`]).
     action_frame: bool,
     /// The frames from an action whose result is exempt from the synchronous-work budget
@@ -107,7 +109,7 @@ fn collect_texts(shape: &Shape, out: &mut Vec<(Rect, String)>) {
 impl ShellBench {
     /// A Shell over a library of `resources` (in this Preferred order) written to a fresh
     /// folder of its own ([`Folder::new`]), in the default layout.
-    fn new(
+    pub(super) fn new(
         cfg: &BenchConfig,
         name: &str,
         resources: &[Resource],
@@ -156,6 +158,7 @@ impl ShellBench {
             slowdown: cfg.feature_slowdown,
             action_slowdown: cfg.action_slowdown,
             undrawn_frames: 0,
+            frame_end: Instant::now(),
             action_frame: false,
             in_exempt_action: false,
             _folder: None,
@@ -201,6 +204,7 @@ impl ShellBench {
         let start = Instant::now();
         std::hint::black_box(self.ctx.tessellate(out.shapes, out.pixels_per_point));
         let elapsed = ui_time + start.elapsed();
+        self.frame_end = Instant::now();
         let feature = self.shell.st.timed_tab.took.take();
         if let Some(s) = samples {
             s.cpu.push(elapsed.as_secs_f64() * 1000.0);
@@ -256,6 +260,31 @@ impl ShellBench {
         }
         self.in_exempt_action = false;
         frames
+    }
+
+    /// [`Self::settle`], also timed in milliseconds: from the action's frame starting to the end
+    /// of the frame that shows its result (pacing included, as the user waits it out). Both
+    /// are recorded in `samples`.
+    pub(super) fn settle_timed(
+        &mut self,
+        samples: &mut Samples,
+        work: ActionWork,
+        action: impl FnOnce(&mut Shell),
+        ready: impl Fn(&Self) -> bool,
+    ) {
+        let start = Instant::now();
+        let frames = self.settle(samples, work, action, ready);
+        samples.settle.push(frames);
+        let ms = self.frame_end.duration_since(start).as_secs_f64() * 1000.0;
+        samples.action_ms.push(ms);
+    }
+
+    /// A timed frame on the way to an action's result (a key repeat before the last one, say):
+    /// exempt from the synchronous-work budget, as [`ActionWork::Exempt`] frames are.
+    pub(super) fn exempt_frame(&mut self, samples: &mut Samples) {
+        self.in_exempt_action = true;
+        self.frame(Some(samples), |_| {});
+        self.in_exempt_action = false;
     }
 
     /// Untimed frames until `ready` (the scenario's setup).
@@ -394,10 +423,12 @@ pub(crate) fn run(cfg: &BenchConfig) -> (Vec<ScenarioReport>, Vec<String>) {
     add("exegetical-guide", exegetical_guide(cfg));
     add("topic-guide", topic_guide(cfg));
     add("get-resources", get_resources(cfg));
+    add("text-size", super::text_size::text_size(cfg));
+    add("text-size-tools", super::text_size::text_size_tools(cfg));
     (reports, errors)
 }
 
-fn built(r: Option<Resource>, what: &str) -> Result<Resource, String> {
+pub(super) fn built(r: Option<Resource>, what: &str) -> Result<Resource, String> {
     r.ok_or_else(|| format!("the synthetic {what} is invalid"))
 }
 

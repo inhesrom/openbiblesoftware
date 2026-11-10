@@ -9,23 +9,27 @@
 //! Feature scenarios (#183) follow the reading ones: `interlinear` (every pane with
 //! interlinear lines), `reading-layout` (every Reading layout option on, #209) and `find`
 //! (stepping a Find bar through matches far apart) on the same panes, and the Shell-driven ones of [`tools`] (Atlas, Search Grid and Chart, Exegetical and
-//! Topic Guides, Get Resources), each with its own settle-frame count.
+//! Topic Guides, Get Resources, Text size), each with its own settle-frame count.
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod library;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod scale;
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod text_size;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tools;
 
 /// The Shell-driven feature scenarios, in report order.
-pub const SHELL_SCENARIOS: [&str; 6] = [
+pub const SHELL_SCENARIOS: [&str; 8] = [
     "atlas",
     "search-grid",
     "search-chart",
     "exegetical-guide",
     "topic-guide",
     "get-resources",
+    "text-size",
+    "text-size-tools",
 ];
 
 /// Most frames an action may take to show its result before the bench gives up on it.
@@ -126,6 +130,10 @@ pub struct ScenarioReport {
     /// Feature scenarios: most frames any action took to show its result (0: its own frame).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub settle_frames_max: Option<usize>,
+    /// Feature scenarios timed in milliseconds (`text-size`, #299): longest from an action's
+    /// frame starting to the end of the frame that shows its result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_ms_max: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -158,6 +166,8 @@ pub(crate) struct Samples {
     placeholder_frames: usize,
     /// Settle frames of each action of a feature scenario.
     settle: Vec<usize>,
+    /// Milliseconds from each action to its result showing, where a scenario times them.
+    action_ms: Vec<f64>,
 }
 
 fn percentile(v: &[f64], p: f64) -> f64 {
@@ -185,6 +195,8 @@ impl Samples {
             sync_layout_p99_ms: percentile(&self.sync, 0.99),
             sync_layout_max_ms: self.sync.iter().copied().fold(0.0, f64::max),
             settle_frames_max: self.settle.iter().copied().max(),
+            action_ms_max: (!self.action_ms.is_empty())
+                .then(|| self.action_ms.iter().copied().fold(0.0, f64::max)),
         }
     }
 }

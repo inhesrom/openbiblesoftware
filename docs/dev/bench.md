@@ -35,6 +35,8 @@ tessellation, the UI thread's work before the GPU.
 | `exegetical-guide` | a Tagged Hebrew Torah (10–30 words a verse) and its Lexicon | Genesis 24 word by word scrolled, then other chapters | ≤ 6 frames |
 | `topic-guide` | two topical indexes of 1,000 topics; Prayer has 60 subtopics of 20 Passages each | scrolls, shows every subtopic, scrolls, switches topic | ≤ 6 frames |
 | `get-resources` | a 3,000-row catalog (the live SWORD repositories list about 2,200) | types a search a key at a time, erases it, switches the type filter to Bibles and back, scrolls | ≤ 1 frame |
+| `text-size` | two whole Bibles (verses of 15–35 words, one with Strong's numbers) and a whole-Bible Commentary, each in its own Tab at Psalm 119 | Ctrl+Plus and Ctrl+Minus in turn, then Ctrl+Plus held for 10 steps (a key repeat every other frame), the first Bible scrolled between | ≤ 6 frames and ≤ 100 ms |
+| `text-size-tools` | the same two Bibles in a Text Comparison over Psalm 119 and a whole-Bible Search's Verses | the same presses, the Text Comparison scrolled between | ≤ 6 frames and ≤ 100 ms |
 
 Every feature scenario has the steady-scrolling budget: at most 1% missed frames. A settle
 budget counts frames from an action until the feature shows its result (0: its own frame). A
@@ -58,6 +60,12 @@ missed at 60 Hz.
   block a jump lands in. Those frames are held to the settle and missed-frame budgets
   instead. Get Resources filters and sorts its catalog on the UI thread in the frame a search
   key is typed or the type filter changes; those frames are not exempt.
+- `text-size` and `text-size-tools` (#299) time each Text size change in milliseconds too,
+  from the key press's frame starting to the end of the first frame that draws every open
+  Tab's text at the new size with no placeholder (`action_ms_max`, held to `max_action_ms`:
+  100 ms). Held keys are timed from the last repeat: earlier steps' layouts must not queue up
+  ahead of it. Before #299 a press styled every block of each whole-Bible Tab again on the UI
+  thread, about 700 ms.
 
 CI runs the gate three more times, each with a seeded slowdown that must fail it:
 

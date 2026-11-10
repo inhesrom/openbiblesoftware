@@ -94,6 +94,22 @@ max_missed_pct = 1.0
 max_sync_p99_ms = 2.0
 max_settle_frames = 1
 
+# A Text size change (#299): Ctrl+Plus and Ctrl+Minus pressed, then held for 10 steps, with
+# the timed Tab scrolled between presses. Each press must show in every open Tab within
+# 100 ms of the key press (`max_action_ms`, from the press's frame starting to the end of the
+# frame that draws every Tab's text at the new size); before #299 it took about 700 ms.
+[features.text-size]        # two whole-Bible Tabs and a whole-Bible Commentary Tab
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
+max_settle_frames = 6
+max_action_ms = 100.0
+
+[features.text-size-tools]  # a Text Comparison of two whole Bibles and a whole-Bible Search
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
+max_settle_frames = 6
+max_action_ms = 100.0
+
 # The scale scenario (#227): `cargo xtask bench --scale`, a manual gate (its library needs
 # about 22 GB of disk, about 4 GB where files are cloned; docs/dev/bench.md). The app over a
 # generated library of 2,000 Resources, from `main` to the ★ Bible's text, its Library Tab

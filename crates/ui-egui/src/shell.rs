@@ -451,6 +451,29 @@ impl Shell {
             .is_some_and(crate::view::ReadingView::top_block_laid)
     }
 
+    /// Whether Tab `tab`'s reading pane last drew its text at Text size `size`, every block
+    /// in view laid out (the Text size bench's "change shown", #299).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn reading_text_drawn_at(&self, tab: TabId, size: f32) -> bool {
+        (self.st.tabs.get(&tab))
+            .and_then(|t| t.view.as_ref())
+            .is_some_and(|v| v.settings().size == size && v.drew_all_text())
+    }
+
+    /// Whether Text Comparison or Search Tab `tab` last drew its text at Text size `size`,
+    /// every row in view laid out (the Text size bench, #299).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn tool_text_drawn_at(&self, tab: TabId, size: f32) -> bool {
+        let Some(t) = self.st.tabs.get(&tab) else {
+            return false;
+        };
+        let comparison =
+            (t.comparison.as_ref()).is_some_and(|v| v.settings().size == size && v.drew_all_text());
+        let search =
+            (t.search.as_ref()).is_some_and(|v| v.settings().size == size && v.drew_all_text());
+        comparison || search
+    }
+
     pub fn session(&self) -> &Session {
         &self.st.session
     }
