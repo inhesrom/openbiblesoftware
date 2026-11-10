@@ -331,9 +331,10 @@ impl Shell {
         }
         let cb = &mut self.st.command_box;
         cb.set_rows(rows(&cb.suggestions, session.search_preview()));
-        if remade {
-            // Text typed in the frame of the Enter: it runs the first of the new rows.
-            picked = picked.and_then(|(_, alt)| Some((cb.selected_row()?.clone(), alt)));
+        if remade && let Some(alt) = keys.run {
+            // Text typed in the frame of the Enter: it runs the first of the new rows, even when
+            // the rows before the text had none to run.
+            picked = cb.selected_row().map(|row| (row.clone(), alt));
         }
         if shown {
             if let Some((i, alt)) = self.dropdown(ui, r.rect) {
@@ -358,6 +359,8 @@ impl Shell {
         let page = cb.page.max(1);
         cb.scroll_to_selected = false;
         let mut keys = Keys::default();
+        // With no rows to move through, the keys are left to the box's caret.
+        let moves_the_highlight = !cb.picks().is_empty();
         ui.input_mut(|i| {
             let at = cb.selected;
             let moves = [
@@ -369,7 +372,7 @@ impl Shell {
                 (Key::Home, 0),
             ];
             for (key, to) in moves {
-                if i.consume_key(Modifiers::NONE, key) {
+                if moves_the_highlight && i.consume_key(Modifiers::NONE, key) {
                     cb.selected = to.min(last);
                     cb.scroll_to_selected = true;
                 }

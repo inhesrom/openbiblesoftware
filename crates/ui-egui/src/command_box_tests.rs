@@ -172,6 +172,64 @@ fn clicking_a_suggestion_runs_it_and_esc_leaves_the_box() {
     assert_eq!(ws.focused(), Some(guide.id));
 }
 
+/// Text and Enter in one frame from an empty box with no rows (no recent entries yet): the
+/// first of the rows the text makes runs; with Alt, in a new Tab (#295 review).
+#[test]
+fn text_and_enter_in_one_frame_from_an_empty_box_run_the_first_new_row() {
+    for (alt, modifiers) in [(false, Modifiers::NONE), (true, Modifiers::ALT)] {
+        let mut h = Harness::new();
+        let tb = tb_tabs(&h)[0];
+        key(&mut h, Key::L, CTRL);
+        assert!(box_focused(&h));
+        assert!(
+            h.shell.st.command_box.selected_row().is_none(),
+            "no rows before"
+        );
+        h.modifiers = modifiers;
+        h.events.push(Event::Text("gen 32 5".into()));
+        h.events.push(Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        });
+        h.frame();
+        h.modifiers = Modifiers::NONE;
+        h.frames(3);
+        let tabs = tb_tabs(&h);
+        if alt {
+            assert_eq!(tabs.len(), 2, "Alt+Enter opened a new Tab: {tabs:?}");
+            let new = tabs.into_iter().find(|t| *t != tb).unwrap();
+            assert_eq!(location(&mut h, new), Some(ge(32, 5)));
+        } else {
+            assert_eq!(tabs, [tb], "Enter moved the focused Bible");
+            assert_eq!(location(&mut h, tb), Some(ge(32, 5)));
+        }
+        assert!(h.shell.st.command_box.text.is_empty());
+    }
+}
+
+/// With no dropdown, Home and End move the box's caret, not a highlight (#295 review).
+#[test]
+fn with_no_rows_home_and_end_move_the_caret() {
+    let mut h = Harness::new();
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, ">zzzzzzzzzz");
+    assert!(h.shell.st.command_box.suggestions.is_empty(), "no dropdown");
+    let caret = |h: &Harness| {
+        let state = egui::TextEdit::load_state(&h.ctx, egui::Id::unique(BOX_ID));
+        let range = state.and_then(|s| s.cursor.char_range()).expect("a caret");
+        range.primary.index.0
+    };
+    assert_eq!(caret(&h), 11);
+    key(&mut h, Key::Home, Modifiers::NONE);
+    assert_eq!(caret(&h), 0);
+    key(&mut h, Key::End, Modifiers::NONE);
+    assert_eq!(caret(&h), 11);
+    assert!(box_focused(&h));
+}
+
 #[test]
 fn an_empty_box_lists_recent_entries_kept_across_a_restart() {
     let db = temp_db("command-box-recent");
