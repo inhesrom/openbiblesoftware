@@ -55,10 +55,6 @@ struct PaintedRow {
 }
 
 impl PaintedRow {
-    fn part(&self, text: &str) -> Option<&Painted> {
-        self.parts.iter().find(|p| p.text == text)
-    }
-
     /// The title as painted: whole, cut short, or from the Filter's match on.
     fn title_part(&self) -> &Painted {
         self.parts
