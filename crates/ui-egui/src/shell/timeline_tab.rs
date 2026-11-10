@@ -389,8 +389,11 @@ fn axis(
     // Over the axis or an entry on it (the entries are widgets on top of the axis).
     let pointer = (ui.ctx().pointer_hover_pos()).filter(|_| ui.rect_contains_pointer(rect));
     if let Some(p) = pointer {
+        // Wheel zoom is the same at every Scroll speed (#293); a sideways swipe scrolls the
+        // axis at it.
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
-        let factor = f64::from(pinch) * (f64::from(scroll.y) / 300.0).exp();
+        let zoom = crate::motion::unscaled_scroll_delta(ui.ctx()).y;
+        let factor = f64::from(pinch) * (f64::from(zoom) / 300.0).exp();
         if (factor - 1.0).abs() > 1e-6 {
             view.zoom_about(factor, f64::from(p.x - rect.min.x), width, bounds);
         }

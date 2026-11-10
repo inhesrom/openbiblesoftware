@@ -40,7 +40,8 @@ Every registered command is in exactly one of these places (the test
   no parameter but are still left out of the Command box.
 - **A Setting**, for a choice only Settings offers (`app.log_level`, Log level): its row in
   the Settings Tab runs the command with the value picked (`SettingKind::Choice` in
-  `obs_engine::SETTINGS`).
+  `obs_engine::SETTINGS`), or the Scroll speed slider runs `view.scroll_speed {value}` (which
+  the Command box also suggests for `scroll speed 2`, #293).
 - **Scripting only** (`obs_engine::SCRIPTING_COMMANDS`): commands that answer
   `obs-cli run …` with data and change nothing on screen (`reference.parse`,
   `annotation.list`, `command_box.suggest` …). No menu offers them.

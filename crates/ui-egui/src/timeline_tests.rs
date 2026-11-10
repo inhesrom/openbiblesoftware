@@ -329,3 +329,58 @@ fn fit_shows_the_whole_timeline_across_the_whole_axis() {
         "Fit put the Timeline on {first}..{last} of an axis {width} wide"
     );
 }
+
+/// #293: the wheel zooms the Timeline as much at every Scroll speed.
+#[test]
+fn the_wheel_zooms_the_timeline_the_same_at_every_scroll_speed() {
+    let (mut h, _files) = harness("scroll-speed");
+    let tab = open_timeline(&mut h, "1 Kings 6");
+    let temple = "Construction of Solomon's Temple";
+    until(&mut h, "the temple on the axis", |h| {
+        !all_in(h, tab, temple).is_empty()
+    });
+    let scale = |h: &Harness| {
+        (h.shell.st.tabs.get(&tab))
+            .and_then(|t| t.timeline.as_ref())
+            .and_then(|t| t.view())
+            .expect("the Timeline's view")
+            .scale
+    };
+    let over = all_in(&h, tab, temple)[0].center();
+    let mut zooms = Vec::new();
+    for speed in [1.0, 0.5, 2.0] {
+        h.shell.run("view.scroll_speed", &json!({ "value": speed }));
+        h.frames(2);
+        for unit in [egui::MouseWheelUnit::Line, egui::MouseWheelUnit::Point] {
+            let before = scale(&h);
+            h.events.push(Event::PointerMoved(over));
+            h.events.push(Event::MouseWheel {
+                unit,
+                delta: vec2(
+                    0.0,
+                    if unit == egui::MouseWheelUnit::Line {
+                        1.0
+                    } else {
+                        40.0
+                    },
+                ),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.frames(60);
+            zooms.push((speed, unit, scale(&h) / before));
+        }
+    }
+    for (speed, unit, zoom) in &zooms {
+        assert!(
+            *zoom > 1.05,
+            "{speed}× {unit:?}: the wheel zooms in ({zoom})"
+        );
+        let at_one = zooms.iter().find(|z| z.0 == 1.0 && z.1 == *unit).unwrap().2;
+        assert!(
+            (zoom - at_one).abs() < 1e-3,
+            "{speed}× {unit:?}: {zoom}, at 1×: {at_one}"
+        );
+    }
+}

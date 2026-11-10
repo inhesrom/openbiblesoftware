@@ -21,6 +21,9 @@ use obs_scripture::Verse;
 
 const SCROLLBAR: f32 = size::SCROLLBAR;
 
+/// How far an arrow key scrolls a reading pane at a Scroll speed of 1×, in points.
+pub(crate) const ARROW_STEP: f32 = 40.0;
+
 /// GPU memory the atlas's textures may take at once, as a frame is painted: #19's text GPU
 /// budget (`max_text_gpu_mib` in `xtask/bench.toml`).
 pub const TEXT_GPU_BUDGET: usize = 32 * 1024 * 1024;
@@ -537,6 +540,8 @@ pub fn reading_pane(
         let footnote_focused = footnote_widget_focused(ui.ctx());
         // A key's scroll eases to its place (#225), unless motion is reduced.
         let (shown, at) = (view.shown_position(), view.position().0);
+        // An arrow key's step follows the Scroll speed (#293); a page is a page.
+        let arrow = ARROW_STEP * crate::motion::scroll_speed(ui.ctx());
         ui.input(|i| {
             if i.key_pressed(egui::Key::PageDown)
                 || (i.key_pressed(egui::Key::Space) && !footnote_focused)
@@ -547,10 +552,10 @@ pub fn reading_pane(
                 view.scroll_by(-page);
             }
             if i.key_pressed(egui::Key::ArrowDown) {
-                view.scroll_by(40.0);
+                view.scroll_by(arrow);
             }
             if i.key_pressed(egui::Key::ArrowUp) {
-                view.scroll_by(-40.0);
+                view.scroll_by(-arrow);
             }
         });
         if view.position().0 != at && !crate::motion::reduced(ui.ctx()) {

@@ -22,6 +22,7 @@ The ★ marks the first Resource of each Resource type in your Preferred order: 
 - **View → Larger text** and **View → Smaller text** (Ctrl+Plus, Ctrl+Minus) change the Text size; Ctrl+0 resets it.
 - **View → Reading layout** sets paragraphs or one verse per line, large chapter numbers, section headings, the column width and justified text for the focused Tab.
 - **View → Theme** and **View → Page tone** change the colours; **View → Settings** (Ctrl+Comma) has every preference in one place.
+- **Scroll speed** in Settings (under Motion) makes the mouse wheel, the trackpad and the arrow keys scroll further or less far, from 0.25× to 4×, everywhere in the app; Reset puts 1× back. Page Up and Page Down still move one page.
 - **Interlinear** in the header of a Bible with Strong's numbers shows Interlinear lines: the Hebrew or Greek behind each word.
 
 ## Compare Bibles

@@ -109,6 +109,8 @@ pub enum CommandBoxAction {
     OpenSavedSearch(String),
     /// Run a command with no parameters but the focused Tab.
     Command(&'static str),
+    /// Set the Scroll speed (#293), in hundredths: `scroll speed 1.5` is 150.
+    ScrollSpeed(u16),
     Search(String),
     /// A recent entry: run this text's best suggestion.
     Recent(String),
@@ -131,6 +133,7 @@ impl CommandBoxAction {
             Self::OpenFavorite(_) => "favorite",
             Self::OpenSavedSearch(_) => "saved_search",
             Self::Command(_) => "command",
+            Self::ScrollSpeed(_) => "scroll_speed",
             Self::Search(_) => "search",
             Self::Recent(_) => "recent",
         }
@@ -271,6 +274,28 @@ fn split_verb(text: &str) -> Option<(Verb, &str)> {
     })
 }
 
+/// `scroll speed 1.5`, `scroll speed 2x`, `scroll speed 150%` (any case, `×` too): the Scroll
+/// speed asked for, in hundredths, when it is one Settings allows.
+fn parse_scroll_speed(text: &str) -> Option<u16> {
+    const WORDS: &str = "scroll speed";
+    let head = text.get(..WORDS.len())?;
+    if !head.eq_ignore_ascii_case(WORDS) {
+        return None;
+    }
+    let rest = text.get(WORDS.len()..)?.trim().to_lowercase();
+    let (number, percent) = match rest.strip_suffix('%') {
+        Some(n) => (n, true),
+        None => (rest.trim_end_matches(['x', '×']), false),
+    };
+    let v: f64 = number.trim().parse().ok()?;
+    let v = if percent { v / 100.0 } else { v };
+    let speed = crate::appearance::scroll_speed_checked(v)?;
+    // 25 to 400.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let hundredths = (f64::from(speed) * 100.0).round() as u16;
+    Some(hundredths)
+}
+
 fn written(p: Passage) -> String {
     format_passage(p, &Standard, RefStyle::Long)
 }
@@ -325,6 +350,20 @@ impl Session {
         self.layout_suggestions(text, &mut ranked);
         if let Some((verb, rest)) = split_verb(text) {
             self.verb_suggestions(verb, rest, &mut ranked);
+        }
+        if let Some(hundredths) = parse_scroll_speed(text) {
+            let speed = f64::from(hundredths) / 100.0;
+            ranked.push((
+                rank::VERB,
+                Suggestion::new(
+                    CommandBoxAction::ScrollSpeed(hundredths),
+                    format!(
+                        "Scroll speed {}",
+                        crate::appearance::scroll_speed_label(speed)
+                    ),
+                    "Setting · Motion",
+                ),
+            ));
         }
         self.resource_suggestions(text, &mut ranked);
         if let Some(p) = parse_passage(text) {
@@ -783,6 +822,10 @@ impl Session {
                     .ok_or_else(|| failed(RUN, "Open a Tab first"))?;
                 self.run(id, &json!({ "tab": tab.0 }))
             }
+            CommandBoxAction::ScrollSpeed(hundredths) => self.run(
+                "view.scroll_speed",
+                &json!({ "value": f64::from(*hundredths) / 100.0 }),
+            ),
             CommandBoxAction::Search(text) => {
                 self.run("search.run", &json!({ "text": text, "split": new_tab }))
             }

@@ -962,3 +962,60 @@ fn monitors_are_listed_in_the_desktops_own_units() {
     assert_eq!(DesktopUnits::Pixels.per_point(3.0, 1.5), 3.0);
     assert_eq!(DesktopUnits::Points.per_point(3.0, 1.5), 1.5);
 }
+
+/// #293 acceptance: a Floating window, an OS window with input of its own, scrolls at the
+/// Scroll speed too: a mouse-wheel step (lines) and a trackpad swipe (points) go half and
+/// twice as far at 0.5× and 2×, with Reduce motion on and off.
+#[test]
+fn scroll_speed_scales_wheel_and_trackpad_in_a_floating_window() {
+    for reduce in [true, false] {
+        let mut h = Harness::new();
+        h.native_windows();
+        if !reduce {
+            h.system_motion(false);
+        }
+        let tb = h.tab_id("TB");
+        h.shell.run("tab.float", &json!({ "tab": tb.0 }));
+        h.frames(3);
+        let w = h.shell.floating[0].id;
+        assert!(h.shell.floating[0].native, "an OS window of its own");
+        let centre = (h.window(w).size() / 2.0).to_pos2();
+        let position = |h: &mut Harness| {
+            (h.shell.st.tabs.get_mut(&tb).unwrap().view.as_mut())
+                .unwrap()
+                .position()
+                .0
+        };
+        let wheeled = |h: &mut Harness, unit: egui::MouseWheelUnit, dy: f32| {
+            let before = position(h);
+            let mut window = h.window(w);
+            window.events.push(Event::PointerMoved(centre));
+            window.events.push(Event::MouseWheel {
+                unit,
+                delta: vec2(0.0, -dy),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            drop(window);
+            h.frames(60);
+            position(h) - before
+        };
+        for (unit, dy) in [
+            (egui::MouseWheelUnit::Line, 3.0),
+            (egui::MouseWheelUnit::Point, 90.0),
+        ] {
+            h.shell.run("view.scroll_speed", &json!({ "value": 1.0 }));
+            let one = wheeled(&mut h, unit, dy);
+            assert!(one > 50.0, "reduce {reduce}, {unit:?}: {one}");
+            for speed in [0.5, 2.0] {
+                h.shell.run("view.scroll_speed", &json!({ "value": speed }));
+                let moved = wheeled(&mut h, unit, dy);
+                assert!(
+                    (moved - one * speed).abs() < 0.5,
+                    "reduce {reduce}, {unit:?} at {speed}×: {moved}, at 1×: {one}"
+                );
+            }
+        }
+    }
+}

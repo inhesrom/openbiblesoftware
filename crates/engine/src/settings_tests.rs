@@ -46,6 +46,7 @@ fn commands_of(kind: SettingKind) -> Vec<&'static str> {
         | SettingKind::Toggle { command, .. }
         | SettingKind::Action { command, .. } => vec![command],
         SettingKind::TextSize => vec!["view.text_larger", "view.text_smaller", "view.text_reset"],
+        SettingKind::ScrollSpeed => vec!["view.scroll_speed"],
         SettingKind::Font(_) => vec!["view.fonts", "view.font"],
         SettingKind::NotebooksInText => vec!["notebook.show_in_text"],
         SettingKind::HomeCards => vec!["home.reset_cards"],
@@ -145,6 +146,7 @@ fn every_stored_view_and_toolbar_field_has_a_setting() {
             "verse_numbers" => vec!["verse_numbers"],
             "highlights" => vec!["highlights"],
             "reduce_motion" => vec!["reduce_motion"],
+            "scroll_speed" => vec!["scroll_speed"],
             "reading_layout" => vec![
                 "text_flow",
                 "large_chapter_numbers",
@@ -276,6 +278,7 @@ pub(crate) fn change(s: &mut Session, id: &str) {
             None => ok(s.run(command, &json!({}))),
         },
         SettingKind::TextSize => ok(s.run("view.text_larger", &json!({}))),
+        SettingKind::ScrollSpeed => ok(s.run("view.scroll_speed", &json!({ "value": 2.5 }))),
         SettingKind::Font(slot) => ok(s.run(
             "view.font",
             &json!({ "slot": slot.id(), "family": "Charis SIL" }),

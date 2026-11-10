@@ -22,6 +22,8 @@ and is saved in the User database as before.
 | | Latin, Greek, Hebrew text font; Interface font | View → Fonts (`view.fonts`, `view.font`) | `view.font {slot}` (bundled) |
 | Interface size | Interface size | `view.interface_size` | `{value: default}` |
 | Theme and Page tone | Theme, Page tone | `view.theme`, `view.page_tone` | `{value: system}`, `{value: auto}` |
+| Motion (#225) | Reduce motion | `view.reduce_motion {on}` | `on: false` |
+| | Scroll speed (#293): a logarithmic slider, 0.25× to 4× | `view.scroll_speed {value}` (also from the Command box: `scroll speed 2`) | `value: 1` |
 | Reading layout defaults | Line spacing, Verse numbers | `view.line_spacing`, `view.verse_numbers` | `{value: normal}`, `{value: superscript}` |
 | | Paragraphs or verse per line, Reading column width (#209) | `view.text_flow`, `view.column_width` | `{value: paragraphs}`, `{value: medium}` |
 | | Large chapter numbers, Section headings, Justified text (#209) | `view.large_chapter_numbers {on}`, `view.section_headings {on}`, `view.justified {on}` | `on: false`, `on: true`, `on: false` |
@@ -47,6 +49,22 @@ follow the theme." for a chosen tone (`shell/page_tone.rs`, `effective_text`). T
 theme turns dark over a chosen Paper or Sepia, a one-time hint offers Auto (Use Auto runs
 `view.page_tone {value: auto}`); `Session::page_tone_hint_due` remembers it was offered in the
 User database (preference `page-tone-hint`), so it never comes back, even after a restart.
+
+## Scroll speed (#293)
+
+One multiplier for the mouse wheel and the trackpad (`Appearance::scroll_speed`, saved with the
+View preferences as `scroll_speed`, never in a Layout). The UI applies it once a frame in every
+viewport (`motion::scroll_input`, called by `Shell::ui` and by each Floating window's own pass):
+it scales egui's `smooth_scroll_delta`, which every scrollable area reads (egui's ScrollAreas,
+reading panes, Text Comparison, Search results, the Note margin), so mouse-wheel lines and
+trackpad points are scaled alike, and egui's smoothing of a big wheel step keeps working. With
+Reduce motion on it scales the instant whole-step delta instead. It does not scale
+`input_options.line_scroll_speed`: egui 0.37 feeds that into Ctrl+wheel zoom too. Ctrl+wheel
+never becomes a scroll delta, so zoom is untouched; the Atlas and the Timeline zoom by
+`motion::unscaled_scroll_delta`, the wheel's own amount (the Timeline's sideways swipe still
+scrolls at the Scroll speed; drag-panning is not a wheel). An arrow key in a reading pane
+scrolls `pane::ARROW_STEP` × the Scroll speed; Page Up/Down and Space still move one page.
+Scrolling the Settings Tab uses a new speed from the next frame, the slider's live preview.
 
 Actions and the library folder are not values, so they have no Reset; every other row has one,
 greyed out while the Setting is at its default.

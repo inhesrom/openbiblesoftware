@@ -38,6 +38,14 @@ pub(super) struct MapUi {
     found: Option<MapPlace>,
 }
 
+#[cfg(test)]
+impl MapUi {
+    /// Where the map looked last frame.
+    pub(super) fn view(&self) -> Option<MapView> {
+        self.view
+    }
+}
+
 /// Width of the place list beside the map, when the Tab is wide enough for it.
 const LIST_WIDTH: f32 = size::SIDE_LIST;
 
@@ -131,7 +139,9 @@ pub(super) fn map_canvas(
             view.pan(f64::from(d.x), f64::from(d.y), world);
         }
         if response.hovered() {
-            let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+            // Wheel zoom, the same at every Scroll speed (#293).
+            let scroll = crate::motion::unscaled_scroll_delta(ui.ctx()).y;
+            let pinch = ui.input(egui::InputState::zoom_delta);
             let factor = f64::from(pinch) * (f64::from(scroll) / 300.0).exp();
             if (factor - 1.0).abs() > 1e-6
                 && let Some(p) = response.hover_pos()

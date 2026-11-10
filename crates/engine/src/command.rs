@@ -16,6 +16,8 @@ pub const MAX_STRING_PARAM: usize = 1 << 20;
 pub enum ParamKind {
     String,
     Integer,
+    /// Any JSON number, whole or not (a Scroll speed of 1.5).
+    Number,
     Boolean,
 }
 
@@ -24,6 +26,7 @@ impl ParamKind {
         match self {
             ParamKind::String => "string",
             ParamKind::Integer => "integer",
+            ParamKind::Number => "number",
             ParamKind::Boolean => "boolean",
         }
     }
@@ -83,6 +86,10 @@ impl<'a> Params<'a> {
 
     pub fn i64(&self, name: &str) -> Option<i64> {
         self.map.get(name).and_then(Value::as_i64)
+    }
+
+    pub fn f64(&self, name: &str) -> Option<f64> {
+        self.map.get(name).and_then(Value::as_f64)
     }
 
     pub fn bool(&self, name: &str) -> Option<bool> {
@@ -158,6 +165,7 @@ impl CommandSpec {
                     let ok = match spec.kind {
                         ParamKind::String => value.as_str().is_some(),
                         ParamKind::Integer => value.as_i64().is_some(),
+                        ParamKind::Number => value.is_number(),
                         ParamKind::Boolean => value.is_boolean(),
                     };
                     if !ok {
@@ -194,6 +202,12 @@ impl CommandSpec {
                     .parse::<i64>()
                     .map(Value::from)
                     .map_err(|_| self.invalid(format!("`{name}` must be an integer")))?,
+                ParamKind::Number => raw
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+                    .map(Value::Number)
+                    .ok_or_else(|| self.invalid(format!("`{name}` must be a number")))?,
                 ParamKind::Boolean => match raw {
                     "true" | "yes" | "1" => Value::Bool(true),
                     "false" | "no" | "0" => Value::Bool(false),
