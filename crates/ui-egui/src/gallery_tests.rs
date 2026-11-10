@@ -642,6 +642,32 @@ fn dialogs_and_popovers() -> Vec<Run> {
             |h| shows(h, "Ps 119:1-26") && shows(h, crate::shell::references::PREVIEW_SHORTENED),
         ),
         (
+            // The text pipeline draws a Hebrew Lemma in reading order (#308).
+            "Command box, a Hebrew Lemma",
+            |h| {
+                h.shell.st.session.refresh_search_indexes();
+                settle_search(h);
+                key(h, Key::L, Modifiers::COMMAND);
+                type_text(h, "bara");
+                for _ in 0..200 {
+                    h.shell.st.session.jobs().pump(16);
+                    h.paced_frame();
+                    if matches!(
+                        h.shell.st.session.search_preview(),
+                        obs_engine::SearchPreview::Hits(_)
+                    ) {
+                        break;
+                    }
+                }
+                settle_all(h);
+            },
+            |h| {
+                h.shell.st.command_box.dropdown.is_some()
+                    && (h.shell.st.command_box.suggestions.iter())
+                        .any(|s| s.label == "בָּרָא · H1254A")
+            },
+        ),
+        (
             "Tab switcher",
             |h| {
                 for id in ["tool.search", "tool.history"] {

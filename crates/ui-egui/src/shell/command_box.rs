@@ -185,7 +185,8 @@ pub(crate) struct CommandBoxUi {
     /// Pickable rows below the list's bottom edge last frame ("N more"); `None` when every
     /// row fitted and there is no scroll bar.
     pub(crate) more: Option<usize>,
-    /// The Search preview's Verse texts, laid out off the UI thread by the text pipeline.
+    /// Resource text in the dropdown (the Search preview's Verses, a Lemma in a label, #308),
+    /// laid out off the UI thread by the text pipeline.
     snippets: SnippetCache,
     /// The Search preview's Verses whose text was drawn last frame (the others still wait for
     /// their layout).
@@ -497,7 +498,16 @@ impl Shell {
                                 Row::Suggestion(i) => {
                                     let s = &cb.suggestions[*i];
                                     let detail = &details[*i];
-                                    let elided = paint_line(ui, rect, &s.label, detail);
+                                    let elided = match pipeline_span(ui, &s.label) {
+                                        Some(span) => paint_mixed_line(
+                                            ui,
+                                            rect,
+                                            (&s.label, span),
+                                            detail,
+                                            &mut verses,
+                                        ),
+                                        None => paint_line(ui, rect, &s.label, detail),
+                                    };
                                     let resp = if elided {
                                         resp.on_hover_text(s.label.clone())
                                     } else {
@@ -643,14 +653,7 @@ fn paint_line(ui: &Ui, rect: Rect, label: &str, detail: &str) -> bool {
     let c = theme::c();
     let painter = ui.painter();
     let font = egui::TextStyle::Body.resolve(ui.style());
-    let detail_rect = painter.text(
-        pos2(rect.right() - space::M, rect.center().y),
-        Align2::RIGHT_CENTER,
-        detail,
-        font.clone(),
-        c.muted,
-    );
-    let room = detail_rect.left() - rect.left() - space::M - space::XXL;
+    let room = paint_detail(ui, rect, detail);
     let galley = one_line(ui, label, font, c.ink, room);
     let elided = galley.elided;
     let at = pos2(
@@ -659,6 +662,109 @@ fn paint_line(ui: &Ui, rect: Rect, label: &str, detail: &str) -> bool {
     );
     painter.galley(at, galley, c.ink);
     elided
+}
+
+/// A row's `detail` at its right; the room left for its label.
+fn paint_detail(ui: &Ui, rect: Rect, detail: &str) -> f32 {
+    let detail_rect = ui.painter().text(
+        pos2(rect.right() - space::M, rect.center().y),
+        Align2::RIGHT_CENTER,
+        detail,
+        egui::TextStyle::Body.resolve(ui.style()),
+        theme::c().muted,
+    );
+    detail_rect.left() - rect.left() - space::M - space::XXL
+}
+
+/// The part of a label the text pipeline draws rather than the chrome font (#308): from its
+/// first to its last character that is right-to-left (egui lays text out without bidi: a
+/// Hebrew Lemma came out mirrored, with its Strong's number) or that the chrome font lacks
+/// (drawn as empty boxes). `None` when the chrome font draws it all.
+fn pipeline_span(ui: &Ui, label: &str) -> Option<std::ops::Range<usize>> {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let needs = |c: char| {
+        let mut b = [0; 4];
+        obs_layout::has_rtl(c.encode_utf8(&mut b)) || !ui.fonts_mut(|f| f.has_glyph(&font, c))
+    };
+    let start = label.char_indices().find(|(_, c)| needs(*c))?.0;
+    let (last, _) = label.char_indices().rev().find(|(_, c)| needs(*c))?;
+    // To the end of its word: the points of a Hebrew last letter go with it.
+    let end = label[last..]
+        .find(char::is_whitespace)
+        .map_or(label.len(), |i| last + i);
+    Some(start..end)
+}
+
+/// A one-line row like [`paint_line`] whose label's `span` the text pipeline draws (a font for
+/// every script, and bidi: "חֶסֶד · H2617A" reads as written, the Lemma then its number), the
+/// rest chrome text on the same baseline; clipped where it would reach the detail. Until a
+/// worker has laid the span out, a placeholder bar stands in for it. Returns whether it was
+/// cut.
+fn paint_mixed_line(
+    ui: &Ui,
+    rect: Rect,
+    (label, span): (&str, std::ops::Range<usize>),
+    detail: &str,
+    text: &mut VerseText<'_>,
+) -> bool {
+    let c = theme::c();
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let room = paint_detail(ui, rect, detail).max(0.0);
+    let left = rect.left() + space::M;
+    let right = left + room;
+    let clip = Rect::from_x_y_ranges(left..=right, rect.y_range()).intersect(ui.clip_rect());
+    let painter = ui.painter().with_clip_rect(clip);
+    let chrome =
+        |text: &str| ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), c.ink));
+    // The chrome text's baseline, its line centred in the row.
+    let probe = chrome("H");
+    let ascent = probe
+        .rows
+        .first()
+        .and_then(|r| r.glyphs.first().map(|g| r.pos.y + g.pos.y))
+        .unwrap_or(probe.size().y);
+    let top = rect.center().y - probe.size().y / 2.0;
+    let baseline = top + ascent;
+    let mut x = left;
+    let before = chrome(&label[..span.start]);
+    x += before.size().x;
+    painter.galley(pos2(left, top), before, c.ink);
+    let laid = text.snippets.get(
+        &label[span.clone()],
+        ColorRole::Ink,
+        false,
+        rect.width(),
+        &text.settings,
+    );
+    match laid
+        .as_ref()
+        .and_then(|l| l.lines.first().map(|line| (l, line)))
+    {
+        Some((laid, line)) => {
+            let width = (line.items.iter())
+                .map(|i| i.x + i.width)
+                .fold(0.0_f32, f32::max);
+            let origin = pos2(x, baseline - line.baseline);
+            text.atlas.paint(&painter, laid, origin, &text.palette);
+            x += width;
+        }
+        None => {
+            let width = font.size * crate::tokens::scale::PLACEHOLDER_EMS / 2.0;
+            crate::components::text_placeholder(
+                &painter,
+                pos2(x, top),
+                width,
+                probe.size().y,
+                c.rule,
+            );
+            ui.ctx().request_repaint();
+            x += width;
+        }
+    }
+    let after = chrome(&label[span.end..]);
+    let end = x + after.size().x;
+    painter.galley(pos2(x, top), after, c.ink);
+    end > right
 }
 
 /// The Page palette the Search preview's Verses are drawn in: as dark (and as High contrast)
@@ -682,8 +788,9 @@ fn preview_settings(reading: TextSettings) -> TextSettings {
     }
 }
 
-/// What the Search preview's Verses are laid out and drawn with: the text pipeline's snippet
-/// layouts and glyph atlas, in [`preview_settings`] and [`hit_palette`].
+/// What Resource text in the dropdown (the Search preview's Verses, a Lemma in a label) is laid
+/// out and drawn with: the text pipeline's snippet layouts and glyph atlas, in
+/// [`preview_settings`] and [`hit_palette`].
 struct VerseText<'a> {
     snippets: &'a mut SnippetCache,
     atlas: &'a mut AtlasTexture,

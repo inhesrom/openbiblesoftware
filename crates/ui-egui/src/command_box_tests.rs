@@ -1165,3 +1165,80 @@ fn the_search_preview_without_a_bible_and_while_indexing() {
     drop(h);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The glyph quads' corners (textured meshes: text the pipeline draws) drawn last frame in
+/// `region`.
+fn glyph_quads_in(h: &Harness, region: egui::Rect) -> Vec<egui::Pos2> {
+    fn walk(shape: &egui::Shape, region: egui::Rect, out: &mut Vec<egui::Pos2>) {
+        match shape {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, region, out)),
+            egui::Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
+                out.extend(
+                    (m.vertices.iter())
+                        .map(|v| v.pos)
+                        .filter(|p| region.contains(*p)),
+                );
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for c in &h.last_shapes {
+        walk(&c.shape, c.clip_rect.intersect(region), &mut out);
+    }
+    out
+}
+
+/// SEARCH-5 (#308): a Hebrew Lemma's Word Study suggestion is not all chrome text (the chrome
+/// font has no Hebrew and egui no bidi: empty boxes, the Strong's number mirrored). The text
+/// pipeline draws the Lemma and the chrome font the rest, so "בָּרָא · H1254A" reads as
+/// written: the Lemma, then its number on the right. Greek and Latin labels stay chrome text.
+#[test]
+fn a_hebrew_lemma_suggestion_is_drawn_by_the_text_pipeline_in_reading_order() {
+    let (mut h, _lab) = super::gallery::launch("cmd-hebrew", &super::gallery::LOOKS[0]);
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "bara");
+    for _ in 0..60 {
+        h.paced_frame();
+    }
+    let label = "בָּרָא · H1254A";
+    let suggestions = &h.shell.st.command_box.suggestions;
+    assert!(
+        suggestions.iter().any(|s| s.label == label),
+        "{suggestions:?}"
+    );
+    assert!(
+        h.texts().iter().all(|t| !obs_layout::has_rtl(t)),
+        "no chrome text holds Hebrew: {:?}",
+        h.texts()
+    );
+    // Its row, by its AccessKit name: the pipeline's glyphs, then the number as chrome text.
+    let tree = h.tree.clone().expect("an AccessKit tree");
+    let row = (tree.nodes.iter())
+        .find(|(_, n)| n.label().is_some_and(|l| l.starts_with(label)))
+        .and_then(|(_, n)| n.bounds())
+        .expect("the Hebrew suggestion's row");
+    let row = egui::Rect::from_min_max(
+        egui::pos2(row.x0 as f32, row.y0 as f32),
+        egui::pos2(row.x1 as f32, row.y1 as f32),
+    );
+    let number = (h.shapes.iter())
+        .find(|(r, t)| t == " · H1254A" && row.contains(r.center()))
+        .map(|(r, _)| *r)
+        .unwrap_or_else(|| panic!("the number as chrome text: {:?}", h.texts()));
+    // The Lemma's glyphs (not the icons further right), each left of the number.
+    let lemma = egui::Rect::from_x_y_ranges(row.left()..=number.right(), row.y_range());
+    let glyphs = glyph_quads_in(&h, lemma);
+    assert!(!glyphs.is_empty(), "no pipeline glyphs in {row:?}");
+    assert!(
+        glyphs.iter().all(|p| p.x <= number.left() + 2.0),
+        "the Lemma left of its number: {number:?}, {glyphs:?}"
+    );
+    // A Greek or Latin label is still chrome text.
+    for typed in ["agape", "gen 1"] {
+        key(&mut h, Key::A, CTRL);
+        type_text(&mut h, typed);
+        let first = h.shell.st.command_box.suggestions[0].label.clone();
+        assert!(h.find(&first).is_some(), "{first}: {:?}", h.texts());
+    }
+}

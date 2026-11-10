@@ -528,6 +528,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Reference preview, shortened, Light](gallery/reference-preview-shortened-light-1x.png) | ![Reference preview, shortened, Dark](gallery/reference-preview-shortened-dark-1x.png) | ![Reference preview, shortened, Sepia](gallery/reference-preview-shortened-sepia-1x.png) |
 | [2×](gallery/reference-preview-shortened-light-2x.png) | [2×](gallery/reference-preview-shortened-dark-2x.png) | [2×](gallery/reference-preview-shortened-sepia-2x.png) |
 
+### Command box, a Hebrew Lemma
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Command box, a Hebrew Lemma, Light](gallery/command-box-a-hebrew-lemma-light-1x.png) | ![Command box, a Hebrew Lemma, Dark](gallery/command-box-a-hebrew-lemma-dark-1x.png) | ![Command box, a Hebrew Lemma, Sepia](gallery/command-box-a-hebrew-lemma-sepia-1x.png) |
+| [2×](gallery/command-box-a-hebrew-lemma-light-2x.png) | [2×](gallery/command-box-a-hebrew-lemma-dark-2x.png) | [2×](gallery/command-box-a-hebrew-lemma-sepia-2x.png) |
+
 ### Tab switcher
 
 | Light | Dark | Sepia |

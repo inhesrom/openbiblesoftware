@@ -76,6 +76,14 @@ The dropdown is a results panel under the box, its right edge under the box's:
   not) and the bottom edge fades under a "N more" pill (with a chevron) counting the rows below it; with
   every row shown there is neither.
 - **Long labels** are cut with "…" before their detail and shown whole in a tooltip on hover.
+- **Resource text in a label** (#308). The part of a label from its first to its last
+  character that is right-to-left or that the Interface font lacks (`pipeline_span`) is drawn
+  by the text pipeline (ADR 0004), at Body size in the Reading fonts and the ink of
+  `hit_palette`, as the Search preview's Verses are; the rest stays chrome text on the same
+  baseline. So `בָּרָא · H1254A` reads as written, the Lemma then its Strong's number. egui
+  has no bidi and the Interface font no Hebrew, so drawn as chrome text it came out as empty
+  boxes with the number mirrored. Until a layout worker has the Lemma (a frame or two), a
+  placeholder bar stands in. Greek and Latin labels are all chrome text.
 - **Two-line rows.** A Search preview Verse shows its reference, then the first line of its
   text with the match highlighted. The text is Resource text, so the text pipeline lays it
   out and draws it (ADR 0004), like the Search Tool's: in the Reading fonts at Body size,

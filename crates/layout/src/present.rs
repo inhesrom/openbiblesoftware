@@ -854,6 +854,14 @@ pub fn starts_rtl(text: &str) -> bool {
     unicode_bidi::get_base_direction(text) == unicode_bidi::Direction::Rtl
 }
 
+/// Whether any character of `text` is right-to-left (bidi class R or AL), so only a layout
+/// with bidi shows it in order: a Hebrew Lemma in a line of chrome (#308).
+pub fn has_rtl(text: &str) -> bool {
+    use unicode_bidi::BidiClass;
+    text.chars()
+        .any(|c| matches!(unicode_bidi::bidi_class(c), BidiClass::R | BidiClass::AL))
+}
+
 /// A one-off paragraph of plain text in `base`, with the byte ranges in `styled` drawn in
 /// their own colour role (a Note body's Bible references as links, #64). Byte positions map
 /// back to `text` (as unit positions), so hit tests and range rects work on them.
