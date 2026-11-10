@@ -337,8 +337,14 @@ impl State {
             egui::vec2(width, super::atlas_tab::MINI_MAP_HEIGHT),
             Sense::hover(),
         );
-        let mut view =
-            super::atlas_tab::fit(&refs, rect, one_place, super::atlas_tab::MINI_MAP_SPAN);
+        // A place's several locations fill the map; one location, or a person's places, show
+        // with the land around them.
+        let span = if one_place && places.iter().any(|p| p.points.len() > 1) {
+            super::atlas_tab::LOCATIONS_SPAN
+        } else {
+            super::atlas_tab::MINI_MAP_SPAN
+        };
+        let mut view = super::atlas_tab::fit(&refs, rect, one_place, span);
         let description = format!(
             "Map: {}",
             places
