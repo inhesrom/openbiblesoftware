@@ -202,6 +202,18 @@ pub(crate) struct VisualFilters {
     pub(crate) next_id: u64,
 }
 
+impl VisualFilters {
+    /// The number of the next new filter's id: from the kept counter on, the first number no
+    /// filter's id has, wrapping past its maximum (a counter from a hand-edited User database or
+    /// Backup can be there, #290).
+    fn free_id(&self) -> u64 {
+        crate::workspace::first_free_id(self.next_id, |n| {
+            let id = format!("filter-{n}");
+            self.list.iter().any(|f| f.id == id)
+        })
+    }
+}
+
 impl Default for VisualFilters {
     fn default() -> Self {
         Self {
@@ -997,7 +1009,7 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let mut f = match existing {
         Some(i) => s.visual_filters.list[i].clone(),
         None => VisualFilter {
-            id: format!("filter-{}", s.visual_filters.next_id),
+            id: format!("filter-{}", s.visual_filters.free_id()),
             name: String::new(),
             query: String::new(),
             marked: None,
@@ -1050,8 +1062,8 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     match existing {
         Some(i) => s.visual_filters.list[i] = f,
         None => {
+            s.visual_filters.next_id = crate::workspace::after(s.visual_filters.free_id());
             s.visual_filters.list.push(f);
-            s.visual_filters.next_id += 1;
         }
     }
     s.save_visual_filters();

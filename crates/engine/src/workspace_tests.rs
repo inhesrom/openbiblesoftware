@@ -813,3 +813,80 @@ fn a_tab_closed_with_its_x_hands_the_focus_to_its_panels_next_tab() {
         vec![Effect::Activate(a), Effect::Focus(a)]
     );
 }
+
+/// #290: a Workspace restored with each id counter at its maximum (from a hand-edited Layout,
+/// Last session or Backup) and the ids just past the wrap in use: the next Tab, Panel,
+/// floating window and Recently closed entry each take the first id no one uses, without
+/// overflowing, and so do a Built-in Layout's Tabs.
+#[test]
+fn id_counters_at_their_maximum_wrap_to_the_first_free_id() {
+    const MAX: u64 = u64::MAX;
+    let mut s = session();
+    for id in ["kjv", "web", "kjv"] {
+        s.run("resource.open", &json!({ "id": id })).unwrap();
+    }
+    let mut snap = s.workspace.snapshot();
+    for (t, id) in snap.tabs.iter_mut().zip([MAX, 1, 2]) {
+        t.id = id;
+    }
+    let panel = |id: u64| LayoutNode::Panel {
+        panel: id,
+        tabs: vec![id],
+        active: Some(id),
+    };
+    // Tab MAX in Panel MAX in the main window; Tabs 1 and 2 in Panels 1 and 2 in windows
+    // MAX and 1; Recently closed entry MAX of Tab 3 in Panel 3.
+    snap.layout = Some(panel(MAX));
+    snap.windows = [(MAX, 1), (1, 2)]
+        .into_iter()
+        .map(|(window, id)| WindowSnapshot {
+            id: window,
+            layout: panel(id),
+            placement: None,
+        })
+        .collect();
+    let mut closed = snap.tabs[1].clone();
+    closed.id = 3;
+    snap.recently_closed = RecentlyClosed {
+        closed: vec![ClosedTabs {
+            id: MAX,
+            tabs: vec![closed],
+            active: Some(3),
+            generation: 0,
+            panel: Some(3),
+            beside: None,
+            side: Side::Right,
+            levels: 0,
+        }],
+        ..Default::default()
+    };
+    snap.focused = Some(MAX);
+    snap.remembered.clear();
+    snap.last_reading_panel = Some(MAX);
+    snap.last_other_panel = None;
+    s.workspace.restore(snap.clone());
+
+    let opened = tab(&s.run("resource.open", &json!({ "id": "web" })).unwrap());
+    assert_eq!(opened, TabId(4));
+    assert_eq!(panel_of(&s, opened), PanelId(MAX));
+    let split = tab(&s
+        .run("resource.open", &json!({ "id": "kjv", "split": true }))
+        .unwrap());
+    assert_eq!(split, TabId(5));
+    assert_eq!(panel_of(&s, split), PanelId(4));
+    let window = s.workspace.float(opened, None).unwrap();
+    assert_eq!(window, WindowId(2));
+    assert_eq!(panel_of(&s, opened), PanelId(5));
+    s.run("tab.close", &json!({ "tab": split.0 })).unwrap();
+    let entries: Vec<u64> = s.workspace.recently_closed().map(|c| c.id).collect();
+    assert_eq!(entries, [1, MAX]);
+
+    // A Built-in Layout's Tabs take free ids too: past Tabs MAX, 1 and 2 it replaces, 3 in
+    // Recently closed, and 4 and 5, closed but still waiting for History to record their
+    // Visits.
+    s.workspace.restore(snap);
+    s.run("layout.builtin", &json!({ "name": "Reading only" }))
+        .unwrap();
+    let ids: Vec<TabId> = s.workspace.tabs().map(|t| t.id).collect();
+    assert_eq!(ids, [TabId(6)]);
+}

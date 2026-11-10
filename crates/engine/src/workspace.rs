@@ -1051,9 +1051,58 @@ impl Workspace {
             .and_then(|(tabs, active)| active.or(tabs.first().copied()))
     }
 
-    /// The id the next Tab opened will get.
-    pub fn next_tab_id(&self) -> u64 {
-        self.next_tab + 1
+    /// The ids the next Tabs opened can get, in order: none of them in use (#290).
+    pub fn free_tab_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        std::iter::successors(Some(self.next_tab), |last| {
+            Some(first_free_id(after(*last), |id| self.tab_id_taken(id)))
+        })
+        .skip(1)
+    }
+
+    /// A fresh Tab id, past the counter and not in use.
+    fn take_tab_id(&mut self) -> TabId {
+        let id = first_free_id(after(self.next_tab), |id| self.tab_id_taken(id));
+        self.next_tab = id;
+        TabId(id)
+    }
+
+    /// Whether a Tab, a queued Visit or Recently closed names this Tab id.
+    fn tab_id_taken(&self, id: u64) -> bool {
+        let tab = TabId(id);
+        self.tabs.contains_key(&tab)
+            || self.closed_with_visits.contains_key(&tab)
+            || self.visits.iter().any(|v| v.tab == tab)
+            || self
+                .closed
+                .closed
+                .iter()
+                .any(|c| c.tabs.iter().any(|t| t.id == id))
+    }
+
+    /// Whether a Panel, a window's arrangement, a remembered place or Recently closed names
+    /// this Panel id.
+    fn panel_id_taken(&self, id: u64) -> bool {
+        let panel = PanelId(id);
+        let arranged = |a: &Option<LayoutNode>| {
+            a.as_ref()
+                .is_some_and(|a| a.panels().iter().any(|(p, _, _)| *p == id))
+        };
+        self.panels.contains_key(&panel)
+            || self.remembered.values().any(|p| *p == panel)
+            || self.last_reading_panel == Some(panel)
+            || self.last_other_panel == Some(panel)
+            || arranged(&self.arrangement)
+            || self.floating.iter().any(|w| arranged(&w.arrangement))
+            || self
+                .closed
+                .closed
+                .iter()
+                .any(|c| c.panel == Some(id) || c.beside == Some(id))
+            || self
+                .closed
+                .came_back_beside
+                .iter()
+                .any(|b| b.panel == id || b.beside == id)
     }
 
     /// Every Tab, most recently active first.
@@ -1065,8 +1114,9 @@ impl Workspace {
 
     /// A fresh Panel id (for Panels the user makes by dragging a Tab out).
     pub fn new_panel_id(&mut self) -> PanelId {
-        self.next_panel += 1;
-        PanelId(self.next_panel)
+        let id = first_free_id(after(self.next_panel), |id| self.panel_id_taken(id));
+        self.next_panel = id;
+        PanelId(id)
     }
 
     /// Effects queued since the last call, for the UI to apply in order.
@@ -1196,8 +1246,7 @@ impl Workspace {
         } else {
             self.opener_link()
         };
-        self.next_tab += 1;
-        let id = TabId(self.next_tab);
+        let id = self.take_tab_id();
         let panel = match placement {
             Placement::Panel(p) | Placement::NewPanel { panel: p, .. } => p,
         };
@@ -1965,8 +2014,11 @@ impl Workspace {
         {
             return Some(w);
         }
-        self.next_window += 1;
-        let window = WindowId(self.next_window);
+        let window = first_free_id(after(self.next_window), |id| {
+            self.floating.iter().any(|w| w.id == WindowId(id))
+        });
+        self.next_window = window;
+        let window = WindowId(window);
         let panel = self.move_to_new_panel(tab);
         self.floating.push(FloatingWindow {
             id: window,
@@ -2057,6 +2109,23 @@ impl Workspace {
 }
 
 /// `node` added at the right of an arrangement.
+/// The first id from `from` on that `taken` does not name, wrapping past `u64::MAX` to 1 (0 is
+/// never an id: a saved Panel of 0 asks for a fresh one). Id counters come back from
+/// hand-edited User databases and Backups, so one can already be at its maximum (#290); the
+/// ids in use are finitely many, so a free one is always found.
+pub(crate) fn first_free_id(from: u64, taken: impl Fn(u64) -> bool) -> u64 {
+    let mut id = from.max(1);
+    while taken(id) {
+        id = after(id);
+    }
+    id
+}
+
+/// The id after `last`, wrapping past `u64::MAX` to 1.
+pub(crate) fn after(last: u64) -> u64 {
+    last.checked_add(1).unwrap_or(1)
+}
+
 fn beside_right(arrangement: Option<LayoutNode>, node: LayoutNode) -> LayoutNode {
     match arrangement {
         None => node,
