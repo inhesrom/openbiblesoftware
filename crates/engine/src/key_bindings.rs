@@ -142,6 +142,14 @@ const RENAMED_SELECTION_KEYS: [(&str, &str); 5] = [
     ("selection.highlight_red_underline", "selection.highlight_5"),
 ];
 
+/// The id a saved binding applies to: a Selection key's old id becomes its new one.
+pub(crate) fn current_binding_id(id: &str) -> &str {
+    RENAMED_SELECTION_KEYS
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| new)
+}
+
 /// The group of the Selection keys in the Keyboard shortcuts Tab.
 pub const SELECTION_GROUP: &str = "Selection";
 /// The group of commands in no menu.
@@ -182,11 +190,32 @@ pub struct KeyBindings {
 }
 
 impl KeyBindings {
-    fn to_json(&self) -> Value {
+    pub(crate) fn to_json(&self) -> Value {
         let map: Map<String, Value> = (self.overrides.iter())
             .map(|(id, key)| (id.clone(), key.clone().map_or(Value::Null, Value::String)))
             .collect();
         Value::Object(map)
+    }
+
+    /// A saved record with each Selection key's old id as its new one, as
+    /// [`Self::from_json`] reads it, for a restore to compare with what the app would write
+    /// back (#258). An old id whose new one the record holds too stays as it is: the loader
+    /// would keep only one of the two.
+    pub(crate) fn upgrade_record(v: &Value) -> Value {
+        let Some(map) = v.as_object() else {
+            return v.clone();
+        };
+        let mut out = Map::new();
+        for (id, key) in map {
+            let current = current_binding_id(id);
+            let id = if current != id && map.contains_key(current) {
+                id
+            } else {
+                current
+            };
+            out.insert(id.to_string(), key.clone());
+        }
+        Value::Object(out)
     }
 
     /// The keys of a saved record; a key that no longer reads is dropped (its default
@@ -194,17 +223,14 @@ impl KeyBindings {
     fn from_json(v: &Value) -> Self {
         let mut overrides = BTreeMap::new();
         for (id, key) in v.as_object().into_iter().flatten() {
-            let id = &RENAMED_SELECTION_KEYS
-                .iter()
-                .find(|(old, _)| old == id)
-                .map_or_else(|| id.clone(), |(_, new)| (*new).to_string());
+            let id = current_binding_id(id);
             match key {
                 Value::Null => {
-                    overrides.insert(id.clone(), None);
+                    overrides.insert(id.to_string(), None);
                 }
                 Value::String(k) => {
                     if let Ok(k) = canonical_key(k) {
-                        overrides.insert(id.clone(), Some(k));
+                        overrides.insert(id.to_string(), Some(k));
                     }
                 }
                 _ => {}

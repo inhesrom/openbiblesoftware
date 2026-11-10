@@ -1310,8 +1310,11 @@ impl Guides {
     }
 }
 
-fn pref(guide: Guide) -> String {
-    format!("guide-arrangement/{}", guide.id())
+/// The start of the preference key of each Guide's Guide arrangement.
+pub(crate) const ARRANGEMENT_PREF_PREFIX: &str = "guide-arrangement/";
+
+pub(crate) fn pref(guide: Guide) -> String {
+    format!("{ARRANGEMENT_PREF_PREFIX}{}", guide.id())
 }
 
 impl Session {

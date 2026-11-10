@@ -7,7 +7,9 @@
 //! - **Restore** first reads the Backup into memory, checks it is a User database this build
 //!   can read (a newer format is refused), runs the migrations on it and checks the result is
 //!   whole (every table, column, index and trigger this build's format has, every row readable,
-//!   SQLite's integrity check passing), so nothing is touched if the file is unusable. Then it takes a Safety backup of the database as it is, and
+//!   no row pointing at one that is not there, SQLite's integrity check passing), so nothing
+//!   is touched if the file is unusable. Then it takes a Safety backup of the database as it
+//!   is, and
 //!   copies the Backup's pages over the live database in one step (rebuilding the copy with
 //!   the live database's page size first, if they differ).
 //! - Nothing is ever written over the live database or SQLite's files beside it
@@ -107,6 +109,28 @@ impl UserStore {
         Ok((store, found))
     }
 
+    /// A copy of this database in memory, page for page, for a trial restore (#258): what the
+    /// app writes to it while reading it changes only the copy. Its path is this one's.
+    pub fn copy_in_memory(&self) -> Result<UserStore, StoreError> {
+        let mut conn = Connection::open_in_memory().map_err(sql)?;
+        rusqlite::backup::Backup::new(&self.conn, &mut conn)
+            .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
+            .map_err(sql)?;
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(sql)?;
+        Ok(UserStore {
+            conn,
+            path: self.path.clone(),
+        })
+    }
+
+    /// Run `statement` on the database with no checks, to write rows the app never would
+    /// (tests of the restore's checks, #258).
+    #[cfg(feature = "test-support")]
+    pub fn execute_unchecked(&self, statement: &str) -> Result<usize, StoreError> {
+        self.conn.execute(statement, []).map_err(sql)
+    }
+
     /// Read everything the app reads of a User database, so a row it could not read refuses
     /// the Backup now rather than failing after the restore.
     fn read_everything(&self) -> Result<(), StoreError> {
@@ -204,6 +228,14 @@ impl UserStore {
     /// returned. An unreadable or newer Backup changes nothing.
     pub fn restore(&mut self, path: &Path) -> Result<PathBuf, StoreError> {
         let (backup, _) = Self::open_backup(path)?;
+        self.restore_from(&backup)
+    }
+
+    /// Replace everything in this database with `backup`, a Backup [`UserStore::open_backup`]
+    /// read into memory. The file it was read from is not read again, so what is restored is
+    /// the copy the caller checked, whatever has happened to the file since (#258). A Safety
+    /// backup of the database as it was is taken first; its path is returned.
+    pub fn restore_from(&mut self, backup: &UserStore) -> Result<PathBuf, StoreError> {
         let page_size = |c: &Connection| -> Result<i64, StoreError> {
             c.query_row("PRAGMA page_size", [], |r| r.get(0))
                 .map_err(sql)
@@ -372,8 +404,8 @@ impl Drop for ScratchFile {
 }
 
 /// Why the migrated database `conn` is not whole, if it is not: a table, column, index or
-/// trigger this build's format has is missing, a row cannot be read, or SQLite's integrity
-/// check (and the Notes search index's own) fails.
+/// trigger this build's format has is missing, a row cannot be read, a row points at one that
+/// is not there, or SQLite's integrity check (and the Notes search index's own) fails.
 fn check_whole(conn: &Connection) -> Result<(), String> {
     let integrity: Vec<String> = conn
         .prepare("PRAGMA integrity_check")
@@ -384,6 +416,29 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
         .map_err(|e| format!("it is damaged ({e})"))?;
     if integrity != ["ok"] {
         return Err(format!("it is damaged ({})", integrity.join("; ")));
+    }
+    // The integrity check does not look at foreign keys: an Annotation pointing at a Notebook
+    // the file lacks would belong to none (#258).
+    let dangling: Vec<(String, String, i64)> = conn
+        .prepare(
+            "SELECT \"table\", parent, COUNT(*) FROM pragma_foreign_key_check
+             GROUP BY \"table\", parent ORDER BY \"table\", parent",
+        )
+        .and_then(|mut s| {
+            s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect()
+        })
+        .map_err(|e| format!("it is damaged ({e})"))?;
+    if !dangling.is_empty() {
+        let rows: Vec<String> = dangling
+            .iter()
+            .map(|(table, parent, n)| {
+                let rows = if *n == 1 { "row" } else { "rows" };
+                let point = if *n == 1 { "points" } else { "point" };
+                format!("{n} {rows} of `{table}` {point} at a missing row of `{parent}`")
+            })
+            .collect();
+        return Err(format!("it is damaged ({})", rows.join("; ")));
     }
     let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
     migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;

@@ -206,3 +206,52 @@ fn export_everything_writes_the_zip_where_the_dialog_says() {
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #258: a Backup holding a Layout and a setting the app could not read is refused in the
+/// preview, naming them, with no Restore offered and nothing changed.
+#[test]
+fn a_backup_with_an_unreadable_layout_is_refused_in_the_preview() {
+    let dir = folder("refused");
+    let mut h = Harness::launch(Some(&dir.join("user.db")));
+    h.shell.run(
+        "annotation.note",
+        &json!({ "passage": "Jn 3:16", "body": "kept" }),
+    );
+    let good = dir.join("good.obsbackup");
+    h.shell.st.session.back_up(&good).unwrap();
+    // A copy damaged through the store, which keeps whatever text it is given.
+    let copy = dir.join("damaging").join("user.db");
+    std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    std::fs::copy(&good, &copy).unwrap();
+    let backup = dir.join("damaged.obsbackup");
+    {
+        let (store, _) = obs_store::UserStore::open(&copy).unwrap();
+        store.save_layout("Broken", "not JSON").unwrap();
+        store.set_preference("search.saved", "not JSON").unwrap();
+        store.back_up(&backup).unwrap();
+    }
+    let before = dump(&h);
+    h.shell.run("data.backups", &json!({}));
+    h.frames(3);
+    let to = backup.clone();
+    h.shell.st.backups_ui.dialog = Arc::new(move |_, _| Some(to.clone()));
+    h.click_text("Restore from backup…");
+    until(&mut h, "the preview", |h| {
+        h.texts()
+            .iter()
+            .any(|t| t.starts_with("damaged.obsbackup cannot be restored"))
+    });
+    preview(&h, "backups-restore-refused-kittest");
+    let shown = h.texts().join("\n");
+    for named in [
+        "the Layout “Broken”",
+        "the setting `search.saved` (Saved searches)",
+        "Nothing was changed.",
+    ] {
+        assert!(shown.contains(named), "{named}: {shown}");
+    }
+    assert!(h.find("Restore").is_none(), "{shown}");
+    assert_eq!(dump(&h), before);
+    drop(h);
+    let _ = std::fs::remove_dir_all(&dir);
+}

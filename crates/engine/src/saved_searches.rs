@@ -27,8 +27,8 @@ use crate::workspace::{Effect, OpenRequest, PanelId, TabId};
 /// How many searches the Search history keeps.
 pub const SEARCH_HISTORY_LIMIT: usize = 50;
 
-const SAVED_PREF: &str = "search.saved";
-const HISTORY_PREF: &str = "search.history";
+pub(crate) const SAVED_PREF: &str = "search.saved";
+pub(crate) const HISTORY_PREF: &str = "search.history";
 
 /// A Saved search: a search kept under a name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

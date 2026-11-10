@@ -91,8 +91,8 @@ impl SearchMode {
         }
     }
 
-    fn preference_key(self) -> String {
-        format!("search.recent.{}", self.id())
+    pub(crate) fn preference_key(self) -> String {
+        format!("{RECENT_PREF_PREFIX}{}", self.id())
     }
 }
 
@@ -131,8 +131,11 @@ impl InlineError {
     }
 }
 
+/// The start of the preference key of each mode's recent queries.
+pub(crate) const RECENT_PREF_PREFIX: &str = "search.recent.";
+
 /// The User database preference that keeps the Word forms setting.
-const WORD_FORMS_KEY: &str = "search.word_forms";
+pub(crate) const WORD_FORMS_KEY: &str = "search.word_forms";
 
 /// Parse a query as a Bible or Library search runs it: with Word forms on, each bare
 /// English word also matches the other words of its stem (#180).
@@ -719,6 +722,10 @@ pub struct BibleSearches {
     recent: BTreeMap<SearchMode, Vec<String>>,
     /// The Word forms setting, once read from the User database.
     word_forms: Option<bool>,
+    /// Set while restored searches run again ([`Session::rerun_restored_searches`]): those
+    /// are not new searches, so they leave Recent searches as they are (a restored backup's
+    /// own Recent searches included, #258).
+    rerunning: bool,
     /// Outlines by [`outline_key`], shared with the jobs that read them.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
@@ -883,6 +890,9 @@ impl Session {
     }
 
     pub(crate) fn remember_search(&mut self, mode: SearchMode, query: &str) {
+        if self.bible_search.rerunning {
+            return;
+        }
         let mut recent = self.recent_searches(mode);
         recent.retain(|q| q != query);
         recent.insert(0, query.to_string());
@@ -985,8 +995,9 @@ impl Session {
 
     /// Run again the searches of the Search Tabs a Workspace snapshot brought back (the Last
     /// session, a Layout, Recently closed; #259), so they show their results as they did. It
-    /// is not a new search: no Visit and no Search history entry. A Search scope naming
-    /// something gone runs over what is left, with a notice, as a Saved search does.
+    /// is not a new search: no Visit, no Search history entry and no Recent searches entry. A
+    /// Search scope naming something gone runs over what is left, with a notice, as a Saved
+    /// search does.
     pub fn rerun_restored_searches(&mut self) {
         let tabs: Vec<TabId> = self
             .workspace
@@ -1000,13 +1011,36 @@ impl Session {
             };
             st.rerun = false;
             let fields = st.clone();
+            self.bible_search.rerunning = true;
             let error = self.start_search(tab, &fields);
+            self.bible_search.rerunning = false;
             let notice = self.gone_from_scope(&crate::favorites::SavedSearch::fields(&fields));
             if let Some(st) = self.search_tab_mut(tab) {
                 st.error = error;
                 st.notice = notice;
             }
         }
+    }
+
+    /// After the User database was replaced (a restore, #258): the Search Tabs whose results
+    /// come from it (Notes mode; Library mode, whose Search scope names Collections) drop
+    /// those results and run their searches again over it, as a restored Tab does.
+    pub(crate) fn rerun_searches_of_user_data(&mut self) {
+        let tabs: Vec<TabId> = self
+            .workspace
+            .tabs()
+            .filter(|t| matches!(t.search.mode, SearchMode::Notes | SearchMode::Library))
+            .map(|t| t.id)
+            .collect();
+        for tab in tabs {
+            self.cancel_bible_jobs(tab);
+            if let Some(st) = self.search_tab_mut(tab) {
+                st.clear_results();
+                st.error = None;
+                st.rerun = !st.query.trim().is_empty();
+            }
+        }
+        self.rerun_restored_searches();
     }
 
     fn start_bible_search(&mut self, tab: TabId, st: &SearchTab) -> Option<InlineError> {

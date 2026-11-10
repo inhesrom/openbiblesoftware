@@ -155,8 +155,11 @@ impl Imports {
     }
 }
 
-fn pref(id: &str) -> String {
-    format!("import-report/{id}")
+/// The start of the preference key of each Resource's latest Import report.
+pub(crate) const REPORT_PREF_PREFIX: &str = "import-report/";
+
+pub(crate) fn pref(id: &str) -> String {
+    format!("{REPORT_PREF_PREFIX}{id}")
 }
 
 impl Session {

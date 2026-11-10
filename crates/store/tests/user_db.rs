@@ -122,6 +122,41 @@ fn a_database_from_a_newer_build_is_refused() {
     assert!(err.to_string().contains("version"), "{err}");
 }
 
+/// A database this build refuses (a newer format, another application's) is left exactly as
+/// it was: its identity and version are read before anything is written, its journal mode
+/// included (#258).
+#[test]
+fn a_refused_database_is_not_changed() {
+    let dir = tmp("refused-unchanged");
+    for (name, app_id, version, why) in [
+        ("newer.db", obs_store::USER_APPLICATION_ID, 999, "version"),
+        ("foreign.db", 0x1234_5678, 3, "not a User database"),
+    ] {
+        let path = dir.join(name);
+        {
+            let c = rusqlite::Connection::open(&path).unwrap();
+            c.execute_batch(&format!(
+                "PRAGMA journal_mode = DELETE;
+                 PRAGMA application_id = {app_id};
+                 PRAGMA user_version = {version};
+                 CREATE TABLE kept (x);"
+            ))
+            .unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        let err = UserStore::open(&path).unwrap_err();
+        assert!(err.to_string().contains(why), "{name}: {err}");
+        let c = rusqlite::Connection::open(&path).unwrap();
+        let mode: String = c
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(mode, "delete", "{name}");
+        drop(c);
+        assert_eq!(std::fs::read(&path).unwrap(), before, "{name}");
+        assert!(!dir.join("backups").exists(), "{name}");
+    }
+}
+
 #[test]
 fn preferred_order_round_trips_and_survives_the_v2_migration() {
     let dir = tmp("preferred");

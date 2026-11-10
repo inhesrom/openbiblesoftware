@@ -295,7 +295,7 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     s.imports.reports.remove(&id);
     s.forget_search_index(&id);
     if let Some(user) = &s.user {
-        let _ = user.set_preference(&format!("import-report/{id}"), "null");
+        let _ = user.set_preference(&crate::import::pref(&id), "null");
     }
     if let Err(e) = s.save_preferred_order() {
         s.workspace.push_effect(Effect::Message(format!(

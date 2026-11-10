@@ -569,8 +569,8 @@ pub fn html_document(title: &str, body: &str, print: bool) -> String {
 
 // ------------------------------------------------------------------------------- session
 
-const OPTIONS_PREF: &str = "copy.options";
-const PRESETS_PREF: &str = "copy.presets";
+pub(crate) const OPTIONS_PREF: &str = "copy.options";
+pub(crate) const PRESETS_PREF: &str = "copy.presets";
 
 impl Session {
     /// Read the Copy verses options and Copy presets from the User database.

@@ -97,10 +97,8 @@ impl UserStore {
         }
         let existed = path.is_file();
         let conn = Connection::open(path).map_err(sql)?;
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(sql)?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(sql)?;
+        // Which database it is and its format are read before anything is written (WAL
+        // journaling persists in the file), so a refused file is left exactly as it was.
         let app_id: i32 = conn
             .query_row("PRAGMA application_id", [], |r| r.get(0))
             .map_err(sql)?;
@@ -119,6 +117,10 @@ impl UserStore {
                 supported: USER_SCHEMA_VERSION,
             });
         }
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .map_err(sql)?;
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(sql)?;
         let mut store = Self {
             conn,
             path: path.to_path_buf(),

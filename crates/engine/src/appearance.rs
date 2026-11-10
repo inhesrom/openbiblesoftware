@@ -373,23 +373,66 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Valu
     })
 }
 
-/// Apply a saved preference record; unknown or missing values keep their defaults. Records
-/// from #37 (a `dark_page` flag and a boolean `verse_numbers`) are read too. Returns the
-/// saved Text size when it was too small to read and the default was used instead.
+/// A saved preference record in the shape [`to_json`] writes: a record from #37 (a
+/// `dark_page` flag, a boolean `verse_numbers`) says the same with `page_tone` and a Verse
+/// numbers id, and a Text size saved while it was the default (`text_size_default`, or the
+/// default before #241 when the record has none) is the default now. [`apply_json`] reads
+/// this, and a restore compares it with what the app would write back (#258).
+pub(crate) fn upgrade_record(v: &Value) -> Value {
+    let mut v = v.clone();
+    let Some(o) = v.as_object_mut() else {
+        return v;
+    };
+    if let Some(&Value::Bool(dark)) = o.get("dark_page") {
+        o.remove("dark_page");
+        if dark && !o.contains_key("page_tone") {
+            o.insert("page_tone".into(), PageTone::Dark.id().into());
+        }
+    }
+    match o.get("verse_numbers") {
+        Some(Value::Bool(false)) => {
+            o.insert(
+                "verse_numbers".into(),
+                verse_numbers_id(VerseNumbers::Hidden).into(),
+            );
+        }
+        Some(Value::Bool(true)) => {
+            o.remove("verse_numbers");
+        }
+        _ => {}
+    }
+    let saved_under = match o.get("text_size_default") {
+        None => Some(TEXT_SIZE_OLD_DEFAULT),
+        Some(d) => d.as_f64().map(|d| d as f32),
+    };
+    if let Some(saved_under) = saved_under {
+        let size = o.get("text_size").and_then(Value::as_f64).map(|s| s as f32);
+        if size.is_some_and(|s| s >= TEXT_SIZE_MIN && s == saved_under) {
+            o.insert("text_size".into(), TEXT_SIZE_DEFAULT.into());
+        }
+        if o.contains_key("text_size_default") {
+            o.insert("text_size_default".into(), TEXT_SIZE_DEFAULT.into());
+        }
+    }
+    v
+}
+
+/// Apply a saved preference record, upgraded first ([`upgrade_record`]); unknown or missing
+/// values keep their defaults. Returns the saved Text size when it was too small to read and
+/// the default was used instead.
 pub(crate) fn apply_json(
     v: &Value,
     a: &mut Appearance,
     t: &mut TextSettings,
     f: &mut FontChoices,
 ) -> Option<f32> {
+    let v = &upgrade_record(v);
     f.apply_json(&v["fonts"]);
     if let Some(x) = v["theme"].as_str().and_then(Theme::from_id) {
         a.theme = x;
     }
     if let Some(x) = v["page_tone"].as_str().and_then(PageTone::from_id) {
         a.page_tone = x;
-    } else if v["dark_page"].as_bool() == Some(true) {
-        a.page_tone = PageTone::Dark;
     }
     if let Some(x) = v["interface_size"]
         .as_str()
@@ -426,14 +469,10 @@ pub(crate) fn apply_json(
     if let Ok(layout) = serde_json::from_value(v["reading_layout"].clone()) {
         t.layout = layout;
     }
-    match &v["verse_numbers"] {
-        Value::String(s) => {
-            if let Some(c) = VERSE_NUMBER_STYLES.iter().find(|c| c.1 == s) {
-                t.verse_numbers = c.0;
-            }
-        }
-        Value::Bool(false) => t.verse_numbers = VerseNumbers::Hidden,
-        _ => {}
+    if let Some(s) = v["verse_numbers"].as_str()
+        && let Some(c) = VERSE_NUMBER_STYLES.iter().find(|c| c.1 == s)
+    {
+        t.verse_numbers = c.0;
     }
     too_small
 }

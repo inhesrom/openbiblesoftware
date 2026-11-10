@@ -30,7 +30,7 @@ impl JobMode {
 }
 
 /// Preference key of the View menu's settings.
-const VIEW_PREF: &str = "view";
+pub(crate) const VIEW_PREF: &str = "view";
 
 /// One running engine: library, services, the command registry and the job queue.
 #[derive(Debug)]
@@ -86,7 +86,7 @@ pub struct Session {
     /// The Home arrangement and "Open Home at launch" (#178).
     pub(crate) home: crate::home::HomeSettings,
     /// The Page tone hint was offered already (#240): it is offered once.
-    page_tone_hinted: bool,
+    pub(crate) page_tone_hinted: bool,
     /// The Visual filters (#211).
     pub(crate) visual_filters: crate::visual_filters::VisualFilters,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.

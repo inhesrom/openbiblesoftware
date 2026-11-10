@@ -166,11 +166,15 @@ impl Session {
         self.user_db()?.back_up(dest)
     }
 
-    /// What restoring the Backup at `path` would change. Reading it changes nothing.
+    /// What restoring the Backup at `path` would change. Reading it changes nothing. The
+    /// Backup is loaded first as a launch on it would load it (the trial restore,
+    /// `backup_check.rs`), and one holding anything the app would not keep that way (a Layout,
+    /// a Favorite, a setting it would set back to its default) is refused, naming each, so a
+    /// restore never drops or defaults anything silently.
     pub fn restore_preview(&self, path: &Path) -> Result<RestorePreview, String> {
         let user = self.user_db()?;
         let now = user.contents()?;
-        let backup = user.backup_contents(path)?;
+        let (_, backup) = checked_backup(self, path)?;
         Ok(RestorePreview {
             path: path.to_path_buf(),
             lines: restore_lines(&now, &backup),
@@ -181,12 +185,26 @@ impl Session {
     }
 
     /// Restore the Backup at `path`: a Safety backup is taken, everything is replaced, and
-    /// the Session reloads what it keeps of the User database. Returns the Safety backup.
+    /// the Session reloads what it keeps of the User database. Returns the Safety backup. A
+    /// Backup the preview refuses changes nothing. What is restored is the copy read once and
+    /// loaded by the trial restore here, never the file read again, so a file changed
+    /// meanwhile cannot slip past it.
     pub fn restore_backup(&mut self, path: &Path) -> Result<PathBuf, String> {
+        let (backup, _) = checked_backup(self, path)?;
+        self.replace_user_data(path, &*backup)
+    }
+
+    /// Replace the User database with `backup`, read from `path`, and reload what the Session
+    /// keeps of it. Returns the Safety backup.
+    fn replace_user_data(
+        &mut self,
+        path: &Path,
+        backup: &dyn crate::persist::UserData,
+    ) -> Result<PathBuf, String> {
         let Some(mut user) = self.user.take() else {
             return Err(NO_USER.into());
         };
-        let safety = match user.restore(path) {
+        let safety = match user.restore(backup) {
             Ok(safety) => safety,
             Err(e) => {
                 // Nothing changed: keep the Session as it was, undo history included.
@@ -207,12 +225,14 @@ impl Session {
     }
 
     /// Undo restore: restore the Safety backup the last restore took. Its own Safety backup
-    /// (of the restored data) is kept like any other.
+    /// (of the restored data) is kept like any other. It is the data as it was in use, so
+    /// it is put back as it was, whatever the app could read of it then.
     pub fn undo_restore(&mut self) -> Result<PathBuf, String> {
         let Some(last) = self.last_restore.clone() else {
             return Err("There is no restore to undo".into());
         };
-        let safety = self.restore_backup(&last.safety)?;
+        let (backup, _) = self.user_db()?.open_backup(&last.safety)?;
+        let safety = self.replace_user_data(&last.safety, &*backup)?;
         self.last_restore = None;
         Ok(safety)
     }
@@ -222,9 +242,11 @@ impl Session {
         self.last_restore.as_ref()
     }
 
-    /// After a restore: nothing the Session wrote of the old data may be taken as saved.
+    /// After a restore: nothing the Session wrote of the old data may be taken as saved, and
+    /// no Search Tab shows results found in it.
     fn after_restore(&mut self) {
         self.forget_saved_session();
+        self.rerun_searches_of_user_data();
         if let NotesFilter::Notebook(id) = &self.notes.filter
             && !self
                 .notebooks()
@@ -239,7 +261,37 @@ impl Session {
     fn user_db(&self) -> Result<&dyn crate::persist::UserData, String> {
         self.user.as_deref().ok_or_else(|| NO_USER.to_string())
     }
+}
 
+/// The Backup at `path`, read into memory, and what it holds, if the app would keep all of it
+/// once restored: the store checks the database, and the trial restore
+/// ([`Session::trial_restore`]) loads a copy of it as a launch would.
+fn checked_backup(
+    session: &Session,
+    path: &Path,
+) -> Result<(Box<dyn crate::persist::UserData>, BackupContents), String> {
+    let (backup, found) = session.user_db()?.open_backup(path)?;
+    let unkept = session.trial_restore(&*backup).map_err(|e| {
+        format!(
+            "{} is not a backup of your data: it is damaged ({e}). Nothing was changed.",
+            path.display()
+        )
+    })?;
+    if !unkept.is_empty() {
+        return Err(format!(
+            "the Backup holds what the app could not keep once restored, so it would be lost: \
+             {}. Nothing was changed.",
+            unkept.join(", ")
+        ));
+    }
+    let contents = BackupContents {
+        version: found,
+        ..backup.contents()?
+    };
+    Ok((backup, contents))
+}
+
+impl Session {
     /// Export everything: a zip of Markdown (each Notebook's Notes) and JSON (every table of
     /// the User database) at `dest`. It is a copy for reading elsewhere; the app restores
     /// Backups, not exports. `dest` is never the User database itself.

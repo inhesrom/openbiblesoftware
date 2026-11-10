@@ -2230,6 +2230,13 @@ pub struct WritesFail {
     pub changes: std::sync::Arc<std::sync::atomic::AtomicU32>,
     /// Every Notebook read fails.
     pub notebooks: bool,
+    /// After a Backup is read, this file is copied over it: the file changes between the
+    /// engine's checks and the restore (#258).
+    pub swap_backup: Option<PathBuf>,
+    /// Reading the Favorites panics, as a loader meeting a record it never expected might.
+    pub favorites_panic: bool,
+    /// The copy a trial restore loads panics reading its Favorites (#258).
+    pub copies_panic: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2242,6 +2249,9 @@ impl WritesFail {
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
             notebooks: false,
+            swap_backup: None,
+            favorites_panic: false,
+            copies_panic: false,
         }
     }
 
@@ -2253,6 +2263,9 @@ impl WritesFail {
             visits: std::cell::Cell::new(failures),
             changes: std::sync::Arc::default(),
             notebooks: false,
+            swap_backup: None,
+            favorites_panic: false,
+            copies_panic: false,
         }
     }
 
@@ -2266,6 +2279,9 @@ impl WritesFail {
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
             notebooks: false,
+            swap_backup: None,
+            favorites_panic: false,
+            copies_panic: false,
         };
         let failures = std::sync::Arc::clone(&s.changes);
         (s, failures)
@@ -2279,6 +2295,9 @@ impl WritesFail {
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
             notebooks: true,
+            swap_backup: None,
+            favorites_panic: false,
+            copies_panic: false,
         }
     }
 }
@@ -2328,6 +2347,9 @@ impl crate::UserData for WritesFail {
         crate::UserData::save_resource_names(&self.store, names)
     }
     fn favorites(&self) -> Result<Vec<obs_store::FavoriteRow>, String> {
+        if self.favorites_panic {
+            panic!("a Favorite no loader expected");
+        }
         crate::UserData::favorites(&self.store)
     }
     fn add_favorite(&self, folder: &str, label: &str, location: &str) -> Result<i64, String> {
@@ -2437,11 +2459,29 @@ impl crate::UserData for WritesFail {
     fn contents(&self) -> Result<obs_store::BackupContents, String> {
         crate::UserData::contents(&self.store)
     }
-    fn backup_contents(&self, path: &Path) -> Result<obs_store::BackupContents, String> {
-        crate::UserData::backup_contents(&self.store, path)
+    fn open_backup(&self, path: &Path) -> Result<(Box<dyn crate::UserData>, u32), String> {
+        let (store, found) = obs_store::UserStore::open_backup(path).map_err(|e| e.to_string())?;
+        if let Some(swap) = &self.swap_backup {
+            std::fs::copy(swap, path).map_err(|e| e.to_string())?;
+        }
+        let opened = Self {
+            copies_panic: self.copies_panic,
+            ..Self::visits(store, 0)
+        };
+        Ok((Box::new(opened), found))
     }
-    fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
-        crate::UserData::restore(&mut self.store, path)
+    fn restore(&mut self, backup: &dyn crate::UserData) -> Result<PathBuf, String> {
+        crate::UserData::restore(&mut self.store, backup)
+    }
+    fn copy_in_memory(&self) -> Result<Box<dyn crate::UserData>, String> {
+        let store = self.store.copy_in_memory().map_err(|e| e.to_string())?;
+        Ok(Box::new(Self {
+            favorites_panic: self.copies_panic,
+            ..Self::visits(store, 0)
+        }))
+    }
+    fn user_store(&self) -> Option<&obs_store::UserStore> {
+        Some(&self.store)
     }
     fn preferences(&self) -> Result<Vec<(String, String)>, String> {
         crate::UserData::preferences(&self.store)

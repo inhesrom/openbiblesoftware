@@ -404,6 +404,14 @@ fn a_backup_missing_part_of_the_format_or_with_unreadable_rows_is_refused() {
             "UPDATE highlight_palettes SET position = 'first' WHERE id = 'standard'",
             "it is damaged",
         ),
+        (
+            // SQLite's integrity check does not look at foreign keys (#258): both Annotations
+            // then belong to no Notebook.
+            "no-notebook",
+            "PRAGMA foreign_keys = OFF;
+             UPDATE annotations SET notebook_id = 'nonexistent'",
+            "2 rows of `annotations` point at a missing row of `notebooks`",
+        ),
     ] {
         let backup = dir.0.join(format!("{name}.obsbackup"));
         db.back_up(&backup).unwrap();

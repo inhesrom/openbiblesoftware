@@ -361,11 +361,20 @@ pub trait UserData: std::fmt::Debug {
     fn update_backup(&self) -> Result<PathBuf, String>;
     /// What the User database holds now.
     fn contents(&self) -> Result<BackupContents, String>;
-    /// What the Backup at `path` holds, migrated to this build's format; the file is only read.
-    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String>;
-    /// Replace everything with the Backup at `path`, after taking a Safety backup, whose path
-    /// is returned. An unreadable or newer Backup changes nothing.
-    fn restore(&mut self, path: &Path) -> Result<PathBuf, String>;
+    /// The Backup at `path`, read into memory and migrated to this build's format, with the
+    /// format version it was written in; the file is only read. Writes to it change only
+    /// the copy in memory.
+    fn open_backup(&self, path: &Path) -> Result<(Box<dyn UserData>, u32), String>;
+    /// Replace everything with `backup`, a Backup [`UserData::open_backup`] read, after taking
+    /// a Safety backup, whose path is returned. The file it was read from is not read again:
+    /// what is restored is the copy the engine checked (#258).
+    fn restore(&mut self, backup: &dyn UserData) -> Result<PathBuf, String>;
+    /// A copy of everything in memory, for a trial restore (#258): writes to it change only
+    /// the copy.
+    fn copy_in_memory(&self) -> Result<Box<dyn UserData>, String>;
+    /// The SQLite User database this is, if it is one; [`UserData::restore`] copies from it.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn user_store(&self) -> Option<&obs_store::UserStore>;
     /// Every saved preference, `(key, value)`, by key.
     fn preferences(&self) -> Result<Vec<(String, String)>, String>;
     /// The local date and time of `at` (Unix seconds), `YYYY-MM-DD HH:MM`.
@@ -509,11 +518,22 @@ impl UserData for obs_store::UserStore {
     fn contents(&self) -> Result<BackupContents, String> {
         obs_store::UserStore::contents(self).map_err(|e| e.to_string())
     }
-    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String> {
-        obs_store::UserStore::backup_contents(path).map_err(|e| e.to_string())
+    fn open_backup(&self, path: &Path) -> Result<(Box<dyn UserData>, u32), String> {
+        let (backup, found) = obs_store::UserStore::open_backup(path).map_err(|e| e.to_string())?;
+        Ok((Box::new(backup), found))
     }
-    fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
-        obs_store::UserStore::restore(self, path).map_err(|e| e.to_string())
+    fn restore(&mut self, backup: &dyn UserData) -> Result<PathBuf, String> {
+        let backup = backup
+            .user_store()
+            .ok_or("the Backup was not read by this User database")?;
+        obs_store::UserStore::restore_from(self, backup).map_err(|e| e.to_string())
+    }
+    fn copy_in_memory(&self) -> Result<Box<dyn UserData>, String> {
+        let copy = obs_store::UserStore::copy_in_memory(self).map_err(|e| e.to_string())?;
+        Ok(Box::new(copy))
+    }
+    fn user_store(&self) -> Option<&obs_store::UserStore> {
+        Some(self)
     }
     fn preferences(&self) -> Result<Vec<(String, String)>, String> {
         obs_store::UserStore::preferences(self).map_err(|e| e.to_string())
