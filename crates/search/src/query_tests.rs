@@ -894,7 +894,7 @@ fn a_100k_deep_query_is_a_query_error_not_a_stack_overflow() {
         assert_eq!(e.kind, QueryErrorKind::TooDeep, "{kind}");
         assert_eq!(
             e.to_string(),
-            "the query nests too deeply (at most 10 parentheses, NOTs and proximity operators inside one another)"
+            "The query nests too deeply (at most 10 parentheses, NOTs and proximity operators inside one another)"
         );
         // The span underlines the token that went one level too deep.
         assert!(e.span.end <= q.len() && e.span.start < e.span.end, "{kind}");

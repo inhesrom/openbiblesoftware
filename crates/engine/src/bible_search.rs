@@ -196,7 +196,7 @@ pub fn parse_scope(text: &str) -> Result<Scope, InlineError> {
                 l.push(p);
                 Scope::Passages(l)
             })
-            .ok_or_else(|| InlineError::new(ErrorField::Scope, "no such books", None))
+            .ok_or_else(|| InlineError::new(ErrorField::Scope, "No such books", None))
     };
     match lower.as_str() {
         "" | "whole bible" | "bible" | "all" => Ok(Scope::WholeBible),

@@ -1499,3 +1499,106 @@ fn a_native_floating_window_leaves_the_main_windows_footnote_widgets_alone() {
         "the main window's marker still holds Space"
     );
 }
+
+/// Psalm 119:1-30 in long verses, imported from USFM; 119:1 has a cross-reference note to
+/// Psalm 119:1-26, a Passage longer than a reference preview's 20 Verses whose 20 Verses are
+/// also taller than the popup (#308).
+pub(super) fn long_psalm_119() -> obs_model::Resource {
+    let mut usfm = String::from("\\id PSA\n\\c 119\n\\p\n");
+    for k in 1..=30 {
+        usfm.push_str(&format!(
+            "\\v {k} Verse {k}: blessed are the undefiled in the way, who walk in the law of the \
+             LORD and seek him with the whole heart."
+        ));
+        if k == 1 {
+            usfm.push_str("\\x - \\xo 119:1 \\xt Psalm 119:1-26\\x*");
+        }
+        usfm.push('\n');
+    }
+    let mut import = obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+        resource_id: "psalm-119".into(),
+        title: "Psalm 119 (test)".into(),
+        abbreviation: "PS119".into(),
+        language: "en".into(),
+        source_file: "PSA.usfm".into(),
+        tool_version: "test".into(),
+        ..Default::default()
+    });
+    import.add_book("PSA.usfm", usfm).unwrap();
+    let mut psalm = import.finish().unwrap().0;
+    psalm.manifest.license = "LicenseRef-PublicDomain".into();
+    psalm
+}
+
+/// Rest the pointer on the first link of the cross-reference note of `tab` whose text starts
+/// with `text`, until the reference preview `heading` shows.
+pub(super) fn hover_note_link(h: &mut Harness, tab: TabId, text: &str, heading: &str) {
+    let (_, at) = marker(h, tab, text);
+    h.events.push(Event::PointerMoved(at));
+    for _ in 0..60 {
+        h.frames(2);
+        if popover(h).is_some_and(|p| !p.link_rects.is_empty()) {
+            break;
+        }
+    }
+    let link = popover(h).expect("the note's popover").link_rects[0];
+    for p in [at, pos2(at.x, link.center().y), link.center()] {
+        h.events.push(Event::PointerMoved(p));
+        h.frames(2);
+    }
+    for _ in 0..300 {
+        h.paced_frame();
+        if h.find(heading).is_some() && preview_shown(h) {
+            break;
+        }
+    }
+    h.frames(4);
+}
+
+/// A reference preview of Psalm 119's first 20 Verses is laid out and drawn (its AccessKit
+/// label; the reading pane's own text goes on past Verse 20).
+fn preview_shown(h: &Harness) -> bool {
+    h.tree
+        .as_ref()
+        .into_iter()
+        .flat_map(|tree| tree.nodes.iter())
+        .filter(|(_, node)| node.role() == egui::Role::Label)
+        .filter_map(|(_, node)| node.value())
+        .any(|v| v.starts_with("Verse 1:") && v.contains("Verse 20:") && !v.contains("Verse 21:"))
+}
+
+/// SEARCH-7 (#308): a reference preview cut both at 20 Verses and at the popup's height says
+/// "Preview shortened" once, not once for each cut.
+#[test]
+fn a_shortened_reference_preview_says_so_once() {
+    let (mut h, _files, tab) = library("shortened", &[long_psalm_119()], "Ps 119:1");
+    h.ctx.enable_accesskit();
+    hover_note_link(&mut h, tab, "Psalm 119:1-26", "Ps 119:1-26");
+    assert!(h.find("Ps 119:1-26").is_some(), "{:?}", h.texts());
+    assert!(preview_shown(&h), "the preview is drawn");
+    let notices = h
+        .texts()
+        .iter()
+        .filter(|t| **t == crate::shell::references::PREVIEW_SHORTENED)
+        .count();
+    assert_eq!(notices, 1, "{:?}", h.texts());
+}
+
+/// A preview taller than its popup shows whole lines only (#308).
+#[test]
+fn a_tall_preview_shows_whole_lines_only() {
+    use crate::shell::references::whole_lines_height;
+    let bottoms = [24.0, 48.0, 72.0, 96.0];
+    assert_eq!(whole_lines_height(96.0, bottoms, 120.0), 96.0, "all fits");
+    assert_eq!(
+        whole_lines_height(96.0, bottoms, 80.0),
+        72.0,
+        "not 80: half a line"
+    );
+    assert_eq!(whole_lines_height(96.0, bottoms, 72.0), 72.0);
+    assert_eq!(
+        whole_lines_height(96.0, bottoms, 10.0),
+        24.0,
+        "at least one line"
+    );
+}

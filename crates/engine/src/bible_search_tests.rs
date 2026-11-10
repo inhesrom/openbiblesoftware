@@ -476,6 +476,48 @@ fn an_over_deep_query_is_an_inline_error_not_a_crash() {
     cleanup(s, root);
 }
 
+/// The reference, query and Morphology parsers' inline errors read alike (#308): sentence case,
+/// curly quotes around what was typed, no backticks.
+#[test]
+fn search_inline_errors_share_one_style() {
+    let (mut s, root) = fixture("error-style", false);
+    for (params, field, message) in [
+        (
+            json!({ "text": "love", "scope": "Foo 3" }),
+            "scope",
+            "Unknown book “Foo”",
+        ),
+        (
+            json!({ "text": "" }),
+            "query",
+            "Type something to search for",
+        ),
+        (
+            json!({ "text": "@aorst" }),
+            "query",
+            "“aorst” is not Morphology (try verb, aorist, imperative, genitive or Qal)",
+        ),
+        (
+            json!({ "text": "strong:" }),
+            "query",
+            "“strong:” needs something after it",
+        ),
+    ] {
+        let out = s.run("search.run", &params).unwrap();
+        assert_eq!(out["error"]["field"], field, "{params}");
+        let tab = TabId(out["tab"].as_u64().unwrap());
+        let e = s.search_tab(tab).unwrap().error.clone().unwrap();
+        assert_eq!(e.message, message, "{params}");
+        assert!(!e.message.contains('`'), "{}", e.message);
+        assert!(
+            e.message.starts_with(|c: char| !c.is_lowercase()),
+            "{}",
+            e.message
+        );
+    }
+    cleanup(s, root);
+}
+
 #[test]
 fn recent_queries_are_kept_per_mode_in_the_user_database() {
     let (mut s, root) = fixture("recent", true);

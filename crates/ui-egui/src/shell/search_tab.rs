@@ -133,23 +133,29 @@ fn morphology_chooser(ui: &mut Ui, tab: TabId, morph: &mut MorphCriteria) -> Opt
     add
 }
 
-/// An inline error under its field, the offending part quoted.
+/// An inline error under its field.
 fn error_line(ui: &mut Ui, error: Option<&InlineError>, field: ErrorField, text: &str) {
     let Some(e) = error.filter(|e| e.field == field) else {
         return;
     };
+    ui.label(
+        RichText::new(inline_error_text(e, text))
+            .small()
+            .color(theme::c().warn),
+    );
+}
+
+/// What an inline error line says: its message, then the offending part of `text` in curly
+/// quotes when the message does not already quote something (#308).
+pub(super) fn inline_error_text(e: &InlineError, text: &str) -> String {
     let quoted = e
         .span
         .clone()
         .and_then(|s| text.get(s))
-        .filter(|q| !q.trim().is_empty() && !e.message.contains(*q))
+        .filter(|q| !q.trim().is_empty() && !e.message.contains(*q) && !e.message.contains('“'))
         .map(|q| format!(" (“{q}”)"))
         .unwrap_or_default();
-    ui.label(
-        RichText::new(format!("{}{quoted}", e.message))
-            .small()
-            .color(theme::c().warn),
-    );
+    format!("{}{quoted}", e.message)
 }
 
 /// The query row's toggle for Word forms (#180).
