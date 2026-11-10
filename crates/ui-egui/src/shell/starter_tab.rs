@@ -15,6 +15,41 @@ use crate::tokens::{size, space};
 /// Every row is this tall: a right-to-left row would otherwise take the whole height.
 const ROW_HEIGHT: f32 = size::ROW_DOUBLE;
 
+/// The Starter library came with the app.
+pub(super) const INTRO_BUNDLED: &str = "Open Bibles, original-language texts, lexicons, commentaries and \
+     reference data that come with the app. A Resource you remove stays removed until you add \
+     it back here.";
+/// Downloaded from the app's releases, and some of it is in the Library.
+pub(super) const INTRO_DOWNLOADED: &str = "Open Bibles, original-language texts, lexicons, commentaries \
+     and reference data, downloaded from the app's releases and checked before anything was \
+     added. A Resource you remove stays removed until you add it back here.";
+/// Not bundled and none of it in the Library yet.
+pub(super) const INTRO_WITHOUT: &str = "This copy of the app came without the Starter library: open \
+     Bibles, original-language texts, lexicons, commentaries and reference data. Download it \
+     from the app's releases; every file is checked before anything is added.";
+
+/// Whether any Starter Resource is (or was, until the user removed it) in the Library.
+fn has_some(rows: &[StarterRow]) -> bool {
+    rows.iter().any(|r| {
+        matches!(
+            r.status,
+            StarterStatus::InLibrary | StarterStatus::Removed | StarterStatus::Outdated { .. }
+        )
+    })
+}
+
+/// The line under the title: it says the Starter library is missing only when none of it is
+/// in the Library (LIBRARY-6), never above "Every Starter Resource … is in your Library."
+pub(super) fn starter_intro(bundled: bool, rows: &[StarterRow]) -> &'static str {
+    if bundled {
+        INTRO_BUNDLED
+    } else if has_some(rows) {
+        INTRO_DOWNLOADED
+    } else {
+        INTRO_WITHOUT
+    }
+}
+
 impl State {
     pub(super) fn starter_body(&mut self, ui: &mut Ui) {
         let mut action: Option<(&'static str, serde_json::Value)> = None;
@@ -26,19 +61,7 @@ impl State {
         crate::components::page_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.label(crate::components::title_text("Starter library"));
-            ui.label(
-                RichText::new(if bundled {
-                    "Open Bibles, original-language texts, lexicons, commentaries and \
-                         reference data that come with the app. A Resource you remove stays \
-                         removed until you add it back here."
-                } else {
-                    "This copy of the app came without the Starter library: open Bibles, \
-                         original-language texts, lexicons, commentaries and reference data. \
-                         Download it from the app's releases; every file is checked before \
-                         anything is added."
-                })
-                .color(theme::c().muted),
-            );
+            ui.label(RichText::new(starter_intro(bundled, &rows)).color(theme::c().muted));
             ui.add_space(space::M);
             if let Some(d) = starter.download() {
                 ui.horizontal(|ui| {
@@ -64,12 +87,15 @@ impl State {
                 crate::components::loading_state(ui, "Loading the Starter library list…");
             } else if !wanted.is_empty() {
                 let bytes: u64 = wanted.iter().map(|i| i.bytes).sum();
+                let missing = format!(
+                    "{} missing Resource{}",
+                    wanted.len(),
+                    if wanted.len() == 1 { "" } else { "s" }
+                );
                 let label = if bundled {
-                    format!(
-                        "Add {} missing Resource{}",
-                        wanted.len(),
-                        if wanted.len() == 1 { "" } else { "s" }
-                    )
+                    format!("Add {missing}")
+                } else if has_some(&rows) {
+                    format!("Download {missing} (≈{} MB)", bytes.div_ceil(1_000_000))
                 } else {
                     format!(
                         "Download Starter library (≈{} MB)",
@@ -114,6 +140,7 @@ impl State {
             let (have, need): (Vec<&StarterRow>, Vec<&StarterRow>) = rows
                 .iter()
                 .partition(|r| r.status == StarterStatus::InLibrary);
+            crate::components::keep_clear_of_scroll_bar(ui);
             egui::ScrollArea::vertical()
                 .id_salt("starter-library")
                 .auto_shrink([false, false])
@@ -221,14 +248,11 @@ fn starter_row(
                     egui::Label::new(crate::components::hint_text(facts.join(" · "))).truncate(),
                 );
             });
+            // What it powers: a plain hint, not a link's colour; it opens nothing (LIBRARY-7).
             if !row.features.is_empty() {
                 ui.add(
-                    egui::Label::new(
-                        RichText::new(row.features.join(" · "))
-                            .small()
-                            .color(theme::c().lapis),
-                    )
-                    .truncate(),
+                    egui::Label::new(crate::components::hint_text(row.features.join(" · ")))
+                        .truncate(),
                 );
             }
         });

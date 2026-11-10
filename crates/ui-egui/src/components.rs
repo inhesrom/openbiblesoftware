@@ -251,6 +251,16 @@ pub fn progress_bar(fraction: f32, what: impl Into<egui::WidgetText>) -> egui::P
 /// (`details`, as the code that failed reported it) only after [`DETAILS`] is clicked.
 /// Returns whether Retry was clicked.
 pub fn error_state(ui: &mut Ui, message: &str, details: &str) -> bool {
+    error_frame(ui, message, details, true)
+}
+
+/// An [`error_state`] without Retry, for a failure the same attempt cannot fix (a file that
+/// is not there); the surface offers its own way on.
+pub fn error_notice(ui: &mut Ui, message: &str, details: &str) {
+    error_frame(ui, message, details, false);
+}
+
+fn error_frame(ui: &mut Ui, message: &str, details: &str, with_retry: bool) -> bool {
     let id = ui.scope_id().with(("error-details", message));
     let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let mut retry = false;
@@ -261,15 +271,17 @@ pub fn error_state(ui: &mut Ui, message: &str, details: &str) -> bool {
             ui.add(icons::image(ui.ctx(), Icon::Warning, size::ICON, warn));
             ui.add(egui::Label::new(RichText::new(message).color(theme::c().ink)).wrap());
         });
-        ui.horizontal(|ui| {
-            retry = ui.add(button(RETRY)).clicked();
-            if !details.is_empty() {
-                let label = if open { HIDE_DETAILS } else { DETAILS };
-                if link(ui, label).clicked() {
-                    open = !open;
+        if with_retry || !details.is_empty() {
+            ui.horizontal(|ui| {
+                retry = with_retry && ui.add(button(RETRY)).clicked();
+                if !details.is_empty() {
+                    let label = if open { HIDE_DETAILS } else { DETAILS };
+                    if link(ui, label).clicked() {
+                        open = !open;
+                    }
                 }
-            }
-        });
+            });
+        }
         if open {
             ui.add(
                 egui::Label::new(caption_text(details).color(theme::c().muted))
@@ -280,6 +292,15 @@ pub fn error_state(ui: &mut Ui, message: &str, details: &str) -> bool {
     });
     ui.data_mut(|d| d.insert_temp(id, open));
     retry
+}
+
+/// The next scroll area's content keeps clear of its scroll bar, so a row's Buttons at the right
+/// edge never sit under the bar's thumb (LIBRARY-14). egui's floating bar is drawn over the
+/// content and takes no room of its own.
+pub fn keep_clear_of_scroll_bar(ui: &mut Ui) {
+    let scroll = &mut ui.spacing_mut().scroll;
+    scroll.floating_allocated_width =
+        scroll.bar_inner_margin + scroll.bar_width + scroll.bar_outer_margin;
 }
 
 /// The thumb of a custom-drawn view's scroll bar in `track` (the view's right edge,

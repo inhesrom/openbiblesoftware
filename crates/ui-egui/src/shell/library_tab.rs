@@ -9,7 +9,7 @@ use obs_engine::{LibraryFilter, TabId, annotations_phrase, language_name};
 use obs_model::{Manifest, Origin, ResourceType};
 use serde_json::json;
 
-use super::get_bibles_tab::spdx_badge;
+use super::get_bibles_tab::{licence_name, spdx_badge};
 use super::{RESOURCE_TYPES, State, type_name};
 use crate::icons::{self, Icon};
 use crate::pane::reading_pane;
@@ -406,7 +406,18 @@ impl State {
                         .show(ui, |ui| {
                             for (label, value) in about_fields(&m) {
                                 ui.label(RichText::new(label).color(theme::c().muted));
-                                ui.label(value);
+                                match label {
+                                    // In words; the SPDX id on hover (LIBRARY-8).
+                                    LICENCE => {
+                                        ui.label(licence_name(&value)).on_hover_text(&value);
+                                    }
+                                    // Its web address a link, as Credits shows it
+                                    // (LIBRARY-12).
+                                    SOURCE => super::credits_tab::linked_text(ui, &value),
+                                    _ => {
+                                        ui.label(value);
+                                    }
+                                }
                                 ui.end_row();
                             }
                             // Resource tags (#153): the user's own labels, for a
@@ -583,7 +594,9 @@ impl Widest {
         let mut widest = Widest::default();
         for m in rows {
             widest.abbreviation = widest.abbreviation.max(width(&m.abbreviation, text::BODY));
-            widest.language = widest.language.max(width(&m.language, text::SMALL));
+            widest.language = widest
+                .language
+                .max(width(row_language(&m.language), text::SMALL));
             let (badge, _) = spdx_badge(&m.license);
             widest.badge = widest
                 .badge
@@ -647,6 +660,18 @@ impl RowColumns {
             language,
             badge,
         }
+    }
+}
+
+/// A row's language: its name, as the chips above say it, never its code (LIBRARY-9); nothing
+/// for a Resource whose language is not known (`und`), which the row's hover, its chip and
+/// About name "Unknown language": that long a name would take the licence badges' room from
+/// every row.
+pub(crate) fn row_language(tag: &str) -> &str {
+    if tag.is_empty() || tag == "und" {
+        ""
+    } else {
+        language_name(tag)
     }
 }
 
@@ -747,7 +772,8 @@ fn library_row(
     }
     paint(columns.title, title);
     if let Some(column) = columns.language {
-        paint(column, layout(column, &m.language, text::SMALL, c.muted));
+        let language = row_language(&m.language);
+        paint(column, layout(column, language, text::SMALL, c.muted));
     }
     let (licence, _) = spdx_badge(&m.license);
     if let Some(column) = columns.badge {
@@ -771,7 +797,9 @@ fn library_row(
     let body = body.on_hover_text(format!(
         "{} · {} · {licence} ({}) — double-click or Enter to open, or drag it onto a Panel; \
          right-click for more",
-        m.title, m.language, m.license
+        m.title,
+        language_name(&m.language),
+        m.license
     ));
     RowResponse { body, handle }
 }
@@ -869,9 +897,14 @@ pub(super) fn type_singular(t: ResourceType) -> &'static str {
     }
 }
 
+/// The About Tab's licence field: its value is the SPDX id, shown in words.
+const LICENCE: &str = "Licence";
+/// The About Tab's source field: a web address in it is a link.
+const SOURCE: &str = "Source";
+
 /// The manifest fields shown at the top of the About Tab.
 fn about_fields(m: &Manifest) -> Vec<(&'static str, String)> {
-    let mut out = vec![("Licence", m.license.clone())];
+    let mut out = vec![(LICENCE, m.license.clone())];
     if let Some(p) = &m.publisher {
         out.push(("Publisher", p.clone()));
     }
@@ -880,7 +913,7 @@ fn about_fields(m: &Manifest) -> Vec<(&'static str, String)> {
     }
     out.push(("Revision", m.revision.to_string()));
     if let Some(u) = &m.source_url {
-        out.push(("Source", u.clone()));
+        out.push((SOURCE, u.clone()));
     }
     out.push((
         "Origin",

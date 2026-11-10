@@ -1796,6 +1796,18 @@ mod library {
         r.center()
     }
 
+    /// Click a language chip: the topmost text with its name (rows name their language too).
+    fn click_chip(h: &mut Harness, language: &str) {
+        let r = h
+            .shapes
+            .iter()
+            .filter(|(_, t)| t == language)
+            .map(|(r, _)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("no {language} chip: {:?}", h.texts()));
+        h.click(r.center());
+    }
+
     /// Where a row's drag handle is.
     fn handle(h: &Harness, abbrev: &str) -> Pos2 {
         let y = row_pos(h, abbrev).y;
@@ -1857,7 +1869,6 @@ mod library {
         for t in [
             "BIBLES",
             "Test Bible",
-            "hbo",
             // The licence in words; its SPDX id is in the tooltip and the About Tab (#302).
             "Public domain",
             "English",
@@ -1871,6 +1882,14 @@ mod library {
                 h.texts()
             );
         }
+        // A row names its language as the chips do, never by its code (#307).
+        assert!(
+            !h.shapes
+                .iter()
+                .any(|(r, s)| (s == "hbo" || s == "en") && panel.contains(r.center())),
+            "{:?}",
+            h.texts()
+        );
         assert_eq!(starred(&h), "TB");
 
         h.shell.st.session.library.add(LibraryEntry {
@@ -2187,19 +2206,19 @@ mod library {
         h.frames(2);
         assert_eq!(row_names(&h), ["HEB", "HNUM"]);
         // With the Hebrew chip on as well, only the Hebrew-language one is left.
-        h.click_text("Hebrew");
+        click_chip(&mut h, "Hebrew");
         assert_eq!(row_names(&h), ["HEB"]);
         // The English chip adds English Resources that also match the text.
-        h.click_text("English");
+        click_chip(&mut h, "English");
         assert_eq!(row_names(&h), ["HEB", "HNUM"]);
         // Clearing the text leaves the chips filtering.
         let t = h.tab_id("Library");
         h.shell.st.tabs.get_mut(&t).unwrap().filter.clear();
         h.frames(2);
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        h.click_text("English");
+        click_chip(&mut h, "English");
         assert_eq!(row_names(&h), ["HEB"]);
-        h.click_text("Hebrew");
+        click_chip(&mut h, "Hebrew");
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
         // A filter that matches nothing says so.
         h.shell.st.tabs.get_mut(&t).unwrap().filter = "zzz".into();
@@ -2211,7 +2230,7 @@ mod library {
     #[test]
     fn removing_the_last_resource_of_a_selected_language_restores_unfiltered_rows() {
         let mut h = Harness::new();
-        h.click_text("Hebrew");
+        click_chip(&mut h, "Hebrew");
         assert_eq!(row_names(&h), ["HEB"]);
         let p = row_pos(&h, "HEB");
         right_click(&mut h, p);
@@ -2231,8 +2250,8 @@ mod library {
         assert!(h.find("Nothing matches the filter.").is_none());
 
         // The remaining chip still toggles normally; no hidden selection survives.
-        h.click_text("English");
-        h.click_text("English");
+        click_chip(&mut h, "English");
+        click_chip(&mut h, "English");
         assert_eq!(row_names(&h), ["TB", "HNUM"]);
         assert!(h.shell.st.tabs[&tab].languages.is_empty());
     }
@@ -2367,7 +2386,8 @@ mod library {
         assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
         for text in [
             "Licence",
-            "CC0-1.0",
+            // In words (#307), the SPDX id on hover.
+            "CC0 1.0",
             "Source",
             "https://github.com/inhesrom/openbiblesoftware",
             "ATTRIBUTION",
@@ -2424,7 +2444,7 @@ mod library {
         for t in [
             "Test Bible",
             "Licence",
-            "LicenseRef-PD",
+            "Public domain",
             "ATTRIBUTION",
             "CHANGES WE MADE",
             "Reformatted for the app.",
@@ -3243,7 +3263,9 @@ mod import {
         assert!(
             h.panels()
                 .iter()
-                .any(|(_, t)| t.iter().any(|t| t == "Import report"))
+                .any(|(_, t)| t.iter().any(|t| t.starts_with("Import report · "))),
+            "{:?}",
+            h.panels()
         );
         assert!(h.find("Import in progress").is_some(), "{:?}", h.texts());
         assert!(h.find(&source.display().to_string()).is_some());
@@ -3369,7 +3391,7 @@ mod import {
         let rec = record(&h, &id);
         assert_eq!(rec.phase, ImportPhase::Complete, "{:?}", rec.error);
         assert!(!rec.report.unwrap().license_missing);
-        for want in ["Import complete", "1 source file(s) · sword (OSIS)"] {
+        for want in ["Import complete", "1 source file · sword (OSIS)"] {
             assert!(h.find(want).is_some(), "{want:?} missing: {:?}", h.texts());
         }
         h.click_text("Open");
@@ -3404,8 +3426,8 @@ mod import {
         for want in [
             "Import complete",
             UNAVAILABLE_INDEX,
-            "2 source file(s) · usfm",
-            "2 Bible book(s) · 2 Verses · 0 notes · 0 Tagged words",
+            "2 source files · usfm",
+            "2 Bible books · 2 Verses · 0 notes · 0 Tagged words",
             "Unmapped verses: 0",
             &format!("Absent verses: {}", report.verse_map.unwrap().absent),
             "Dropped markup (1)",
@@ -3443,7 +3465,8 @@ mod import {
             "{:?}",
             h.panels()
         );
-        h.click_text("Import report");
+        // The report Tab names the Resource once it is in (#307).
+        h.click_text("Import report · WEB-1");
         h.click_text("About");
         assert!(
             h.panels()
@@ -3592,6 +3615,8 @@ mod keyboard_navigation;
 mod keyboard_shortcuts;
 #[path = "library_rows_tests.rs"]
 mod library_rows;
+#[path = "library_wording_tests.rs"]
+mod library_wording;
 #[path = "menu_audit_tests.rs"]
 mod menu_audit;
 #[path = "note_margin_tests.rs"]

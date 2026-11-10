@@ -79,7 +79,7 @@ fn painted_rows(h: &Harness) -> Vec<PaintedRow> {
         let words = [
             m.abbreviation.as_str(),
             m.title.as_str(),
-            m.language.as_str(),
+            super::super::library_tab::row_language(&m.language),
             badge,
         ];
         // A title cut short before the Filter's match shows from the matched word on.

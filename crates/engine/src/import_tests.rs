@@ -347,3 +347,75 @@ fn import_source_detects_sword_by_conf_file_or_mods_d_folder() {
         ImportSource::Usfm("/x/GEN.usfm".into())
     );
 }
+
+/// LIBRARY-10 (#307): every report Tab was "Import report"; two side by side could not be
+/// told apart. It names the source while it runs and the Resource once it is in.
+#[test]
+fn import_report_tabs_name_what_was_imported() {
+    let (mut s, root) = fixture("report-title", JobMode::Inline);
+    let title = |s: &Session, id: &str| {
+        s.workspace
+            .tabs()
+            .find(|t| t.kind == TabKind::ImportReport(id.into()))
+            .map(|t| t.title.clone())
+    };
+    let id = start(&mut s, &root.join("source/GEN.usfm"));
+    assert_eq!(title(&s, &id).as_deref(), Some("Import report · GEN"));
+    finish(&mut s);
+    let abbreviation = s.library.get(&id).unwrap().manifest.abbreviation.clone();
+    assert_eq!(
+        title(&s, &id),
+        Some(format!("Import report · {abbreviation}"))
+    );
+    let other = start(&mut s, &root.join("source/JHN.usfm"));
+    assert_eq!(title(&s, &other).as_deref(), Some("Import report · JHN"));
+    finish(&mut s);
+    assert_ne!(title(&s, &id), title(&s, &other));
+    // Opened again from About: the same name.
+    for t in s.workspace.tabs().map(|t| t.id).collect::<Vec<_>>() {
+        s.workspace.close(t);
+    }
+    s.run("import.report", &json!({"id": id})).unwrap();
+    assert_eq!(
+        title(&s, &id),
+        Some(format!("Import report · {abbreviation}"))
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// LIBRARY-13 (#307): a failed Import says what went wrong in plain words; the system's
+/// error ("os error 2", "no \id line") is only the Details.
+#[test]
+fn failed_imports_say_what_went_wrong_in_plain_words() {
+    let (mut s, root) = fixture("failure-words", JobMode::Inline);
+    std::fs::write(root.join("README.md"), "# Not a Bible\n").unwrap();
+    for (path, plain) in [
+        (
+            root.join("missing/foo.usfm"),
+            "That file or folder does not exist",
+        ),
+        (root.join("README.md"), "That is not a USFM file"),
+    ] {
+        let id = start(&mut s, &path);
+        finish(&mut s);
+        let record = s.imports.report(&id).unwrap();
+        assert_eq!(record.phase, ImportPhase::Failed);
+        let error = record.error.as_deref().unwrap();
+        let message = failure_message(error);
+        assert!(message.starts_with(plain), "{error:?} reads {message:?}");
+        for raw in ["os error", "\\id", "README.md", "foo.usfm"] {
+            assert!(!message.contains(raw), "{message:?}");
+        }
+    }
+    assert_eq!(
+        failure_message("x: Import cancelled"),
+        "The Import was cancelled."
+    );
+    assert!(
+        failure_message("KJV from CrossWire: download from CrossWire: timed out")
+            .starts_with("The download did not finish")
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
