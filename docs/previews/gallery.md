@@ -216,6 +216,48 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Library rows: Filter match in a cut title, Light](gallery/library-rows-filter-match-in-a-cut-title-light-1x.png) | ![Library rows: Filter match in a cut title, Dark](gallery/library-rows-filter-match-in-a-cut-title-dark-1x.png) | ![Library rows: Filter match in a cut title, Sepia](gallery/library-rows-filter-match-in-a-cut-title-sepia-1x.png) |
 | [2×](gallery/library-rows-filter-match-in-a-cut-title-light-2x.png) | [2×](gallery/library-rows-filter-match-in-a-cut-title-dark-2x.png) | [2×](gallery/library-rows-filter-match-in-a-cut-title-sepia-2x.png) |
 
+### Get Resources: Lexicons, section gaps
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Lexicons, section gaps, Light](gallery/get-resources-lexicons-section-gaps-light-1x.png) | ![Get Resources: Lexicons, section gaps, Dark](gallery/get-resources-lexicons-section-gaps-dark-1x.png) | ![Get Resources: Lexicons, section gaps, Sepia](gallery/get-resources-lexicons-section-gaps-sepia-1x.png) |
+| [2×](gallery/get-resources-lexicons-section-gaps-light-2x.png) | [2×](gallery/get-resources-lexicons-section-gaps-dark-2x.png) | [2×](gallery/get-resources-lexicons-section-gaps-sepia-2x.png) |
+
+### Get Resources: rows beside the scroll bar
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: rows beside the scroll bar, Light](gallery/get-resources-rows-beside-the-scroll-bar-light-1x.png) | ![Get Resources: rows beside the scroll bar, Dark](gallery/get-resources-rows-beside-the-scroll-bar-dark-1x.png) | ![Get Resources: rows beside the scroll bar, Sepia](gallery/get-resources-rows-beside-the-scroll-bar-sepia-1x.png) |
+| [2×](gallery/get-resources-rows-beside-the-scroll-bar-light-2x.png) | [2×](gallery/get-resources-rows-beside-the-scroll-bar-dark-2x.png) | [2×](gallery/get-resources-rows-beside-the-scroll-bar-sepia-2x.png) |
+
+### Starter library: rows beside the scroll bar
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Starter library: rows beside the scroll bar, Light](gallery/starter-library-rows-beside-the-scroll-bar-light-1x.png) | ![Starter library: rows beside the scroll bar, Dark](gallery/starter-library-rows-beside-the-scroll-bar-dark-1x.png) | ![Starter library: rows beside the scroll bar, Sepia](gallery/starter-library-rows-beside-the-scroll-bar-sepia-1x.png) |
+| [2×](gallery/starter-library-rows-beside-the-scroll-bar-light-2x.png) | [2×](gallery/starter-library-rows-beside-the-scroll-bar-dark-2x.png) | [2×](gallery/starter-library-rows-beside-the-scroll-bar-sepia-2x.png) |
+
+### Library: an Import with no language or licence
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library: an Import with no language or licence, Light](gallery/library-an-import-with-no-language-or-licence-light-1x.png) | ![Library: an Import with no language or licence, Dark](gallery/library-an-import-with-no-language-or-licence-dark-1x.png) | ![Library: an Import with no language or licence, Sepia](gallery/library-an-import-with-no-language-or-licence-sepia-1x.png) |
+| [2×](gallery/library-an-import-with-no-language-or-licence-light-2x.png) | [2×](gallery/library-an-import-with-no-language-or-licence-dark-2x.png) | [2×](gallery/library-an-import-with-no-language-or-licence-sepia-2x.png) |
+
+### About: licence in words and Source link
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![About: licence in words and Source link, Light](gallery/about-licence-in-words-and-source-link-light-1x.png) | ![About: licence in words and Source link, Dark](gallery/about-licence-in-words-and-source-link-dark-1x.png) | ![About: licence in words and Source link, Sepia](gallery/about-licence-in-words-and-source-link-sepia-1x.png) |
+| [2×](gallery/about-licence-in-words-and-source-link-light-2x.png) | [2×](gallery/about-licence-in-words-and-source-link-dark-2x.png) | [2×](gallery/about-licence-in-words-and-source-link-sepia-2x.png) |
+
+### Import report: the file does not exist
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Import report: the file does not exist, Light](gallery/import-report-the-file-does-not-exist-light-1x.png) | ![Import report: the file does not exist, Dark](gallery/import-report-the-file-does-not-exist-dark-1x.png) | ![Import report: the file does not exist, Sepia](gallery/import-report-the-file-does-not-exist-sepia-1x.png) |
+| [2×](gallery/import-report-the-file-does-not-exist-light-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-dark-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-sepia-2x.png) |
+
 ## Toolbar panes, menus and windows
 
 ### Library pane
