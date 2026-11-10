@@ -448,16 +448,18 @@ fn upgraded(key: &str, stored: &Value) -> Value {
 /// Whether `now` holds every value `stored` does: each field of an object (one missing from
 /// `now` only if it carries nothing, [`carries_nothing`], as fields at their default are left
 /// out when written), each item of a list (in any order, each matched once, so a repeated
-/// item kept once does not count as kept), and the same number, text or flag. Two whole
-/// numbers (ids, counters) are the same only when equal; a number with a fraction is the same
-/// when it is equal as written or as the app keeps it (`f32`). `now` may hold more: fields
-/// and items the app adds as defaults.
+/// item kept once does not count as kept), and the same number, text or flag. A whole number
+/// the app writes (an id, a counter) is the same only as that whole number written as one:
+/// `16.0` or `1.6e1` is not, as an integer loader does not read it (it falls back, and may
+/// write another value). A number the app writes with a fraction is the same when it is
+/// equal as written or as the app keeps it (`f32`). `now` may hold more: fields and items
+/// the app adds as defaults.
 pub(crate) fn holds(stored: &Value, now: &Value) -> bool {
     match (stored, now) {
         (Value::Number(a), Value::Number(b)) => {
             let whole = |n: &serde_json::Number| n.is_i64() || n.is_u64();
             a == b
-                || (!(whole(a) && whole(b))
+                || (!whole(b)
                     && a.as_f64()
                         .zip(b.as_f64())
                         .is_some_and(|(a, b)| a == b || (a as f32) == (b as f32)))

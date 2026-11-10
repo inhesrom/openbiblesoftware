@@ -76,9 +76,10 @@ rounds of #258), it runs the loaders themselves:
    Favorite and Visit (by id, each location kept), every Reading plan and each of its Readings
    (by position), every Layout whole (below), and every setting a loader reads
    (`held_settings`: the value the app would write for it now). A setting is kept when its
-   value now holds every value the stored one holds (`holds`): the same number (two whole
-   numbers, such as ids and counters, exactly; one with a fraction as written or as the app
-   keeps it, `f32`), text and flag, each field of an object (one missing now only if
+   value now holds every value the stored one holds (`holds`): the same number (a whole
+   number the app writes, such as an id or counter, only as that whole number written as one,
+   so `16.0` or `1.6e1` that an integer loader falls back from is not; one with a fraction as
+   written or as the app keeps it, `f32`), text and flag, each field of an object (one missing now only if
    it carried nothing: `null`, `false`, `0`, empty), and each item of a list, matched once in
    any order, so a repeated item kept once, an unknown id set back to its default, a clamped or
    cut value, a wrong-typed field and a field this version does not know (with a value) all

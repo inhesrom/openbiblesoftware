@@ -1254,10 +1254,22 @@ fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
 
 /// #258: a Visual filters counter the loader would raise is refused even when the old and new
 /// value are the same as an `f32` (16777216 and 16777217 are): whole numbers are compared
-/// exactly, so the change is named before any Safety backup.
+/// exactly, so the change is named before any Safety backup. Written with a fraction or an
+/// exponent, the counter is not one the loader reads (it falls back and raises it), so that
+/// too is refused.
 #[test]
 fn a_backup_with_a_counter_the_loader_would_raise_past_f32_precision_is_refused() {
-    let f = Fixture::new("raised-counter");
+    for (name, counter) in [
+        ("raised-counter", "16777216"),
+        ("raised-counter-fraction", "16777216.0"),
+        ("raised-counter-exponent", "1.6777216e7"),
+    ] {
+        refuses_raised_counter(name, counter);
+    }
+}
+
+fn refuses_raised_counter(name: &str, counter: &str) {
+    let f = Fixture::new(name);
     let mut s = f.session();
     let good = f.file("good.obsbackup");
     s.run("data.back_up", &path(&good)).unwrap();
@@ -1268,11 +1280,8 @@ fn a_backup_with_a_counter_the_loader_would_raise_past_f32_precision_is_refused(
     damaged_copy(&f, &good, &backup, |db| {
         db.set_preference(crate::visual_filters::VISUAL_FILTERS_PREF, &filters)
             .unwrap();
-        db.set_preference(
-            crate::visual_filters::VISUAL_FILTERS_NEXT_ID_PREF,
-            "16777216",
-        )
-        .unwrap();
+        db.set_preference(crate::visual_filters::VISUAL_FILTERS_NEXT_ID_PREF, counter)
+            .unwrap();
     });
     s.run(
         "annotation.note",
@@ -1286,24 +1295,41 @@ fn a_backup_with_a_counter_the_loader_would_raise_past_f32_precision_is_refused(
         "the setting `reading.visual_filters_next_id` (Visual filters)",
         "Nothing was changed",
     ] {
-        assert!(refused.contains(named), "{named}: {refused}");
+        assert!(refused.contains(named), "{counter}: {named}: {refused}");
     }
     assert!(
         !refused.contains("`reading.visual_filters`"),
-        "the filters themselves are kept: {refused}"
+        "{counter}: the filters themselves are kept: {refused}"
     );
     let err = s.run("data.restore", &path(&backup)).unwrap_err();
     assert!(
         err.to_string().contains("`reading.visual_filters_next_id`"),
-        "{err}"
+        "{counter}: {err}"
     );
-    assert_eq!(dump(&s), before);
+    assert_eq!(dump(&s), before, "{counter}");
     assert!(s.last_restore().is_none());
     assert!(
         !s.kept_backups()
             .iter()
             .any(|b| b.kind == BackupKind::Safety)
     );
+}
+
+/// #258: how `holds` compares numbers. A whole number the app writes is kept only by the same
+/// whole number written as one; a stored whole number read into an `f32` field is kept when
+/// the app writes it back with a fraction, and a fraction as the app keeps it (`f32`).
+#[test]
+fn holds_compares_a_whole_number_the_app_writes_exactly() {
+    let holds = crate::backup_check::holds;
+    assert!(holds(&json!(16_777_216), &json!(16_777_216)));
+    assert!(!holds(&json!(16_777_216), &json!(16_777_217)));
+    for written in ["16777216.0", "1.6777216e7", "16777217.0"] {
+        let stored: Value = serde_json::from_str(written).unwrap();
+        assert!(!holds(&stored, &json!(16_777_217)), "{written}");
+    }
+    assert!(holds(&json!(14), &json!(14.0)));
+    assert!(holds(&json!(1.1), &json!(f64::from(1.1_f32))));
+    assert!(!holds(&json!(1.1), &json!(1.2)));
 }
 
 /// The Session after using every setting, record and list the app keeps in the User
