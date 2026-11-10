@@ -314,7 +314,11 @@ impl ReadingView {
         let old = std::mem::replace(&mut self.note_ends, Arc::new(ends));
         let changed: std::collections::BTreeSet<usize> = (old.iter())
             .filter(|p| self.note_ends.binary_search(p).is_err())
-            .chain(self.note_ends.iter().filter(|p| old.binary_search(p).is_err()))
+            .chain(
+                self.note_ends
+                    .iter()
+                    .filter(|p| old.binary_search(p).is_err()),
+            )
             .filter_map(|p| self.doc.block_at(p.unit, p.byte.saturating_sub(1)))
             .collect();
         if changed.is_empty() {
@@ -580,7 +584,14 @@ impl ReadingView {
         let interlinear = self.interlinear.clone();
         let note_ends = Arc::clone(&self.note_ends);
         self.client.submit_with(key, move || {
-            match paragraph(&doc, i, &settings, interlinear.as_deref(), &note_ends, false) {
+            match paragraph(
+                &doc,
+                i,
+                &settings,
+                interlinear.as_deref(),
+                &note_ends,
+                false,
+            ) {
                 Some(p) => lay_out(&p, width),
                 // Checked above: the block exists.
                 None => lay_out(

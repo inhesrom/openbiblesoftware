@@ -1023,7 +1023,11 @@ fn a_notes_end_has_room_for_its_marker_before_the_next_verse_number() {
     // before the number either way.
     for end in [us, v32] {
         let p = block_paragraph_with_note_room(&unit, &block, Direction::Ltr, &settings, &[end]);
-        assert_eq!(p.text().replace('\u{2003}', ""), plain.text(), "text is kept");
+        assert_eq!(
+            p.text().replace('\u{2003}', ""),
+            plain.text(),
+            "text is kept"
+        );
         let objects: Vec<InlineObject> = objects(&p).into_iter().map(|(_, o)| o).collect();
         assert_eq!(
             objects,
@@ -1076,7 +1080,10 @@ fn a_notes_end_has_room_for_its_marker_before_the_next_verse_number() {
                 )
             })
             .unwrap();
-        assert!(number.x >= room.x + room.width - 0.01, "{number:?} after {room:?}");
+        assert!(
+            number.x >= room.x + room.width - 0.01,
+            "{number:?} after {room:?}"
+        );
     }
     // An end at the block's start is the block before's; none is no room.
     let p = block_paragraph_with_note_room(&unit, &block, Direction::Ltr, &settings, &[0]);

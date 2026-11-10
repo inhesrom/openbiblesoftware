@@ -1121,7 +1121,15 @@ fn menus_and_choosers() -> Vec<Run> {
 /// The BSB's Tab beside the KJV, with Genesis 1:`verse` selected whole.
 fn bsb_verse_selected(h: &mut Harness, verse: u16) -> TabId {
     let tab = open_bsb(h);
-    let v = h.shell.st.tabs.get_mut(&tab).unwrap().view.as_mut().unwrap();
+    let v = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tab)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
     let verse = obs_scripture::Verse::new(obs_scripture::Book::Genesis, 1, verse);
     let (unit, byte) = v.doc.verse_position(verse).unwrap();
     let range = v.doc.verse_range_at(unit, byte).unwrap();
@@ -1185,7 +1193,10 @@ fn open_mhc_psalm_119(h: &mut Harness) {
     h.shell.st.session.library.add_file(&path).unwrap();
     let tab = h
         .shell
-        .run("resource.open", &json!({ "id": "mhc-ps119", "split": true }))
+        .run(
+            "resource.open",
+            &json!({ "id": "mhc-ps119", "split": true }),
+        )
         .unwrap()["tab"]
         .as_u64()
         .unwrap();
@@ -1198,15 +1209,11 @@ fn open_mhc_psalm_119(h: &mut Harness) {
 /// Each defect the visual QA sweep found in the reading pane's text, as drawn now (#305).
 fn reading_text() -> Vec<Run> {
     vec![
-        (
-            "Italic words in a Commentary",
-            open_mhc_psalm_119,
-            |h| {
-                (h.shell.st.tabs.values()).any(|t| {
-                    (t.view.as_ref()).is_some_and(|v| v.doc.manifest.resource_id == "mhc-ps119")
-                })
-            },
-        ),
+        ("Italic words in a Commentary", open_mhc_psalm_119, |h| {
+            (h.shell.st.tabs.values()).any(|t| {
+                (t.view.as_ref()).is_some_and(|v| v.doc.manifest.resource_id == "mhc-ps119")
+            })
+        }),
         (
             "A Highlight over several lines",
             |h| {
@@ -1234,7 +1241,11 @@ fn reading_text() -> Vec<Run> {
                 key(h, Key::Escape, Modifiers::NONE);
                 settle_all(h);
             },
-            |h| annotations(h).iter().any(|a| a.body() == "The Spirit hovering."),
+            |h| {
+                annotations(h)
+                    .iter()
+                    .any(|a| a.body() == "The Spirit hovering.")
+            },
         ),
     ]
 }
