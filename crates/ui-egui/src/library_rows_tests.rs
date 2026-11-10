@@ -105,10 +105,13 @@ fn painted_rows(h: &Harness) -> Vec<PaintedRow> {
                 .collect();
             parts.sort_by(|a, b| a.rect.left().total_cmp(&b.rect.left()));
             parts.dedup_by(|a, b| a.rect == b.rect && a.text == b.text);
-            rows.push((y, PaintedRow {
-                title: m.title.clone(),
-                parts,
-            }));
+            rows.push((
+                y,
+                PaintedRow {
+                    title: m.title.clone(),
+                    parts,
+                },
+            ));
         }
     }
     rows.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -255,7 +258,10 @@ fn library_rows_in_a_narrow_panel_drop_the_badge_and_language_not_the_title() {
         // Abbreviation and title only; each still says something.
         assert_eq!(row.parts.len(), 2, "{row:?}");
         for p in &row.parts {
-            assert!(p.shown.trim_end_matches('…').chars().count() >= 3, "{row:?}");
+            assert!(
+                p.shown.trim_end_matches('…').chars().count() >= 3,
+                "{row:?}"
+            );
         }
     }
     assert!(
@@ -292,7 +298,10 @@ fn a_cut_library_title_shows_the_part_the_filter_matched() {
     assert!(rows.len() > 1, "{rows:?}");
     assert_no_overlap(&h, &rows);
     assert_ellipsis_when_cut(&rows);
-    for row in rows.iter().filter(|r| r.title.to_lowercase().contains("hebrew")) {
+    for row in rows
+        .iter()
+        .filter(|r| r.title.to_lowercase().contains("hebrew"))
+    {
         let shown = &row.title_part().shown;
         assert!(shown.contains("Hebrew"), "{:?} shows {shown:?}", row.title);
     }

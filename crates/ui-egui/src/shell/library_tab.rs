@@ -721,7 +721,13 @@ fn library_row(
     }
     // Each part on one line in its column, left-aligned and centred on the row.
     let layout = |column: Rangef, text: &str, size: f32, color: egui::Color32| {
-        crate::components::elided(&painter, text, FontId::proportional(size), color, column.span())
+        crate::components::elided(
+            &painter,
+            text,
+            FontId::proportional(size),
+            color,
+            column.span(),
+        )
     };
     let paint = |column: Rangef, galley: std::sync::Arc<egui::Galley>| {
         let at = pos2(rect.left() + column.min, y - galley.size().y / 2.0);
@@ -1039,7 +1045,10 @@ mod tests {
                 dropped_language_at = Some(width);
             }
         }
-        assert!(dropped_badge_at > dropped_language_at, "{dropped_badge_at:?}");
+        assert!(
+            dropped_badge_at > dropped_language_at,
+            "{dropped_badge_at:?}"
+        );
     }
 
     #[test]
@@ -1064,16 +1073,16 @@ mod tests {
     #[test]
     fn a_filter_match_starts_at_its_word() {
         let kjv = "King James Version with Strong's Numbers";
-        assert_eq!(
-            filter_match(kjv, "strong"),
-            Some((30, "Strong's Numbers"))
-        );
+        assert_eq!(filter_match(kjv, "strong"), Some((30, "Strong's Numbers")));
         assert_eq!(filter_match(kjv, "king"), Some((4, kjv)));
         assert_eq!(
             filter_match(kjv, "ames"),
             Some((10, "James Version with Strong's Numbers"))
         );
-        assert_eq!(filter_match(kjv, "s ver"), Some((14, "James Version with Strong's Numbers")));
+        assert_eq!(
+            filter_match(kjv, "s ver"),
+            Some((14, "James Version with Strong's Numbers"))
+        );
         assert_eq!(filter_match(kjv, "hebrew"), None);
         assert_eq!(filter_match(kjv, ""), None);
         assert_eq!(filter_match("Ἀρχὴ Λόγος", "λόγ"), Some((8, "Λόγος")));
