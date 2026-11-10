@@ -274,8 +274,10 @@ pub(super) fn map_canvas(
         }
         let galley = painter.layout_no_wrap(m.label.clone(), font.clone(), ink);
         let size = galley.size();
-        // Right of the marker, else left, above or below, else at a corner (in a cluster of
-        // markers, #304): inside the map, clear of others.
+        // Right of the marker, else left, above or below, else at a corner, else a line
+        // above or below its right or left (in a cluster of markers, #304): inside the map,
+        // clear of others.
+        let line = size.y + space::XXS;
         let candidates = [
             vec2(space::M, -size.y / 2.0),
             vec2(-space::M - size.x, -size.y / 2.0),
@@ -285,6 +287,10 @@ pub(super) fn map_canvas(
             vec2(space::XS, space::XS),
             vec2(-space::XS - size.x, -space::XS - size.y),
             vec2(-space::XS - size.x, space::XS),
+            vec2(space::M, -size.y / 2.0 + line),
+            vec2(space::M, -size.y / 2.0 - line),
+            vec2(-space::M - size.x, -size.y / 2.0 + line),
+            vec2(-space::M - size.x, -size.y / 2.0 - line),
         ];
         let spots = candidates.map(|offset| Rect::from_min_size(m.at + offset, size));
         let free = |r: &Rect| {

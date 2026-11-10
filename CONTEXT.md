@@ -300,7 +300,7 @@ The Tool that maps the places a Passage names, on a base map built into the app 
 _Avoid_: Map view, Bible map, Atlas Resource
 
 **Timeline**:
-The Tool that shows biblical history on a zoomable horizontal axis: the Eras as a band of named periods, then Lifespans, then Events, each at its dates as the index gives them. It follows its Link set: the Events the Passage tells are emphasised, with the Lifespans of the people they name, and the view centres on the one it tells most of; a Verse no Event tells widens to its chapter. Clicking an Event opens its Passage (its Link set moves there, or the ★ Bible opens at it), clicking a Lifespan opens the person's Factbook, clicking an Era shows all of it. Dates say how sure they are: "c. 2246 BC" where the source marks a date approximate, ranges for what lasts ("1055–1015 BC"), and a day only where the source gives one.
+The Tool that shows biblical history on a zoomable horizontal axis: the Eras as a band of named periods, then Lifespans, then Events, each at its dates as the index gives them. It follows its Link set: the Events the Passage tells are emphasised, with the Lifespans of the people they name, and the view centres on the one it tells most of; a Verse no Event tells widens to its chapter. Clicking an Event opens its Passage (its Link set moves there, or the ★ Bible opens at it), clicking a Lifespan opens the person's Factbook, clicking an Era shows all of it. Where entries crowd the axis, one with no room for its bar or marker and its name is not drawn over the others: a "+N" chip under the Lifespans or at the bottom of the Events counts those starting there, and its menu lists them to open. Dates say how sure they are: "c. 2246 BC" where the source marks a date approximate, ranges for what lasts ("1055–1015 BC"), and a day only where the source gives one.
 _Avoid_: Chronology (as the Tool's name), Time chart, History view
 
 **Era**:
@@ -551,7 +551,7 @@ The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entri
 _Avoid_: Bible Word Study, Lexical study
 
 **Factbook**:
-The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Map (a place at each of its Place locations with their Confidence; for a person, the places they lived in), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
+The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Map (a place at each of its Place locations with their Confidence, the map fitted to them; for a person, the places they lived in), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
 _Avoid_: Encyclopedia, Profile, Person page
 
 **Topic Guide**:

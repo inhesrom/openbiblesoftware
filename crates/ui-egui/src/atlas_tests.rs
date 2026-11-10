@@ -500,6 +500,49 @@ fn jerusalems_factbook_map_fits_its_four_locations() {
             p.location
         );
     }
+
+    // Drawn, each is named, though Jerusalem, the City of David and Mount Zion are a few
+    // points apart even fitted (the City of David went unnamed, #304).
+    let ctx = egui::Context::default();
+    let input = egui::RawInput {
+        screen_rect: Some(rect),
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(input, |ui| {
+        let mut view = fitted;
+        crate::shell::atlas_tab::map_canvas(
+            ui,
+            rect,
+            &mut view,
+            &crate::shell::atlas_tab::MapScene {
+                places: &[&jerusalem],
+                selected: None,
+                emphasized: &|_| false,
+                all_points: true,
+                interactive: false,
+                description: "Map: Jerusalem",
+            },
+        );
+    });
+    // No renderer takes the font atlas.
+    output.textures_delta.clear();
+    let mut texts = Vec::new();
+    for clipped in &output.shapes {
+        collect(&clipped.shape, &mut texts);
+    }
+    let names: Vec<&str> = texts.iter().map(|(_, t)| t.as_str()).collect();
+    for p in &jerusalem.points {
+        assert!(
+            names.contains(&p.location.as_str()),
+            "{} is not named: {names:?}",
+            p.location
+        );
+    }
+    for (i, (a, ta)) in texts.iter().enumerate() {
+        for (b, tb) in &texts[i + 1..] {
+            assert!(!a.intersects(*b), "{ta} {a:?} overlaps {tb} {b:?}");
+        }
+    }
 }
 
 /// The Screenshot gallery's Factbook Map of a place with several possible locations (#304):
