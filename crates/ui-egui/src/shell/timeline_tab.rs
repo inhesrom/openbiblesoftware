@@ -628,27 +628,6 @@ fn entry_tooltip(e: &TimelineEntry) -> String {
     text
 }
 
-/// `text` on one line, cut short with "…" to fit `width`.
-fn elided(
-    painter: &egui::Painter,
-    text: &str,
-    font: &FontId,
-    color: Color32,
-    width: f32,
-) -> Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::single_section(
-        text.to_string(),
-        egui::TextFormat::simple(font.clone(), color),
-    );
-    job.wrap = egui::text::TextWrapping {
-        max_width: width,
-        max_rows: 1,
-        break_anywhere: true,
-        overflow_character: Some('…'),
-    };
-    painter.layout_job(job)
-}
-
 /// Lay out the entries of `kind` in view into at most `rows` rows from `top`: emphasised ones
 /// first, so they get their labels, each in the first row where it (and its label) fits.
 /// Returns them and how many rows they took.
@@ -708,7 +687,7 @@ fn place_rows(
         let before = !inside && galley.size().x > room_after && room_before > room_after;
         let room = if before { room_before } else { room_after };
         if !inside && galley.size().x > room && room > space::XXL {
-            galley = elided(painter, &e.title, &font, text_color, room);
+            galley = crate::components::elided(painter, &e.title, font.clone(), text_color, room);
         }
         let w = galley.size().x;
         let label_x = if inside {

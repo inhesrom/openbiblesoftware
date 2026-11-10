@@ -640,7 +640,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "a Panel's share in a thumbnail is never zero",
     ),
     (
-        "shell/toolbar_look.rs",
+        "components.rs",
         "job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));",
         "1.0",
         "a truncation width is never zero",

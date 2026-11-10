@@ -336,6 +336,20 @@ pub fn selected_row(painter: &egui::Painter, rect: egui::Rect, radius: f32) {
     }
 }
 
+/// `text` laid out on one line at most `width` wide, ending in "…" when it does not fit (a
+/// Library row's title, a Layout card's chip, a Timeline label): never cut mid-letter.
+pub fn elided(
+    painter: &egui::Painter,
+    text: impl Into<String>,
+    font: egui::FontId,
+    color: egui::Color32,
+    width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.into(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));
+    painter.layout_job(job)
+}
+
 /// The outline round a hovered card-like link (a Factbook card, a Topic Guide entry).
 pub fn hover_outline(ui: &Ui, rect: egui::Rect) {
     ui.painter().rect_stroke(

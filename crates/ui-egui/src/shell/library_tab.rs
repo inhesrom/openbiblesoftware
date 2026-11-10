@@ -4,11 +4,12 @@
 //! the list together. The About Tab shows a Resource's manifest, licence, Attribution (drawn by
 //! the text pipeline, verbatim) and changes, and offers Remove…
 
-use egui::{Align2, FontId, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, FontId, Rangef, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{LibraryFilter, TabId, annotations_phrase, language_name};
 use obs_model::{Manifest, Origin, ResourceType};
 use serde_json::json;
 
+use super::get_bibles_tab::spdx_badge;
 use super::{RESOURCE_TYPES, State, type_name};
 use crate::icons::{self, Icon};
 use crate::pane::reading_pane;
@@ -167,6 +168,20 @@ impl State {
                     ui.set_height(total - gap);
                     let origin = ui.max_rect().min;
                     let width = ui.available_width();
+                    // The rows in view (and a dragged one) share their columns.
+                    let mut top = 0.0;
+                    let mut in_view = Vec::new();
+                    for item in &items {
+                        let h = height(item);
+                        let shown = top + h > viewport.top() && top < viewport.bottom();
+                        top += h;
+                        if let Item::Row(_, _, m) = item
+                            && (shown || dragging.as_deref() == Some(m.resource_id.as_str()))
+                        {
+                            in_view.push(*m);
+                        }
+                    }
+                    let columns = RowColumns::fit(Widest::of(ui, in_view), width);
                     let mut top = 0.0;
                     for item in &items {
                         let h = height(item);
@@ -216,6 +231,7 @@ impl State {
                                     ui,
                                     tab,
                                     m,
+                                    &columns,
                                     position == 0,
                                     selected.as_deref() == Some(id.as_str()),
                                     dragged_row,
@@ -541,11 +557,104 @@ struct RowResponse {
     handle: egui::Response,
 }
 
-/// Draw one row: [handle] [★] abbreviation, title, language, licence badge.
+/// The widest abbreviation, language and licence badge among some Library rows.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Widest {
+    abbreviation: f32,
+    language: f32,
+    badge: f32,
+}
+
+impl Widest {
+    fn of<'a>(ui: &Ui, rows: impl IntoIterator<Item = &'a Manifest>) -> Self {
+        let painter = ui.painter();
+        let width = |text: &str, size: f32| {
+            painter
+                .layout_no_wrap(
+                    text.to_string(),
+                    FontId::proportional(size),
+                    egui::Color32::PLACEHOLDER,
+                )
+                .size()
+                .x
+        };
+        let mut widest = Widest::default();
+        for m in rows {
+            widest.abbreviation = widest.abbreviation.max(width(&m.abbreviation, text::BODY));
+            widest.language = widest.language.max(width(&m.language, text::SMALL));
+            let (badge, _) = spdx_badge(&m.license);
+            widest.badge = widest
+                .badge
+                .max(width(badge, text::CAPTION) + 2.0 * BADGE_PAD);
+        }
+        widest
+    }
+}
+
+/// Where the parts of the Library rows in view go, as x ranges from a row's left edge (#302):
+/// one abbreviation, title, language and licence badge column for every row, so they line
+/// up. A narrow Panel (or a Larger Interface size) drops the badge, then the language, before
+/// the title gets narrower than [`size::TITLE_MIN`]; the abbreviation takes at most half the
+/// row; and text that still does not fit ends in "…".
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RowColumns {
+    abbreviation: Rangef,
+    title: Rangef,
+    language: Option<Rangef>,
+    badge: Option<Rangef>,
+}
+
+impl RowColumns {
+    fn fit(widest: Widest, width: f32) -> Self {
+        let left = HANDLE_W + space::XL;
+        let right = (width - space::XS).max(left);
+        let abbreviation = Rangef::new(
+            left,
+            left + widest
+                .abbreviation
+                .min(size::FIELD_NARROW)
+                .min((right - left) / 2.0),
+        );
+        let title_left = abbreviation.max + space::M;
+        // A column's width with the gap before it; an empty column takes none.
+        let with_gap = |w: f32| if w > 0.0 { w + space::M } else { 0.0 };
+        let fits = |taken: f32| right - taken - title_left >= size::TITLE_MIN;
+        let language_w = with_gap(widest.language);
+        let badge_w = with_gap(widest.badge);
+        let (language, badge) = if fits(language_w + badge_w) {
+            (language_w > 0.0, badge_w > 0.0)
+        } else {
+            (language_w > 0.0 && fits(language_w), false)
+        };
+        let mut end = right;
+        let badge = badge.then(|| {
+            let r = Rangef::new(end - widest.badge, end);
+            end = r.min - space::M;
+            r
+        });
+        let language = language.then(|| {
+            let r = Rangef::new(end - widest.language, end);
+            end = r.min - space::M;
+            r
+        });
+        RowColumns {
+            abbreviation,
+            title: Rangef::new(title_left, end.max(title_left)),
+            language,
+            badge,
+        }
+    }
+}
+
+/// The space between a licence badge's edge and its text.
+const BADGE_PAD: f32 = space::S;
+
+/// Draw one row: [handle] [★] abbreviation, title, language, licence badge, in `columns`.
 fn library_row(
     ui: &mut Ui,
     tab: TabId,
     m: &Manifest,
+    columns: &RowColumns,
     first: bool,
     selected: bool,
     dragging: bool,
@@ -587,59 +696,40 @@ fn library_row(
             c.gilt,
         );
     }
-    let x = rect.left() + HANDLE_W + space::XL;
-    let abbrev = painter.text(
-        pos2(x, y),
-        Align2::LEFT_CENTER,
-        &m.abbreviation,
-        FontId::proportional(text::BODY),
-        c.ink,
-    );
-    // Right side: licence badge, then language.
-    let badge_font = FontId::proportional(text::CAPTION);
-    let galley = painter.layout_no_wrap(m.license.clone(), badge_font.clone(), c.muted);
-    let pad = space::S;
-    let badge = Rect::from_min_size(
-        pos2(
-            rect.right() - galley.size().x - 2.0 * pad - space::XS,
-            y - size::BADGE / 2.0,
-        ),
-        vec2(galley.size().x + 2.0 * pad, size::BADGE),
-    );
-    painter.rect_stroke(
-        badge,
-        size::BADGE / 2.0,
-        Stroke::new(stroke::HAIR, c.rule),
-        egui::StrokeKind::Inside,
-    );
-    painter.text(
-        badge.center(),
-        Align2::CENTER_CENTER,
-        &m.license,
-        badge_font,
-        c.muted,
-    );
-    let lang = painter.text(
-        pos2(badge.left() - space::M, y),
-        Align2::RIGHT_CENTER,
-        &m.language,
-        FontId::proportional(text::SMALL),
-        c.muted,
-    );
-    let title_left = abbrev.right().max(x + size::FIELD_NUMBER) + space::M;
-    let title_clip = Rect::from_x_y_ranges(title_left..=lang.left() - space::M, rect.y_range());
-    if title_clip.width() > space::XXL {
-        ui.painter_at(title_clip).text(
-            pos2(title_left, y),
-            Align2::LEFT_CENTER,
-            &m.title,
-            FontId::proportional(text::LABEL),
-            c.ink,
+    // Each part on one line in its column, left-aligned and centred on the row.
+    let paint = |column: Rangef, text: &str, size: f32, color: egui::Color32| {
+        let galley =
+            crate::components::elided(&painter, text, FontId::proportional(size), color, column.span());
+        let at = pos2(rect.left() + column.min, y - galley.size().y / 2.0);
+        painter.galley(at, galley, color);
+    };
+    paint(columns.abbreviation, &m.abbreviation, text::BODY, c.ink);
+    paint(columns.title, &m.title, text::LABEL, c.ink);
+    if let Some(column) = columns.language {
+        paint(column, &m.language, text::SMALL, c.muted);
+    }
+    let (licence, _) = spdx_badge(&m.license);
+    if let Some(column) = columns.badge {
+        let galley = painter.layout_no_wrap(
+            licence.to_string(),
+            FontId::proportional(text::CAPTION),
+            c.muted,
         );
+        let badge = Rect::from_min_size(
+            pos2(rect.left() + column.min, y - size::BADGE / 2.0),
+            vec2(galley.size().x + 2.0 * BADGE_PAD, size::BADGE),
+        );
+        painter.rect_stroke(
+            badge,
+            size::BADGE / 2.0,
+            Stroke::new(stroke::HAIR, c.rule),
+            egui::StrokeKind::Inside,
+        );
+        painter.galley(badge.center() - galley.size() / 2.0, galley, c.muted);
     }
     let body = body.on_hover_text(format!(
-        "{} · {} · {} — double-click or Enter to open, or drag it onto a Panel; right-click \
-         for more",
+        "{} · {} · {licence} ({}) — double-click or Enter to open, or drag it onto a Panel; \
+         right-click for more",
         m.title, m.language, m.license
     ));
     RowResponse { body, handle }
@@ -859,5 +949,77 @@ mod tests {
             drop_slot(&rows, "A", pos2(100.0, 36.0), drop_region()).map(|s| s.to),
             Some(1)
         );
+    }
+
+    /// Widths like the Starter library's: "Abbott-Smith", "grc", "Public domain".
+    const WIDEST: Widest = Widest {
+        abbreviation: 84.0,
+        language: 20.0,
+        badge: 80.0,
+    };
+
+    fn in_order(c: &RowColumns) -> Vec<Rangef> {
+        let mut out = vec![c.abbreviation, c.title];
+        out.extend(c.language);
+        out.extend(c.badge);
+        out
+    }
+
+    fn assert_apart(c: &RowColumns, width: f32) {
+        let parts = in_order(c);
+        for pair in parts.windows(2) {
+            assert!(pair[0].max + space::M <= pair[1].min + 0.01, "{c:?}");
+        }
+        assert!(parts.last().unwrap().max <= width - space::XS, "{c:?}");
+    }
+
+    #[test]
+    fn a_wide_row_has_every_column_and_a_title_of_its_own() {
+        let c = RowColumns::fit(WIDEST, 460.0);
+        assert!(c.language.is_some() && c.badge.is_some(), "{c:?}");
+        assert_eq!(c.abbreviation.span(), WIDEST.abbreviation);
+        assert!(c.title.span() >= size::TITLE_MIN, "{c:?}");
+        assert_eq!(c.badge.unwrap().max, 460.0 - space::XS);
+        assert_apart(&c, 460.0);
+    }
+
+    #[test]
+    fn a_narrowing_row_drops_the_badge_then_the_language_before_the_title() {
+        let mut dropped_badge_at = None;
+        let mut dropped_language_at = None;
+        for width in (100..=600).rev().map(|w| w as f32) {
+            let c = RowColumns::fit(WIDEST, width);
+            assert_apart(&c, width);
+            assert!(
+                c.language.is_some() || c.badge.is_none(),
+                "the language went before the badge: {c:?}"
+            );
+            if c.badge.is_some() || c.language.is_some() {
+                assert!(c.title.span() >= size::TITLE_MIN, "{width}: {c:?}");
+            }
+            if c.badge.is_none() && dropped_badge_at.is_none() {
+                dropped_badge_at = Some(width);
+            }
+            if c.language.is_none() && dropped_language_at.is_none() {
+                dropped_language_at = Some(width);
+            }
+        }
+        assert!(dropped_badge_at > dropped_language_at, "{dropped_badge_at:?}");
+    }
+
+    #[test]
+    fn a_long_abbreviation_takes_at_most_half_the_row() {
+        let long = Widest {
+            abbreviation: 300.0,
+            ..WIDEST
+        };
+        assert_eq!(
+            RowColumns::fit(long, 600.0).abbreviation.span(),
+            size::FIELD_NARROW
+        );
+        let c = RowColumns::fit(long, 200.0);
+        let room = 200.0 - space::XS - HANDLE_W - space::XL;
+        assert_eq!(c.abbreviation.span(), room / 2.0);
+        assert!(c.title.span() > 0.0, "{c:?}");
     }
 }

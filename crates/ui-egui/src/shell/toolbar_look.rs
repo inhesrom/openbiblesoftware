@@ -339,12 +339,12 @@ pub(super) fn resource_row(ui: &Ui, rect: Rect, chip: Option<&str>, title: &str,
     );
     match chip {
         Some(abbreviation) => {
-            let chip_text = elided(
+            let chip_text = crate::components::elided(
                 p,
-                abbreviation.to_string(),
+                abbreviation,
                 FontId::proportional(text::SMALL),
-                chip_w - 2.0 * BADGE_PAD,
                 lk.accent,
+                chip_w - 2.0 * BADGE_PAD,
             );
             p.galley(
                 pos2(
@@ -530,12 +530,12 @@ pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Lo
             } else {
                 title.clone()
             };
-            let galley = elided(
+            let galley = crate::components::elided(
                 p,
                 text,
                 FontId::proportional(text::CAPTION),
-                r.width() - space::S,
                 if dim { lk.muted } else { lk.ink },
+                r.width() - space::S,
             );
             let at = r.center() - galley.size() / 2.0;
             p.with_clip_rect(r.shrink(space::PX))
@@ -559,19 +559,6 @@ pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Lo
             }
         }
     }
-}
-
-/// `text` on one line at most `width` wide, ending in "…" when it does not fit.
-fn elided(
-    p: &Painter,
-    text: String,
-    font: FontId,
-    width: f32,
-    color: Color32,
-) -> std::sync::Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::simple_singleline(text, font, color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));
-    p.layout_job(job)
 }
 
 /// A small text link inside a Layout card ("Rename", "Delete").

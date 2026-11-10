@@ -3589,6 +3589,8 @@ mod key_labels;
 mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "library_rows_tests.rs"]
+mod library_rows;
 #[path = "menu_audit_tests.rs"]
 mod menu_audit;
 #[path = "note_margin_tests.rs"]

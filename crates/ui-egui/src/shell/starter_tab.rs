@@ -6,7 +6,7 @@ use obs_engine::starter::{StarterRow, StarterStatus};
 use serde_json::json;
 
 use super::State;
-use super::get_bibles_tab::licence_badge;
+use super::get_bibles_tab::spdx_badge;
 use super::import_tab::megabytes;
 use super::library_tab::{section, type_singular};
 use crate::theme;
@@ -14,17 +14,6 @@ use crate::tokens::{size, space};
 
 /// Every row is this tall: a right-to-left row would otherwise take the whole height.
 const ROW_HEIGHT: f32 = size::ROW_DOUBLE;
-
-/// A short licence badge and its colour, from an SPDX expression.
-fn spdx_badge(spdx: &str) -> (&'static str, egui::Color32) {
-    if spdx.contains("PublicDomain") {
-        licence_badge(Some("public domain"))
-    } else if spdx == obs_model::LICENSE_UNKNOWN {
-        licence_badge(None)
-    } else {
-        licence_badge(Some(spdx).filter(|s| !s.is_empty()))
-    }
-}
 
 impl State {
     pub(super) fn starter_body(&mut self, ui: &mut Ui) {
