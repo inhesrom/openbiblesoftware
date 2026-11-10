@@ -92,7 +92,7 @@ The dropdown is a results panel under the box, its right edge under the box's:
 
 `crates/engine/src/search_preview.rs`. While the dropdown offers Search, the UI hands the
 text and its clock to `Session::update_search_preview` every frame. Once the text has not
-changed for 100 ms (`PREVIEW_DEBOUNCE`) the engine searches it in the **★ Bible** (first
+changed for 80 ms (`PREVIEW_DEBOUNCE`) the engine searches it in the **★ Bible** (first
 Bible in Preferred order), over its whole text, as a background job on the ready Search
 index, the same search as the Search Tool's (`bible_search::desktop::run`, Word forms as
 set), with snippets for the first rows only. The UI never waits: it asks to be drawn again
@@ -105,7 +105,8 @@ highlighted Verse opens as shown, even when Enter lands in the frame that replac
 The time to hits is gated in wall-clock time by the `search-preview` bench scenario
 (`cargo xtask bench`, [bench.md](bench.md)): each query typed a key at a time over a
 whole-Bible ★ Bible, from its last key to the frame drawing its hits, at most 150 ms (about
-120 ms measured: the 100 ms debounce, then a frame or so for the worker's search).
+120 ms measured: the 80 ms debounce, then a frame or two each for the worker's search and
+the layout of its Verses).
 
 Under the Search row it shows (`SearchPreview`):
 

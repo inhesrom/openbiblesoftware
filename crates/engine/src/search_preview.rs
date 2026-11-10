@@ -22,12 +22,13 @@ use crate::session::Session;
 pub const PREVIEW_HITS: usize = 5;
 
 /// How long, in seconds, the typing must stop before the Search preview searches: short
-/// enough that hits show within about 150 ms of the last key.
-pub const PREVIEW_DEBOUNCE: f64 = 0.1;
+/// enough that hits show within about 150 ms of the last key, the background search and the
+/// layout of its Verses each taking a frame or two (five 60 Hz frames, then two to four).
+pub const PREVIEW_DEBOUNCE: f64 = 0.08;
 
 /// How far short of [`PREVIEW_DEBOUNCE`] the UI's clock may fall and the typing still count as
-/// stopped: a clock summed from 60 Hz frame intervals reads 0.09999… six frames after a key,
-/// and a frame later (17 ms) is too late.
+/// stopped: a clock summed from 100 Hz frame intervals reads 0.07999… eight frames after a
+/// key, and a frame later is too late.
 const CLOCK_SLACK: f64 = 1e-6;
 
 /// What the Search preview shows.

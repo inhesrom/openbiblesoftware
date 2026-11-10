@@ -21,8 +21,8 @@ use super::{BenchConfig, Samples};
 /// What is typed, a query a step: a word in nearly every Verse, then rarer words and phrases.
 pub(crate) const QUERIES: [&str; 4] = ["LORD", "every man", "said unto", "shall be"];
 
-/// Frames between two keys typed (83 ms at 60 Hz: a quick typist, inside the debounce).
-const KEY_FRAMES: usize = 5;
+/// Frames between two keys typed (67 ms at 60 Hz: a quick typist, inside the debounce).
+const KEY_FRAMES: usize = 4;
 
 /// The two whole Bibles, the first the ★ Bible, with their Search indexes built; each query
 /// typed into the Command box and timed until its hits show.

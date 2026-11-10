@@ -82,8 +82,8 @@ fn the_preview_searches_once_the_typing_has_stopped() {
     assert_eq!(s.search_preview_query(), None);
     assert_eq!(s.search_preview(), &SearchPreview::Off);
     let due = s.search_preview_due_in(0.15).unwrap();
-    assert!((due - 0.04).abs() < 1e-9, "{due}");
-    // The typing stopped at 0.09: one search, of the last text, 100 ms later.
+    assert!((due - 0.02).abs() < 1e-9, "{due}");
+    // The typing stopped at 0.09: one search, of the last text, 80 ms later.
     s.update_search_preview(Some("love"), 0.19);
     assert_eq!(s.search_preview_query(), Some("love"));
     assert!(
@@ -109,17 +109,17 @@ fn the_preview_searches_once_the_typing_has_stopped() {
     assert_eq!(s.search_preview(), &SearchPreview::Off);
     assert_eq!(s.search_preview_query(), None);
 
-    // A clock summed from 60 Hz frames: six frames after the key is the debounce, though the
-    // sum falls a rounding error short of it.
-    let key = 2.0 + 4.0 / 60.0;
+    // A clock summed from 100 Hz frames: eight frames after the key is the debounce, though
+    // the sum falls a rounding error short of it.
+    let key = 2.0 + 4.0 / 100.0;
     let mut now = key;
     s.update_search_preview(Some("law"), now);
-    for _ in 0..6 {
-        now += 1.0 / 60.0;
+    for _ in 0..8 {
+        now += 1.0 / 100.0;
     }
     assert!(now - key < PREVIEW_DEBOUNCE, "{}", now - key);
     s.update_search_preview(Some("law"), now);
-    assert!(s.search_preview_running(), "searched on the sixth frame");
+    assert!(s.search_preview_running(), "searched on the eighth frame");
     settle(&mut s);
     let _ = std::fs::remove_dir_all(root);
 }
