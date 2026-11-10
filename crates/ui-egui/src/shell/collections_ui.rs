@@ -288,7 +288,7 @@ pub(super) fn collections_menu(
             let by_hand = c.resources.iter().any(|r| r == id);
             let mut on = library.in_collection(&c.name, id);
             let by_rule = on && !by_hand;
-            let response = ui.add_enabled(!by_rule, egui::Checkbox::new(&mut on, &c.name));
+            let response = crate::components::toggle_enabled(ui, !by_rule, &mut on, &c.name);
             if by_rule {
                 response.on_disabled_hover_text("In this Collection by its rules");
             } else if response.clicked() {

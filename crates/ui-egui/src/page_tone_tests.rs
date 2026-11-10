@@ -409,3 +409,127 @@ fn settings_shows_the_page_tone_in_effect() {
         h.texts()
     );
 }
+
+/// Open `guide` in a Panel of its own, as the accessibility audit opens each kind of Guide;
+/// its Panel.
+fn open_guide(h: &mut Harness, guide: obs_engine::Guide) -> Rect {
+    use obs_engine::Guide;
+    let (command, params) = match guide {
+        Guide::PassageGuide => ("guide.passage_guide", json!({ "passage": "Jn 3:16" })),
+        Guide::ExegeticalGuide => ("guide.exegetical_guide", json!({ "passage": "Lk 1:30" })),
+        Guide::WordStudy => ("guide.word_study", json!({ "strongs": "G26" })),
+        Guide::Factbook => ("guide.factbook", json!({ "name": "John" })),
+        Guide::TopicGuide => ("guide.topic_guide", json!({ "topic": "Forgiveness" })),
+    };
+    let mut params = params;
+    params["split"] = json!(true);
+    h.shell.run(command, &params);
+    settle(h);
+    settle_all(h);
+    focused_pane(h)
+}
+
+/// The largest solid rectangle drawn last frame inside `region` (a Tab's page), and its
+/// fill.
+fn page_in(h: &Harness, region: Rect) -> (Rect, egui::Color32) {
+    (h.rects.iter())
+        .filter(|(r, _)| region.contains_rect(*r))
+        .max_by(|(a, _), (b, _)| a.area().total_cmp(&b.area()))
+        .copied()
+        .expect("a page is drawn")
+}
+
+/// Acceptance (#306): every kind of Guide is drawn on the Page tone, as the Bible beside it
+/// is, so its Resource snippets (Commentary excerpts, cross-reference previews, the
+/// Exegetical Guide's words and lemmas) sit on the page instead of on slabs of the Dark page
+/// over the chrome's field, with notches beside indented lemmas. Checked in Light (Paper)
+/// and Dark (Dark) with Page tone Auto, and with Sepia chosen in Light.
+#[test]
+fn every_guide_is_on_the_page_tone_its_snippets_are_on() {
+    use obs_engine::Guide;
+    let (mut h, _lab) = harness("guides");
+    for guide in Guide::ALL {
+        for (theme, tone, palette) in [
+            ("light", "auto", Palette::PAPER),
+            ("dark", "auto", Palette::DARK),
+            ("light", "sepia", Palette::SEPIA),
+        ] {
+            h.shell.run("view.theme", &json!({ "value": theme }));
+            h.shell.run("view.page_tone", &json!({ "value": tone }));
+            h.shell.reset_layout();
+            settle(&mut h);
+            let pane = open_guide(&mut h, guide);
+            h.frame();
+            if theme == "dark" {
+                preview(&h, &format!("guide-page-tone-{}-dark-kittest", guide.id()));
+            }
+            let surface = format!("{} ({theme}, {tone})", guide.title());
+            let (page, fill) = page_in(&h, pane);
+            assert_eq!(fill, palette.page, "{surface}: the Guide's page");
+            // The snippets' pages are the Guide's: no other tone's page shows on it. (The
+            // light chrome's labels share Paper's ink, so inks are not compared.)
+            for other in [Palette::PAPER, Palette::SEPIA, Palette::DARK] {
+                assert!(
+                    other.tone == palette.tone || !fills_in(&h, page).contains(&other.page),
+                    "{surface}: a {:?} page on the Guide",
+                    other.tone
+                );
+            }
+            // The Passage Guide's Commentary excerpt and cross-reference previews, the
+            // Exegetical Guide's words and lemmas.
+            if matches!(guide, Guide::PassageGuide | Guide::ExegeticalGuide) {
+                assert!(inks_in(&h, page).contains(&palette.ink), "{surface}: ink");
+            }
+        }
+    }
+}
+
+/// #306: a Page tone the chrome's text does not read on (Paper chosen in Dark) leaves the
+/// Guide's page in the chrome's field, and each Resource snippet keeps a Paper page of its
+/// own, so both the Guide's labels and the Resource text stay readable.
+#[test]
+fn a_guide_keeps_the_field_when_the_page_tone_is_not_the_themes() {
+    let (mut h, _lab) = harness("guide-paper-in-dark");
+    h.shell.run("view.theme", &json!({ "value": "light" }));
+    h.shell.run("view.page_tone", &json!({ "value": "paper" }));
+    h.frames(2);
+    h.shell.run("view.theme", &json!({ "value": "dark" }));
+    h.frames(2);
+    let pane = open_guide(&mut h, obs_engine::Guide::PassageGuide);
+    h.frame();
+    let (page, fill) = page_in(&h, pane);
+    assert_eq!(fill, crate::theme::DARK.field, "the Guide's page");
+    assert!(
+        fills_in(&h, page).contains(&Palette::PAPER.page),
+        "the snippets keep their Paper page"
+    );
+    assert!(inks_in(&h, page).contains(&Palette::PAPER.ink));
+}
+
+/// #306: a Guide's page is the Page tone when the chrome's text reads on it: each built-in
+/// Theme on the tones of its own ground, not a light Theme on the Dark page nor a dark one on
+/// Paper or Sepia.
+#[test]
+fn the_chrome_text_reads_on_the_page_tones_of_its_own_ground() {
+    use crate::theme::{DARK, HIGH_CONTRAST_DARK, HIGH_CONTRAST_LIGHT, LIGHT, text_reads_on};
+    for (chrome, page, reads) in [
+        (LIGHT, Palette::PAPER, true),
+        (LIGHT, Palette::SEPIA, true),
+        (LIGHT, Palette::DARK, false),
+        (DARK, Palette::DARK, true),
+        (DARK, Palette::PAPER, false),
+        (DARK, Palette::SEPIA, false),
+        (HIGH_CONTRAST_LIGHT, Palette::PAPER_HIGH_CONTRAST, true),
+        (HIGH_CONTRAST_LIGHT, Palette::SEPIA_HIGH_CONTRAST, true),
+        (HIGH_CONTRAST_DARK, Palette::DARK_HIGH_CONTRAST, true),
+        (HIGH_CONTRAST_DARK, Palette::PAPER_HIGH_CONTRAST, false),
+    ] {
+        assert_eq!(
+            text_reads_on(&chrome, page.page),
+            reads,
+            "{:?} chrome on the {:?} page",
+            if chrome.dark { "dark" } else { "light" },
+            page.tone
+        );
+    }
+}

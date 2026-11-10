@@ -1542,7 +1542,7 @@ impl Shell {
                 };
                 let shown = self.st.session.reading_layout(tab);
                 for (flow, id, label) in obs_engine::TEXT_FLOWS {
-                    if ui.radio(shown.flow == flow, label).clicked() {
+                    if crate::components::radio(ui, shown.flow == flow, label).clicked() {
                         run = Some(json!({ "flow": id }));
                     }
                 }
@@ -1561,7 +1561,7 @@ impl Shell {
                     ("justified", "Justified text", shown.justified),
                 ];
                 for (param, label, mut on) in toggles {
-                    if ui.checkbox(&mut on, label).clicked() {
+                    if crate::components::toggle(ui, &mut on, label).clicked() {
                         run = Some(json!({ param: on }));
                     }
                 }
@@ -1572,7 +1572,7 @@ impl Shell {
                         .color(theme::c().muted),
                 );
                 for (column, id, label) in obs_engine::COLUMN_WIDTHS {
-                    if ui.radio(shown.column == column, label).clicked() {
+                    if crate::components::radio(ui, shown.column == column, label).clicked() {
                         run = Some(json!({ "column": id }));
                     }
                 }
@@ -2141,7 +2141,7 @@ impl State {
                 json!({}),
             ),
         };
-        if guide_tab::hint_page(ui, &message, button) {
+        if guide_tab::hint_page(ui, crate::components::page_frame(), &message, button) {
             self.run(id, &params);
         }
     }
@@ -2959,8 +2959,7 @@ impl State {
                     let mut chosen = lines.is_chosen(kind, *line);
                     // The last line picked stays.
                     let last = chosen && lines.shown(kind).len() <= 1 && lines.on;
-                    if ui
-                        .add_enabled(!last, egui::Checkbox::new(&mut chosen, line.name()))
+                    if crate::components::toggle_enabled(ui, !last, &mut chosen, line.name())
                         .clicked()
                     {
                         run = Some(json!({ "tab": tab.0, "line": line.id(), "shown": chosen }));
@@ -3164,12 +3163,12 @@ impl State {
                         }
                     });
                     let mut differences = comparison.differences;
-                    if ui
-                        .checkbox(
-                            &mut differences,
-                            crate::components::label_text("Differences"),
-                        )
-                        .clicked()
+                    if crate::components::toggle(
+                        ui,
+                        &mut differences,
+                        crate::components::label_text("Differences"),
+                    )
+                    .clicked()
                     {
                         run = Some(("compare.differences", json!({ "tab": tab.0 })));
                     }

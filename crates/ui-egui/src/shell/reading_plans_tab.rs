@@ -203,10 +203,11 @@ impl State {
             ui.add_space(space::XS);
             heading(ui, "Plan");
             for t in reading_plans::templates() {
-                ui.radio_value(&mut f.template, t.id.clone(), &t.name)
+                crate::components::radio_value(ui, &mut f.template, t.id.clone(), &t.name)
                     .on_hover_text(&t.about);
             }
-            ui.radio_value(
+            crate::components::radio_value(
+                ui,
                 &mut f.template,
                 reading_plans::CUSTOM.to_string(),
                 "Custom: chosen books over N days",

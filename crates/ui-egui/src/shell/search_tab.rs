@@ -323,8 +323,7 @@ impl State {
                     self.save_search_button(ui, tab, &query, &scope, &mut run);
                     if forms_toggle {
                         let mut on = word_forms;
-                        if ui
-                            .checkbox(&mut on, WORD_FORMS)
+                        if crate::components::toggle(ui, &mut on, WORD_FORMS)
                             .on_hover_text(
                                 "Also find other forms of English words: love finds loved, \
                                  loving and loveth. \"Quoted\" words stay exact.",
@@ -531,8 +530,7 @@ impl State {
                     ui.label(crate::components::hint_text("Collections"));
                     for c in library.collections() {
                         let mut on = scope.collections.contains(&c.name);
-                        if ui
-                            .checkbox(&mut on, c.name.as_str())
+                        if crate::components::toggle(ui, &mut on, c.name.as_str())
                             .on_hover_text(if c.rules.is_empty() {
                                 "Chosen by hand".to_string()
                             } else {
@@ -555,8 +553,7 @@ impl State {
                     }
                     any = true;
                     let mut all = scope.types.contains(&ty);
-                    if ui
-                        .checkbox(&mut all, format!("All {}", type_plural(ty)))
+                    if crate::components::toggle(ui, &mut all, format!("All {}", type_plural(ty)))
                         .clicked()
                     {
                         run.push((

@@ -345,7 +345,7 @@ impl Shell {
                 ui.label(egui::RichText::new("Buttons show").strong());
                 ui.horizontal(|ui| {
                     for (labels, id, label) in LauncherLabels::ALL {
-                        if ui.radio(settings.labels == labels, label).clicked() {
+                        if crate::components::radio(ui, settings.labels == labels, label).clicked() {
                             acts.push(("toolbar.labels", json!({ "value": id })));
                         }
                     }
@@ -363,14 +363,13 @@ impl Shell {
                 ui.label(egui::RichText::new("Position").strong());
                 ui.horizontal(|ui| {
                     for (position, id, label) in ToolbarPosition::ALL {
-                        if ui.radio(settings.position == position, label).clicked() {
+                        if crate::components::radio(ui, settings.position == position, label).clicked() {
                             acts.push(("view.toolbar_position", json!({ "value": id })));
                         }
                     }
                 });
                 let mut auto_hide = settings.auto_hide;
-                if ui
-                    .checkbox(
+                if crate::components::toggle(ui,
                         &mut auto_hide,
                         "Auto-hide: show the toolbar when the pointer reaches its edge or Alt is held",
                     )

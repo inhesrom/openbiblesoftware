@@ -3597,6 +3597,8 @@ mod user_guide;
 
 #[path = "a11y_audit_tests.rs"]
 mod a11y_audit;
+#[path = "control_outline_tests.rs"]
+mod control_outline;
 #[path = "floating_windows_tests.rs"]
 mod floating_windows;
 #[path = "footnotes_tests.rs"]

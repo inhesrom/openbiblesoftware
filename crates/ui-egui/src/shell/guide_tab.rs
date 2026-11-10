@@ -86,6 +86,11 @@ struct Drawn {
 }
 
 impl State {
+    /// The page of a Guide Tab, on the Page tone as its Resource text is (#306).
+    pub(super) fn guide_frame(&self) -> egui::Frame {
+        crate::components::guide_page_frame(self.palette.page)
+    }
+
     /// A Passage Guide's or Exegetical Guide's page: the Passage, then the Guide's sections.
     pub(super) fn passage_keyed_guide_body(&mut self, ui: &mut Ui, tab: TabId, guide: Guide) {
         let passage = self
@@ -96,6 +101,7 @@ impl State {
         let Some(passage) = passage else {
             if hint_page(
                 ui,
+                self.guide_frame(),
                 "Type a Passage in the box above (for example “Jn 3:16-18”), or put this Guide \
                  in a Bible's Link set to follow it.",
                 "Show John 3:16-18",
@@ -137,7 +143,7 @@ impl State {
         let mut drag_start: Option<GuideSection> = None;
         let mut drag_end = false;
         let mut region = Rect::NOTHING;
-        crate::components::page_frame().show(ui, |ui| {
+        self.guide_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             if let Some(a) = head(self, ui) {
                 action = Some(a);
@@ -731,15 +737,14 @@ fn section_header(
     }
 }
 
-/// A Guide with no Key yet: what to type, and a Button that shows an example (#223). Returns
-/// whether it was clicked.
-pub(super) fn hint_page(ui: &mut Ui, text: &str, action: &str) -> bool {
-    crate::components::page_frame()
-        .show(ui, |ui| {
-            ui.set_min_size(ui.available_size());
-            crate::components::empty_state(ui, text, action).clicked()
-        })
-        .inner
+/// A Guide with no Key yet: what to type, and a Button that shows an example (#223), on
+/// `page`. Returns whether it was clicked.
+pub(super) fn hint_page(ui: &mut Ui, page: egui::Frame, text: &str, action: &str) -> bool {
+    page.show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        crate::components::empty_state(ui, text, action).clicked()
+    })
+    .inner
 }
 
 /// A filterable section's Collection chooser (#153), shown once the user has Collections:

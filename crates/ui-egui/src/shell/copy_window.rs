@@ -319,7 +319,9 @@ impl State {
                             ui.horizontal(|ui| {
                                 for (value, value_label) in *values {
                                     let on = options.value(name) == Some(*value);
-                                    if ui.radio(on, *value_label).clicked() && !on {
+                                    if crate::components::radio(ui, on, *value_label).clicked()
+                                        && !on
+                                    {
                                         acts.push(Act::Option(name, value));
                                     }
                                 }

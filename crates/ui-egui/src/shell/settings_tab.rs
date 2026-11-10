@@ -173,8 +173,7 @@ impl State {
                 let (choices, current) = obs_engine::choices(&self.session, command);
                 ui.horizontal_wrapped(|ui| {
                     for (id, label) in choices {
-                        let r = ui
-                            .radio(id == current, label)
+                        let r = crate::components::radio(ui, id == current, label)
                             .accessible_name(format!("{}: {label}", setting.label));
                         if r.clicked() && id != current {
                             run = Some((command, json!({ "value": id })));
