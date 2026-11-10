@@ -50,6 +50,28 @@ pub(super) fn starter_intro(bundled: bool, rows: &[StarterRow]) -> &'static str 
     }
 }
 
+/// The Button that adds the `missing` Starter Resources (`bytes` in all): from the bundle,
+/// the whole Starter library when none of it is in the Library, else only what is missing.
+pub(super) fn starter_add_label(
+    bundled: bool,
+    rows: &[StarterRow],
+    missing: usize,
+    bytes: u64,
+) -> String {
+    let resources = format!(
+        "{missing} missing Resource{}",
+        if missing == 1 { "" } else { "s" }
+    );
+    let megabytes = bytes.div_ceil(1_000_000);
+    if bundled {
+        format!("Add {resources}")
+    } else if has_some(rows) {
+        format!("Download {resources} (≈{megabytes} MB)")
+    } else {
+        format!("Download Starter library (≈{megabytes} MB)")
+    }
+}
+
 impl State {
     pub(super) fn starter_body(&mut self, ui: &mut Ui) {
         let mut action: Option<(&'static str, serde_json::Value)> = None;
@@ -87,21 +109,7 @@ impl State {
                 crate::components::loading_state(ui, "Loading the Starter library list…");
             } else if !wanted.is_empty() {
                 let bytes: u64 = wanted.iter().map(|i| i.bytes).sum();
-                let missing = format!(
-                    "{} missing Resource{}",
-                    wanted.len(),
-                    if wanted.len() == 1 { "" } else { "s" }
-                );
-                let label = if bundled {
-                    format!("Add {missing}")
-                } else if has_some(&rows) {
-                    format!("Download {missing} (≈{} MB)", bytes.div_ceil(1_000_000))
-                } else {
-                    format!(
-                        "Download Starter library (≈{} MB)",
-                        bytes.div_ceil(1_000_000)
-                    )
-                };
+                let label = starter_add_label(bundled, &rows, wanted.len(), bytes);
                 if ui.button(RichText::new(label).strong()).clicked() {
                     action = Some(("starter.add", json!({})));
                 }
