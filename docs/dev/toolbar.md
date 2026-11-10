@@ -152,7 +152,8 @@ the choice.
   button: one click flips Collapsed ↔ Expanded. Its double chevron points the way the
   toolbar's inner edge moves: » on the Left and « on the Right while Collapsed, the other way
   (with the word "Collapse") while Expanded. It is a Tab stop: F6 puts the keyboard on the
-  first Launcher, Tab reaches the control, and Enter or Space flips it. Its accessible name
+  first Launcher (or onto the control itself when every Launcher is hidden), Tab reaches the
+  control, and Enter or Space flips it. Its accessible name
   states the state ("Expand toolbar (now collapsed)", "Collapse toolbar (now expanded)") and it
   reads as a toggle that is on while Expanded.
 - **Elsewhere:** right-click the toolbar (Expanded, Collapsed), Customize toolbar… (At the left
@@ -163,7 +164,8 @@ the choice.
   pop-out control's "Collapse") at the current Interface size, up to a maximum (a 180-point
   text column, `toolbar_look::expanded_width`); longer text ends in "…".
 - **Room:** the Expanded column pushes the Workspace over, and panes open beside the wider
-  column. With Auto-hide it is drawn over the Workspace like the Collapsed one. A short window
+  column, also when chosen from » or for a hidden Launcher (`pane_anchor` spans the column's
+  width at Left and Right). With Auto-hide it is drawn over the Workspace like the Collapsed one. A short window
   moves the Launchers it has no room for into », as Collapsed; the pop-out control always keeps
   its place at the end.
 - Expanded is the `expanded` field of the `toolbar` preference, kept across launches and never

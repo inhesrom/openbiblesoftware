@@ -623,9 +623,10 @@ fn one_click_on_the_pop_out_control_expands_and_collapses_a_side_toolbar() {
     std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
 }
 
-/// The Library's row shows its update count in the detail line, as the badge does Collapsed.
+/// The Library's row paints its shortcut; its detail line counts updates, as the badge does
+/// Collapsed; the column's width has a cap.
 #[test]
-fn the_expanded_library_row_shows_its_shortcut_and_update_count() {
+fn the_expanded_library_row_paints_its_shortcut_and_its_detail_line_counts_updates() {
     let mut h = Harness::new();
     h.shell
         .run("view.toolbar_position", &json!({ "value": "left" }));
@@ -647,7 +648,7 @@ fn the_expanded_library_row_shows_its_shortcut_and_update_count() {
     h.shell
         .run("keys.clear", &json!({ "command": "toolbar.tools" }));
     assert_eq!(h.shell.launcher_detail(Launcher::Tools, 0), "");
-    // The column has a maximum width; longer text ends in "…".
+    // The column's width has a cap, whatever the text.
     use crate::shell::toolbar_look as look;
     assert_eq!(
         look::expanded_width(10_000.0),
@@ -687,7 +688,6 @@ fn right_click_customize_the_command_box_and_the_shortcut_expand_and_collapse_it
     h.frames(3);
     h.click_text("Expanded");
     assert!(expanded(&h), "Customize: Expanded");
-    preview(&h, "toolbar-customize-expanded");
     h.click_text("Collapsed");
     assert!(!expanded(&h), "Customize: Collapsed");
     h.click_text("Done");
@@ -745,6 +745,90 @@ fn the_keyboard_reaches_the_pop_out_control_and_hears_its_state() {
     assert_eq!(node, Some(egui::accesskit::Toggled::True));
     key(&mut h, Key::Enter, Modifiers::NONE);
     assert!(!expanded(&h), "Enter collapses");
+}
+
+/// The open pane is beside an Expanded column at `edge`, never over it.
+fn assert_pane_beside_column(h: &Harness, edge: ToolbarPosition) {
+    let pane = h.shell.st.toolbar.pane.expect("the pane");
+    let bar = bar(h);
+    match edge {
+        ToolbarPosition::Left => assert!(pane.left() >= bar.right(), "{pane:?} {bar:?}"),
+        ToolbarPosition::Right => assert!(pane.right() <= bar.left(), "{pane:?} {bar:?}"),
+        _ => unreachable!(),
+    }
+}
+
+/// An Expanded column's » button and a hidden Launcher's fallback anchor are narrower than
+/// the column; their panes still open beside it, at the Left and the Right.
+#[test]
+fn an_expanded_toolbar_opens_panes_from_more_and_for_hidden_launchers_beside_the_column() {
+    let mut h = Harness::new();
+    h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+    for (edge, value) in [
+        (ToolbarPosition::Left, "left"),
+        (ToolbarPosition::Right, "right"),
+    ] {
+        h.shell
+            .run("view.toolbar_position", &json!({ "value": value }));
+        // A short window: choose the last Launcher in » from ».
+        h.screen = vec2(1000.0, 230.0);
+        h.frames(4);
+        let tb = &h.shell.st.toolbar;
+        let more = tb.overflow.expect("a » button");
+        assert!(more.width() < bar(&h).width() - 40.0, "{more:?}");
+        let last = (Launcher::ALL.into_iter())
+            .rfind(|w| tb.buttons[w] == more)
+            .expect("a Launcher in »");
+        h.click(more.center());
+        let p = topmost(&h, last.title());
+        h.click(p);
+        assert_eq!(h.shell.st.toolbar.open, Some(last), "{value}");
+        assert_pane_beside_column(&h, edge);
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        assert_eq!(h.shell.st.toolbar.open, None);
+
+        // The Library hidden: Alt+L opens it from the toolbar's start, beside the column.
+        h.screen = vec2(1400.0, 900.0);
+        h.shell.run(
+            "toolbar.show_launcher",
+            &json!({ "launcher": Launcher::Library.id(), "shown": false }),
+        );
+        h.frames(3);
+        assert!(!h.shell.st.toolbar.buttons.contains_key(&Launcher::Library));
+        h.events.push(Event::PointerMoved(pos2(700.0, 500.0)));
+        key(&mut h, Key::L, Modifiers::ALT);
+        assert_eq!(h.shell.st.toolbar.open, Some(Launcher::Library), "{value}");
+        assert_pane_beside_column(&h, edge);
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        h.shell.run(
+            "toolbar.show_launcher",
+            &json!({ "launcher": Launcher::Library.id(), "shown": true }),
+        );
+    }
+}
+
+/// With every Launcher hidden, F6 still reaches a side Toolbar: its pop-out control.
+#[test]
+fn f6_lands_on_the_pop_out_control_when_every_launcher_is_hidden() {
+    let mut h = Harness::new();
+    h.ctx.enable_accesskit();
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "left" }));
+    for which in Launcher::ALL {
+        h.shell.run(
+            "toolbar.show_launcher",
+            &json!({ "launcher": which.id(), "shown": false }),
+        );
+    }
+    h.frames(3);
+    let name = crate::shell::toolbar_bar::pop_out_name(false);
+    for _ in 0..4 {
+        key(&mut h, Key::F6, Modifiers::NONE);
+        if focused(&h).as_deref() == Some(name) {
+            break;
+        }
+    }
+    assert_eq!(focused(&h).as_deref(), Some(name));
 }
 
 /// Acceptance: with Auto-hide an Expanded toolbar is drawn over the Workspace at its edge;

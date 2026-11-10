@@ -131,7 +131,13 @@ impl Shell {
             {
                 let edge = nearest_edge(work, p);
                 self.st.toolbar.grip_target = Some(edge);
-                look::drop_edge(ui.ctx(), edge_rect(work, edge));
+                // At Left or Right, the preview is as wide as the toolbar will be there.
+                let thickness = if settings.expanded && edge.is_vertical() {
+                    look::bar_thickness_around(self.expanded_width(ui, &settings))
+                } else {
+                    look::bar_thickness(edge.is_vertical())
+                };
+                look::drop_edge(ui.ctx(), edge_rect(work, edge, thickness));
             }
             if grip.drag_stopped()
                 && let Some(edge) = self.st.toolbar.grip_target.take()
@@ -189,6 +195,8 @@ impl Shell {
 
             if vertical {
                 let resp = self.pop_out_control(ui, &settings, across);
+                // With every Launcher hidden, F6 lands on the pop-out control.
+                first = first.or(Some(resp.id));
                 if resp.clicked() {
                     act = Some(("view.toolbar_expanded", json!({ "on": !expanded })));
                 }
@@ -199,7 +207,8 @@ impl Shell {
             }
         });
         self.st.toolbar.bar = Some(strip.response.rect);
-        // F6 puts the keyboard on the first Launcher, or the overflow button (#215).
+        // F6 puts the keyboard on the first Launcher, or the overflow button (#215), or the
+        // pop-out control (#291).
         self.st.areas.toolbar = first.map(|id| (id, strip.response.rect));
         self.st.toolbar.menu_open |= menu_open;
         if let Some(which) = toggle {
@@ -361,14 +370,25 @@ impl Shell {
     }
 
     /// Where the open pane drops down from: its Launcher's button (or the » button holding it),
-    /// else, for a Launcher hidden from the toolbar, the toolbar's start.
+    /// else, for a Launcher hidden from the toolbar, the toolbar's start. At Left and Right the
+    /// anchor spans the toolbar's whole width, so an Expanded column's narrower » button
+    /// (#291) still opens the pane beside the column, not over it.
     pub(super) fn pane_anchor(&self, ui: &Ui, which: Launcher) -> Rect {
         let tb = &self.st.toolbar;
+        let across_bar = |mut r: Rect| {
+            if let Some(bar) = tb.bar
+                && self.st.session.toolbar.position.is_vertical()
+            {
+                r.min.x = bar.min.x;
+                r.max.x = bar.max.x;
+            }
+            r
+        };
         if let Some(r) = tb.buttons.get(&which) {
-            return *r;
+            return across_bar(*r);
         }
         if let Some(bar) = tb.bar {
-            return Rect::from_min_size(bar.min, look::overflow_size());
+            return across_bar(Rect::from_min_size(bar.min, look::overflow_size()));
         }
         let work = self.work_rect(ui);
         let start = match self.st.session.toolbar.position {
@@ -549,9 +569,8 @@ pub(crate) fn nearest_edge(work: Rect, p: Pos2) -> ToolbarPosition {
         .map_or(ToolbarPosition::Top, |d| d.0)
 }
 
-/// Where a toolbar at `edge` of `work` sits, for the drop preview.
-fn edge_rect(work: Rect, edge: ToolbarPosition) -> Rect {
-    let t = look::bar_thickness(edge.is_vertical());
+/// Where a toolbar `t` thick at `edge` of `work` sits, for the drop preview.
+fn edge_rect(work: Rect, edge: ToolbarPosition, t: f32) -> Rect {
     match edge {
         ToolbarPosition::Top => Rect::from_min_size(work.min, vec2(work.width(), t)),
         ToolbarPosition::Bottom => {
