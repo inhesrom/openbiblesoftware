@@ -1977,6 +1977,7 @@ fn a_restore_running_searches_again_keeps_the_backups_recent_searches() {
 /// `u64::MAX` restores, every loader keeping those ids exactly. Opening a Tab, splitting a
 /// Panel, floating a Tab and saving Visual filters after that take free ids: nothing
 /// overflows (test builds check overflow, so it would panic) and no id in use is taken again.
+/// A Backup made after the Visual filter counter wraps restores, and a relaunch keeps it.
 #[test]
 fn ids_at_their_maximum_give_way_to_free_ids_after_a_restore() {
     const MAX: u64 = u64::MAX;
@@ -2087,7 +2088,24 @@ fn ids_at_their_maximum_give_way_to_free_ids_after_a_restore() {
         .filter(|id| id.starts_with("filter-"))
         .collect();
     assert_eq!(filters, ["filter-1", &format!("filter-{MAX}"), "filter-2"]);
-    assert_eq!(s.visual_filters.next_id, 3);
+    // The counter stays at the maximum: loading raises a lower one back there while
+    // `filter-<MAX>` exists, and a Backup's check compares the stored counter exactly.
+    assert_eq!(s.visual_filters.next_id, MAX);
+
+    // A Backup made after the wrap passes its checks and restores, and a relaunch keeps it all.
+    let after_wrap = f.file("after-wrap.obsbackup");
+    s.run("data.back_up", &path(&after_wrap)).unwrap();
+    s.restore_preview(&after_wrap).unwrap();
+    s.run("data.restore", &path(&after_wrap)).unwrap();
+    assert_eq!(s.visual_filters.next_id, MAX);
+    let relaunched = f.launched_on(&after_wrap);
+    assert_eq!(relaunched.visual_filters.list, s.visual_filters.list);
+    assert_eq!(relaunched.visual_filters.next_id, MAX);
+    drop(s);
+    let mut s = f.session();
+    assert_eq!(s.visual_filters.next_id, MAX);
+    assert_eq!(saved(&mut s, "Love once more"), "filter-3");
+    assert_eq!(s.visual_filters.next_id, MAX);
 }
 
 fn panel_of_tab(s: &Session, tab: u64) -> PanelId {

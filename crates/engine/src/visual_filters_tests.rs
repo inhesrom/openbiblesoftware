@@ -589,7 +589,8 @@ fn a_deleted_filters_id_is_never_reused_so_restored_layouts_do_not_switch_new_fi
 
 /// #290: a hand-edited User database whose filter has the id `filter-<u64::MAX>` (which also
 /// puts the counter there at launch) neither panics nor collides on the next new filter: the
-/// counter wraps to the first number no filter's id has.
+/// counter wraps to the first number no filter's id has, and stays at the maximum across a
+/// relaunch.
 #[test]
 fn a_filter_id_at_the_maximum_wraps_the_counter_to_a_free_number() {
     let (mut s, t) = launch("max-id");
@@ -626,6 +627,16 @@ fn a_filter_id_at_the_maximum_wraps_the_counter_to_a_free_number() {
         .filter(|id| id.starts_with("filter-"))
         .collect();
     assert_eq!(ids, ["filter-1", &max, "filter-2", "filter-3"]);
+    // The stored counter stays at the maximum, so it loads as itself and a relaunch goes on
+    // with the next free number.
+    assert_eq!(s.visual_filters.next_id, u64::MAX);
+    drop(s);
+    let mut s = reopen(&t.0);
+    assert_eq!(s.visual_filters.next_id, u64::MAX);
+    let out = s
+        .run("filter.save", &json!({ "name": "Hope", "query": "hope" }))
+        .unwrap();
+    assert_eq!(out["id"], "filter-4");
 }
 
 // ------------------------------------------------------- review of #211: scope and reach

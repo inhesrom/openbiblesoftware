@@ -198,7 +198,9 @@ pub(crate) struct VisualFilters {
     pub(crate) list: Vec<VisualFilter>,
     /// Bumped by every change to `list`.
     pub(crate) revision: u64,
-    /// The number of the next new filter's id (`filter-<n>`): ids are never reused.
+    /// The number of the next new filter's id (`filter-<n>`): ids are never reused, until the
+    /// counter reaches `u64::MAX`. There it stays (#290), so the stored counter still loads as
+    /// itself while `filter-<u64::MAX>` exists (a Backup's check compares it exactly).
     pub(crate) next_id: u64,
 }
 
@@ -1062,7 +1064,10 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     match existing {
         Some(i) => s.visual_filters.list[i] = f,
         None => {
-            s.visual_filters.next_id = crate::workspace::after(s.visual_filters.free_id());
+            // Past an id wrapped below the counter, the counter stays where it was (at the
+            // maximum): `load_visual_filters` raises a lower one back to it anyway.
+            let id = s.visual_filters.free_id();
+            s.visual_filters.next_id = s.visual_filters.next_id.max(id.saturating_add(1));
             s.visual_filters.list.push(f);
         }
     }
