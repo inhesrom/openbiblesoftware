@@ -155,6 +155,27 @@ fn the_preview_shows_the_first_five_verses_of_the_star_bible_and_how_many_match(
 }
 
 #[test]
+fn going_back_to_a_text_whose_search_was_cancelled_searches_it_again() {
+    let (mut s, root) = fixture("retype", &[psalms(12), kjv()], true);
+    // "love" is submitted; its job has not run yet.
+    s.update_search_preview(Some("love"), 0.0);
+    s.update_search_preview(Some("love"), PREVIEW_DEBOUNCE);
+    assert!(s.search_preview_running());
+    // "law" is typed (cancelling it), then "love" again before "law" is due.
+    s.update_search_preview(Some("law"), 0.2);
+    assert!(!s.search_preview_running());
+    s.update_search_preview(Some("love"), 0.25);
+    assert!(s.search_preview_due_in(0.25).is_some(), "due again");
+    s.update_search_preview(Some("love"), 0.5);
+    assert_eq!(s.search_preview_query(), Some("love"));
+    assert!(s.search_preview_running(), "searched again");
+    settle(&mut s);
+    assert_eq!(hits(&s).query, "love");
+    assert_eq!(hits(&s).total, 12);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn without_a_bible_the_preview_says_so() {
     let (mut s, root) = fixture("no-bible", &[], true);
     s.update_search_preview(Some("love"), 0.0);
@@ -199,5 +220,70 @@ fn opening_a_preview_hit_goes_to_its_verse_in_a_bible() {
     assert_eq!(t.kind, TabKind::Resource("psalms".into()));
     assert_eq!(s.workspace.focused(), Some(tab));
     assert!(s.run("command_box.open_hit", &json!({ "hit": 5 })).is_err());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn an_unmapped_hit_opened_from_a_linked_bible_leaves_the_link_set_still() {
+    use crate::testing::bibles::{bible, v};
+    use obs_scripture::Book;
+    // ADD's Esth 10:4 is a Greek addition: an Unmapped verse.
+    let add = bible(
+        "add",
+        "ADD",
+        &[
+            (v(Book::Esther, 10, 3), "Mordecai was next unto the king."),
+            (
+                v(Book::Esther, 10, 4),
+                "Then Mordecai said, God hath done these things.",
+            ),
+        ],
+        Some(&[Some(v(Book::Esther, 10, 3)), None]),
+        &[],
+    );
+    let (mut s, root) = fixture("unmapped", &[add, kjv()], true);
+    let kjv_tab = TabId(
+        s.run("resource.open", &json!({ "id": "kjv" })).unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    s.run("tab.link", &json!({ "tab": kjv_tab.0, "set": "A" }))
+        .unwrap();
+    s.run("tab.go", &json!({ "tab": kjv_tab.0, "text": "Lev 19:18" }))
+        .unwrap();
+    s.workspace.user_focused(kjv_tab);
+    s.workspace.take_effects();
+    s.update_search_preview(Some("done"), 0.0);
+    s.update_search_preview(Some("done"), PREVIEW_DEBOUNCE);
+    settle(&mut s);
+    assert_eq!(
+        shown(&hits(&s))[0].0,
+        "Esther 10:4 (ADD, no Standard equivalent)"
+    );
+
+    let out = s.run("command_box.open_hit", &json!({ "hit": 0 })).unwrap();
+    let tab = TabId(out["tab"].as_u64().unwrap());
+    assert_ne!(tab, kjv_tab);
+    let t = s.workspace.tab(tab).unwrap();
+    assert_eq!(t.kind, TabKind::Resource("add".into()));
+    assert_eq!(
+        t.link,
+        Some('A'),
+        "opened from the linked KJV, it joined its set"
+    );
+    assert_eq!(t.history.current(), Some(v(Book::Esther, 10, 4)));
+    // Nothing followed: the KJV stays at Lev 19:18; the new Tab jumps once it is loaded.
+    let effects = s.workspace.take_effects();
+    assert!(
+        !effects.iter().any(|e| matches!(e, Effect::Follow { .. })),
+        "{effects:?}"
+    );
+    assert!(effects.contains(&Effect::NavigateOpened {
+        tab,
+        verse: Some(v(Book::Esther, 10, 4)),
+        key: None,
+    }));
+    let kjv_at = s.workspace.tab(kjv_tab).unwrap().history.current();
+    assert_eq!(kjv_at, Some(v(Book::Leviticus, 19, 18)));
     let _ = std::fs::remove_dir_all(root);
 }

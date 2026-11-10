@@ -99,6 +99,8 @@ impl Session {
         if p.typed.as_ref().is_none_or(|(t, _)| t != text) {
             p.typed = Some((text.to_string(), now));
             if let Some(job) = p.job.take() {
+                // Its hits never come: that text must be searched again if it is typed again.
+                p.searched = None;
                 self.jobs().cancel(job);
             }
         }

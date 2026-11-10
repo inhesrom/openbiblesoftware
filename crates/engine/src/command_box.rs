@@ -1102,23 +1102,27 @@ fn open_preview_hit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandErro
     let open = (!new_tab)
         .then(|| s.workspace.most_recent(|t| t.kind == kind))
         .flatten();
-    let tab = match open {
-        Some(tab) => {
-            s.workspace.focus(tab);
-            tab
-        }
-        None => {
-            let out = s.run(
-                "resource.open",
-                &json!({ "id": hit.bible, "split": new_tab }),
-            )?;
-            out["tab"]
-                .as_u64()
-                .map(TabId)
-                .ok_or_else(|| failed(OPEN_HIT, "no Tab opened"))?
-        }
-    };
-    s.workspace.navigate(tab, hit.native);
+    if let Some(tab) = open {
+        s.workspace.focus(tab);
+        s.workspace.navigate(tab, hit.native);
+        return Ok(json!({ "tab": tab.0, "verse": hit.native.osis() }));
+    }
+    let out = s.run(
+        "resource.open",
+        &json!({ "id": hit.bible, "split": new_tab }),
+    )?;
+    let tab = (out["tab"].as_u64().map(TabId)).ok_or_else(|| failed(OPEN_HIT, "no Tab opened"))?;
+    // A new Tab has no Verse map yet: its Link set, which it may have joined, would take the
+    // Unmapped verse for a Standard one. It starts there, and jumps once the UI has loaded it
+    // (as a Favorite opens), so the set stays put.
+    if let Some(t) = s.workspace.tab_mut(tab) {
+        t.visit(hit.native, None);
+    }
+    s.workspace.push_effect(Effect::NavigateOpened {
+        tab,
+        verse: Some(hit.native),
+        key: None,
+    });
     Ok(json!({ "tab": tab.0, "verse": hit.native.osis() }))
 }
 
