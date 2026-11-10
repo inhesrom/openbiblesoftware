@@ -347,6 +347,17 @@ fn command_box_results_previews() {
         settle_verses(&mut h);
         h.screenshot(&out.join(format!("results-hebrew-{theme}.ppm")));
     }
+    // No Bible installed: the preview offers Get Bibles instead of hits.
+    for theme in ["light", "dark"] {
+        let (mut h, _files) =
+            super::search::harness_of(&format!("command-box-preview-no-bible-{theme}"), &[]);
+        h.shell.run("view.theme", &json!({ "value": theme }));
+        h.frames(2);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "love");
+        pump_frames(&mut h, 10);
+        h.screenshot(&out.join(format!("results-no-bible-{theme}.ppm")));
+    }
 }
 
 // ------------------------------------------------------------- the results panel (#295)
