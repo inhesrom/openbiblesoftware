@@ -265,8 +265,8 @@ impl State {
 
     /// One Lemma card: Lemma (pipeline), Strong's number, Morphology (raw code in a tooltip)
     /// and the Lexicon gloss ([`lexicon_gloss`]); an entry with no gloss to cut names its
-    /// Lexicon with Open in … (`lexicon.open` lands on the same entry: the first Lexicon in
-    /// Preferred order that has the number).
+    /// Lexicon with Open in …, which opens that Lexicon (`lexicon.open` with its `resource`:
+    /// the Preferred order may have changed since the card was pinned) at the entry.
     fn lemma_card(
         &mut self,
         ui: &mut Ui,
@@ -274,7 +274,7 @@ impl State {
         role: Option<&str>,
         settings: &TextSettings,
     ) {
-        let mut open_lexicon: Option<bool> = None;
+        let mut open_lexicon: Option<(String, bool)> = None;
         egui::Frame::new()
             .fill(theme::c().surface)
             .stroke(crate::components::rule_stroke())
@@ -343,8 +343,10 @@ impl State {
                                 )
                                 .clicked()
                                 {
-                                    open_lexicon =
-                                        Some(ui.input(|i| i.modifiers.command || i.modifiers.ctrl));
+                                    open_lexicon = Some((
+                                        l.resource_id.clone(),
+                                        ui.input(|i| i.modifiers.command || i.modifiers.ctrl),
+                                    ));
                                 }
                             }
                         });
@@ -354,10 +356,14 @@ impl State {
                     }
                 }
             });
-        if let Some(new_tab) = open_lexicon {
+        if let Some((resource, new_tab)) = open_lexicon {
             self.run(
                 "lexicon.open",
-                &json!({ "strongs": card.strongs.to_string(), "new_tab": new_tab }),
+                &json!({
+                    "strongs": card.strongs.to_string(),
+                    "resource": resource,
+                    "new_tab": new_tab,
+                }),
             );
         }
     }

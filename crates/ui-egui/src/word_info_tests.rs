@@ -648,11 +648,8 @@ fn a_greek_star_lexicon_does_not_hide_the_hebrew_gloss() {
     );
 }
 
-/// #294: an entry with no gloss line to cut (a cross-reference) names its Lexicon with
-/// Open in …, which opens the Lexicon at the entry, instead of "No Lexicon entry".
-#[test]
-fn an_entry_without_a_gloss_names_its_lexicon_and_opens_it() {
-    let (mut h, heb) = hebrew_harness();
+/// A Lexicon whose only entry, H1254A, is a cross-reference with no gloss line to cut.
+fn cross_reference_lexicon() -> obs_model::Resource {
     let mut m = Manifest::new(
         "xref-lex",
         "Cross-reference Lexicon",
@@ -684,7 +681,15 @@ fn an_entry_without_a_gloss_names_its_lexicon_and_opens_it() {
         None,
         false,
     );
-    let _lexicon = add_obr(&mut h.shell, &b.build().unwrap());
+    b.build().unwrap()
+}
+
+/// #294: an entry with no gloss line to cut (a cross-reference) names its Lexicon with
+/// Open in …, which opens the Lexicon at the entry, instead of "No Lexicon entry".
+#[test]
+fn an_entry_without_a_gloss_names_its_lexicon_and_opens_it() {
+    let (mut h, heb) = hebrew_harness();
+    let _lexicon = add_obr(&mut h.shell, &cross_reference_lexicon());
     let spot = word_spot(&h, heb, "בָּרָ֣א");
     h.events.push(Event::PointerMoved(spot));
     h.frames(14);
@@ -707,5 +712,58 @@ fn an_entry_without_a_gloss_names_its_lexicon_and_opens_it() {
     assert_eq!(
         tab.entry_history.current(),
         Some(Key::StrongsNumber("H1254A".parse().unwrap()))
+    );
+}
+
+/// #294 review: a pinned card keeps the Lexicon it names when the Preferred order changes,
+/// and Open in … opens that Lexicon, not the one now first with the number.
+#[test]
+fn open_in_opens_the_named_lexicon_after_the_preferred_order_changes() {
+    let (mut h, heb) = hebrew_harness();
+    let _xref = add_obr(&mut h.shell, &cross_reference_lexicon());
+    let card = |h: &Harness| {
+        let shown = h.shell.st.session.word_info.shown.clone().expect("shown");
+        let l = shown.main.lexicon.expect("a Lexicon");
+        (l.abbreviation, l.text)
+    };
+    let bara = word_spot(&h, heb, "בָּרָ֣א");
+    h.click(bara);
+    h.frames(3);
+    assert!(h.shell.st.session.word_info.pinned);
+    assert_eq!(card(&h), ("XRL".into(), None));
+    // A Lexicon with the number is added and moved first; the pinned card is unchanged.
+    let _hebrew = add_obr(&mut h.shell, &hebrew_lexicon());
+    assert!(
+        h.shell
+            .run("library.move", &json!({ "id": "heb-lexicon", "to": 0 }))
+            .is_some()
+    );
+    h.frames(3);
+    assert_eq!(
+        h.shell
+            .st
+            .session
+            .library
+            .preferred(obs_model::ResourceType::Lexicon)
+            .map(|e| e.manifest.resource_id.as_str()),
+        Some("heb-lexicon")
+    );
+    assert_eq!(card(&h), ("XRL".into(), None));
+    h.click_text("Open in XRL");
+    h.frames(3);
+    let tab = h.shell.st.session.workspace.tab(h.tab_id("XRL")).unwrap();
+    assert_eq!(tab.kind, TabKind::Resource("xref-lex".into()));
+    assert_eq!(
+        tab.entry_history.current(),
+        Some(Key::StrongsNumber("H1254A".parse().unwrap()))
+    );
+    assert!(
+        !h.shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .any(|t| t.kind == TabKind::Resource("heb-lexicon".into())),
+        "the preferred Lexicon did not open"
     );
 }

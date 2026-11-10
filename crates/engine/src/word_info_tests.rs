@@ -179,3 +179,46 @@ fn an_entry_with_no_gloss_line_still_names_its_lexicon() {
     assert_eq!(word.main.lexicon.as_ref(), Some(&gloss));
     assert_eq!(word.main.line(), "H1 אָב v. II. אבה. · BDBT");
 }
+
+/// #294 review: a Lexicon's homographs (H7225 → H7225G, H7225H) are all read before the next
+/// Lexicon: a cross-reference first does not hide the gloss of the entry after it.
+#[test]
+fn a_glossless_homograph_does_not_hide_the_next_homographs_gloss() {
+    let t = Temp::new("homographs");
+    let bdb = lexicon(
+        "bdbt",
+        "BDBT",
+        &[
+            ("H7225G", "רֵאשִׁית v. ראשׁ.", &[]),
+            ("H7225H", "רֵאשִׁית re.shit", &["first, beginning"]),
+        ],
+    );
+    let later = lexicon("tbt", "TBT", &[("H7225", "רֵאשִׁית", &["start"])]);
+    let library = library(&t, &[bdb.clone(), later]);
+    let gloss = shown(&library, "H7225").unwrap();
+    assert_eq!(
+        (
+            gloss.abbreviation.as_str(),
+            gloss.text.as_deref(),
+            gloss.lemma.as_deref()
+        ),
+        ("BDBT", Some("first, beginning"), Some("רֵאשִׁית re.shit"))
+    );
+
+    // With every homograph glossless, the first one is kept over a later Lexicon's absence.
+    let t = Temp::new("homographs-glossless");
+    let glossless = lexicon(
+        "bdbt",
+        "BDBT",
+        &[
+            ("H7225G", "רֵאשִׁית v. ראשׁ.", &[]),
+            ("H7225H", "רֵאשִׁית v. ראשׁ.", &[]),
+        ],
+    );
+    let library = self::library(&t, &[glossless]);
+    let gloss = shown(&library, "H7225").unwrap();
+    assert_eq!(
+        (gloss.abbreviation.as_str(), gloss.text.as_deref()),
+        ("BDBT", None)
+    );
+}

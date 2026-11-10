@@ -30,7 +30,8 @@ pub struct LexiconGloss {
 /// in Preferred order, whatever its language (a Greek ★ Lexicon has no H-numbers), each read
 /// with [`obs_store::ResourceStore::lookup_strongs`] (the extended number, else its base
 /// number; a base number, else its extended numbers). The first entry with a short gloss
-/// wins; when no entry has one, the first entry found, without text. `None` only when no
+/// wins, checking every entry of a Lexicon (homographs H7225G, H7225H) before the next
+/// Lexicon; when no entry has one, the first entry found, without text. `None` only when no
 /// Lexicon has the number.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn lexicon_gloss(library: &crate::Library, number: StrongsNumber) -> Option<LexiconGloss> {
@@ -39,19 +40,18 @@ pub fn lexicon_gloss(library: &crate::Library, number: StrongsNumber) -> Option<
         let Ok(found) = crate::word_study::lexicon_entries_in(lexicon, number) else {
             continue;
         };
-        let Some(first) = found.into_iter().next() else {
-            continue;
-        };
-        let gloss = LexiconGloss {
-            text: lexicon_excerpt(&first.text),
-            resource_id: first.resource_id,
-            abbreviation: first.abbreviation,
-            lemma: first.headword,
-        };
-        if gloss.text.is_some() {
-            return Some(gloss);
+        for entry in found {
+            let gloss = LexiconGloss {
+                text: lexicon_excerpt(&entry.text),
+                resource_id: entry.resource_id,
+                abbreviation: entry.abbreviation,
+                lemma: entry.headword,
+            };
+            if gloss.text.is_some() {
+                return Some(gloss);
+            }
+            without_gloss.get_or_insert(gloss);
         }
-        without_gloss.get_or_insert(gloss);
     }
     without_gloss
 }
