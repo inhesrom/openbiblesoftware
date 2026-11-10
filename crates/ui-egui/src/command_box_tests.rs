@@ -740,6 +740,73 @@ fn enter_on_a_search_preview_verse_opens_it_when_new_verses_replace_it() {
     assert_eq!(tab.history.current(), Some(Verse::new(Book::Matthew, 6, 5)));
 }
 
+/// A press on a Verse of the last text's Search preview that the new text's Verses replace
+/// before the release, in an earlier frame or in the release's: the click opens nothing, not
+/// the new Verse drawn where the pressed one was (#295).
+#[test]
+fn a_click_on_a_search_preview_verse_replaced_mid_press_opens_nothing() {
+    for arrive_with_release in [false, true] {
+        let (mut h, _files) = super::search::harness_of(
+            &format!("command-box-preview-click-replaced-{arrive_with_release}"),
+            &[obs_engine::testing::kjv_love()],
+        );
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "love");
+        pump_frames(&mut h, 20);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "created");
+        h.frames(15);
+        assert!(h.shell.st.session.search_preview_running());
+        let pressed = h.at("Matthew 6:5");
+        h.events.push(Event::PointerMoved(pressed));
+        h.frame();
+        h.button(pressed, true);
+        h.frame();
+        // The Verses for "created" arrive while the button is down.
+        h.shell.st.session.jobs().pump(16);
+        if !arrive_with_release {
+            h.frame();
+            let genesis = h.at("Genesis 1:1");
+            assert!((genesis - pressed).length() < size::ROW, "in its place");
+            assert!(h.find("Matthew 6:5").is_none(), "{:?}", h.texts());
+        }
+        h.button(pressed, false);
+        h.frames(3);
+        let opened = (h.shell.st.session.workspace.tabs())
+            .any(|t| t.kind == TabKind::Resource("kjv-love".into()));
+        assert!(!opened, "arriving with the release: {arrive_with_release}");
+    }
+}
+
+/// The Search preview's search starts in a frame with no input after the typing stopped: that
+/// frame asks for the next within a frame interval, so its Verses show within about 150 ms
+/// of the last key, with no key or caret blink to draw them (#295).
+#[test]
+fn the_search_preview_is_drawn_when_its_search_starts_with_no_input() {
+    let (mut h, _files) = love_harness("command-box-preview-idle");
+    key(&mut h, Key::L, CTRL);
+    let typed_at = h.time;
+    type_text(&mut h, "love");
+    for _ in 0..30 {
+        h.idle_frame();
+        if h.shell.st.session.search_preview_running() {
+            break;
+        }
+    }
+    assert!(h.shell.st.session.search_preview_running());
+    let frame = std::time::Duration::from_millis(16);
+    assert!(h.repaint_delay <= frame, "{:?}", h.repaint_delay);
+    // The job finishes; the next frame, asked for above, draws its Verses.
+    h.shell.st.session.jobs().pump(16);
+    h.idle_frame();
+    assert!(h.find("Psalms 119:1").is_some(), "{:?}", h.texts());
+    assert!(
+        h.time - typed_at <= 0.15 + 1.0 / 60.0,
+        "{}",
+        h.time - typed_at
+    );
+}
+
 /// The Search preview's Verses read in every Theme beside every Page tone (#295): their ink
 /// and the tint behind their matches are a pair (WCAG AA, AAA in High contrast) that also
 /// reads on the panel, whatever the Page tone.

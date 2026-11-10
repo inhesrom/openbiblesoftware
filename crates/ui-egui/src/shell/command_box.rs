@@ -78,6 +78,23 @@ impl Row {
         !matches!(self, Row::Heading { .. } | Row::Note(_))
     }
 
+    /// The row's widget id, from what it opens rather than where it sits: a press on a Verse
+    /// that the Search preview's next Verses replace before the release clicks nothing, not
+    /// the Verse put in its place (egui gives a release to the widget id pressed).
+    fn widget_id(&self, list: egui::Id, suggestions: &[Suggestion]) -> egui::Id {
+        match self {
+            Row::Suggestion(i) => {
+                let s = &suggestions[*i];
+                list.with(("suggestion", *i, &s.label, &s.detail))
+            }
+            Row::Hit(hit) => list.with(("hit", hit.open_params(false).to_string())),
+            Row::ShowAll { search, .. } => list.with(("show_all", &suggestions[*search].label)),
+            Row::AddBible => list.with("add_bible"),
+            Row::Heading { title, .. } => list.with(("heading", title)),
+            Row::Note(note) => list.with(("note", note)),
+        }
+    }
+
     fn height(&self) -> f32 {
         match self {
             Row::Heading { .. } => HEADING,
@@ -306,6 +323,12 @@ impl Shell {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_secs_f64(due));
         }
+        // A search started this frame, after the frame's background repaint was asked for: its
+        // Verses are applied by the frames that follow, not by the next key or caret blink.
+        if session.search_preview_running() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
+        }
         let cb = &mut self.st.command_box;
         cb.set_rows(rows(&cb.suggestions, session.search_preview()));
         if remade {
@@ -439,20 +462,17 @@ impl Shell {
                         let mut pick = 0;
                         let mut below = 0;
                         let mut first: Option<Rect> = None;
+                        let rows_id = egui::Id::unique(BOX_ID).with(LIST);
                         for row in &cb.rows {
-                            let (rect, resp) = ui.allocate_exact_size(
-                                vec2(ui.available_width(), row.height()),
-                                if row.is_pickable() {
-                                    Sense::click()
-                                } else {
-                                    Sense::hover()
-                                },
-                            );
+                            let (_, rect) =
+                                ui.allocate_space(vec2(ui.available_width(), row.height()));
                             let first = *first.get_or_insert(rect);
                             if !row.is_pickable() {
                                 paint_note(ui, rect, row);
                                 continue;
                             }
+                            let id = row.widget_id(rows_id, &cb.suggestions);
+                            let resp = ui.interact(rect, id, Sense::click());
                             if rect.center().y > view.bottom() {
                                 below += 1;
                             } else if rect.top() >= view.top() {
