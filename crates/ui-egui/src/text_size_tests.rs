@@ -310,6 +310,49 @@ fn a_tiny_saved_text_size_opens_at_the_default_with_a_one_time_toast() {
     std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
 }
 
+/// Holding Ctrl+Plus for 10 steps (#299), a key repeat each frame, lands every reading Tab on
+/// the final size, and each on the Verse it showed at the top before.
+#[test]
+fn holding_ctrl_plus_keeps_every_tabs_current_location() {
+    let (mut h, tb, hn) = linked_harness();
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:20" }));
+    settle_all(&mut h);
+    // Scrolled by hand a little: no longer on the jump's target line.
+    let over = h.panels()[0].0.center();
+    h.events.push(Event::PointerMoved(over));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -45.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    settle_all(&mut h);
+    let before = [location(&mut h, tb), location(&mut h, hn)];
+    assert!(before.iter().all(Option::is_some), "{before:?}");
+    let default = obs_layout::TextSettings::default().size;
+    for step in 0..10 {
+        h.events.push(Event::Key {
+            key: Key::Plus,
+            physical_key: Some(Key::Equals),
+            pressed: true,
+            repeat: step > 0,
+            modifiers: CTRL,
+        });
+        h.frame();
+    }
+    settle_all(&mut h);
+    let size = default + 10.0;
+    assert_eq!(h.shell.st.session.text.size, size);
+    for t in [tb, hn] {
+        let view = h.shell.st.tabs[&t].view.as_ref().unwrap();
+        assert_eq!(view.settings().size, size);
+        assert!(view.drew_all_text());
+    }
+    assert_eq!([location(&mut h, tb), location(&mut h, hn)], before);
+}
+
 /// Fresh-install reading text at 1× and on a 2× display, before (the old 17 pt default) and
 /// after (#241), for the PR: `UPDATE_PREVIEWS=1` writes them to `target/previews`.
 #[test]

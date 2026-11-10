@@ -424,6 +424,7 @@ pub(crate) fn run(cfg: &BenchConfig) -> (Vec<ScenarioReport>, Vec<String>) {
     add("topic-guide", topic_guide(cfg));
     add("get-resources", get_resources(cfg));
     add("text-size", super::text_size::text_size(cfg));
+    add("text-size-tools", super::text_size::text_size_tools(cfg));
     (reports, errors)
 }
 

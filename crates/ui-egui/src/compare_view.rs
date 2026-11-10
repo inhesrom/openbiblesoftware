@@ -134,6 +134,9 @@ pub struct ComparisonView {
     generation: u64,
     /// The Find bar's current match is to be scrolled into view once drawn (#175).
     revealing: bool,
+    /// Rows in view the last frame drew as placeholders, waiting for their layout (`None`:
+    /// not drawn since its text settings changed).
+    placeholders: Option<usize>,
 }
 
 impl ComparisonView {
@@ -151,6 +154,7 @@ impl ComparisonView {
             snippets: SnippetCache::default(),
             generation: 0,
             revealing: false,
+            placeholders: None,
         }
     }
 
@@ -195,8 +199,22 @@ impl ComparisonView {
     pub fn set_settings(&mut self, settings: TextSettings) {
         if settings != self.settings {
             self.settings = settings;
+            // Rows queued for layout at the old settings are not wanted any more (#299).
+            self.snippets.forget_pending();
+            self.placeholders = None;
             self.reset_heights();
         }
+    }
+
+    pub fn settings(&self) -> &TextSettings {
+        &self.settings
+    }
+
+    /// Whether a frame has drawn every row in view since the text settings last changed,
+    /// none as a placeholder (the Text size bench's "change shown", #299).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn drew_all_text(&self) -> bool {
+        self.placeholders == Some(0)
     }
 
     fn set_width(&mut self, width: f32) {
@@ -558,6 +576,7 @@ pub fn comparison_pane(
     let (first, offset) = view.anchor;
     let mut y = rect.top() - offset;
     let mut i = first;
+    let mut placeholders = 0;
     while i < view.blocks.len() && y < rect.bottom() {
         let block = view.blocks[i].clone();
         let mut row_y = y + BLOCK_HEAD;
@@ -688,6 +707,7 @@ pub fn comparison_pane(
                             }
                             None => {
                                 measured = false;
+                                placeholders += 1;
                                 reveal_pending |= reveal == Some((i, row));
                                 crate::components::text_placeholder(
                                     &painter,
@@ -776,6 +796,7 @@ pub fn comparison_pane(
         y += height;
         i += 1;
     }
+    view.placeholders = Some(placeholders);
     if let Some((block, _)) = reveal
         && view.reveal_drawn(block, revealed, reveal_pending)
     {

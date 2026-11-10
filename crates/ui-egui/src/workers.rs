@@ -28,8 +28,8 @@ pub fn lay_out(para: &Paragraph, width: f32) -> LaidBlock {
 }
 
 /// Builds the layout on a worker: everything, including turning spans into a paragraph,
-/// happens off the UI thread.
-type Work = Box<dyn FnOnce() -> LaidBlock + Send>;
+/// happens off the UI thread. `None`: its requester no longer wants it, so nothing was done.
+type Work = Box<dyn FnOnce() -> Option<LaidBlock> + Send>;
 
 struct Job {
     key: u64,
@@ -71,8 +71,7 @@ fn spawn_workers() -> Option<Sender<Job>> {
                         guard.recv()
                     };
                     let Ok(job) = job else { return };
-                    let laid = Arc::new((job.work)());
-                    let _ = job.reply.send((job.key, laid));
+                    run(job);
                 }
             });
         if spawned.is_ok() {
@@ -92,6 +91,14 @@ pub struct LayoutClient {
     reply_tx: Sender<(u64, Arc<LaidBlock>)>,
     reply_rx: Receiver<(u64, Arc<LaidBlock>)>,
     pending: std::collections::HashSet<u64>,
+    /// Bumped when pending work is forgotten: queued jobs from before skip their layout, so a
+    /// burst of relayouts (Ctrl+Plus held, #299) never queues stale work ahead of the new.
+    epoch: Arc<AtomicU64>,
+    /// Layouts the workers did for this client.
+    ran: Arc<AtomicU64>,
+    /// Jobs kept back from the pool until [`Self::release`] (tests: a pool busy elsewhere).
+    #[cfg(test)]
+    held: Option<Vec<Job>>,
 }
 
 impl std::fmt::Debug for LayoutClient {
@@ -109,6 +116,10 @@ impl Default for LayoutClient {
             reply_tx,
             reply_rx,
             pending: std::collections::HashSet::new(),
+            epoch: Arc::default(),
+            ran: Arc::default(),
+            #[cfg(test)]
+            held: None,
         }
     }
 }
@@ -124,20 +135,45 @@ impl LayoutClient {
         if !self.pending.insert(key) {
             return;
         }
-        let tx = pool().tx.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        let (epoch, ran) = (Arc::clone(&self.epoch), Arc::clone(&self.ran));
+        let submitted = epoch.load(Ordering::Relaxed);
         let job = Job {
             key,
-            work: Box::new(work),
+            work: Box::new(move || {
+                if epoch.load(Ordering::Relaxed) != submitted {
+                    return None;
+                }
+                ran.fetch_add(1, Ordering::Relaxed);
+                Some(work())
+            }),
             reply: self.reply_tx.clone(),
         };
-        match tx {
-            Some(tx) => {
-                if let Err(e) = tx.send(job) {
-                    run_inline(e.0);
-                }
-            }
-            None => run_inline(job),
+        #[cfg(test)]
+        if let Some(held) = self.held.as_mut() {
+            held.push(job);
+            return;
         }
+        send(job);
+    }
+
+    /// Keep jobs back from the pool until [`Self::release`], as a pool busy with other work
+    /// would (tests).
+    #[cfg(test)]
+    pub fn hold(&mut self) {
+        self.held.get_or_insert_with(Vec::new);
+    }
+
+    /// Send the jobs kept back since [`Self::hold`] to the pool, in order.
+    #[cfg(test)]
+    pub fn release(&mut self) {
+        for job in self.held.take().unwrap_or_default() {
+            send(job);
+        }
+    }
+
+    /// Layouts the workers did for this client (jobs skipped as forgotten are not counted).
+    pub fn ran(&self) -> u64 {
+        self.ran.load(Ordering::Relaxed)
     }
 
     pub fn is_pending(&self, key: u64) -> bool {
@@ -157,15 +193,32 @@ impl LayoutClient {
         done
     }
 
-    /// Forget pending work (its results will be ignored by key).
+    /// Forget pending work: queued jobs skip their layout, and the results of those already
+    /// running are ignored by key.
     pub fn forget_pending(&mut self) {
         self.pending.clear();
+        self.epoch.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-fn run_inline(job: Job) {
-    let laid = Arc::new((job.work)());
-    let _ = job.reply.send((job.key, laid));
+/// Queue a job for the workers; without any (wasm), run it now.
+fn send(job: Job) {
+    let tx = pool().tx.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    match tx {
+        Some(tx) => {
+            if let Err(e) = tx.send(job) {
+                run(e.0);
+            }
+        }
+        None => run(job),
+    }
+}
+
+/// Do a job and send its layout back, unless its requester no longer wants it.
+fn run(job: Job) {
+    if let Some(laid) = (job.work)() {
+        let _ = job.reply.send((job.key, Arc::new(laid)));
+    }
 }
 
 /// Inline-snippet layouts (cross-reference previews, popups, Word Info, search results), laid
@@ -177,6 +230,12 @@ pub struct SnippetCache {
 }
 
 impl SnippetCache {
+    /// Forget the layouts still queued: new text settings (#299) want every snippet at the
+    /// new size, so those at the old one are skipped rather than done first.
+    pub fn forget_pending(&mut self) {
+        self.client.forget_pending();
+    }
+
     /// Collect completed layouts even when no visible text requests a snippet this frame.
     pub fn drain(&mut self) {
         for (k, laid) in self.client.drain() {

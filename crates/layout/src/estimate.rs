@@ -14,6 +14,9 @@ const HEBREW_ADVANCE: f32 = 0.55;
 /// KJV Jn 3:16 with a Greek Lemma and a Strong's number under each word.
 const INTERLINEAR_WIDEN: f32 = 1.6;
 
+/// One line's height before line spacing in a paragraph with no text, px.
+const EMPTY_LINE: f32 = 16.0 * 1.46;
+
 /// A height estimate for `para` at `width` px, from character counts and font size.
 pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
     HeightEstimate::of(para).at(width)
@@ -26,7 +29,7 @@ pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
 pub struct HeightEstimate {
     /// The text's advance on one line, px.
     text_width: f32,
-    /// One line's height before line spacing, px.
+    /// One line's height before line spacing, px (0: no text, [`EMPTY_LINE`]).
     line_size: f32,
     line_spacing: f32,
     /// Width taken from every line, px.
@@ -67,15 +70,12 @@ impl HeightEstimate {
             };
             line_size = line_size.max(r.style.size * 1.46 * k);
         }
-        if line_size == 0.0 {
-            line_size = 16.0 * 1.46;
-        }
         // Interlinear lines (#143) widen each Tagged word to its column and add rows under
         // every line.
         let (widen, rows) = match &para.interlinear {
             Some(il) if il.rows > 0 => (
                 INTERLINEAR_WIDEN,
-                il.rows as f32 * il.size * 1.35 + line_size / 1.46 * 0.5,
+                il.rows as f32 * il.size * 1.35 + or_empty_line(line_size) / 1.46 * 0.5,
             ),
             _ => (1.0, 0.0),
         };
@@ -96,8 +96,34 @@ impl HeightEstimate {
         let avail = (width - self.taken).max(1.0);
         let lines = (self.text_width * self.widen / avail).ceil().max(1.0);
         self.space_before
-            + lines * (self.line_size * self.line_spacing + self.rows)
+            + lines * (or_empty_line(self.line_size) * self.line_spacing + self.rows)
             + self.space_after
+    }
+
+    /// The estimate of the same paragraph styled at `k` times the Text size, without styling
+    /// it again (#299): every length in a styled paragraph is in proportion to the Text size,
+    /// so this is what [`Self::of`] would measure at the new size.
+    pub fn scaled(&self, k: f32) -> Self {
+        Self {
+            text_width: self.text_width * k,
+            line_size: self.line_size * k,
+            line_spacing: self.line_spacing,
+            taken: self.taken * k,
+            space_before: self.space_before * k,
+            space_after: self.space_after * k,
+            widen: self.widen,
+            rows: self.rows * k,
+        }
+    }
+}
+
+/// A line's height before line spacing: `line_size`, or [`EMPTY_LINE`] in a paragraph with no
+/// text (0).
+fn or_empty_line(line_size: f32) -> f32 {
+    if line_size == 0.0 {
+        EMPTY_LINE
+    } else {
+        line_size
     }
 }
 
