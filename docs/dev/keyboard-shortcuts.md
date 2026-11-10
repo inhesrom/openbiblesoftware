@@ -37,7 +37,9 @@ stored and rebound like commands.
   Find in Resource would get Esc.
 - Keys are written in egui notation and stored one way (`canonical_key`): Ctrl, Shift, Alt in
   that order, then egui's key name (`Ctrl+Up`, `Ctrl+OpenBracket`). Ctrl+Plus drops Shift and
-  is the same key as Ctrl+= (#137), so they conflict.
+  is the same key as Ctrl+= (#137), so they conflict. Ctrl+Alt+Plus (a Resource's own Text
+  size, #292) is another key: two bindings of one key told apart by Alt alone may both still be
+  pressed with Shift (`shell::extra_held`).
 - Refused keys (`not_bindable`): Esc (closes and cancels; Esc also cancels recording), Enter
   (text fields use Enter, Shift+, Ctrl+ and Alt+Enter), Tab without Ctrl (Tab and Shift+Tab
   move the keyboard focus, Alt+Tab is the system's; Ctrl+Tab is the Tab switcher's, #215), and

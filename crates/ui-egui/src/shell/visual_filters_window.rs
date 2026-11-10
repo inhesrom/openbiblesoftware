@@ -415,6 +415,8 @@ impl State {
                         "tab.visual_filter",
                         json!({ "tab": tab.0, "id": f.id, "on": on }),
                     ));
+                    // Closes its menu, also in a Tab's ⋯ menu, which a click leaves open.
+                    ui.close();
                 }
             });
         }

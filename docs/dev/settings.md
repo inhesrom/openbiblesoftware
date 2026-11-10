@@ -19,6 +19,7 @@ and is saved in the User database as before.
 | Section | Setting | Changed by | Reset runs |
 |---|---|---|---|
 | Text and fonts | Text size | `view.text_smaller`, `view.text_larger` | `view.text_reset` |
+| | Resources with their own Text size (#292): each Resource with its size and Reset | a Tab's Text size row (`view.resource_text_size`, `view.resource_text_larger`, `view.resource_text_smaller`) | one: `settings.reset {setting: resource_text_sizes, resource}`; Reset all: `settings.reset {setting: resource_text_sizes}` |
 | | Latin, Greek, Hebrew text font; Interface font | View → Fonts (`view.fonts`, `view.font`) | `view.font {slot}` (bundled) |
 | Interface size | Interface size | `view.interface_size` | `{value: default}` |
 | Theme and Page tone | Theme, Page tone | `view.theme`, `view.page_tone` | `{value: system}`, `{value: auto}` |
@@ -69,6 +70,50 @@ Scrolling the Settings Tab uses a new speed from the next frame, the slider's li
 
 Actions and the library folder are not values, so they have no Reset; every other row has one,
 greyed out while the Setting is at its default.
+
+## A Resource's own Text size (#292)
+
+A Resource can have an Own Text size (CONTEXT.md) over the global Text size: absolute, in the
+same 12–40 pt range, for every Tab of the Resource. The global Larger and Smaller text never
+move it; Reset makes the Resource follow the global size again.
+
+| Crate | File | What |
+|---|---|---|
+| `obs-engine` | `resource_text_size.rs` | `ResourceTextSizes` (resource id → points), kept in the User database preference `view.resource_text_sizes` (JSON object; a size out of range is clamped on load, so a Backup holding one is refused by the trial restore); `Session::text_size_of`, `text_settings_of`, `text_size_resource(tab)`; the commands below |
+| `obs-engine` | `workspace.rs` | `Tab::clicked_resource`, set by `Workspace::clicked_into`: the Resource last clicked into in a Text Comparison or Search Tab (not saved) |
+| `obs-engine` | `backup_check.rs` | the trial restore compares `view.resource_text_sizes` like every other setting |
+| `obs-ui-egui` | `shell/text_size_controls.rs` | the Text size row (label and "own size" or "follows Text size", A−, slider, A+, the size, Reset) at the top of a Tab's ⋯ menu, and the header's **Aa** button that opens the row alone |
+| `obs-ui-egui` | `shell.rs`, `compare_view.rs`, `search_view.rs` | a Resource Tab's view takes `text_settings_of` its Resource; Text Comparison rows and Search hits each take their Resource's size (`set_own_sizes`, `row_settings`, `settings_of`); a click or right-click on a row reports its Resource (`clicked_into`) |
+| `obs-ui-egui` | `shell/settings_tab.rs` | the Setting's list: each Resource with its size and Reset; the Setting's Reset link reads Reset all |
+
+Commands, all acting on the Tab's **Text size Resource** (`Session::text_size_resource`): a
+Resource Tab's Resource; in a Text Comparison or Search Tab the one last clicked into while it
+is still shown, else the first row's; none in other Tabs (the key commands are then disabled
+and leave their keys alone). `tab` (default: the focused Tab) or `resource` name another.
+
+| Command | Key | What |
+|---|---|---|
+| `view.resource_text_larger` | Ctrl+Alt+Plus (also Ctrl+Alt+= and numpad +) | one point up from the size the Resource is drawn at |
+| `view.resource_text_smaller` | Ctrl+Alt+Minus | one point down |
+| `view.resource_text_reset` | Ctrl+Alt+0 | follow the global Text size again |
+| `view.resource_text_size {value}` | — | the slider's form: an absolute size (no message; the row shows it) |
+
+The three keys are Ctrl+Plus, Ctrl+Minus and Ctrl+0 with Alt. Ctrl+Plus and Ctrl+Alt+Plus are
+told apart by Alt alone, so both may still be pressed with Shift (+ is Shift+= on a US
+keyboard; `shell::extra_held`). Ctrl+Alt is AltGr on Windows, which types ~ \ } with these keys
+on some layouts, so the keys are left to a focused text field (`annotate::TEXT_FIELD_KEYS`).
+
+Every change runs a command at once and the views take the new size on the next frame through
+#299's fast path (scaled height estimates, stale layouts skipped), so the text follows the
+slider while it is dragged. The ⋯ menu and the Aa popover close only on a click outside
+(`components::menu_staying_open`); each of the ⋯ menu's items closes it itself.
+
+Tests: engine `resource_text_size_tests.rs` (shared by a Resource's Tabs, the global size not
+moving an own one, the range, a restart and Layout loads, Backup and restore, the Text
+Comparison Bible clicked into, keys and the Command box, Settings); UI
+`resource_text_size_tests.rs` (the ⋯ row live while dragging with the menu open, the Aa button
+and the keyboard on the slider with its accessible name, Ctrl+Alt keys and the global keys,
+every Tab keeping its Current location, Text Comparison rows, Settings' list).
 
 ## Search
 

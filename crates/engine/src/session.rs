@@ -50,6 +50,8 @@ pub struct Session {
     pub workspace: Workspace,
     /// Text settings for Resource text (the View menu).
     pub text: TextSettings,
+    /// Each Resource's own Text size over [`Self::text`]'s (#292).
+    pub(crate) resource_text_sizes: crate::resource_text_size::ResourceTextSizes,
     /// Theme and Page tone (the View menu).
     pub appearance: crate::appearance::Appearance,
     /// The fonts chosen in View → Fonts (#138), by name. The UI loads them and puts the
@@ -137,6 +139,7 @@ impl Session {
             starter: crate::starter::StarterLibrary::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
+            resource_text_sizes: Default::default(),
             appearance: crate::appearance::Appearance::default(),
             fonts: crate::appearance::FontChoices::default(),
             custom_theme: crate::custom_theme::CustomTheme::default(),
@@ -263,6 +266,7 @@ impl Session {
         self.load_log_level();
         self.load_update_settings();
         self.load_tour();
+        self.load_resource_text_sizes();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

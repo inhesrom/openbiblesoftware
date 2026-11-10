@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
+use obs_engine::resource_text_size::ResourceTextSizes;
 use obs_engine::{Cell, ComparedBible, CopiedBible, Marks, VerseBlock, verse_blocks};
 use obs_layout::{ColorRole, LaidBlock, TextSettings, UnitPos};
 use obs_model::Direction;
@@ -125,6 +126,8 @@ pub struct ComparisonView {
     /// Where the pane was drawn last frame.
     viewport: Rect,
     settings: TextSettings,
+    /// The Bibles with their own Text size (#292): each row is drawn at its Bible's.
+    own_sizes: ResourceTextSizes,
     /// The top of the view: a block, and how far into it.
     anchor: (usize, f32),
     /// The location last taken from or reported to the engine.
@@ -149,6 +152,7 @@ impl ComparisonView {
             width: 400.0,
             viewport: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0)),
             settings,
+            own_sizes: ResourceTextSizes::default(),
             anchor: (0, 0.0),
             synced: None,
             snippets: SnippetCache::default(),
@@ -199,15 +203,37 @@ impl ComparisonView {
     pub fn set_settings(&mut self, settings: TextSettings) {
         if settings != self.settings {
             self.settings = settings;
-            // Rows queued for layout at the old settings are not wanted any more (#299).
-            self.snippets.forget_pending();
-            self.placeholders = None;
-            self.reset_heights();
+            self.text_size_changed();
         }
+    }
+
+    /// The Bibles with their own Text size (#292); a change lays the rows out again at their
+    /// new sizes, on the same Verse block.
+    pub fn set_own_sizes(&mut self, own: &ResourceTextSizes) {
+        if *own != self.own_sizes {
+            self.own_sizes = own.clone();
+            self.text_size_changed();
+        }
+    }
+
+    fn text_size_changed(&mut self) {
+        // Rows queued for layout at the old settings are not wanted any more (#299).
+        self.snippets.forget_pending();
+        self.placeholders = None;
+        self.reset_heights();
     }
 
     pub fn settings(&self) -> &TextSettings {
         &self.settings
+    }
+
+    /// The Text settings row `row` is drawn with: its Bible's own size, else the global one.
+    pub fn row_settings(&self, row: usize) -> TextSettings {
+        let own = (self.docs.get(row)).and_then(|d| self.own_sizes.get(&d.id));
+        TextSettings {
+            size: own.unwrap_or(self.settings.size),
+            ..self.settings
+        }
     }
 
     /// Whether a frame has drawn every row in view since the text settings last changed,
@@ -230,8 +256,10 @@ impl ComparisonView {
         self.anchor.1 = 0.0;
     }
 
-    fn line_height(&self) -> f32 {
-        self.settings.size * self.settings.line_spacing * scale::ROW_LINE
+    /// The height of one line of row `row`'s text.
+    fn line_height(&self, row: usize) -> f32 {
+        let settings = self.row_settings(row);
+        settings.size * settings.line_spacing * scale::ROW_LINE
     }
 
     fn text_width(&self) -> f32 {
@@ -242,16 +270,15 @@ impl ComparisonView {
         let Some(b) = self.blocks.get(i) else {
             return 0.0;
         };
-        let per_line = (self.text_width() / (self.settings.size * 0.5)).max(10.0);
-        let rows: f32 = b
-            .cells
-            .iter()
-            .map(|c| {
+        let rows: f32 = (b.cells.iter().enumerate())
+            .map(|(row, c)| {
+                let size = self.row_settings(row).size;
+                let per_line = (self.text_width() / (size * 0.5)).max(10.0);
                 let lines = match &c.cell {
                     Cell::Text { text, .. } => (text.chars().count() as f32 / per_line).ceil(),
                     _ => 1.0,
                 };
-                lines.max(1.0) * self.line_height() + ROW_GAP
+                lines.max(1.0) * self.line_height(row) + ROW_GAP
             })
             .sum();
         BLOCK_HEAD + rows + BLOCK_GAP
@@ -403,6 +430,9 @@ pub struct ComparisonOutput {
     pub response: Option<egui::Response>,
     /// The Verse block right-clicked this frame (#142).
     pub context: Option<ComparisonContext>,
+    /// The Bible (resource id) whose row was clicked or right-clicked this frame: the one the
+    /// Tab's Text size controls change (#292).
+    pub clicked_into: Option<String>,
 }
 
 /// A right-click on a Verse block: its Standard Verse and, on a row with text, that row.
@@ -502,6 +532,9 @@ pub fn comparison_pane(
         .secondary_clicked()
         .then(|| response.interact_pointer_pos())
         .flatten();
+    let click_at = (response.clicked() || response.secondary_clicked())
+        .then(|| response.interact_pointer_pos())
+        .flatten();
     let painter = ui.painter_at(rect);
     let accessible = ui
         .ctx()
@@ -563,7 +596,6 @@ pub fn comparison_pane(
         return out;
     }
 
-    let settings = view.settings;
     let text_left = left + LABEL_WIDTH;
     let text_width = view.text_width();
     let label_font = FontId::proportional(text::LABEL);
@@ -573,7 +605,8 @@ pub fn comparison_pane(
     let mut tints: Vec<Rect> = Vec::new();
     // Find matches (#175): their rectangles, and whether each is the current one.
     let mut matches: Vec<(Rect, bool)> = Vec::new();
-    let mut carets: Vec<[f32; 3]> = Vec::new();
+    // Each ‸: x, top, bottom, and its row's Text size.
+    let mut carets: Vec<[f32; 4]> = Vec::new();
     let (first, offset) = view.anchor;
     let mut y = rect.top() - offset;
     let mut i = first;
@@ -597,7 +630,8 @@ pub fn comparison_pane(
         let mut row_context = None;
         for (row, c) in block.cells.iter().enumerate() {
             let rtl = view.rtl(row);
-            let mut height = view.line_height();
+            let settings = view.row_settings(row);
+            let mut height = view.line_height(row);
             let mut accessible_laid = None;
             let mut accessible_text = String::new();
             let mut accessible_label = format!("{} — {reference}", view.abbreviation(row));
@@ -672,7 +706,12 @@ pub fn comparison_pane(
                                     }
                                     for &m in &d.missing {
                                         if let Some([x, t, b]) = caret_at(&laid, m) {
-                                            carets.push([text_left + x, row_y + t, row_y + b]);
+                                            carets.push([
+                                                text_left + x,
+                                                row_y + t,
+                                                row_y + b,
+                                                settings.size,
+                                            ]);
                                         }
                                     }
                                 }
@@ -748,6 +787,12 @@ pub fn comparison_pane(
                 }
             }
             height = height.max(label_h);
+            if let Some(p) = click_at
+                && (row_y..row_y + height + ROW_GAP).contains(&p.y)
+                && let Some(bible) = view.docs.get(row)
+            {
+                out.clicked_into = Some(bible.id.clone());
+            }
             if let Some(p) = context_at
                 && (row_y..row_y + height + ROW_GAP).contains(&p.y)
                 && let Cell::Text { natives, text } = &c.cell
@@ -814,8 +859,8 @@ pub fn comparison_pane(
         crate::pane::paint_find_match(&painter, r, current, palette);
     }
     crate::pane::paint_runs(&painter, runs, |q| palette.color(q.role));
-    for [x, _, b] in carets {
-        let s = settings.size * mark::CARET_EMS;
+    for [x, _, b, size] in carets {
+        let s = size * mark::CARET_EMS;
         painter.line(
             vec![
                 pos2(x - s, b),

@@ -621,6 +621,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Tab menu, Add to Favorites folder, Light](gallery/tab-menu-add-to-favorites-folder-light-1x.png) | ![Tab menu, Add to Favorites folder, Dark](gallery/tab-menu-add-to-favorites-folder-dark-1x.png) | ![Tab menu, Add to Favorites folder, Sepia](gallery/tab-menu-add-to-favorites-folder-sepia-1x.png) |
 | [2×](gallery/tab-menu-add-to-favorites-folder-light-2x.png) | [2×](gallery/tab-menu-add-to-favorites-folder-dark-2x.png) | [2×](gallery/tab-menu-add-to-favorites-folder-sepia-2x.png) |
 
+### Text size popover
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Text size popover, Light](gallery/text-size-popover-light-1x.png) | ![Text size popover, Dark](gallery/text-size-popover-dark-1x.png) | ![Text size popover, Sepia](gallery/text-size-popover-sepia-1x.png) |
+| [2×](gallery/text-size-popover-light-2x.png) | [2×](gallery/text-size-popover-dark-2x.png) | [2×](gallery/text-size-popover-sepia-2x.png) |
+
 ### Add Tab menu
 
 | Light | Dark | Sepia |

@@ -12,6 +12,7 @@ Everything in the app can be reached from the keyboard. On macOS, Ctrl in this g
 - **Ctrl+Shift+N**: a Note on the selection. **Alt+1…9**: Highlight it.
 - **Ctrl+Z**, **Ctrl+Shift+Z**: Undo and Redo.
 - **Ctrl+Plus**, **Ctrl+Minus**, **Ctrl+0**: Larger, smaller and default Text size.
+- **Ctrl+Alt+Plus**, **Ctrl+Alt+Minus**, **Ctrl+Alt+0**: the same for the focused Tab's Resource only, which then keeps its Own Text size (⌥⌘ on macOS).
 
 ## Move around the window
 

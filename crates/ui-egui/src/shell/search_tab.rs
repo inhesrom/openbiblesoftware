@@ -708,6 +708,7 @@ impl State {
             view.reveal(s);
         }
         view.set_settings(settings);
+        view.set_own_sizes(self.session.resource_text_sizes());
         let mut shown = st.clone();
         shown.selected = select;
         let out = search_pane(ui, view, &shown, &mut self.atlas, &palette);
@@ -716,6 +717,14 @@ impl State {
             && let Some(ws) = self.session.workspace.tab_mut(tab)
         {
             ws.search.selected = select;
+        }
+        // The Resource of the hit clicked or right-clicked is the one the Tab's Text size
+        // controls change (#292).
+        let into = (out.clicked.map(|c| (c.row, c.hit)))
+            .or(out.context)
+            .and_then(|(row, hit)| hit_resource(st, row, hit));
+        if let Some(resource) = into {
+            self.session.workspace.clicked_into(tab, &resource);
         }
         if let Some(c) = out.clicked {
             self.session.workspace.user_focused(tab);
@@ -958,5 +967,18 @@ impl State {
                 self.run("notes.open", &json!({ "id": hit.id }));
             }
         }
+    }
+}
+
+/// The Resource (id) of hit `hit` of result row `row`: a Bible row's Bible, a Library row's
+/// Resource.
+fn hit_resource(st: &SearchTab, row: usize, hit: usize) -> Option<String> {
+    match (&st.results, &st.library_results) {
+        (Some(r), _) => {
+            let h = r.rows.get(row)?.hits.get(hit)?;
+            Some(r.bibles.get(h.bible)?.id.clone())
+        }
+        (None, Some(r)) => Some(r.group_of(row)?.id.clone()),
+        (None, None) => None,
     }
 }

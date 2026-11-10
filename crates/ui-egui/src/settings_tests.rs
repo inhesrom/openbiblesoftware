@@ -110,11 +110,26 @@ fn search(h: &mut Harness, tab: TabId, query: &str) {
 fn ctrl_comma_opens_settings_ready_to_search() {
     let mut h = Harness::new();
     let tab = open_settings(&mut h);
-    // Every section is listed.
-    for title in ["TEXT AND FONTS", "INTERFACE SIZE", "THEME AND PAGE TONE"] {
+    // Every section is listed, the first ones in view.
+    for title in ["TEXT AND FONTS", "INTERFACE SIZE"] {
         assert!(in_tab(&h, tab, title).is_some(), "{title}: {:?}", h.texts());
     }
     preview(&h, "settings-tab");
+    let body = pane_rect(&h, tab).center();
+    h.events.push(Event::PointerMoved(body));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -200.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(3);
+    assert!(
+        in_tab(&h, tab, "THEME AND PAGE TONE").is_some(),
+        "{:?}",
+        h.texts()
+    );
     // Typed straight into the search box.
     h.events.push(Event::Text("sepia".into()));
     h.frames(2);

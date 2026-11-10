@@ -47,7 +47,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "compare_view.rs",
-        "let per_line = (self.text_width() / (self.settings.size * 0.5)).max(10.0);",
+        "let per_line = (self.text_width() / (size * 0.5)).max(10.0);",
         "10.0",
         "characters a line holds at the least, for a height estimate",
     ),
@@ -59,7 +59,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "compare_view.rs",
-        "lines.max(1.0) * self.line_height() + ROW_GAP",
+        "lines.max(1.0) * self.line_height(row) + ROW_GAP",
         "1.0",
         "a block's height estimate is at least one line",
     ),

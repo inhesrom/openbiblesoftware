@@ -12,6 +12,7 @@ use std::ops::Range;
 
 use egui::{Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::library_search::row_label;
+use obs_engine::resource_text_size::ResourceTextSizes;
 use obs_engine::{BibleResults, LibraryResults, SearchTab};
 use obs_layout::{ColorRole, TextSettings};
 
@@ -76,6 +77,8 @@ pub struct SearchView {
     width: f32,
     viewport_height: f32,
     settings: TextSettings,
+    /// The Resources with their own Text size (#292): each hit is drawn at its Resource's.
+    own_sizes: ResourceTextSizes,
     /// The top of the view: a row, and how far into it.
     anchor: (usize, f32),
     /// Bring this row into view at the next frame.
@@ -95,6 +98,7 @@ impl SearchView {
             width: 400.0,
             viewport_height: 400.0,
             settings,
+            own_sizes: ResourceTextSizes::default(),
             anchor: (0, 0.0),
             reveal: None,
             snippets: SnippetCache::default(),
@@ -106,15 +110,37 @@ impl SearchView {
     pub fn set_settings(&mut self, settings: TextSettings) {
         if settings != self.settings {
             self.settings = settings;
-            // Hits queued for layout at the old settings are not wanted any more (#299).
-            self.snippets.forget_pending();
-            self.last = SearchFrame::default();
-            self.reset_heights();
+            self.text_size_changed();
         }
+    }
+
+    /// The Resources with their own Text size (#292); a change lays the hits out again at
+    /// their new sizes.
+    pub fn set_own_sizes(&mut self, own: &ResourceTextSizes) {
+        if *own != self.own_sizes {
+            self.own_sizes = own.clone();
+            self.text_size_changed();
+        }
+    }
+
+    fn text_size_changed(&mut self) {
+        // Hits queued for layout at the old settings are not wanted any more (#299).
+        self.snippets.forget_pending();
+        self.last = SearchFrame::default();
+        self.reset_heights();
     }
 
     pub fn settings(&self) -> &TextSettings {
         &self.settings
+    }
+
+    /// The Text settings Resource `resource`'s hits are drawn with: its own size, else the
+    /// global one.
+    pub fn settings_of(&self, resource: &str) -> TextSettings {
+        TextSettings {
+            size: self.own_sizes.get(resource).unwrap_or(self.settings.size),
+            ..self.settings
+        }
     }
 
     /// Whether the last frame drew hits in view, every one with its text (none as a
@@ -526,7 +552,6 @@ fn bible_row(
     paint: &mut Paint<'_>,
 ) -> (f32, bool, f32) {
     let palette = paint.palette;
-    let settings = view.settings;
     let text_left = left + LABEL_WIDTH;
     let text_width = view.text_width();
     let row = &results.rows[i];
@@ -544,6 +569,7 @@ fn bible_row(
         let bible = results.bibles.get(h.bible);
         let abbreviation = bible.map_or("", |b| b.abbreviation.as_str());
         let rtl = bible.is_some_and(|b| b.rtl);
+        let settings = bible.map_or(view.settings, |b| view.settings_of(&b.id));
         paint.painter.text(
             pos2(left, row_y + space::XXS),
             Align2::LEFT_TOP,
@@ -563,7 +589,7 @@ fn bible_row(
             );
             label_h += text::CAPTION_LINE;
         }
-        let mut height = view.line_height();
+        let mut height = settings.size * settings.line_spacing * scale::ROW_LINE;
         let origin = pos2(text_left, row_y);
         let snippet = tab.snippet(i, j);
         let laid = snippet.and_then(|s| {
@@ -618,11 +644,12 @@ fn library_row(
     paint: &mut Paint<'_>,
 ) -> (f32, bool, f32) {
     let palette = paint.palette;
-    let settings = view.settings;
-    let mut label_settings = settings;
-    label_settings.size *= LABEL_SCALE;
     let row = &results.rows[i];
     let group = results.group_of(i);
+    let settings = group.map_or(view.settings, |g| view.settings_of(&g.id));
+    let line_height = settings.size * settings.line_spacing * scale::ROW_LINE;
+    let mut label_settings = settings;
+    label_settings.size *= LABEL_SCALE;
     let mut row_y = y;
     if results.starts_group(i)
         && let Some(g) = group
@@ -654,13 +681,13 @@ fn library_row(
         Some(laid) => paint_laid(paint, atlas, &laid, &[], origin),
         None => {
             measured = false;
-            let h = view.line_height() * LABEL_SCALE;
+            let h = line_height * LABEL_SCALE;
             placeholder(paint, origin, text_width * share::LABEL, h);
             h
         }
     };
     row_y += space::XXS + label_h + space::XXS;
-    let mut height = view.line_height();
+    let mut height = line_height;
     let origin = pos2(text_left, row_y);
     let snippet = tab.snippet(i, 0);
     let laid = snippet.and_then(|s| {

@@ -791,6 +791,14 @@ fn menus_and_choosers() -> Vec<Run> {
             |h| popup(h) && command_shown(h, "tab.close") && shows(h, "Add to Favorites folder"),
         ),
         (
+            "Text size popover",
+            |h| {
+                let aa = spot(h, "Aa", in_kjv_header);
+                h.click(aa);
+            },
+            |h| popup(h) && shows(h, "Text size · KJV") && !command_shown(h, "tab.close"),
+        ),
+        (
             "Add Tab menu",
             |h| {
                 let add = spot(h, "[plus]", |r| r.right() < 930.0);
@@ -1765,13 +1773,14 @@ fn every_tab_kind_and_overlay_is_in_the_gallery() {
 }
 
 /// How `crates/ui-egui/src` opens a window, popover, menu or chooser.
-const OPENERS: [&str; 8] = [
+const OPENERS: [&str; 9] = [
     "egui::Window::new(",
     "egui::Area::new(",
     "egui::Popup::menu(",
     "egui::Popup::context_menu(",
     ".context_menu(|",
     "components::menu(",
+    "components::menu_staying_open(",
     "ui.menu_button(",
     "egui::ComboBox::from_id_salt(",
 ];
@@ -1802,9 +1811,13 @@ const SITES: &[(&str, &str, &[&str])] = &[
             "view-menu-notebooks-in-text",
             "interlinear-lines-menu",
             "text-comparison-add-a-bible",
-            "tab-menu-add-to-favorites-folder",
             "add-tab-menu",
         ],
+    ),
+    (
+        "shell.rs",
+        "components::menu_staying_open(",
+        &["tab-menu-add-to-favorites-folder"],
     ),
     (
         "shell.rs",
@@ -1861,6 +1874,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/favorites_tab.rs",
         ".context_menu(|",
         &["favorite-menu-move-to-folder"],
+    ),
+    (
+        "shell/text_size_controls.rs",
+        "components::menu_staying_open(",
+        &["text-size-popover"],
     ),
     (
         "shell/favorites_tab.rs",

@@ -499,6 +499,9 @@ pub struct Tab {
     /// (#214) carries the one it closed with until it draws. Cleared when the Tab is sent
     /// somewhere else. Recently closed takes it as the user closes the Tab.
     pub scroll: Option<ScrollPosition>,
+    /// The Resource last clicked into in a Text Comparison or Search Tab, whose Text size its
+    /// size controls change (#292, [`crate::Session::text_size_resource`]); not saved.
+    pub clicked_resource: Option<String>,
 }
 
 impl Tab {
@@ -539,6 +542,7 @@ impl Tab {
             view_unit: None,
             passage: None,
             scroll: t.scroll,
+            clicked_resource: None,
         }
     }
 
@@ -1278,6 +1282,7 @@ impl Workspace {
                 view_unit: None,
                 passage: None,
                 scroll: None,
+                clicked_resource: None,
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -1661,6 +1666,16 @@ impl Workspace {
     pub fn view_scrolled(&mut self, tab: TabId, at: Option<ScrollPosition>) {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.scroll = at;
+        }
+    }
+
+    /// The user clicked into Resource `resource`'s text in a Text Comparison or Search Tab
+    /// ([`Tab::clicked_resource`]).
+    pub fn clicked_into(&mut self, tab: TabId, resource: &str) {
+        if let Some(t) = self.tabs.get_mut(&tab)
+            && t.clicked_resource.as_deref() != Some(resource)
+        {
+            t.clicked_resource = Some(resource.to_string());
         }
     }
 

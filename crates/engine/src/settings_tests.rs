@@ -47,6 +47,12 @@ fn commands_of(kind: SettingKind) -> Vec<&'static str> {
         | SettingKind::Action { command, .. } => vec![command],
         SettingKind::TextSize => vec!["view.text_larger", "view.text_smaller", "view.text_reset"],
         SettingKind::ScrollSpeed => vec!["view.scroll_speed"],
+        SettingKind::ResourceTextSizes => vec![
+            "view.resource_text_larger",
+            "view.resource_text_smaller",
+            "view.resource_text_reset",
+            "view.resource_text_size",
+        ],
         SettingKind::Font(_) => vec!["view.fonts", "view.font"],
         SettingKind::NotebooksInText => vec!["notebook.show_in_text"],
         SettingKind::HomeCards => vec!["home.reset_cards"],
@@ -281,6 +287,10 @@ pub(crate) fn change(s: &mut Session, id: &str) {
         },
         SettingKind::TextSize => ok(s.run("view.text_larger", &json!({}))),
         SettingKind::ScrollSpeed => ok(s.run("view.scroll_speed", &json!({ "value": 2.5 }))),
+        SettingKind::ResourceTextSizes => ok(s.run(
+            "view.resource_text_size",
+            &json!({ "resource": "kjv", "value": 26 }),
+        )),
         SettingKind::Font(slot) => ok(s.run(
             "view.font",
             &json!({ "slot": slot.id(), "family": "Charis SIL" }),

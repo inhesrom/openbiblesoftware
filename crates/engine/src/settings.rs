@@ -90,6 +90,9 @@ pub enum SettingKind {
     TextSize,
     /// The Scroll speed, a slider from 0.25× to 4× (`view.scroll_speed {value}`).
     ScrollSpeed,
+    /// The Resources with their own Text size (#292), set from a Tab's ⋯ menu or Aa button
+    /// (`view.resource_text_size`), each with its Reset (`settings.reset {resource}`).
+    ResourceTextSizes,
     /// The font chosen for a slot (`view.font`); View → Fonts chooses it.
     Font(FontSlot),
     /// Each Notebook's Show in text (`notebook.show_in_text`), on by default.
@@ -177,9 +180,19 @@ pub const SETTINGS: &[Setting] = &[
         "text_size",
         S::TextAndFonts,
         "Text size",
-        "How large Resource text is drawn in every Tab; Interface size is separate",
+        "How large Resource text is drawn in every Tab, but a Resource with its own size; \
+         Interface size is separate",
         "font size bigger smaller larger points zoom",
         SettingKind::TextSize,
+    ),
+    setting(
+        "resource_text_sizes",
+        S::TextAndFonts,
+        "Resources with their own Text size",
+        "A Resource can have its own size, set from its Tab's menu or Aa button; the others \
+         follow the Text size",
+        "font size bigger smaller larger points zoom per resource own override",
+        SettingKind::ResourceTextSizes,
     ),
     font("font_latin", "Latin text font", FontSlot::Latin),
     font("font_greek", "Greek text font", FontSlot::Greek),
@@ -661,6 +674,7 @@ impl Session {
             SettingKind::ScrollSpeed => {
                 self.appearance.scroll_speed == crate::appearance::SCROLL_SPEED_DEFAULT
             }
+            SettingKind::ResourceTextSizes => self.resource_text_sizes.is_empty(),
             SettingKind::Font(slot) => self.fonts.get(slot).is_none(),
             SettingKind::NotebooksInText => (self.notebooks().ok()?.iter()).all(|n| n.show_in_text),
             SettingKind::HomeCards => self.home.cards == crate::home::HomeSettings::default().cards,
@@ -720,6 +734,18 @@ fn reset(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             let value = f64::from(crate::appearance::SCROLL_SPEED_DEFAULT);
             s.run("view.scroll_speed", &json!({ "value": value }))?;
         }
+        SettingKind::ResourceTextSizes => {
+            // One Resource's Reset, or Reset all.
+            let own: Vec<String> = match p.str("resource") {
+                Some(id) => vec![id.to_string()],
+                None => (s.resource_text_sizes().iter())
+                    .map(|(id, _)| id.to_string())
+                    .collect(),
+            };
+            for id in own {
+                s.set_resource_text_size("settings.reset", &id, None)?;
+            }
+        }
         SettingKind::Font(slot) => {
             s.run("view.font", &json!({ "slot": slot.id() }))?;
         }
@@ -770,12 +796,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
     id: "settings.reset",
     label: "Reset a setting",
     shortcut: None,
-    params: &[ParamSpec {
-        name: "setting",
-        kind: ParamKind::String,
-        required: true,
-        help: "The Setting's id (see the Settings Tab), e.g. `theme` or `text_size`",
-    }],
+    params: &[
+        ParamSpec {
+            name: "setting",
+            kind: ParamKind::String,
+            required: true,
+            help: "The Setting's id (see the Settings Tab), e.g. `theme` or `text_size`",
+        },
+        ParamSpec {
+            name: "resource",
+            kind: ParamKind::String,
+            required: false,
+            help: "With `resource_text_sizes`: only this Resource's own Text size (default: \
+                   every Resource's)",
+        },
+    ],
     enabled: always,
     run: reset,
 }];

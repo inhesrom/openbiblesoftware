@@ -98,7 +98,17 @@ fn with_key_text(text: &str, key: &str) -> String {
 
 /// Shortcuts that text fields use themselves (undo, redo, leaving the field, moving by word on
 /// macOS). While a text field has focus, the commands bound to them do not run.
-const TEXT_FIELD_KEYS: [&str; 5] = ["Ctrl+Z", "Ctrl+Shift+Z", "Escape", "Alt+Left", "Alt+Right"];
+const TEXT_FIELD_KEYS: [&str; 8] = [
+    "Ctrl+Z",
+    "Ctrl+Shift+Z",
+    "Escape",
+    "Alt+Left",
+    "Alt+Right",
+    // Ctrl+Alt is AltGr on Windows, which types ~ \ } with these keys on some layouts (#292).
+    "Ctrl+Alt+Plus",
+    "Ctrl+Alt+Minus",
+    "Ctrl+Alt+0",
+];
 
 /// The Note editor's text field.
 fn editor_body_id() -> egui::Id {
