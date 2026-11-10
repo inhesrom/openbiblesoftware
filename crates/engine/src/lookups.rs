@@ -1,8 +1,10 @@
 //! Lookups from Resource text (#142): the right-click menu's "Open in preferred Lexicon" and
 //! "Look up in Dictionary", as commands so the command palette reaches them too.
 //!
-//! - `lexicon.open {strongs}`: the first Lexicon in Preferred order with an entry for the
-//!   Strong's number (an extended number falls back to its base number, as the store does).
+//! - `lexicon.open {strongs, resource?}`: the first Lexicon in Preferred order with an entry
+//!   for the Strong's number (an extended number falls back to its base number, as the store
+//!   does); with `resource`, that Lexicon (Word Info's Open in … names the Lexicon it shows,
+//!   which the Preferred order may have moved since).
 //! - `dictionary.lookup {text}`: the first Dictionary in Preferred order with a Headword
 //!   matching the text (compared after normalization, aliases included).
 //!
@@ -38,6 +40,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: true,
                 help: "Strong's number, e.g. G25 or H1254A",
             },
+            ParamSpec {
+                name: "resource",
+                kind: ParamKind::String,
+                required: false,
+                help: "This Lexicon (resource id) instead of the first in Preferred order",
+            },
             NEW_TAB,
         ],
         enabled: always,
@@ -72,10 +80,26 @@ fn open_lexicon(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "lexicon.open";
     let text = p.str("strongs").unwrap_or_default().trim();
     let number: StrongsNumber = text.parse().map_err(|e| failed(ID, e))?;
-    let found = s
-        .library
-        .of_type(ResourceType::Lexicon)
-        .find_map(|e| strongs_entry(e, number).map(|k| (e.manifest.resource_id.clone(), k)));
+    let found = match p.str("resource").map(str::trim) {
+        Some(id) => {
+            let entry = s
+                .library
+                .get(id)
+                .filter(|e| e.manifest.resource_type == ResourceType::Lexicon)
+                .ok_or_else(|| failed(ID, format!("No Lexicon “{id}” in the library")))?;
+            let key = strongs_entry(entry, number).ok_or_else(|| {
+                failed(
+                    ID,
+                    format!("{} has no entry for {number}", entry.manifest.abbreviation),
+                )
+            })?;
+            Some((entry.manifest.resource_id.clone(), key))
+        }
+        None => s
+            .library
+            .of_type(ResourceType::Lexicon)
+            .find_map(|e| strongs_entry(e, number).map(|k| (e.manifest.resource_id.clone(), k))),
+    };
     let Some((id, key)) = found else {
         return Err(failed(ID, format!("No Lexicon has an entry for {number}")));
     };

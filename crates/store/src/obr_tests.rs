@@ -771,6 +771,38 @@ fn strongs_lookup_falls_back_from_an_extended_to_a_base_number() {
     assert!(units("G26").is_empty());
 }
 
+/// #294: a Bible tagging the base number (H7225) finds a Lexicon keyed only by extended
+/// numbers (H7225G, H7225H), in letter order; the extended number still finds only its own.
+#[test]
+fn strongs_lookup_falls_back_from_a_base_to_its_extended_numbers() {
+    use obs_model::{Manifest, ResourceBuilder, ResourceType};
+    let mut m = Manifest::new("ext", "Extended only", "EXT", ResourceType::Lexicon, "en");
+    m.key_schemes = vec![KeyScheme::StrongsNumber];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    for id in ["H7225H", "H7225G", "H72250"] {
+        let unit = UnitId::new(id).unwrap();
+        b.add_unit(unit.clone(), UnitKind::Entry, None, format!("{id} entry"));
+        b.add_key(Key::StrongsNumber(id.parse().unwrap()), &unit, None, false);
+    }
+    let dir = TempDir::new("strongs-extended");
+    let path = dir.path("ext.obr");
+    write_obr(&b.build().unwrap(), &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    let units = |n: &str| -> Vec<String> {
+        r.lookup_strongs(n.parse().unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.unit.to_string())
+            .collect()
+    };
+    assert_eq!(units("H7225"), ["H7225G", "H7225H"]);
+    assert_eq!(units("H7225H"), ["H7225H"]);
+    // H7225A has no entry and neither has its base number.
+    assert!(units("H7225A").is_empty());
+    assert!(units("G7225").is_empty());
+}
+
 #[test]
 fn compact_spans_preserve_every_range_query_and_use_typed_columns() {
     let dir = TempDir::new("compact-ranges");

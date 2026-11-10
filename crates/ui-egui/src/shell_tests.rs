@@ -72,6 +72,30 @@ fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
     shell.st.docs.insert(id, doc);
 }
 
+/// A Resource's `.obr` file in the temporary directory, removed when dropped.
+struct ObrFile(std::path::PathBuf);
+impl Drop for ObrFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Write `resource` to a real `.obr` file and add it to the library as a library Resource is:
+/// what the engine reads from disk (Word Info's Lexicon gloss, #294) finds it. Keep the
+/// returned file alive for the test.
+fn add_obr(shell: &mut Shell, resource: &obs_model::Resource) -> ObrFile {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "obs-shell-{}-{n}-{}.obr",
+        std::process::id(),
+        resource.manifest.resource_id
+    ));
+    obs_store::write_obr(resource, &path).unwrap();
+    shell.st.session.library.add_file(&path).unwrap();
+    ObrFile(path)
+}
+
 impl Harness {
     fn new() -> Self {
         Self::launch(None)

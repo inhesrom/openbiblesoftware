@@ -7,7 +7,7 @@
 //!   with its count ("love → G25 ×…, G26 ×…"). When exactly one number renders them the Guide goes
 //!   straight to it, also when the answer was already computed.
 //! - **Header** (always on top, not a section): Lemma, transliteration, Strong's number, short
-//!   Gloss and the Lexicon it came from (the first Lexicon in Preferred order with an entry),
+//!   Gloss and the Lexicon it came from ([`crate::word_info::lexicon_gloss`], as Word Info),
 //!   part of speech and total occurrences (the Bibles' rendering indexes; see
 //!   [`header`]).
 //! - **Lexicon entries** section ([`crate::GuideSection::LexiconEntries`]): every Lexicon in
@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::library::LibraryEntry;
-use crate::word_info::{LexiconGloss, has_original_script};
+use crate::word_info::{LexiconGloss, has_original_script, lexicon_gloss};
 use crate::word_sections::{OccurrencePreview, PreviewBible, read_previews};
 use crate::workspace::{Guide, OpenRequest, PanelId, TabId, TabKind};
 use crate::{JobEvent, JobEventKind, JobId, Library, Session};
@@ -83,7 +83,7 @@ pub struct WordStudyHeader {
     /// The headword of the first Lexicon entry (original script).
     pub lemma: Option<String>,
     pub transliteration: Option<String>,
-    /// The first Lexicon in Preferred order with an entry: its short gloss.
+    /// The Lexicon gloss, as Word Info shows it ([`crate::word_info::lexicon_gloss`]).
     pub gloss: Option<LexiconGloss>,
     /// Plain English (`verb`), from the Bibles' Morphology.
     pub part_of_speech: Option<String>,
@@ -316,7 +316,7 @@ pub fn lexicon_entries(_: &Library, _: StrongsNumber) -> Result<Vec<LexiconEntry
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn lexicon_entries_in(
+pub(crate) fn lexicon_entries_in(
     entry: &LibraryEntry,
     number: StrongsNumber,
 ) -> Result<Vec<LexiconEntry>, obs_store::StoreError> {
@@ -379,26 +379,6 @@ pub(crate) fn lexicon_entries_from(
     Ok(out)
 }
 
-/// The short gloss of the first Lexicon in Preferred order that has `number`.
-#[cfg(not(target_arch = "wasm32"))]
-fn first_gloss(library: &Library, number: StrongsNumber) -> Option<LexiconGloss> {
-    library.of_type(ResourceType::Lexicon).find_map(|entry| {
-        let found = lexicon_entries_in(entry, number).ok()?;
-        let first = found.into_iter().next()?;
-        Some(LexiconGloss {
-            resource_id: first.resource_id,
-            abbreviation: first.abbreviation,
-            lemma: first.headword,
-            text: crate::word_info::lexicon_excerpt(&first.text)?,
-        })
-    })
-}
-
-#[cfg(target_arch = "wasm32")]
-fn first_gloss(_: &Library, _: StrongsNumber) -> Option<LexiconGloss> {
-    None
-}
-
 /// The header for `number`. Total occurrences come from the first Bible in Preferred order
 /// in the number's original language that tags it (TAHOT for H, TAGNT for G), else the first
 /// tagged Bible that does; an extended number falls back to its base number in a Bible that
@@ -409,7 +389,7 @@ pub fn header(
     indexes: &RenderingIndexes,
     number: StrongsNumber,
 ) -> WordStudyHeader {
-    let gloss = first_gloss(library, number);
+    let gloss = lexicon_gloss(library, number);
     let lemma = gloss.as_ref().and_then(|g| g.lemma.clone());
     let transliteration = lemma
         .as_deref()
@@ -490,12 +470,12 @@ pub fn chooser(library: &Library, indexes: &RenderingIndexes, words: &str) -> Ch
     let choices = numbers
         .into_iter()
         .map(|(strongs, count)| {
-            let gloss = first_gloss(library, strongs);
+            let gloss = lexicon_gloss(library, strongs);
             Choice {
                 strongs,
                 count,
                 lemma: gloss.as_ref().and_then(|g| g.lemma.clone()),
-                gloss: gloss.map(|g| g.text),
+                gloss: gloss.and_then(|g| g.text),
             }
         })
         .collect();

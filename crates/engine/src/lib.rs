@@ -183,6 +183,8 @@ pub mod visual_filters;
 #[cfg(test)]
 mod visual_filters_tests;
 pub mod word_info;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod word_info_tests;
 pub mod word_sections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod word_sections_tests;

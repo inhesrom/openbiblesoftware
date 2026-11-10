@@ -93,12 +93,23 @@ pub trait ResourceStore {
     fn lookup_key(&self, key: &Key) -> Result<Vec<KeyEntry>, StoreError>;
 
     /// Entries for a Strong's number. An extended number with no entry of its own falls back to
-    /// its base number (H1254A → H1254), so a Lexicon keyed by plain Strong's still answers.
-    /// Entries for the number itself come before those that only list it as a secondary Key.
+    /// its base number (H1254A → H1254), so a Lexicon keyed by plain Strong's still answers;
+    /// a base number with no entry of its own finds its extended numbers' entries (H7225 →
+    /// H7225G, H7225H, in letter order), so a Bible tagging plain Strong's finds a Lexicon
+    /// keyed only by extended ones. Entries for the number itself come before those that only
+    /// list it as a secondary Key.
     fn lookup_strongs(&self, number: StrongsNumber) -> Result<Vec<KeyEntry>, StoreError> {
         let mut entries = self.lookup_key(&Key::StrongsNumber(number))?;
         if entries.is_empty() && number.is_extended() {
             entries = self.lookup_key(&Key::StrongsNumber(number.base()))?;
+        } else if entries.is_empty() {
+            for letter in 'A'..='Z' {
+                if let Some(extended) =
+                    StrongsNumber::new(number.language(), number.number(), Some(letter))
+                {
+                    entries.extend(self.lookup_key(&Key::StrongsNumber(extended))?);
+                }
+            }
         }
         entries.sort_by_key(|e| e.alias);
         Ok(entries)
