@@ -288,7 +288,7 @@ A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Compari
 _Avoid_: Utility, Widget
 
 **Word Info**:
-The Tool that shows a Tagged word's Lemma, Strong's number, Morphology and Gloss when the user hovers over or clicks the word.
+The Tool that shows a Tagged word's Lemma, Strong's number, Morphology and Gloss when the user hovers over or clicks the word. Its Lexicon gloss is the one the Word Study header shows: the first Lexicon in Preferred order with an entry for the number (any language, extended or base number), so a Greek ★ Lexicon never hides a Hebrew word's entry; an entry with no short gloss names its Lexicon with Open in … rather than saying there is none.
 _Avoid_: Info panel, Information tool
 
 **Text Comparison**:

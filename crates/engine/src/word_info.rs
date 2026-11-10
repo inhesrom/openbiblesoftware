@@ -12,14 +12,53 @@ pub(crate) const AFFIX_NUMBERS_FROM: u32 = 9000;
 /// Longest Lexicon gloss shown on a card, in characters.
 const EXCERPT_CHARS: usize = 160;
 
-/// The gloss of the first Lexicon in Preferred order for one Strong's number.
+/// The Lexicon gloss of one Strong's number, as [`lexicon_gloss`] finds it for Word Info and
+/// the Word Study header.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexiconGloss {
     pub resource_id: String,
     pub abbreviation: String,
     /// The entry's headword, used as the Lemma when the Tagged word carries none (KJV).
     pub lemma: Option<String>,
-    pub text: String,
+    /// The entry's short gloss ([`lexicon_excerpt`]); `None` when no Lexicon's entry has one
+    /// to cut (a cross-reference such as BDB's `אָב v. II. אבה.`): the card then names the
+    /// Lexicon and offers to open it at the entry instead of saying there is none.
+    pub text: Option<String>,
+}
+
+/// The Lexicon gloss of `number` that Word Info and the Word Study header show: every Lexicon
+/// in Preferred order, whatever its language (a Greek ★ Lexicon has no H-numbers), each read
+/// with [`obs_store::ResourceStore::lookup_strongs`] (the extended number, else its base
+/// number; a base number, else its extended numbers). The first entry with a short gloss
+/// wins; when no entry has one, the first entry found, without text. `None` only when no
+/// Lexicon has the number.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn lexicon_gloss(library: &crate::Library, number: StrongsNumber) -> Option<LexiconGloss> {
+    let mut without_gloss = None;
+    for lexicon in library.of_type(obs_model::ResourceType::Lexicon) {
+        let Ok(found) = crate::word_study::lexicon_entries_in(lexicon, number) else {
+            continue;
+        };
+        let Some(first) = found.into_iter().next() else {
+            continue;
+        };
+        let gloss = LexiconGloss {
+            text: lexicon_excerpt(&first.text),
+            resource_id: first.resource_id,
+            abbreviation: first.abbreviation,
+            lemma: first.headword,
+        };
+        if gloss.text.is_some() {
+            return Some(gloss);
+        }
+        without_gloss.get_or_insert(gloss);
+    }
+    without_gloss
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn lexicon_gloss(_: &crate::Library, _: StrongsNumber) -> Option<LexiconGloss> {
+    None
 }
 
 /// One morpheme's card: Lemma, Strong's number, Morphology in plain English and the Lexicon
@@ -163,8 +202,14 @@ impl LemmaCard {
         if let Some(m) = &self.morphology {
             s.push_str(&format!(" · {m}"));
         }
-        if let Some(l) = &self.lexicon {
-            s.push_str(&format!(" · {}: {}", l.abbreviation, l.text));
+        match &self.lexicon {
+            Some(LexiconGloss {
+                abbreviation,
+                text: Some(text),
+                ..
+            }) => s.push_str(&format!(" · {abbreviation}: {text}")),
+            Some(l) => s.push_str(&format!(" · {}", l.abbreviation)),
+            None => {}
         }
         s
     }
@@ -330,7 +375,7 @@ mod tests {
             resource_id: "tbesh".into(),
             abbreviation: "TBESH".into(),
             lemma: Some(lemma.into()),
-            text: text.into(),
+            text: Some(text.into()),
         })
     }
 
@@ -356,7 +401,10 @@ mod tests {
         );
         assert_eq!(w.main.morph_code.as_deref(), Some("HVqp3ms"));
         assert_eq!(w.gloss.as_deref(), Some("he created"));
-        assert_eq!(w.main.lexicon.as_ref().unwrap().text, "to create");
+        assert_eq!(
+            w.main.lexicon.as_ref().unwrap().text.as_deref(),
+            Some("to create")
+        );
         assert_eq!(w.transliteration.as_deref(), Some("bara"));
         assert!(w.parts.is_empty());
         assert_eq!(
@@ -407,7 +455,10 @@ mod tests {
         assert_eq!(w.gloss, None);
         assert_eq!(w.main.lemma.as_deref(), Some("אֱלֹהִים"));
         assert_eq!(w.main.morphology, None);
-        assert_eq!(w.main.lexicon.as_ref().unwrap().text, "God, gods");
+        assert_eq!(
+            w.main.lexicon.as_ref().unwrap().text.as_deref(),
+            Some("God, gods")
+        );
     }
 
     #[test]

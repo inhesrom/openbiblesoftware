@@ -1,15 +1,15 @@
 //! The Word Info Tool (#50, #18 rules 15–16): the Tagged word the pointer rests on (~150 ms
 //! dwell, sticky) or the one clicked (pinned). Shows the word as written, transliteration,
 //! contextual gloss and reference; the main Lemma card (Lemma, Strong's number, plain-English
-//! Morphology, the first Lexicon's gloss); and prefixes and suffixes under Parts. Original-
-//! script text is drawn by the inline-snippet mode.
+//! Morphology, the Lexicon gloss the Word Study header shows too); and prefixes and suffixes
+//! under Parts. Original-script text is drawn by the inline-snippet mode.
 
 use egui::{RichText, Ui, vec2};
-use obs_engine::word_info::lexicon_excerpt;
-use obs_engine::{LemmaCard, LexiconGloss, ShownWord, TabId};
+use obs_engine::word_info::lexicon_gloss;
+use obs_engine::{LemmaCard, ShownWord, TabId};
 use obs_layout::{ColorRole, TextSettings};
-use obs_model::{Key, ResourceType};
-use obs_scripture::{Passage, RefStyle, StrongsNumber, format_passage};
+use obs_model::ResourceType;
+use obs_scripture::{Passage, RefStyle, format_passage};
 use serde_json::json;
 
 use super::{Dwell, HOVER_DWELL_SECS, State};
@@ -131,31 +131,12 @@ impl State {
         };
         let rtl = doc.direction() == obs_model::Direction::Rtl;
         let bible = doc.manifest.resource_id.clone();
-        let mut shown = ShownWord::new(written, rtl, reference, parts, |n| self.lexicon_gloss(n))?;
+        let library = &self.session.library;
+        let mut shown = ShownWord::new(written, rtl, reference, parts, |n| {
+            lexicon_gloss(library, n)
+        })?;
         shown.bible = Some(bible);
         Some(shown)
-    }
-
-    /// The gloss of the first Lexicon in Preferred order for a Strong's number: its entry's
-    /// first paragraph after the headword. The Lexicon is loaded like any other Resource.
-    fn lexicon_gloss(&mut self, number: StrongsNumber) -> Option<LexiconGloss> {
-        let entry = self.session.library.preferred(ResourceType::Lexicon)?;
-        let (id, abbreviation) = (
-            entry.manifest.resource_id.clone(),
-            entry.manifest.abbreviation.clone(),
-        );
-        let doc = self.doc(&id).ok()?;
-        let key = doc.navigation.lookup(&Key::StrongsNumber(number))?;
-        let (unit, start) = doc.entry_position(key)?;
-        let unit = doc.units.get(unit)?;
-        let end = key.range.map_or(unit.text.len(), |(_, e)| e as usize);
-        let text = lexicon_excerpt(unit.text.get(start..end)?)?;
-        Some(LexiconGloss {
-            resource_id: id,
-            abbreviation,
-            lemma: unit.title.clone(),
-            text,
-        })
     }
 
     pub(super) fn word_info_body(&mut self, ui: &mut Ui, _tab: TabId) {
@@ -283,7 +264,9 @@ impl State {
     }
 
     /// One Lemma card: Lemma (pipeline), Strong's number, Morphology (raw code in a tooltip)
-    /// and the Lexicon gloss.
+    /// and the Lexicon gloss ([`lexicon_gloss`]); an entry with no gloss to cut names its
+    /// Lexicon with Open in … (`lexicon.open` lands on the same entry: the first Lexicon in
+    /// Preferred order that has the number).
     fn lemma_card(
         &mut self,
         ui: &mut Ui,
@@ -291,6 +274,7 @@ impl State {
         role: Option<&str>,
         settings: &TextSettings,
     ) {
+        let mut open_lexicon: Option<bool> = None;
         egui::Frame::new()
             .fill(theme::c().surface)
             .stroke(crate::components::rule_stroke())
@@ -335,9 +319,34 @@ impl State {
                 }
                 match &card.lexicon {
                     Some(l) => {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(crate::components::hint_text(format!("{}:", l.abbreviation)));
-                            ui.label(RichText::new(&l.text).color(theme::c().ink));
+                        ui.horizontal_wrapped(|ui| match &l.text {
+                            Some(text) => {
+                                ui.label(crate::components::hint_text(format!(
+                                    "{}:",
+                                    l.abbreviation
+                                )));
+                                ui.label(RichText::new(text).color(theme::c().ink));
+                            }
+                            // An entry with no gloss line to cut: name its Lexicon and open
+                            // it there.
+                            None => {
+                                ui.label(crate::components::hint_text(format!(
+                                    "{}: no short gloss",
+                                    l.abbreviation
+                                )));
+                                if crate::components::link(
+                                    ui,
+                                    format!("Open in {}", l.abbreviation),
+                                )
+                                .on_hover_text(
+                                    "Open the Lexicon at this entry · Ctrl/Cmd-click: a new Tab",
+                                )
+                                .clicked()
+                                {
+                                    open_lexicon =
+                                        Some(ui.input(|i| i.modifiers.command || i.modifiers.ctrl));
+                                }
+                            }
                         });
                     }
                     None => {
@@ -345,6 +354,12 @@ impl State {
                     }
                 }
             });
+        if let Some(new_tab) = open_lexicon {
+            self.run(
+                "lexicon.open",
+                &json!({ "strongs": card.strongs.to_string(), "new_tab": new_tab }),
+            );
+        }
     }
 
     /// Draw `text` through the inline-snippet mode, as tall as its layout (a placeholder bar

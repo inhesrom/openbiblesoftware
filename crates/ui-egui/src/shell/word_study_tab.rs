@@ -101,11 +101,22 @@ impl State {
                 ui.label(RichText::new(t).italics().color(theme::c().ink));
             }
             if let Some(g) = &h.gloss {
-                ui.label(RichText::new(format!("“{}”", g.text)).color(theme::c().ink));
-                ui.label(crate::components::hint_text(format!(
-                    "— {}",
-                    g.abbreviation
-                )));
+                match &g.text {
+                    Some(text) => {
+                        ui.label(RichText::new(format!("“{text}”")).color(theme::c().ink));
+                        ui.label(crate::components::hint_text(format!(
+                            "— {}",
+                            g.abbreviation
+                        )));
+                    }
+                    // The entry is below, under Lexicon entries.
+                    None => {
+                        ui.label(crate::components::hint_text(format!(
+                            "No short gloss — {}",
+                            g.abbreviation
+                        )));
+                    }
+                }
             }
         });
         let occurrences = match &h.occurrences {
