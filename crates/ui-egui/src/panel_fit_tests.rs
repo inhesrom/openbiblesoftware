@@ -372,8 +372,8 @@ fn panel_fit_previews() {
     if std::env::var_os("UPDATE_PREVIEWS").is_none() {
         return;
     }
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/previews/panel-fit");
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/panel-fit");
     for (name, open, _) in panel_fit() {
         for (look, slug) in LOOKS.iter().zip(["light", "dark"]) {
             let (mut h, _lab) = launch(&format!("panel-fit-preview-{slug}"), look);
