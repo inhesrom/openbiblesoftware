@@ -25,6 +25,11 @@ pub const PREVIEW_HITS: usize = 5;
 /// enough that hits show within about 150 ms of the last key.
 pub const PREVIEW_DEBOUNCE: f64 = 0.1;
 
+/// How far short of [`PREVIEW_DEBOUNCE`] the UI's clock may fall and the typing still count as
+/// stopped: a clock summed from 60 Hz frame intervals reads 0.09999… six frames after a key,
+/// and a frame later (17 ms) is too late.
+const CLOCK_SLACK: f64 = 1e-6;
+
 /// What the Search preview shows.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum SearchPreview {
@@ -125,7 +130,7 @@ impl Session {
         }
         let p = &self.command_box.preview;
         let since = p.typed.as_ref().map_or(0.0, |(_, at)| now - at);
-        let due = p.searched.as_deref() != Some(text) && since >= PREVIEW_DEBOUNCE;
+        let due = p.searched.as_deref() != Some(text) && since + CLOCK_SLACK >= PREVIEW_DEBOUNCE;
         let index_ready = (p.waiting_for.as_deref()).is_some_and(|id| self.search.is_ready(id));
         if due || index_ready {
             self.start_search_preview(text.to_string());

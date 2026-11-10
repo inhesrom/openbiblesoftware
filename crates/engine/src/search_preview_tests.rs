@@ -108,6 +108,19 @@ fn the_preview_searches_once_the_typing_has_stopped() {
     s.update_search_preview(None, 1.2);
     assert_eq!(s.search_preview(), &SearchPreview::Off);
     assert_eq!(s.search_preview_query(), None);
+
+    // A clock summed from 60 Hz frames: six frames after the key is the debounce, though the
+    // sum falls a rounding error short of it.
+    let key = 2.0 + 4.0 / 60.0;
+    let mut now = key;
+    s.update_search_preview(Some("law"), now);
+    for _ in 0..6 {
+        now += 1.0 / 60.0;
+    }
+    assert!(now - key < PREVIEW_DEBOUNCE, "{}", now - key);
+    s.update_search_preview(Some("law"), now);
+    assert!(s.search_preview_running(), "searched on the sixth frame");
+    settle(&mut s);
     let _ = std::fs::remove_dir_all(root);
 }
 
