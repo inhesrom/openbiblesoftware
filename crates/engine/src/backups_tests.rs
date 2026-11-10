@@ -1252,6 +1252,60 @@ fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
     );
 }
 
+/// #258: a Visual filters counter the loader would raise is refused even when the old and new
+/// value are the same as an `f32` (16777216 and 16777217 are): whole numbers are compared
+/// exactly, so the change is named before any Safety backup.
+#[test]
+fn a_backup_with_a_counter_the_loader_would_raise_past_f32_precision_is_refused() {
+    let f = Fixture::new("raised-counter");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    let mut filters = crate::visual_filters::built_in_filters();
+    filters[0].id = "filter-16777216".to_string();
+    let filters = serde_json::to_string(&filters).unwrap();
+    damaged_copy(&f, &good, &backup, |db| {
+        db.set_preference(crate::visual_filters::VISUAL_FILTERS_PREF, &filters)
+            .unwrap();
+        db.set_preference(
+            crate::visual_filters::VISUAL_FILTERS_NEXT_ID_PREF,
+            "16777216",
+        )
+        .unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the setting `reading.visual_filters_next_id` (Visual filters)",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    assert!(
+        !refused.contains("`reading.visual_filters`"),
+        "the filters themselves are kept: {refused}"
+    );
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(
+        err.to_string().contains("`reading.visual_filters_next_id`"),
+        "{err}"
+    );
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+}
+
 /// The Session after using every setting, record and list the app keeps in the User
 /// database that can be reached here.
 fn write_everything(s: &mut Session) {
