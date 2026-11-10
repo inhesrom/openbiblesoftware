@@ -696,7 +696,7 @@ fn library_row(
                 .painter
                 .layout_no_wrap(hits, font.clone(), palette.ink);
             let width = view.width - hits.size().x;
-            let name = crate::components::elided(&paint.painter, &name, font, palette.ink, width);
+            let name = crate::components::elided(paint.painter, &name, font, palette.ink, width);
             let after = pos2(at.x + name.size().x, at.y);
             paint.painter.galley(at, name, palette.ink);
             paint.painter.galley(after, hits, palette.ink);
