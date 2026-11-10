@@ -416,6 +416,17 @@ fn failed_imports_say_what_went_wrong_in_plain_words() {
         failure_message("KJV from CrossWire: download from CrossWire: timed out")
             .starts_with("The download did not finish")
     );
+    // A local file's error starts with its path; one in a Downloads folder was not a download.
+    for local in [
+        "/Users/me/Downloads/x.usfm: invalid data",
+        "C:\\Users\\me\\Downloads\\x.usfm: invalid data",
+    ] {
+        assert_eq!(
+            failure_message(local),
+            "The app could not read this source, so nothing was added to your Library.",
+            "{local}"
+        );
+    }
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -184,7 +184,7 @@ pub fn failure_message(error: &str) -> &'static str {
         "That SWORD folder holds several modules. Choose one module's .conf file in mods.d/."
     } else if e.contains("cannot be imported") || e.contains("has no entries") {
         "The app cannot import this SWORD module yet."
-    } else if e.contains("download") {
+    } else if e.contains("download from ") {
         "The download did not finish. Check the connection, then try again."
     } else {
         "The app could not read this source, so nothing was added to your Library."

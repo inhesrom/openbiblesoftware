@@ -176,8 +176,9 @@ pub(super) fn spdx_badge(spdx: &str) -> (&'static str, Color32) {
 
 /// A licence in words, for About and Credits (LIBRARY-8): "Public domain" for every spelling
 /// of it, a Creative Commons id as its name ("CC BY 4.0", "CC BY-SA 4.0", "CC0 1.0"),
-/// "Unknown" for none; any other id (a font's "OFL-1.1") as it is. The SPDX id is for the
-/// hover.
+/// "Unknown" for none; a SWORD download's `LicenseRef-` id as its Library row badge reads
+/// ("GPL", "Copyrighted", "Other licence"); any other id (a font's "OFL-1.1") as it is. The
+/// SPDX id is for the hover.
 pub(super) fn licence_name(spdx: &str) -> String {
     if spdx.is_empty() || spdx == obs_model::LICENSE_UNKNOWN {
         return "Unknown".to_string();
@@ -196,6 +197,9 @@ pub(super) fn licence_name(spdx: &str) -> String {
             _ => (rest, ""),
         };
         return format!("CC {terms} {version}").trim_end().to_string();
+    }
+    if spdx.starts_with("LicenseRef-") {
+        return spdx_badge(spdx).0.to_string();
     }
     spdx.to_string()
 }

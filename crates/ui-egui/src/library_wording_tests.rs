@@ -79,7 +79,13 @@ const GEN_USFM: &str = "\\id GEN\n\\c 1\n\\p\n\\v 1 In the beginning.\\f + \\ft 
 fn import_genesis(h: &mut Harness) {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/gallery/wording");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("GEN.usfm"), GEN_USFM).unwrap();
+    // Tests and gallery runs in parallel share this file: write a copy and rename it into
+    // place, so no Import reads it half-written.
+    static COPY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COPY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let copy = dir.join(format!("GEN.usfm.{}-{n}", std::process::id()));
+    std::fs::write(&copy, GEN_USFM).unwrap();
+    std::fs::rename(&copy, dir.join("GEN.usfm")).unwrap();
     // Tests run in the crate's folder: the same path on every computer.
     h.shell.run(
         "import.start",
@@ -261,7 +267,7 @@ fn the_starter_library_says_it_is_missing_only_when_it_is_and_its_feature_lines_
 #[test]
 fn the_starter_intro_follows_what_is_in_the_library() {
     use super::super::starter_tab::{
-        INTRO_BUNDLED, INTRO_DOWNLOADED, INTRO_WITHOUT, starter_intro,
+        INTRO_BUNDLED, INTRO_DOWNLOADED, INTRO_WITHOUT, starter_add_label, starter_intro,
     };
     use obs_engine::starter::{StarterRow, StarterStatus};
     let row = |status| StarterRow {
@@ -288,12 +294,40 @@ fn the_starter_intro_follows_what_is_in_the_library() {
         starter_intro(false, &[row(StarterStatus::Adding)]),
         INTRO_WITHOUT
     );
-    for status in [StarterStatus::InLibrary, StarterStatus::Removed] {
+    let outdated = || StarterStatus::Outdated {
+        installed: 1,
+        offered: 2,
+    };
+    for status in [StarterStatus::InLibrary, StarterStatus::Removed, outdated()] {
         assert_eq!(
             starter_intro(false, &[row(StarterStatus::Missing), row(status)]),
             INTRO_DOWNLOADED
         );
     }
+    // The Button: the whole Starter library, only what is missing, or Add from the bundle.
+    let none = [row(StarterStatus::Missing), row(StarterStatus::Missing)];
+    assert_eq!(
+        starter_add_label(false, &none, 2, 182_400_000),
+        "Download Starter library (≈183 MB)"
+    );
+    let partly = [row(StarterStatus::InLibrary), row(StarterStatus::Missing)];
+    assert_eq!(
+        starter_add_label(false, &partly, 1, 4_500_000),
+        "Download 1 missing Resource (≈5 MB)"
+    );
+    let partly = [
+        row(outdated()),
+        row(StarterStatus::Missing),
+        row(StarterStatus::Missing),
+    ];
+    assert_eq!(
+        starter_add_label(false, &partly, 2, 9_000_000),
+        "Download 2 missing Resources (≈9 MB)"
+    );
+    assert_eq!(
+        starter_add_label(true, &none, 2, 1),
+        "Add 2 missing Resources"
+    );
 }
 
 /// LIBRARY-8 and LIBRARY-9: an imported Genesis with no language and no licence showed "und"
@@ -370,6 +404,12 @@ fn licence_names_read_in_words() {
         ("CC-BY-SA-4.0", "CC BY-SA 4.0"),
         ("CC0-1.0", "CC0 1.0"),
         ("OFL-1.1", "OFL-1.1"),
+        ("LicenseRef-GPL", "GPL"),
+        (
+            "LicenseRef-Copyrighted-Permission-to-distribute-granted-to-CrossWire",
+            "Copyrighted",
+        ),
+        ("LicenseRef-Some-Other-Terms", "Other licence"),
     ] {
         assert_eq!(licence_name(spdx), name, "{spdx}");
     }

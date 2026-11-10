@@ -32,7 +32,7 @@ impl State {
         };
         // The Search index's live state, once the Resource is in the library (#58).
         let index = self.session.search.status(id).cloned();
-        let mut action: Option<&'static str> = None;
+        let mut action: Option<ReportAction> = None;
         crate::components::page_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::vertical()
@@ -61,7 +61,7 @@ impl State {
                         ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
                     );
                     if running && ui.button("Cancel").clicked() {
-                        action = Some("import.cancel");
+                        action = Some(ReportAction::Run("import.cancel"));
                     }
                     if let Some(report) = &record.report {
                         ui.add_space(space::L);
@@ -69,21 +69,21 @@ impl State {
                         ui.add_space(space::XL);
                         ui.horizontal(|ui| {
                             if ui.button("Open").clicked() {
-                                action = Some("resource.open");
+                                action = Some(ReportAction::Run("resource.open"));
                             }
                             if ui.button("About").clicked() {
-                                action = Some("resource.about");
+                                action = Some(ReportAction::Run("resource.about"));
                             }
                             if ui.button("Remove import…").clicked() {
-                                action = Some("library.remove");
+                                action = Some(ReportAction::Run("library.remove"));
                             }
                         });
                     }
                 });
         });
         match action {
-            Some(IMPORT_ANOTHER) => self.pick_import = true,
-            Some(CLOSE) => {
+            Some(ReportAction::ImportAnother) => self.pick_import = true,
+            Some(ReportAction::Close) => {
                 let kind = obs_engine::TabKind::ImportReport(id.to_string());
                 let tab =
                     (self.session.workspace.tabs()).find_map(|t| (t.kind == kind).then_some(t.id));
@@ -91,7 +91,7 @@ impl State {
                     self.run("tab.close", &json!({ "tab": tab.0 }));
                 }
             }
-            Some(command) => {
+            Some(ReportAction::Run(command)) => {
                 self.run(command, &json!({ "id": id }));
             }
             None => {}
@@ -194,35 +194,39 @@ impl State {
 /// A failed Import's report: what went wrong in plain words with the error itself under
 /// Details, then Import another… (a file the user picks: not after a download, whose row on
 /// Get Resources has Retry) and Close.
-fn failed(ui: &mut Ui, record: &ImportRecord) -> Option<&'static str> {
+fn failed(ui: &mut Ui, record: &ImportRecord) -> Option<ReportAction> {
     let error = record.error.as_deref().unwrap_or_default();
     let mut action = None;
     crate::components::error_notice(ui, failure_message(error), error);
     ui.add_space(space::L);
     ui.horizontal(|ui| {
         let downloaded = record.origin.is_some() || record.open_origin.is_some();
-        if !downloaded && ui.button(IMPORT_ANOTHER_LABEL).clicked() {
-            action = Some(IMPORT_ANOTHER);
+        if !downloaded && ui.button("Import another…").clicked() {
+            action = Some(ReportAction::ImportAnother);
         }
         if ui.button("Close").clicked() {
-            action = Some(CLOSE);
+            action = Some(ReportAction::Close);
         }
     });
     action
 }
 
-/// A failed report's own actions, beside the commands its other Buttons run.
-const IMPORT_ANOTHER: &str = "import-another";
-const CLOSE: &str = "close";
-const IMPORT_ANOTHER_LABEL: &str = "Import another…";
+/// What a Button on an Import report asks for: a command on the Resource, or one of a failed
+/// report's own actions.
+enum ReportAction {
+    Run(&'static str),
+    ImportAnother,
+    Close,
+}
 
-/// Parse, then the Search index: live progress from the worker, never simulated.
 /// Bytes as "4.5 MB".
 #[allow(clippy::cast_precision_loss)]
 pub(super) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
+/// Download, Parse, then the Search index: live progress from the worker, never simulated.
+/// A failed Import's report shows [`failed`] instead.
 fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
     if let Some(origin) = &record.origin {
         section(ui, "Download");
@@ -237,9 +241,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
             ImportPhase::Download => {
                 ui.add(waiting(format!("Downloading from {}…", origin.repo)));
             }
-            ImportPhase::Failed if record.report.is_none() => {
-                ui.label("Download stopped");
-            }
+            ImportPhase::Failed => {}
             _ => {
                 ui.label(format!("Downloaded from {}", origin.repo));
             }
@@ -262,12 +264,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
         ImportPhase::Index | ImportPhase::Complete => {
             ui.label("Parse complete");
         }
-        ImportPhase::Failed => {
-            ui.colored_label(
-                theme::c().warn,
-                record.error.as_deref().unwrap_or("Import failed"),
-            );
-        }
+        ImportPhase::Failed => {}
     }
     ui.add_space(space::M);
     section(ui, "Search index");
@@ -283,9 +280,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
         (ImportPhase::Index, _) => {
             ui.add(waiting("Search index: starting…"));
         }
-        (ImportPhase::Failed, _) => {
-            ui.label("Search index: not built");
-        }
+        (ImportPhase::Failed, _) => {}
         // Not built by the Import: the background rebuild's live state.
         (ImportPhase::Complete, ImportIndexStatus::Deferred | ImportIndexStatus::Failed(_)) => {
             match (index, &record.index) {
