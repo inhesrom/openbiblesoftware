@@ -492,10 +492,11 @@ impl State {
     fn commentary_row(&mut self, ui: &mut Ui, tab: TabId, row: &CommentaryRow) -> bool {
         let top = ui.cursor().min;
         let reference = format_passage(row.section, &Standard, RefStyle::Short);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(&row.title).strong().color(theme::c().lapis));
-            ui.label(RichText::new(&reference).color(theme::c().muted));
-        });
+        crate::components::title_and_detail(
+            ui,
+            RichText::new(&row.title).strong().color(theme::c().lapis),
+            RichText::new(&reference).color(theme::c().muted),
+        );
         let rtl = row.direction == Direction::Rtl;
         if let Some(h) = &row.heading {
             self.guide_snippet(ui, h, ColorRole::Accent, rtl, 2);
@@ -548,7 +549,7 @@ impl State {
         lines: usize,
     ) {
         let settings: TextSettings = self.session.text;
-        let width = ui.available_width().max(size::TEXT_MIN);
+        let width = crate::components::fill_width(ui).max(size::TEXT_MIN);
         let line = settings.size * settings.line_spacing;
         let laid = self.snippets.get(text, role, rtl, width, &settings);
         let Some(laid) = laid else {

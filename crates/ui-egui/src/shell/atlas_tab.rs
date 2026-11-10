@@ -265,10 +265,13 @@ pub(super) fn map_canvas(
             Some(m.place.entity.as_str()) == selected,
         );
     }
-    // Labels: strongest first, each only where it covers no label already placed.
+    // Labels: strongest first, each only where it covers no label already placed and, where
+    // it can, no other place's marker (#301, #304); a label that fits nowhere is left out
+    // (hovering names it).
     let font = FontId::proportional(text::SMALL);
+    let reach = |m: &Marker<'_>| marker_reach(m.strong, Some(m.place.entity.as_str()) == selected);
     let mut placed: Vec<Rect> = Vec::new();
-    for m in markers.iter().rev() {
+    for (i, m) in markers.iter().enumerate().rev() {
         if !rect.contains(m.at) {
             continue;
         }
@@ -276,21 +279,23 @@ pub(super) fn map_canvas(
         let size = galley.size();
         // Right of the marker, else left, above or below, else at a corner, else a line
         // above or below its right or left (in a cluster of markers, #304): inside the map,
-        // clear of others.
+        // clear of others, each clear of its own marker's reach (#301).
+        let gap = reach(m) + space::XS;
+        let corner = gap * std::f32::consts::FRAC_1_SQRT_2;
         let line = size.y + space::XXS;
         let candidates = [
-            vec2(space::M, -size.y / 2.0),
-            vec2(-space::M - size.x, -size.y / 2.0),
-            vec2(-size.x / 2.0, -space::M - size.y),
-            vec2(-size.x / 2.0, space::M),
-            vec2(space::XS, -space::XS - size.y),
-            vec2(space::XS, space::XS),
-            vec2(-space::XS - size.x, -space::XS - size.y),
-            vec2(-space::XS - size.x, space::XS),
-            vec2(space::M, -size.y / 2.0 + line),
-            vec2(space::M, -size.y / 2.0 - line),
-            vec2(-space::M - size.x, -size.y / 2.0 + line),
-            vec2(-space::M - size.x, -size.y / 2.0 - line),
+            vec2(gap, -size.y / 2.0),
+            vec2(-gap - size.x, -size.y / 2.0),
+            vec2(-size.x / 2.0, -gap - size.y),
+            vec2(-size.x / 2.0, gap),
+            vec2(corner, -corner - size.y),
+            vec2(corner, corner),
+            vec2(-corner - size.x, -corner - size.y),
+            vec2(-corner - size.x, corner),
+            vec2(gap, -size.y / 2.0 + line),
+            vec2(gap, -size.y / 2.0 - line),
+            vec2(-gap - size.x, -size.y / 2.0 + line),
+            vec2(-gap - size.x, -size.y / 2.0 - line),
         ];
         let spots = candidates.map(|offset| Rect::from_min_size(m.at + offset, size));
         let free = |r: &Rect| {
@@ -298,8 +303,9 @@ pub(super) fn map_canvas(
         };
         // Clear of the other markers too where there is such a spot.
         let off_markers = |r: &Rect| {
-            let around = r.expand(chart::MARKER);
-            (markers.iter()).all(|o| o.at == m.at || !around.contains(o.at))
+            let halo = r.expand(space::XXS);
+            (markers.iter().enumerate())
+                .all(|(j, o)| j == i || halo.distance_to_pos(o.at) >= reach(o) + space::PX)
         };
         let Some(at) = (spots.iter().find(|r| free(r) && off_markers(r)))
             .or_else(|| spots.iter().find(|r| free(r)))
@@ -387,6 +393,20 @@ fn lines(
             .map(|p| to_screen(f64::from(p[0]), f64::from(p[1])))
             .collect();
         painter.add(Shape::line(points, stroke));
+    }
+}
+
+/// How far a marker reaches from its centre: its radius and outline, and a picked one's ring.
+fn marker_reach(strong: bool, picked: bool) -> f32 {
+    let r = if strong {
+        chart::MARKER_STRONG
+    } else {
+        chart::MARKER
+    };
+    if picked {
+        r + chart::RING_GAP + stroke::THICK
+    } else {
+        r + stroke::MEDIUM
     }
 }
 
@@ -535,7 +555,7 @@ impl State {
         let mut refit = state.fitted != Some(passage);
         // The search row.
         let mut zoom: Option<f64> = None;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.add(crate::components::search_field(
                 &mut state.query,
                 "Find a place…",
@@ -570,7 +590,7 @@ impl State {
             if unlocated > 0 {
                 status.push_str(&format!(", {unlocated} without a location"));
             }
-            ui.add(egui::Label::new(RichText::new(status).color(theme::c().muted)).truncate());
+            crate::components::toolbar_summary(ui, status);
         });
         // Search results, under the box.
         let query = state.query.trim().to_string();

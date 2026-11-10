@@ -3109,7 +3109,7 @@ impl State {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = space::XS;
                     for (i, id) in bibles.iter().enumerate() {
-                        crate::components::chip_frame().show(ui, |ui| {
+                        crate::components::chip(ui, ("compare-chip", id), |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = space::XXS;
                                 let (rect, r) = ui.allocate_exact_size(

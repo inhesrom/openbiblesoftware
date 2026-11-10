@@ -146,7 +146,7 @@ impl State {
         let focus = emphasis.focus.map(|i| &timeline.entries[i]);
 
         // Controls and status.
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .small_button("Earlier")
                 .on_hover_text("Show earlier years")
@@ -204,7 +204,7 @@ impl State {
                     "Enter a Bible reference or join a Link set to bring its events out".to_string()
                 }
             };
-            ui.add(egui::Label::new(RichText::new(status).color(theme::c().muted)).truncate());
+            crate::components::toolbar_summary(ui, status);
         });
 
         // The axis, and the list of the Passage's events under it.
