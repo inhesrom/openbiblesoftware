@@ -1729,6 +1729,13 @@ fn assert_layout_restored_whole(s: &mut Session, written: &obs_store::UserStore,
         return;
     }
     let mut expected: Value = serde_json::from_str(&stored).unwrap();
+    // A Tab's field stored as null reads as left out: the restore may fill in its default (a
+    // Search Tab's search with `null` comes back as a fresh search).
+    for tab in expected["tabs"].as_array_mut().into_iter().flatten() {
+        if let Some(fields) = tab.as_object_mut() {
+            fields.retain(|_, v| !v.is_null());
+        }
+    }
     let mut panels = Vec::new();
     panel_ids(&expected["layout"], &mut panels);
     for w in expected["windows"].as_array().into_iter().flatten() {

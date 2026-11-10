@@ -8,6 +8,8 @@
 //! - `view.toolbar_position {value}` (top, bottom, left, right), in View → Toolbar position
 //!   and the toolbar's right-click menu; dragging its grip runs it too.
 //! - `view.toolbar_auto_hide`: Auto-hide on or off.
+//! - `view.toolbar_expanded {on?}`: a Left or Right toolbar Expanded (each Launcher's icon,
+//!   label and detail line) or Collapsed (icons only); without `on` it flips (#291).
 //! - `view.toolbar_customize`: open the Customize toolbar window.
 //! - `toolbar.labels {value}` (both, icons, labels), `toolbar.show_launcher {launcher, shown}`,
 //!   `toolbar.move_launcher {launcher, to}` and `toolbar.reset`, from that window.
@@ -62,14 +64,14 @@ impl ToolbarPosition {
         Self::ALL.iter().find(|t| t.1 == id).map(|t| t.0)
     }
 
-    /// Left and Right: the Launchers are stacked, icons only.
+    /// Left and Right: the Launchers are stacked, icons only unless Expanded.
     pub fn is_vertical(self) -> bool {
         matches!(self, ToolbarPosition::Left | ToolbarPosition::Right)
     }
 }
 
-/// What a Launcher button shows (Customize toolbar…). On a vertical toolbar it is always
-/// icons only, with the label in the tooltip.
+/// What a Launcher button shows (Customize toolbar…). On a vertical toolbar it is icons
+/// only, with the label in the tooltip, or (Expanded) icon, label and detail line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LauncherLabels {
     #[default]
@@ -104,6 +106,9 @@ pub struct ToolbarSettings {
     /// The toolbar is out of the way until the pointer reaches its edge or Alt is held.
     pub auto_hide: bool,
     pub labels: LauncherLabels,
+    /// At the Left or Right: Expanded, a wider column showing each Launcher's icon, label and
+    /// detail line; else Collapsed, icons only (#291). Top and Bottom ignore it.
+    pub expanded: bool,
     /// Every Launcher once, in toolbar order, each with whether it is shown.
     launchers: Vec<(Launcher, bool)>,
 }
@@ -114,6 +119,7 @@ impl Default for ToolbarSettings {
             position: ToolbarPosition::default(),
             auto_hide: false,
             labels: LauncherLabels::default(),
+            expanded: false,
             launchers: Launcher::ALL.iter().map(|l| (*l, true)).collect(),
         }
     }
@@ -153,6 +159,11 @@ impl ToolbarSettings {
         self.launchers.insert(to, item);
     }
 
+    /// Whether the toolbar is drawn Expanded now: at the Left or Right, with Expanded chosen.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded && self.position.is_vertical()
+    }
+
     /// Whether the buttons draw their icon.
     pub fn shows_icons(&self) -> bool {
         self.position.is_vertical() || self.labels != LauncherLabels::LabelsOnly
@@ -168,6 +179,7 @@ impl ToolbarSettings {
             "position": self.position.id(),
             "auto_hide": self.auto_hide,
             "labels": self.labels.id(),
+            "expanded": self.expanded,
             "launchers": self.launchers.iter().map(|(l, on)| json!({
                 "id": l.id(),
                 "shown": on,
@@ -187,6 +199,9 @@ impl ToolbarSettings {
         }
         if let Some(l) = v["labels"].as_str().and_then(LauncherLabels::from_id) {
             out.labels = l;
+        }
+        if let Some(b) = v["expanded"].as_bool() {
+            out.expanded = b;
         }
         if let Some(list) = v["launchers"].as_array() {
             let mut launchers: Vec<(Launcher, bool)> = Vec::new();
@@ -286,6 +301,13 @@ fn toggle_auto_hide(s: &mut Session, _: Params<'_>) -> Result<Value, CommandErro
     saved(s, "view.toolbar_auto_hide", json!({ "on": on }))
 }
 
+/// Expanded or Collapsed: `on` when given, else the other one.
+fn set_expanded(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    s.toolbar.expanded = p.bool("on").unwrap_or(!s.toolbar.expanded);
+    let on = s.toolbar.expanded;
+    saved(s, "view.toolbar_expanded", json!({ "on": on }))
+}
+
 fn show_launcher(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "toolbar.show_launcher";
     let which = launcher_param(ID, &p)?;
@@ -338,6 +360,19 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         params: &[],
         enabled: always,
         run: toggle_auto_hide,
+    },
+    CommandSpec {
+        id: "view.toolbar_expanded",
+        label: "Expanded toolbar",
+        shortcut: Some("Ctrl+Shift+B"),
+        params: &[ParamSpec {
+            name: "on",
+            kind: ParamKind::Boolean,
+            required: false,
+            help: "Expanded (true) or Collapsed (false); without it, the other one",
+        }],
+        enabled: always,
+        run: set_expanded,
     },
     CommandSpec {
         id: "view.toolbar_customize",
