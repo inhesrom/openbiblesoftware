@@ -636,6 +636,58 @@ fn the_search_preview_shows_the_star_bibles_hits_as_you_type() {
     assert_eq!(h.shell.st.session.search_tab(tab).unwrap().query, "love");
 }
 
+/// The Search preview's Verses arriving under the Search row move the highlight with the row
+/// it was on, and Enter pressed in the frame they arrive runs the row the user saw
+/// highlighted, not the Verse now in its place (#295).
+#[test]
+fn the_search_preview_arriving_keeps_the_highlighted_row() {
+    let word_study_tabs = |h: &Harness| {
+        (h.shell.st.session.workspace.tabs())
+            .filter(|t| t.kind == TabKind::Guide(Guide::WordStudy))
+            .count()
+    };
+    for enter_as_they_arrive in [false, true] {
+        let (mut h, _files) = love_harness(&format!(
+            "command-box-preview-arriving-{enter_as_they_arrive}"
+        ));
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "love");
+        // Before the Verses: Search, then Word Study for the English word.
+        key(&mut h, Key::ArrowDown, Modifiers::NONE);
+        let cb = &h.shell.st.command_box;
+        let word_study = cb.selected_row().cloned();
+        let Some(Row::Suggestion(i)) = word_study else {
+            panic!("a suggestion is highlighted: {:?}", cb.rows);
+        };
+        assert_eq!(
+            cb.suggestions[i].action,
+            obs_engine::CommandBoxAction::WordStudyWords("love".into())
+        );
+        assert_eq!(cb.selected, 1);
+        // The typing stopped: the search is queued, its Verses not yet back.
+        h.frames(15);
+        assert!(h.shell.st.session.search_preview_running());
+        assert!(!h.shell.st.command_box.rows.contains(&Row::Hit(0)));
+        h.shell.st.session.jobs().pump(16);
+        if enter_as_they_arrive {
+            key(&mut h, Key::Enter, Modifiers::NONE);
+            pump_frames(&mut h, 3);
+            assert_eq!(word_study_tabs(&h), 1, "Word Study ran");
+            let psalms = (h.shell.st.session.workspace.tabs())
+                .any(|t| t.kind == TabKind::Resource("psalms".into()));
+            assert!(!psalms, "no Verse was opened");
+        } else {
+            h.frames(2);
+            let cb = &h.shell.st.command_box;
+            assert!(cb.rows.contains(&Row::Hit(0)), "{:?}", cb.rows);
+            assert_eq!(cb.selected_row().cloned(), word_study);
+            // Search, five Verses and Show all above it now.
+            assert_eq!(cb.selected, 7);
+            assert_eq!(word_study_tabs(&h), 0);
+        }
+    }
+}
+
 /// The Search preview's Verses read in every Theme beside every Page tone (#295): their ink
 /// and the tint behind their matches are a pair (WCAG AA, AAA in High contrast) that also
 /// reads on the panel, whatever the Page tone.

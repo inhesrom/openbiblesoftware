@@ -145,7 +145,9 @@ pub(crate) struct CommandBoxUi {
     for_text: Option<String>,
     /// The dropdown's rows as last drawn.
     pub(crate) rows: Vec<Row>,
-    /// The highlighted row, counting only the rows that can be picked.
+    /// The highlighted row, counting only the rows that can be picked. When the rows are
+    /// made again for the same suggestions (the Search preview's Verses arriving), it moves
+    /// with the row it was on.
     pub(crate) selected: usize,
     /// The highlight moved: scroll it into view.
     scroll_to_selected: bool,
@@ -187,9 +189,18 @@ impl CommandBoxUi {
     }
 
     /// The highlighted row.
-    #[cfg(test)]
     pub(crate) fn selected_row(&self) -> Option<&Row> {
         self.picks().get(self.selected).copied()
+    }
+
+    /// Show `rows`, the highlight staying on the row it was on (unless that row is gone).
+    fn set_rows(&mut self, rows: Vec<Row>) {
+        let held = self.selected_row().cloned();
+        self.rows = rows;
+        let picks = self.picks();
+        let last = picks.len().saturating_sub(1);
+        let moved = held.and_then(|h| picks.iter().position(|r| **r == h));
+        self.selected = moved.unwrap_or(self.selected).min(last);
     }
 
     /// The text the Search preview previews: the Search suggestion's.
@@ -217,9 +228,10 @@ impl Shell {
         if had_focus {
             keys = self.command_box_keys(ui);
         }
-        let mut picked: Option<(usize, bool)> =
-            keys.run.map(|alt| (self.st.command_box.selected, alt));
+        // Enter runs the row highlighted as drawn, whatever the rows made below put there.
         let cb = &mut self.st.command_box;
+        let mut picked: Option<(Row, bool)> =
+            (keys.run).and_then(|alt| Some((cb.selected_row()?.clone(), alt)));
         let mut out = egui::TextEdit::singleline(&mut cb.text)
             .id(id)
             .hint_text(super::with_key(&self.st.session, HINT, "command_box.focus"))
@@ -239,11 +251,15 @@ impl Shell {
             cb.for_text = None;
         }
         let focused = r.has_focus() || ui.memory(|m| m.has_focus(id));
+        let mut remade = false;
         if focused && (cb.for_text.as_deref() != Some(cb.text.as_str()) || r.gained_focus()) {
             cb.suggestions = self.st.session.command_box_suggestions(&cb.text);
             cb.for_text = Some(cb.text.clone());
             cb.selected = 0;
+            // New rows: the highlight starts again at the first.
+            cb.rows.clear();
             cb.from_the_top = true;
+            remade = true;
         }
         if keys.leave {
             ui.memory_mut(|m| m.surrender_focus(id));
@@ -268,19 +284,23 @@ impl Shell {
                 .request_repaint_after(std::time::Duration::from_secs_f64(due));
         }
         let cb = &mut self.st.command_box;
-        cb.rows = rows(&cb.suggestions, session.search_preview());
-        cb.selected = cb.selected.min(cb.picks().len().saturating_sub(1));
+        cb.set_rows(rows(&cb.suggestions, session.search_preview()));
+        if remade {
+            // Text typed in the frame of the Enter: it runs the first of the new rows.
+            picked = picked.and_then(|(_, alt)| Some((cb.selected_row()?.clone(), alt)));
+        }
         if shown {
-            if let Some(i) = self.dropdown(ui, r.rect) {
-                picked = Some(i);
+            if let Some((i, alt)) = self.dropdown(ui, r.rect) {
+                let cb = &self.st.command_box;
+                picked = cb.picks().get(i).map(|r| ((*r).clone(), alt));
             }
         } else {
             let cb = &mut self.st.command_box;
             cb.dropdown = None;
             cb.more = None;
         }
-        if let Some((pick, new_tab)) = picked {
-            self.run_pick(ui, pick, new_tab);
+        if let Some((row, new_tab)) = picked {
+            self.run_pick(ui, row, new_tab);
         }
     }
 
@@ -504,14 +524,11 @@ impl Shell {
         clicked
     }
 
-    /// Run pickable row `pick`: a suggestion through `command_box.run`, a Search preview
-    /// Verse, Show all, or Get Bibles. On success the box empties and lets the keyboard go
-    /// back to the Workspace, unless the command put it back in the box (All commands,
-    /// Command box, #226). On failure the text stays, to be corrected.
-    fn run_pick(&mut self, ui: &Ui, pick: usize, new_tab: bool) {
-        let Some(row) = self.st.command_box.picks().get(pick).map(|r| (*r).clone()) else {
-            return;
-        };
+    /// Run `row`: a suggestion through `command_box.run`, a Search preview Verse, Show all,
+    /// or Get Bibles. On success the box empties and lets the keyboard go back to the
+    /// Workspace, unless the command put it back in the box (All commands, Command box, #226).
+    /// On failure the text stays, to be corrected.
+    fn run_pick(&mut self, ui: &Ui, row: Row, new_tab: bool) {
         let ran = match row {
             Row::Suggestion(i) | Row::ShowAll { search: i, .. } => {
                 return self.run_choice(ui, i, new_tab);
