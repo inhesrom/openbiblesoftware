@@ -76,7 +76,8 @@ The dropdown is a results panel under the box, its right edge under the box's:
   every row shown there is neither.
 - **Long labels** are cut with "…" before their detail and shown whole in a tooltip on hover.
 - **Two-line rows.** A Search preview Verse shows its reference, then its text with the
-  match highlighted (the Search Tool's hit tint).
+  match highlighted: the Search hit tint and ink of the Page palette as dark (and as High
+  contrast) as the Theme (`hit_colors`), a pair that reads in the chrome beside any Page tone.
 - **Screen readers** hear each row as `label · detail, 3 of 12`: its place among the rows
   that can be picked (headings and notes cannot).
 
@@ -89,7 +90,13 @@ Bible in Preferred order), over its whole text, as a background job on the ready
 index, the same search as the Search Tool's (`bible_search::desktop::run`, Word forms as
 set), with snippets for the first rows only. The UI never waits: it asks to be drawn again
 when the debounce ends (`search_preview_due_in`) and while the job runs. The last hits stay
-until new ones arrive, so the list does not jump while the user types.
+until new ones arrive, so the list does not jump while the user types. A text whose search
+was cancelled by more typing is searched again if the user types back to it.
+
+The time to hits is gated in wall-clock time by the `search-preview` bench scenario
+(`cargo xtask bench`, [bench.md](bench.md)): each query typed a key at a time over a
+whole-Bible ★ Bible, from its last key to the frame drawing its hits, at most 150 ms (about
+120 ms measured: the 100 ms debounce, then a frame or so for the worker's search).
 
 Under the Search row it shows (`SearchPreview`):
 
@@ -104,7 +111,8 @@ Under the Search row it shows (`SearchPreview`):
 The *Search "…"* row stays in every case. A click on a Verse, or Enter on it, goes there as
 Go to does (`command_box.open_hit`: the Standard Verse in the focused Bible, else the most
 recent Bible Tab, else the ★ Bible; an Unmapped verse opens in its own Bible); Alt opens a
-new Tab. **Show all** runs the Search suggestion, as Enter on it does: the Search Tab with
+new Tab. A new Tab for an Unmapped verse goes there once its Verse map is loaded
+(`Effect::NavigateOpened`, as a Favorite opens), so the Link set it joins stays put. **Show all** runs the Search suggestion, as Enter on it does: the Search Tab with
 the text, over its own scope and Bibles.
 
 ## All commands (#226)
@@ -166,9 +174,11 @@ moves it to the top.
 Tests: `crates/engine/src/command_box_tests.rs` (the parser and ranking, each action, recent
 entries across a restart, the headings, on a real `.obr` library with the Starter Lexicons'
 excerpts), `crates/engine/src/search_preview_tests.rs` (the debounced query, the ★ Bible's
-first five Verses and the count, no Bible, an index being built, opening a hit) and
+first five Verses and the count, no Bible, an index being built, opening a hit, a cancelled
+text typed again, an Unmapped hit opened from a linked Bible) and
 `crates/ui-egui/src/command_box_tests.rs` (Ctrl+L, typing, ↑/↓, PgUp/PgDn, Home/End, Enter,
 Alt+Enter, Esc, click, recent entries after a relaunch; the panel's size at every Toolbar
 position, window size and Interface size; the scroll bar and "N more"; cut labels and their
-tooltips; "N of M" for screen readers; the Search preview within 150 ms, its keys and
-clicks, Show all, Get Bibles and Indexing).
+tooltips; "N of M" for screen readers; the Search preview's debounce and frame scheduling
+(on the harness's 60 Hz clock), its keys and clicks, Show all, Get Bibles and Indexing; its
+highlights' contrast in every Theme and Page tone).

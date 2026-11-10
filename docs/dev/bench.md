@@ -38,6 +38,7 @@ tessellation, the UI thread's work before the GPU.
 | `text-size` | two whole Bibles (verses of 15–35 words, one with Strong's numbers) and a whole-Bible Commentary, each in its own Tab at Psalm 119 | Ctrl+Plus and Ctrl+Minus in turn, then Ctrl+Plus held for 10 steps (a key repeat every other frame), the first Bible scrolled between | ≤ 6 frames and ≤ 100 ms |
 | `text-size-tools` | the same two Bibles in a Text Comparison over Psalm 119 and a whole-Bible Search's Verses | the same presses, the Text Comparison scrolled between | ≤ 6 frames and ≤ 100 ms |
 | `resource-text-size` | the first of those Bibles in two Tabs beside the second, at Psalm 119 | the first Bible's own Text size slider (#292) stepped up and down in turn, then dragged 10 steps a step a frame, the first Tab scrolled between | ≤ 6 frames and ≤ 100 ms |
+| `search-preview` | the same two Bibles, the first the ★ Bible, their Search indexes built | types `LORD` (in nearly every Verse), `every man`, `said unto`, `shall be` into the Command box a key every 5 frames, Esc between | ≤ 9 frames and ≤ 150 ms |
 
 Every feature scenario has the steady-scrolling budget: at most 1% missed frames. A settle
 budget counts frames from an action until the feature shows its result (0: its own frame). A
@@ -68,6 +69,12 @@ missed at 60 Hz.
   100 ms). Held keys are timed from the last repeat: earlier steps' layouts must not queue up
   ahead of it. Before #299 a press styled every block of each whole-Bible Tab again on the UI
   thread, about 700 ms.
+- `search-preview` (#295) times each query in milliseconds the same way, from its last key's
+  frame starting to the end of the first frame drawing the Command box's Search preview hits
+  for it: the 100 ms debounce, the search on a worker (`JobMode::default_for_host`, as the
+  app runs it) and the frame showing it. The synchronous work timed is the Bible Tab under
+  the dropdown's; the dropdown itself is held to the missed-frame budget with the whole
+  Shell. About 120 ms on a 16-thread Ryzen (#295).
 
 CI runs the gate three more times, each with a seeded slowdown that must fail it:
 

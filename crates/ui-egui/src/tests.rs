@@ -821,8 +821,8 @@ fn every_shell_scenario_shows_its_feature_and_measures_it() {
         assert!(r.sync_layout_p50_ms >= 3.0, "{r:?}");
         assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
         // The Text size scenarios (#299, #292) also time each change in milliseconds, for the
-        // gate.
-        let timed = r.name.contains("text-size");
+        // gate, and the Search preview (#295) each query until its hits show.
+        let timed = r.name.contains("text-size") || r.name == "search-preview";
         assert_eq!(r.action_ms_max.is_some(), timed, "{r:?}");
     }
 }

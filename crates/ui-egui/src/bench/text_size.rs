@@ -50,7 +50,7 @@ fn press(larger: bool, repeat: bool) -> Event {
 
 /// Two whole Bibles: verses of 15–35 words, as long as a real English Bible's; the first with
 /// Strong's numbers, as the KJV.
-fn whole_bibles() -> Result<[obs_model::Resource; 2], String> {
+pub(super) fn whole_bibles() -> Result<[obs_model::Resource; 2], String> {
     Ok([
         built(
             library::english_bible("bench-a", "BA", &Book::ALL, 15..35, true, 1),

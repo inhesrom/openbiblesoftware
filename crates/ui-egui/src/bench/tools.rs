@@ -429,6 +429,7 @@ pub(crate) fn run(cfg: &BenchConfig) -> (Vec<ScenarioReport>, Vec<String>) {
         "resource-text-size",
         super::text_size::resource_text_size(cfg),
     );
+    add("search-preview", super::search_preview::search_preview(cfg));
     (reports, errors)
 }
 

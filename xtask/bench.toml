@@ -118,6 +118,16 @@ max_sync_p99_ms = 2.0
 max_settle_frames = 6
 max_action_ms = 100.0
 
+# The Command box's Search preview (#295): each query typed a key at a time over a whole-Bible
+# ★ Bible, timed from its last key's frame starting to the end of the frame that draws its
+# hits: the 100 ms debounce, the search on a worker and the frame that shows it. #295 asks
+# for about 150 ms; 9 frames at 60 Hz.
+[features.search-preview]   # the Command box typed into, a whole-Bible ★ Bible's hits shown
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
+max_settle_frames = 9
+max_action_ms = 150.0
+
 # The scale scenario (#227): `cargo xtask bench --scale`, a manual gate (its library needs
 # about 22 GB of disk, about 4 GB where files are cloned; docs/dev/bench.md). The app over a
 # generated library of 2,000 Resources, from `main` to the ★ Bible's text, its Library Tab
