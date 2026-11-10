@@ -195,6 +195,27 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Timeline, Light](gallery/tab-timeline-light-1x.png) | ![Timeline, Dark](gallery/tab-timeline-dark-1x.png) | ![Timeline, Sepia](gallery/tab-timeline-sepia-1x.png) |
 | [2×](gallery/tab-timeline-light-2x.png) | [2×](gallery/tab-timeline-dark-2x.png) | [2×](gallery/tab-timeline-sepia-2x.png) |
 
+### Library rows: narrow Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library rows: narrow Panel, Light](gallery/library-rows-narrow-panel-light-1x.png) | ![Library rows: narrow Panel, Dark](gallery/library-rows-narrow-panel-dark-1x.png) | ![Library rows: narrow Panel, Sepia](gallery/library-rows-narrow-panel-sepia-1x.png) |
+| [2×](gallery/library-rows-narrow-panel-light-2x.png) | [2×](gallery/library-rows-narrow-panel-dark-2x.png) | [2×](gallery/library-rows-narrow-panel-sepia-2x.png) |
+
+### Library rows: Larger Interface size
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library rows: Larger Interface size, Light](gallery/library-rows-larger-interface-size-light-1x.png) | ![Library rows: Larger Interface size, Dark](gallery/library-rows-larger-interface-size-dark-1x.png) | ![Library rows: Larger Interface size, Sepia](gallery/library-rows-larger-interface-size-sepia-1x.png) |
+| [2×](gallery/library-rows-larger-interface-size-light-2x.png) | [2×](gallery/library-rows-larger-interface-size-dark-2x.png) | [2×](gallery/library-rows-larger-interface-size-sepia-2x.png) |
+
+### Library rows: Filter match in a cut title
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library rows: Filter match in a cut title, Light](gallery/library-rows-filter-match-in-a-cut-title-light-1x.png) | ![Library rows: Filter match in a cut title, Dark](gallery/library-rows-filter-match-in-a-cut-title-dark-1x.png) | ![Library rows: Filter match in a cut title, Sepia](gallery/library-rows-filter-match-in-a-cut-title-sepia-1x.png) |
+| [2×](gallery/library-rows-filter-match-in-a-cut-title-light-2x.png) | [2×](gallery/library-rows-filter-match-in-a-cut-title-dark-2x.png) | [2×](gallery/library-rows-filter-match-in-a-cut-title-sepia-2x.png) |
+
 ## Toolbar panes, menus and windows
 
 ### Library pane
