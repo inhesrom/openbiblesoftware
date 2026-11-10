@@ -319,7 +319,6 @@ impl Shell {
             SearchPreview::Hits(h) => Some(Arc::clone(h)),
             _ => None,
         };
-        let hit_tint = self.st.palette.search_hit;
         let screen = ui.ctx().content_rect();
         let frame = crate::components::popover_frame().inner_margin(inset::BAR);
         let margin = frame.total_margin();
@@ -426,7 +425,7 @@ impl Shell {
                                     let Some(hit) = hit else {
                                         continue;
                                     };
-                                    let elided = paint_hit(ui, rect, hit, hit_tint);
+                                    let elided = paint_hit(ui, rect, hit);
                                     let name = format!("{} · {}", hit.reference, hit.snippet.text);
                                     (name, elided.then(|| hit.snippet.text.clone()))
                                 }
@@ -581,10 +580,24 @@ fn paint_line(ui: &Ui, rect: Rect, label: &str, detail: &str) -> bool {
     elided
 }
 
+/// The background and ink of a Search preview hit in the dropdown: the Search hit tint and ink
+/// of the Page palette as dark (and as High contrast) as the Theme, never the Page tone's own,
+/// so the pair reads whatever Page tone sits beside the chrome.
+pub(crate) fn hit_colors(c: &crate::tokens::Chrome) -> (egui::Color32, egui::Color32) {
+    let tone = if c.dark {
+        obs_engine::PageTone::Dark
+    } else {
+        obs_engine::PageTone::Paper
+    };
+    let palette = crate::palette::Palette::for_theme(tone, c.high_contrast);
+    (palette.search_hit, palette.ink)
+}
+
 /// A Search preview Verse: its reference, then its text with the hits tinted, cut with "…".
 /// Returns whether the text was cut.
-fn paint_hit(ui: &Ui, rect: Rect, hit: &obs_engine::PreviewHit, tint: egui::Color32) -> bool {
+fn paint_hit(ui: &Ui, rect: Rect, hit: &obs_engine::PreviewHit) -> bool {
     let c = theme::c();
+    let (tint, tint_ink) = hit_colors(&c);
     let painter = ui.painter();
     let body = egui::TextStyle::Body.resolve(ui.style());
     let width = rect.width() - 2.0 * space::M;
@@ -599,7 +612,7 @@ fn paint_hit(ui: &Ui, rect: Rect, hit: &obs_engine::PreviewHit, tint: egui::Colo
     let plain = TextFormat::simple(body.clone(), c.muted);
     let marked = TextFormat {
         background: tint,
-        ..TextFormat::simple(body, c.ink)
+        ..TextFormat::simple(body, tint_ink)
     };
     for r in &hit.snippet.highlights {
         if r.start < at || r.end > text.len() {

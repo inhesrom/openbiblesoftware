@@ -228,7 +228,8 @@ fn the_hint_names_the_current_command_box_key() {
 /// more hits than the Search preview shows (#295):
 /// `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui command_box_results_previews` writes
 /// `target/previews/command-box/results-{light,dark}.ppm`, and All commands (`>`) as
-/// `commands-{light,dark}.ppm`.
+/// `commands-{light,dark}.ppm`; then the hits in the Dark theme beside a Paper Page tone and in
+/// the Light theme beside a Dark one, `results-{dark-paper,light-dark}.ppm`.
 #[test]
 fn command_box_results_previews() {
     if std::env::var_os("UPDATE_PREVIEWS").is_none() {
@@ -258,6 +259,22 @@ fn command_box_results_previews() {
         type_text(&mut h, ">");
         h.frames(10);
         h.screenshot(&out.join(format!("commands-{theme}.ppm")));
+    }
+    for (theme, tone) in [("dark", "paper"), ("light", "dark")] {
+        let (mut h, _files) = super::search::harness_of(
+            &format!("command-box-preview-{theme}-{tone}"),
+            &[
+                obs_engine::testing::kjv_love(),
+                obs_engine::testing::bibles::psalms(12),
+            ],
+        );
+        h.shell.run("view.theme", &json!({ "value": theme }));
+        h.shell.run("view.page_tone", &json!({ "value": tone }));
+        h.frames(2);
+        key(&mut h, Key::L, CTRL);
+        type_text(&mut h, "love");
+        pump_frames(&mut h, 40);
+        h.screenshot(&out.join(format!("results-{theme}-{tone}.ppm")));
     }
 }
 
@@ -518,8 +535,9 @@ fn the_keys_reach_every_row_and_screen_readers_hear_the_count() {
 }
 
 /// The Search preview (#295): the ★ Bible's first five Verses with "love" highlighted show
-/// under the Search row within 150 ms of the typing stopping, with Show all; a click on one
-/// goes there, and Show all opens the Search Tool.
+/// under the Search row by the frame after the debounce ends (on the harness's 60 Hz clock;
+/// the `search-preview` bench scenario gates the wall-clock time), with Show all; a click on
+/// one goes there, and Show all opens the Search Tool.
 #[test]
 fn the_search_preview_shows_the_star_bibles_hits_as_you_type() {
     let (mut h, _files) = love_harness("command-box-preview");
@@ -603,6 +621,63 @@ fn the_search_preview_shows_the_star_bibles_hits_as_you_type() {
         .map(|t| t.id)
         .expect("a Search Tab");
     assert_eq!(h.shell.st.session.search_tab(tab).unwrap().query, "love");
+}
+
+/// The Search preview's highlighted words read in every Theme beside every Page tone (#295):
+/// the hit's ink and tint are a pair (WCAG AA, AAA in High contrast), whatever the Page tone.
+#[test]
+fn the_search_preview_highlights_read_in_every_theme_and_page_tone() {
+    let (mut h, _files) = love_harness("command-box-hit-contrast");
+    key(&mut h, Key::L, CTRL);
+    type_text(&mut h, "love");
+    pump_frames(&mut h, 20);
+    assert!(h.find("Psalms 119:1").is_some(), "{:?}", h.texts());
+    let mut checked = 0;
+    for theme in ["light", "dark", "high_contrast_light", "high_contrast_dark"] {
+        for (_, tone, _) in obs_engine::PageTone::ALL {
+            h.shell.run("view.theme", &json!({ "value": theme }));
+            h.shell.run("view.page_tone", &json!({ "value": tone }));
+            pump_frames(&mut h, 3);
+            let chrome = crate::theme::c();
+            assert_eq!(chrome.high_contrast, theme.starts_with("high_contrast"));
+            let needs = if chrome.high_contrast { 7.0 } else { 4.5 };
+            let mut marked = Vec::new();
+            for clipped in &h.last_shapes {
+                collect_marked(&clipped.shape, &mut marked);
+            }
+            assert!(!marked.is_empty(), "{theme}, {tone}: no highlighted words");
+            for (word, ink, background) in marked {
+                assert_eq!(
+                    (background, ink),
+                    crate::shell::command_box::hit_colors(&chrome)
+                );
+                let ratio = crate::palette::contrast(ink, background);
+                assert!(
+                    ratio >= needs,
+                    "{theme}, {tone}: {word:?} {ink:?} on {background:?} is {ratio:.2}:1"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked >= 4 * 4 * 5, "{checked}");
+}
+
+/// The text runs painted on a background of their own: (text, ink, background).
+fn collect_marked(shape: &egui::Shape, out: &mut Vec<(String, egui::Color32, egui::Color32)>) {
+    match shape {
+        egui::Shape::Vec(v) => v.iter().for_each(|s| collect_marked(s, out)),
+        egui::Shape::Text(t) => {
+            let job = &t.galley.job;
+            for s in &job.sections {
+                if s.format.background.a() > 0 {
+                    let text = &job.text[s.byte_range.start.0..s.byte_range.end.0];
+                    out.push((text.to_string(), s.format.color, s.format.background));
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Without a Bible the preview offers Get Bibles; while the ★ Bible is indexed it says so
