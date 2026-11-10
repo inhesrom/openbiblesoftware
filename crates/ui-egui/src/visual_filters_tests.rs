@@ -84,14 +84,18 @@ fn click_header(h: &mut Harness, tab: TabId, text: &str) {
     h.click(p);
 }
 
-/// Open `tab`'s Visual filters menu: the header's Filters button in a wide Panel (it reads
-/// `wide`), the ⋯ menu's `narrow` submenu in a narrow one. Answers whether the Panel is wide.
+/// Open `tab`'s Visual filters menu: the header's Filters button (it reads `wide`) in a wide
+/// Panel, or on the second line of a narrow one's header (#303); else the ⋯ menu's `narrow`
+/// submenu. Answers whether the Panel is wide.
 fn open_filters(h: &mut Harness, tab: TabId, wide: &str, narrow: &str) -> bool {
     let is_wide = panel_of(h, tab).width() >= 430.0;
-    if is_wide {
+    let [_, oy] = view(h, tab).text_origin;
+    let panel = panel_of(h, tab);
+    let button = (h.shapes.iter())
+        .any(|(r, t)| t == wide && panel.contains(r.center()) && r.center().y < oy);
+    if is_wide || button {
         click_header(h, tab, wide);
     } else {
-        let panel = panel_of(h, tab);
         assert!(
             !(h.shapes.iter()).any(|(r, t)| t.starts_with("Filt") && panel.contains(r.center())),
             "a narrow header has no Filters button"

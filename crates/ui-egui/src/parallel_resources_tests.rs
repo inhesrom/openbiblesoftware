@@ -333,9 +333,11 @@ fn the_reference_box_leaves_room_for_the_parallel_controls_in_a_narrow_panel() {
         .filter(|r| r.contains(text) && r.width() > 40.0 && r.height() < 40.0)
         .min_by(|a, b| a.width().total_cmp(&b.width()))
         .expect("the reference box");
+    // ◀ beside the box, or on the header's second line when the box would be too short for
+    // a whole reference beside it (#303).
     let previous = in_panel(&h, tab, "[chevron-left]");
     assert!(
-        field.right() < previous.x - 4.0,
+        field.right() < previous.x - 4.0 || previous.y > field.bottom(),
         "the box {field:?} overlaps ◀ at {previous:?}"
     );
     assert!(

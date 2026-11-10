@@ -603,7 +603,8 @@ fn collect(shape: &Shape, out: &mut Vec<(Rect, String)>) {
     match shape {
         Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
         Shape::Text(t) => {
-            let rect = Rect::from_min_size(t.pos, t.galley.size());
+            // Where the text is: a right-aligned galley lies left of its position.
+            let rect = t.galley.rect.translate(t.pos.to_vec2());
             out.push((rect, t.galley.text().to_string()));
         }
         _ => {}
@@ -3632,6 +3633,8 @@ mod note_margin_ui;
 mod page_tone;
 #[path = "pane_states_tests.rs"]
 mod pane_states;
+#[path = "panel_fit_tests.rs"]
+mod panel_fit;
 #[path = "reading_layout_tests.rs"]
 mod reading_layout;
 #[path = "recently_closed_tests.rs"]

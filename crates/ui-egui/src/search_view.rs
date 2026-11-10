@@ -683,13 +683,24 @@ fn library_row(
     if results.starts_group(i)
         && let Some(g) = group
     {
-        paint.painter.text(
-            pos2(left, y + space::M),
-            Align2::LEFT_TOP,
-            results.group_header(g),
-            FontId::proportional(text::LABEL),
-            palette.ink,
-        );
+        // The Resource's name gives way to its count in a narrow Tab (#303).
+        let font = FontId::proportional(text::LABEL);
+        let at = pos2(left, y + space::M);
+        let whole =
+            (paint.painter).layout_no_wrap(results.group_header(g), font.clone(), palette.ink);
+        if whole.size().x <= view.width {
+            paint.painter.galley(at, whole, palette.ink);
+        } else {
+            let (name, hits) = results.group_header_parts(g);
+            let hits = paint
+                .painter
+                .layout_no_wrap(hits, font.clone(), palette.ink);
+            let width = view.width - hits.size().x;
+            let name = crate::components::elided(&paint.painter, &name, font, palette.ink, width);
+            let after = pos2(at.x + name.size().x, at.y);
+            paint.painter.galley(at, name, palette.ink);
+            paint.painter.galley(after, hits, palette.ink);
+        }
         row_y += GROUP_HEAD;
     }
     let top = row_y;

@@ -133,6 +133,9 @@ pub mod size {
     /// A Tab header's Resource chooser, and in a narrow header.
     pub const HEADER_CHOOSER: f32 = 72.0;
     pub const HEADER_CHOOSER_NARROW: f32 = 52.0;
+    /// The least room a Tab header shows its Resource's name in (cut short with "…"); with
+    /// less, the name gives way (#303).
+    pub const HEADER_TITLE_MIN: f32 = 72.0;
     /// The Panels' tab bar.
     pub const TAB_BAR: f32 = 31.0;
     /// Room kept for a scroll bar beside custom-drawn content.
@@ -679,10 +682,12 @@ pub mod chart {
     pub const CELL: super::Vec2 = super::vec2(64.0, 24.0);
     /// A Grid cell's heat: the faintest share of lapis a cell with a hit takes.
     pub const HEAT_MIN: f32 = 0.15;
-    /// The Search Analysis table's fixed columns (Reference, Bible, Lemma, Gloss,
+    /// The Search Analysis table's fixed columns (Reference, Bible, Word, Lemma,
     /// Morphology; Context takes the rest), and its Context column at the least.
     pub const ANALYSIS_COLUMNS: [f32; 5] = [150.0, 64.0, 130.0, 120.0, 180.0];
     pub const ANALYSIS_CONTEXT_MIN: f32 = 260.0;
+    /// The least each column (Context last) gives way to in a narrow Tab (#303).
+    pub const ANALYSIS_COLUMNS_LEAST: [f32; 6] = [84.0, 48.0, 72.0, 72.0, 96.0, 120.0];
 
     /// The shortest an axis gets under its list.
     pub const AXIS_MIN: f32 = 120.0;

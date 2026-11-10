@@ -251,89 +251,112 @@ impl State {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let bible_mode = st.mode == SearchMode::Bible;
-                ui.horizontal(|ui| {
-                    for m in SearchMode::ALL {
-                        if ui.selectable_label(st.mode == m, m.label()).clicked() && st.mode != m {
-                            run.push(("search.mode", json!({ "tab": tab.0, "value": m.id() })));
+                // The modes, then Saved & history at the right: on a line of its own in a
+                // narrow Tab (#303).
+                crate::components::row_with_end(
+                    ui,
+                    ("search-modes", tab),
+                    &mut (&mut run, &mut morph_open, &mut toggle_sidebar),
+                    |ui, (run, morph_open, _)| {
+                        for m in SearchMode::ALL {
+                            if ui.selectable_label(st.mode == m, m.label()).clicked()
+                                && st.mode != m
+                            {
+                                run.push(("search.mode", json!({ "tab": tab.0, "value": m.id() })));
+                            }
                         }
-                    }
-                    if bible_mode {
-                        ui.add_space(space::L);
-                        if ui
-                            .selectable_label(morph_open, "Morphology…")
-                            .on_hover_text("Choose grammar in plain English: @verb aorist")
-                            .clicked()
-                        {
-                            morph_open = !morph_open;
+                        if bible_mode {
+                            ui.add_space(space::L);
+                            if ui
+                                .selectable_label(**morph_open, "Morphology…")
+                                .on_hover_text("Choose grammar in plain English: @verb aorist")
+                                .clicked()
+                            {
+                                **morph_open = !**morph_open;
+                            }
                         }
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    },
+                    |ui, (_, _, toggle_sidebar)| {
                         if ui
                             .selectable_label(sidebar, "Saved & history")
                             .on_hover_text("Saved searches and the Search history")
                             .clicked()
                         {
-                            toggle_sidebar = true;
+                            **toggle_sidebar = true;
                         }
-                    });
-                });
+                    },
+                );
                 // Word forms is for English words of Bibles and Library Resources (#180).
                 let forms_toggle = st.mode != SearchMode::Notes;
-                let buttons = if forms_toggle {
-                    size::FIELD_WIDE + space::XXXL
-                } else {
-                    size::SIDE_LIST
-                };
-                // Wrapped, so a narrow Tab puts the toggle on a line of its own.
-                ui.horizontal_wrapped(|ui| {
-                    let r = ui
-                        .add(
-                            egui::TextEdit::singleline(&mut query)
-                                .id_salt(("search-query", tab))
-                                .hint_text(query_hint(st.mode))
-                                .desired_width(
-                                    (ui.available_width() - buttons).max(size::FIELD_NARROW),
-                                )
-                                .margin(inset::BAR),
-                        )
-                        .accessible_name("Search for");
-                    query_field = Some(r.id);
-                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if enter {
-                        // The same Enter must not also open the selected result.
-                        ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-                    }
-                    if enter || ui.button("Search").clicked() {
-                        run.push((
-                            "search.run",
-                            json!({ "tab": tab.0, "text": query.clone(), "scope": scope.clone() }),
-                        ));
-                    }
-                    crate::components::menu(ui, "Recent", |ui| {
-                        if recent.is_empty() {
-                            ui.label(RichText::new("No recent searches").color(theme::c().muted));
+                // The query box takes the row's spare width; in a narrow Tab the buttons go
+                // under it (#303).
+                crate::components::field_row(
+                    ui,
+                    ("search-query-row", tab),
+                    size::FIELD_NARROW,
+                    &mut (&mut query, &mut query_field, &mut run, &scope),
+                    |ui, (query, query_field, run, scope), width| {
+                        let r = ui
+                            .add(
+                                egui::TextEdit::singleline(&mut **query)
+                                    .id_salt(("search-query", tab))
+                                    .hint_text(query_hint(st.mode))
+                                    .desired_width(width)
+                                    .margin(inset::BAR),
+                            )
+                            .accessible_name("Search for");
+                        **query_field = Some(r.id);
+                        let enter =
+                            r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if enter {
+                            // The same Enter must not also open the selected result.
+                            ui.input_mut(|i| {
+                                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                            });
+                            run.push((
+                                "search.run",
+                                json!({ "tab": tab.0, "text": query.clone(), "scope": scope.clone() }),
+                            ));
                         }
-                        for q in &recent {
-                            if ui.button(q).clicked() {
-                                run.push(("search.run", json!({ "tab": tab.0, "text": q })));
-                                ui.close();
+                    },
+                    |ui, (query, _, run, scope)| {
+                        if ui.button("Search").clicked() {
+                            run.push((
+                                "search.run",
+                                json!({ "tab": tab.0, "text": query.clone(), "scope": scope.clone() }),
+                            ));
+                        }
+                        crate::components::menu(ui, "Recent", |ui| {
+                            if recent.is_empty() {
+                                ui.label(
+                                    RichText::new("No recent searches").color(theme::c().muted),
+                                );
+                            }
+                            for q in &recent {
+                                if ui.button(q).clicked() {
+                                    run.push(("search.run", json!({ "tab": tab.0, "text": q })));
+                                    ui.close();
+                                }
+                            }
+                        });
+                        self.save_search_button(ui, tab, query, scope, run);
+                        if forms_toggle {
+                            let mut on = word_forms;
+                            if crate::components::toggle(ui, &mut on, WORD_FORMS)
+                                .on_hover_text(
+                                    "Also find other forms of English words: love finds loved, \
+                                     loving and loveth. \"Quoted\" words stay exact.",
+                                )
+                                .changed()
+                            {
+                                run.push((
+                                    "search.word_forms",
+                                    json!({ "tab": tab.0, "value": on }),
+                                ));
                             }
                         }
-                    });
-                    self.save_search_button(ui, tab, &query, &scope, &mut run);
-                    if forms_toggle {
-                        let mut on = word_forms;
-                        if crate::components::toggle(ui, &mut on, WORD_FORMS)
-                            .on_hover_text(
-                                "Also find other forms of English words: love finds loved, \
-                                 loving and loveth. \"Quoted\" words stay exact.",
-                            )
-                            .changed()
-                        {
-                            run.push(("search.word_forms", json!({ "tab": tab.0, "value": on })));
-                        }
-                    }
-                });
+                    },
+                );
                 error_line(ui, error.as_ref(), ErrorField::Query, &query);
                 if bible_mode
                     && morph_open
