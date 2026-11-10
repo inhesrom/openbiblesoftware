@@ -110,6 +110,14 @@ max_sync_p99_ms = 2.0
 max_settle_frames = 6
 max_action_ms = 100.0
 
+# A Resource's own Text size (#292): its slider stepped, then dragged a step a frame, must
+# show in both Tabs of the Resource within 100 ms of each step, as a Text size key does.
+[features.resource-text-size]  # a whole Bible in two Tabs beside another whole Bible
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
+max_settle_frames = 6
+max_action_ms = 100.0
+
 # The scale scenario (#227): `cargo xtask bench --scale`, a manual gate (its library needs
 # about 22 GB of disk, about 4 GB where files are cloned; docs/dev/bench.md). The app over a
 # generated library of 2,000 Resources, from `main` to the ★ Bible's text, its Library Tab

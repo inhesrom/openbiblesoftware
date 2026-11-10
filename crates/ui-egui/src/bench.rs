@@ -21,7 +21,7 @@ pub(crate) mod text_size;
 pub(crate) mod tools;
 
 /// The Shell-driven feature scenarios, in report order.
-pub const SHELL_SCENARIOS: [&str; 8] = [
+pub const SHELL_SCENARIOS: [&str; 9] = [
     "atlas",
     "search-grid",
     "search-chart",
@@ -30,6 +30,7 @@ pub const SHELL_SCENARIOS: [&str; 8] = [
     "get-resources",
     "text-size",
     "text-size-tools",
+    "resource-text-size",
 ];
 
 /// Most frames an action may take to show its result before the bench gives up on it.

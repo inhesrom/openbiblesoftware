@@ -588,6 +588,7 @@ mod tests {
             "resize",
             "text-size",
             "text-size-tools",
+            "resource-text-size",
         ] {
             assert!(
                 names.contains(&feature),
@@ -633,7 +634,7 @@ mod tests {
     #[test]
     fn a_text_size_change_slower_than_100_ms_fails_the_gate() {
         let t = thresholds();
-        for name in ["text-size", "text-size-tools"] {
+        for name in ["text-size", "text-size-tools", "resource-text-size"] {
             assert_eq!(t.features[name].max_action_ms, Some(100.0), "{name}");
         }
         let mut r = report(0.0, 0, 1.2);
