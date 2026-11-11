@@ -166,6 +166,9 @@ pub mod size {
     pub const FIELD: f32 = 180.0;
     /// A wide text field: a name, a search, a rule.
     pub const FIELD_WIDE: f32 = 280.0;
+    /// The narrowest a list row's title column gets before the row drops its other columns
+    /// (a Library row's licence badge, then its language).
+    pub const TITLE_MIN: f32 = 120.0;
     /// The narrowest a block of laid-out text is given, however small its Panel.
     pub const TEXT_MIN: f32 = 40.0;
     /// The widest a line of chrome prose runs before it wraps (a message, a hint).

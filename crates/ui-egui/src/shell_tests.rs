@@ -1858,7 +1858,8 @@ mod library {
             "BIBLES",
             "Test Bible",
             "hbo",
-            "LicenseRef-PD",
+            // The licence in words; its SPDX id is in the tooltip and the About Tab (#302).
+            "Public domain",
             "English",
             "Hebrew",
         ] {
@@ -3589,6 +3590,8 @@ mod key_labels;
 mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "library_rows_tests.rs"]
+mod library_rows;
 #[path = "menu_audit_tests.rs"]
 mod menu_audit;
 #[path = "note_margin_tests.rs"]
