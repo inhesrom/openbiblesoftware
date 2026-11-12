@@ -56,6 +56,10 @@ const MIN_SPAN: f64 = 3.0;
 /// Smallest box of the Factbook's map: enough land around a place to see where it is.
 pub(super) const MINI_MAP_SPAN: f64 = 7.0;
 
+/// Smallest box of the Factbook's map of a place with several possible locations: fitted to
+/// them, so they spread apart rather than sit on one spot of a regional map (#304).
+pub(super) const LOCATIONS_SPAN: f64 = 0.25;
+
 /// How near (screen points) the pointer must be to a marker to hover or click it.
 const HIT_RADIUS: f32 = chart::HIT;
 
@@ -270,19 +274,36 @@ pub(super) fn map_canvas(
         }
         let galley = painter.layout_no_wrap(m.label.clone(), font.clone(), ink);
         let size = galley.size();
-        // Right of the marker, else left, above or below: inside the map, clear of others.
+        // Right of the marker, else left, above or below, else at a corner, else a line
+        // above or below its right or left (in a cluster of markers, #304): inside the map,
+        // clear of others.
+        let line = size.y + space::XXS;
         let candidates = [
             vec2(space::M, -size.y / 2.0),
             vec2(-space::M - size.x, -size.y / 2.0),
             vec2(-size.x / 2.0, -space::M - size.y),
             vec2(-size.x / 2.0, space::M),
+            vec2(space::XS, -space::XS - size.y),
+            vec2(space::XS, space::XS),
+            vec2(-space::XS - size.x, -space::XS - size.y),
+            vec2(-space::XS - size.x, space::XS),
+            vec2(space::M, -size.y / 2.0 + line),
+            vec2(space::M, -size.y / 2.0 - line),
+            vec2(-space::M - size.x, -size.y / 2.0 + line),
+            vec2(-space::M - size.x, -size.y / 2.0 - line),
         ];
-        let Some(at) = candidates
-            .into_iter()
-            .map(|offset| Rect::from_min_size(m.at + offset, size))
-            .find(|r| {
-                rect.contains_rect(*r) && !placed.iter().any(|p| p.expand(space::PX).intersects(*r))
-            })
+        let spots = candidates.map(|offset| Rect::from_min_size(m.at + offset, size));
+        let free = |r: &Rect| {
+            rect.contains_rect(*r) && !placed.iter().any(|p| p.expand(space::PX).intersects(*r))
+        };
+        // Clear of the other markers too where there is such a spot.
+        let off_markers = |r: &Rect| {
+            let around = r.expand(chart::MARKER);
+            (markers.iter()).all(|o| o.at == m.at || !around.contains(o.at))
+        };
+        let Some(at) = (spots.iter().find(|r| free(r) && off_markers(r)))
+            .or_else(|| spots.iter().find(|r| free(r)))
+            .copied()
         else {
             continue;
         };

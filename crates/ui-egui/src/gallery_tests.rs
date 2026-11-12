@@ -171,6 +171,13 @@ fn surfaces() -> Vec<Surface> {
         (Section::MenusAndChoosers, menus_and_choosers()),
         (Section::States, super::pane_states::pane_states()),
         (Section::ReadingText, reading_text()),
+        // Crowded charts (#304).
+        (Section::Tabs, super::timeline::crowded_timelines()),
+        (Section::Tabs, super::atlas::factbook_maps()),
+        (
+            Section::MenusAndChoosers,
+            super::timeline::crowded_timeline_menus(),
+        ),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -1972,6 +1979,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/theme_editor_window.rs",
         "egui::Window::new(",
         &["theme-editor"],
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "egui::Popup::menu(",
+        &["timeline-a-chip-s-menu"],
     ),
     (
         "shell/toolbar.rs",

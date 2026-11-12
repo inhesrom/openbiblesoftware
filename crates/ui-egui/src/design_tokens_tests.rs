@@ -287,6 +287,12 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell/atlas_tab.rs",
+        "pub(super) const LOCATIONS_SPAN: f64 = 0.25;",
+        "0.25",
+        "degrees of latitude, not points",
+    ),
+    (
+        "shell/atlas_tab.rs",
         "let factor = f64::from(pinch) * (f64::from(scroll) / 300.0).exp();",
         "300.0",
         "how fast the wheel zooms",

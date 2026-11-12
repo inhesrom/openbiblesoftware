@@ -258,6 +258,34 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Import report: the file does not exist, Light](gallery/import-report-the-file-does-not-exist-light-1x.png) | ![Import report: the file does not exist, Dark](gallery/import-report-the-file-does-not-exist-dark-1x.png) | ![Import report: the file does not exist, Sepia](gallery/import-report-the-file-does-not-exist-sepia-1x.png) |
 | [2×](gallery/import-report-the-file-does-not-exist-light-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-dark-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-sepia-2x.png) |
 
+### Timeline: crowded, 1 Kings 6
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: crowded, 1 Kings 6, Light](gallery/timeline-crowded-1-kings-6-light-1x.png) | ![Timeline: crowded, 1 Kings 6, Dark](gallery/timeline-crowded-1-kings-6-dark-1x.png) | ![Timeline: crowded, 1 Kings 6, Sepia](gallery/timeline-crowded-1-kings-6-sepia-1x.png) |
+| [2×](gallery/timeline-crowded-1-kings-6-light-2x.png) | [2×](gallery/timeline-crowded-1-kings-6-dark-2x.png) | [2×](gallery/timeline-crowded-1-kings-6-sepia-2x.png) |
+
+### Timeline: crowded, in the right Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: crowded, in the right Panel, Light](gallery/timeline-crowded-in-the-right-panel-light-1x.png) | ![Timeline: crowded, in the right Panel, Dark](gallery/timeline-crowded-in-the-right-panel-dark-1x.png) | ![Timeline: crowded, in the right Panel, Sepia](gallery/timeline-crowded-in-the-right-panel-sepia-1x.png) |
+| [2×](gallery/timeline-crowded-in-the-right-panel-light-2x.png) | [2×](gallery/timeline-crowded-in-the-right-panel-dark-2x.png) | [2×](gallery/timeline-crowded-in-the-right-panel-sepia-2x.png) |
+
+### Timeline: crowded, whole
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: crowded, whole, Light](gallery/timeline-crowded-whole-light-1x.png) | ![Timeline: crowded, whole, Dark](gallery/timeline-crowded-whole-dark-1x.png) | ![Timeline: crowded, whole, Sepia](gallery/timeline-crowded-whole-sepia-1x.png) |
+| [2×](gallery/timeline-crowded-whole-light-2x.png) | [2×](gallery/timeline-crowded-whole-dark-2x.png) | [2×](gallery/timeline-crowded-whole-sepia-2x.png) |
+
+### Factbook Map: a place's several locations
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Factbook Map: a place's several locations, Light](gallery/factbook-map-a-place-s-several-locations-light-1x.png) | ![Factbook Map: a place's several locations, Dark](gallery/factbook-map-a-place-s-several-locations-dark-1x.png) | ![Factbook Map: a place's several locations, Sepia](gallery/factbook-map-a-place-s-several-locations-sepia-1x.png) |
+| [2×](gallery/factbook-map-a-place-s-several-locations-light-2x.png) | [2×](gallery/factbook-map-a-place-s-several-locations-dark-2x.png) | [2×](gallery/factbook-map-a-place-s-several-locations-sepia-2x.png) |
+
 ## Toolbar panes, menus and windows
 
 ### Library pane
@@ -809,6 +837,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Reading plan, Bible chooser, Light](gallery/reading-plan-bible-chooser-light-1x.png) | ![Reading plan, Bible chooser, Dark](gallery/reading-plan-bible-chooser-dark-1x.png) | ![Reading plan, Bible chooser, Sepia](gallery/reading-plan-bible-chooser-sepia-1x.png) |
 | [2×](gallery/reading-plan-bible-chooser-light-2x.png) | [2×](gallery/reading-plan-bible-chooser-dark-2x.png) | [2×](gallery/reading-plan-bible-chooser-sepia-2x.png) |
+
+### Timeline: a chip's menu
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: a chip's menu, Light](gallery/timeline-a-chip-s-menu-light-1x.png) | ![Timeline: a chip's menu, Dark](gallery/timeline-a-chip-s-menu-dark-1x.png) | ![Timeline: a chip's menu, Sepia](gallery/timeline-a-chip-s-menu-sepia-1x.png) |
+| [2×](gallery/timeline-a-chip-s-menu-light-2x.png) | [2×](gallery/timeline-a-chip-s-menu-dark-2x.png) | [2×](gallery/timeline-a-chip-s-menu-sepia-2x.png) |
 
 ## Empty, loading and error states
 

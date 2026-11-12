@@ -70,6 +70,12 @@ where the visual QA sweep found it drawn wrong (a Commentary's italic words as t
 converter makes them, a Highlight and the jump flash over several lines, a Note marker before
 the next verse number). A rendering fix of the reading pane adds its case there.
 
+Crowded charts (#304) are drawn with data the Starter subset has too little of: the Timeline
+with `crowded_events` (`timeline_tests.rs`: more Events and Lifespans than the axis has rows
+for, in the Tabs section, and a "+N" chip's menu in the menus section) and the Factbook Map of a
+place with several Place locations (`factbook_maps` in `atlas_tests.rs`: Arimathea from the
+geocoding excerpt). Each writes its index into the launch's library folder and adds it.
+
 `every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
 each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo
 box, and fails until `SITES` names the surface that draws a new one (or says why none does).
