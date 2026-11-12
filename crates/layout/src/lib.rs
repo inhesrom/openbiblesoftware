@@ -31,8 +31,8 @@ pub use layout::{Hit, LaidBlock, LaidCell, LaidItem, LaidLine, UnitPos, layout};
 pub use paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
 pub use present::{
     BlockKind, BlockSource, NOTE_ROOM_SIZE, SYNTHETIC_SMALL_CAPS, SnippetStyle, block_paragraph,
-    block_paragraph_with_note_room, footnote_label, formatted_snippet_paragraph, snippet_paragraph,
-    starts_rtl, styled_snippet_paragraph, unit_blocks,
+    block_paragraph_with_note_room, footnote_label, formatted_snippet_paragraph, has_rtl,
+    snippet_paragraph, starts_rtl, styled_snippet_paragraph, unit_blocks,
 };
 pub use spans::SpanIndex;
 pub use style::{

@@ -521,6 +521,20 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Reference preview, Light](gallery/reference-preview-light-1x.png) | ![Reference preview, Dark](gallery/reference-preview-dark-1x.png) | ![Reference preview, Sepia](gallery/reference-preview-sepia-1x.png) |
 | [2×](gallery/reference-preview-light-2x.png) | [2×](gallery/reference-preview-dark-2x.png) | [2×](gallery/reference-preview-sepia-2x.png) |
 
+### Reference preview, shortened
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Reference preview, shortened, Light](gallery/reference-preview-shortened-light-1x.png) | ![Reference preview, shortened, Dark](gallery/reference-preview-shortened-dark-1x.png) | ![Reference preview, shortened, Sepia](gallery/reference-preview-shortened-sepia-1x.png) |
+| [2×](gallery/reference-preview-shortened-light-2x.png) | [2×](gallery/reference-preview-shortened-dark-2x.png) | [2×](gallery/reference-preview-shortened-sepia-2x.png) |
+
+### Command box, a Hebrew Lemma
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Command box, a Hebrew Lemma, Light](gallery/command-box-a-hebrew-lemma-light-1x.png) | ![Command box, a Hebrew Lemma, Dark](gallery/command-box-a-hebrew-lemma-dark-1x.png) | ![Command box, a Hebrew Lemma, Sepia](gallery/command-box-a-hebrew-lemma-sepia-1x.png) |
+| [2×](gallery/command-box-a-hebrew-lemma-light-2x.png) | [2×](gallery/command-box-a-hebrew-lemma-dark-2x.png) | [2×](gallery/command-box-a-hebrew-lemma-sepia-2x.png) |
+
 ### Tab switcher
 
 | Light | Dark | Sepia |
@@ -930,6 +944,27 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Search: error, Light](gallery/search-error-light-1x.png) | ![Search: error, Dark](gallery/search-error-dark-1x.png) | ![Search: error, Sepia](gallery/search-error-sepia-1x.png) |
 | [2×](gallery/search-error-light-2x.png) | [2×](gallery/search-error-dark-2x.png) | [2×](gallery/search-error-sepia-2x.png) |
+
+### Search: unknown book in the Scope
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: unknown book in the Scope, Light](gallery/search-unknown-book-in-the-scope-light-1x.png) | ![Search: unknown book in the Scope, Dark](gallery/search-unknown-book-in-the-scope-dark-1x.png) | ![Search: unknown book in the Scope, Sepia](gallery/search-unknown-book-in-the-scope-sepia-1x.png) |
+| [2×](gallery/search-unknown-book-in-the-scope-light-2x.png) | [2×](gallery/search-unknown-book-in-the-scope-dark-2x.png) | [2×](gallery/search-unknown-book-in-the-scope-sepia-2x.png) |
+
+### Search: empty query
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: empty query, Light](gallery/search-empty-query-light-1x.png) | ![Search: empty query, Dark](gallery/search-empty-query-dark-1x.png) | ![Search: empty query, Sepia](gallery/search-empty-query-sepia-1x.png) |
+| [2×](gallery/search-empty-query-light-2x.png) | [2×](gallery/search-empty-query-dark-2x.png) | [2×](gallery/search-empty-query-sepia-2x.png) |
+
+### Search: unknown Morphology
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: unknown Morphology, Light](gallery/search-unknown-morphology-light-1x.png) | ![Search: unknown Morphology, Dark](gallery/search-unknown-morphology-dark-1x.png) | ![Search: unknown Morphology, Sepia](gallery/search-unknown-morphology-sepia-1x.png) |
+| [2×](gallery/search-unknown-morphology-light-2x.png) | [2×](gallery/search-unknown-morphology-dark-2x.png) | [2×](gallery/search-unknown-morphology-sepia-2x.png) |
 
 ### Search: nothing matches
 

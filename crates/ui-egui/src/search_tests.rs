@@ -321,6 +321,53 @@ fn query_errors_show_inline_under_the_box() {
     drop(files);
 }
 
+/// The Search Tab shows the reference, query and Morphology parsers' errors in one style
+/// (#308): sentence case, what was typed in curly quotes once, no backticks.
+#[test]
+fn search_errors_under_the_box_share_one_style() {
+    let (mut h, files) = harness("error-style", 3);
+    type_query(&mut h, "@aorst");
+    h.frames(2);
+    let morph = "“aorst” is not Morphology (try verb, aorist, imperative, genitive or Qal)";
+    assert!(h.find(morph).is_some(), "{:?}", h.texts());
+    let tab = search_tab(&h);
+    for (params, message) in [
+        (
+            json!({ "tab": tab.0, "text": "love", "scope": "Foo 3" }),
+            "Unknown book “Foo”",
+        ),
+        (
+            json!({ "tab": tab.0, "text": "", "scope": "" }),
+            "Type something to search for",
+        ),
+    ] {
+        h.shell.run("search.run", &params);
+        h.frames(2);
+        assert!(h.find(message).is_some(), "{message}: {:?}", h.texts());
+    }
+    let error = obs_engine::InlineError {
+        field: obs_engine::ErrorField::Query,
+        message: morph.into(),
+        span: Some(0..6),
+    };
+    assert_eq!(
+        super::super::search_tab::inline_error_text(&error, "@aorst"),
+        morph,
+        "a message that quotes what was typed is not followed by it again"
+    );
+    let error = obs_engine::InlineError {
+        message: "Expected a chapter or verse number".into(),
+        span: Some(0..4),
+        ..error
+    };
+    assert_eq!(
+        super::super::search_tab::inline_error_text(&error, "Rom:"),
+        "Expected a chapter or verse number (“Rom:”)"
+    );
+    drop(h);
+    drop(files);
+}
+
 #[test]
 fn word_info_search_this_word_searches_its_bible() {
     let (mut h, files) = harness("word-info", 3);

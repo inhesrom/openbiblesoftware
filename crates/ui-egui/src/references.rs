@@ -15,6 +15,30 @@ use super::{State, TabId};
 use crate::tokens::{scale, size};
 use crate::{ReadingDoc, SnippetCache};
 
+/// The line under a preview that leaves text out.
+pub(crate) const PREVIEW_SHORTENED: &str = "Preview shortened — click the reference to read";
+
+/// How much of a laid preview `height` tall, its lines ending at `line_bottoms`, shows in at
+/// most `max`: whole lines only, so the last line shown is never cut in half (#308); at least
+/// the first line.
+pub(crate) fn whole_lines_height(
+    height: f32,
+    line_bottoms: impl IntoIterator<Item = f32>,
+    max: f32,
+) -> f32 {
+    if height <= max {
+        return height;
+    }
+    let mut bottoms = line_bottoms.into_iter();
+    let Some(first) = bottoms.next() else {
+        return max;
+    };
+    bottoms
+        .take_while(|bottom| *bottom <= max)
+        .last()
+        .unwrap_or(first)
+}
+
 struct Queries<T, K = Passage> {
     jobs: JobQueue,
     pending: BTreeMap<JobId, K>,
@@ -467,15 +491,24 @@ impl State {
     }
 
     /// Resource text is always drawn with the glyph atlas. A cache miss only submits work;
-    /// it never shapes, lays out or reads SQLite on the UI thread.
+    /// it never shapes, lays out or reads SQLite on the UI thread. A shortened full preview
+    /// says so under it.
     pub(super) fn preview(&mut self, ui: &mut Ui, passage: Passage, one_line: bool) {
+        if self.preview_body(ui, passage, one_line) {
+            ui.small(PREVIEW_SHORTENED);
+        }
+    }
+
+    /// Draw a Passage's preview; true when a full (not `one_line`) preview left text out, so
+    /// the caller says so once (#308).
+    fn preview_body(&mut self, ui: &mut Ui, passage: Passage, one_line: bool) -> bool {
         let width = ui.available_width().max(size::TEXT_MIN);
         let height = self.session.text.size * scale::LINE;
         if one_line
             && !ui.is_rect_visible(Rect::from_min_size(ui.cursor().min, vec2(width, height)))
         {
             ui.allocate_space(vec2(width, height));
-            return;
+            return false;
         }
         let cache = Arc::clone(&self.references.preview_text);
         let preview = match self.references.previews.get(
@@ -489,7 +522,7 @@ impl State {
             None => {
                 ui.allocate_space(vec2(width, height));
                 ui.ctx().request_repaint();
-                return;
+                return false;
             }
             Some(Err(e)) => {
                 // A row of a list: the plain message, the error itself on hover (#223).
@@ -509,7 +542,7 @@ impl State {
                     )
                     .on_hover_text(e);
                 }
-                return;
+                return false;
             }
             Some(Ok(preview)) => preview,
         };
@@ -532,21 +565,23 @@ impl State {
         let Some(laid) = laid else {
             ui.allocate_space(vec2(width, height));
             ui.ctx().request_repaint();
-            return;
+            return false;
         };
         let height = if one_line {
             laid.lines.first().map_or(height, |line| line.bottom)
         } else {
-            laid.height.min(size::POPOVER)
+            whole_lines_height(
+                laid.height,
+                laid.lines.iter().map(|line| line.bottom),
+                size::POPOVER,
+            )
         };
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &preview.text));
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         painter.rect_filled(rect, 0.0, self.palette.page);
         self.atlas.paint(&painter, &laid, rect.min, &self.palette);
-        if !one_line && (preview.truncated || laid.height > height) {
-            ui.small("Preview shortened — click the reference to read");
-        }
+        !one_line && (preview.truncated || laid.height > height)
     }
 
     pub(super) fn reference_message_popup(&self, ui: &Ui, message: &str) {
@@ -572,10 +607,12 @@ impl State {
             ui.set_width(size::POPOVER);
             // Bound work even when one written target maps to many disjoint Passages.
             for target in passages.iter().take(3) {
-                let mut remaining = 20;
+                let mut remaining = cross_references::PREVIEW_VERSES;
+                // One notice per target however its preview was shortened (#308).
+                let mut shortened = false;
                 for passage in target {
                     if remaining == 0 {
-                        ui.small("Preview shortened — click the reference to read");
+                        shortened = true;
                         break;
                     }
                     let verses: Vec<_> = passage.verses(&Standard).take(remaining + 1).collect();
@@ -587,11 +624,15 @@ impl State {
                         continue;
                     };
                     ui.strong(format_passage(*passage, &Standard, RefStyle::Short));
-                    self.preview(ui, shown, false);
+                    shortened |= self.preview_body(ui, shown, false);
                     remaining -= count;
                     if verses.len() > count {
-                        ui.small("Preview shortened — click the reference to read");
+                        shortened = true;
+                        break;
                     }
+                }
+                if shortened {
+                    ui.small(PREVIEW_SHORTENED);
                 }
                 if target.is_empty() {
                     ui.label("No Standard equivalent");

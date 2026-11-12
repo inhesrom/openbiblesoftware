@@ -779,6 +779,17 @@ fn a_line_reads_right_to_left_when_its_first_strong_character_does() {
     }
 }
 
+/// A Hebrew (or Arabic) word anywhere in a line needs bidi; Greek and Latin do not (#308).
+#[test]
+fn a_line_has_rtl_text_when_any_character_reads_right_to_left() {
+    for rtl in ["חֶסֶד · H2617A", "H430 · אֱלֹהִים", "كتاب"] {
+        assert!(crate::has_rtl(rtl), "{rtl}");
+    }
+    for ltr in ["ἀγάπη · G26", "John 3:16", "", "Search for “love”"] {
+        assert!(!crate::has_rtl(ltr), "{ltr}");
+    }
+}
+
 /// John 1:1-2 and 2:1 with Footnotes after 1:1, two after 1:2 and one after 2:1, and a
 /// cross-reference note (with its zero-width Cross-reference) after 2:1 (#208).
 fn footnoted_unit() -> TextUnit {
