@@ -487,7 +487,7 @@ impl Shell {
                 ui.label(egui::RichText::new("At the left or right").strong());
                 ui.horizontal(|ui| {
                     for (on, label) in [(false, "Collapsed"), (true, "Expanded")] {
-                        if ui.radio(settings.expanded == on, label).clicked() {
+                        if crate::components::radio(ui, settings.expanded == on, label).clicked() {
                             acts.push(("view.toolbar_expanded", json!({ "on": on })));
                         }
                     }
