@@ -1046,6 +1046,7 @@ impl Shell {
             || self.st.zip_dialog_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
+            || self.st.session.search_preview_running()
             || self.st.session.word_study.is_busy()
             || self.st.session.reanchoring.is_busy()
             || self.st.session.factbooks.is_busy()

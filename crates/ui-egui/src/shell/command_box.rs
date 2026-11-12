@@ -2,19 +2,35 @@
 //! text and ranks the suggestions ([`obs_engine::Session::command_box_suggestions`]); this
 //! draws them as a dropdown under the box and runs the one picked through `command_box.run`.
 //!
+//! The dropdown is a results panel (#295): min(640 pt, half the window) wide, at most 60% of
+//! the window tall, never off-screen; the suggestions under headings with their counts, and
+//! under the Search row the Search preview (the ★ Bible's first Verses for the text, searched
+//! in the background once the typing stops). When its rows do not all fit, a scroll bar shows
+//! and the bottom edge fades with "N more". A Verse's text is Resource text: it is laid out and
+//! drawn by the text pipeline (ADR 0004), right to left for a right-to-left Bible, in the row
+//! and in its hover popup alike.
+//!
 //! Keyboard first: Ctrl+L (the `command_box.focus` command) puts the keyboard in the box and
-//! selects its text; ↑/↓ pick a suggestion; Enter runs it; Alt+Enter runs it in a new Tab; Esc
-//! leaves the box. An empty box lists the recent entries; `>` lists every command it can run
-//! (Help → All commands, Ctrl+Shift+P, #226). A click on a suggestion runs it (Alt held: in
-//! a new Tab).
+//! selects its text; ↑/↓, PgUp/PgDn and Home/End move the highlight through every row; Enter
+//! runs it; Alt+Enter runs it in a new Tab; Esc leaves the box. An empty box lists the recent
+//! entries; `>` lists every command it can run (Help → All commands, Ctrl+Shift+P, #226). A
+//! click on a row runs it (Alt held: in a new Tab).
 
+use std::sync::Arc;
+
+use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align2, Key, Modifiers, Rect, Sense, Ui, pos2, vec2};
-use obs_engine::Suggestion;
+use obs_engine::{CommandBoxAction, PreviewHit, SearchPreview, Suggestion};
+use obs_layout::{ColorRole, TextSettings};
 use serde_json::json;
 
 use super::Shell;
+use crate::icons::{self, Icon};
+use crate::palette::Palette;
+use crate::pane::AtlasTexture;
 use crate::theme;
-use crate::tokens::{inset, radius, size, space};
+use crate::tokens::{inset, radius, share, size, space, text};
+use crate::workers::SnippetCache;
 
 /// The box's widget id.
 pub(crate) const BOX_ID: &str = "command-box";
@@ -22,14 +38,121 @@ pub(crate) const BOX_ID: &str = "command-box";
 /// Placeholder shown in the empty box, followed by the box's key (#177).
 pub(crate) const HINT: &str = "Go to, study, open or search";
 
-/// Height of one suggestion row.
+/// Height of a one-line row.
 const ROW: f32 = size::ROW;
 
-/// Rows the dropdown shows before it scrolls.
-const MAX_ROWS: usize = 12;
+/// Height of a heading.
+const HEADING: f32 = size::ROW_COMPACT;
+
+/// Height of a Search preview Verse: its reference, then its text.
+const HIT_ROW: f32 = size::ROW + text::LABEL_LINE;
 
 /// The dropdown's scrolling list, by which its scroll is forgotten when it is made again.
 const LIST: &str = "command_box_list";
+
+/// The row that offers Get Bibles when the library has no Bible to preview a search in.
+pub(crate) const ADD_A_BIBLE: &str = "Add a Bible to search as you type";
+
+/// One row of the dropdown.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Row {
+    /// A heading over the rows that follow, with how many there are.
+    Heading { title: String, count: usize },
+    /// Suggestion `i` of [`CommandBoxUi::suggestions`].
+    Suggestion(usize),
+    /// A Search preview Verse, as shown: the Verse it opens stays the one shown when the
+    /// preview's next Verses replace it before the pick runs.
+    Hit(PreviewHit),
+    /// Show all the Search preview's results in the Search Tool: the box's Search suggestion,
+    /// `i`, with how many Verses match.
+    ShowAll { search: usize, total: usize },
+    /// Get Bibles: the library has no Bible to search.
+    AddBible,
+    /// A line that cannot be picked: the ★ Bible being indexed, or no Verse matching.
+    Note(String),
+}
+
+impl Row {
+    /// Whether the highlight can rest on it and Enter run it.
+    fn is_pickable(&self) -> bool {
+        !matches!(self, Row::Heading { .. } | Row::Note(_))
+    }
+
+    /// The row's widget id, from what it opens rather than where it sits: a press on a Verse
+    /// that the Search preview's next Verses replace before the release clicks nothing, not
+    /// the Verse put in its place (egui gives a release to the widget id pressed).
+    fn widget_id(&self, list: egui::Id, suggestions: &[Suggestion]) -> egui::Id {
+        match self {
+            Row::Suggestion(i) => {
+                let s = &suggestions[*i];
+                list.with(("suggestion", *i, &s.label, &s.detail))
+            }
+            Row::Hit(hit) => list.with(("hit", hit.open_params(false).to_string())),
+            Row::ShowAll { search, .. } => list.with(("show_all", &suggestions[*search].label)),
+            Row::AddBible => list.with("add_bible"),
+            Row::Heading { title, .. } => list.with(("heading", title)),
+            Row::Note(note) => list.with(("note", note)),
+        }
+    }
+
+    fn height(&self) -> f32 {
+        match self {
+            Row::Heading { .. } => HEADING,
+            Row::Hit(_) => HIT_ROW,
+            _ => ROW,
+        }
+    }
+}
+
+/// The dropdown's rows: the suggestions under their headings, and under the Search row the
+/// Search preview.
+pub(crate) fn rows(suggestions: &[Suggestion], preview: &SearchPreview) -> Vec<Row> {
+    let mut out = Vec::new();
+    for g in obs_engine::suggestion_groups(suggestions) {
+        out.push(Row::Heading {
+            title: g.heading.to_string(),
+            count: g.suggestions.len(),
+        });
+        out.extend(g.suggestions.iter().map(|&i| Row::Suggestion(i)));
+        let search = (g.suggestions.iter())
+            .find(|&&i| matches!(suggestions[i].action, CommandBoxAction::Search(_)));
+        if let Some(&search) = search {
+            preview_rows(search, preview, &mut out);
+        }
+    }
+    out
+}
+
+/// The Search preview's rows, under Search suggestion `search`.
+fn preview_rows(search: usize, preview: &SearchPreview, out: &mut Vec<Row>) {
+    match preview {
+        SearchPreview::Off => {}
+        SearchPreview::NoBible => out.push(Row::AddBible),
+        SearchPreview::Indexing(abbreviation) => out.push(Row::Note(format!(
+            "Indexing {abbreviation}… results will appear here"
+        ))),
+        SearchPreview::Hits(h) if h.hits.is_empty() => {
+            out.push(Row::Note(format!("No verses in {} match", h.bible)));
+        }
+        SearchPreview::Hits(h) => {
+            out.push(Row::Heading {
+                title: format!("Verses in {}", h.bible),
+                count: h.total,
+            });
+            out.extend(h.hits.iter().cloned().map(Row::Hit));
+            out.push(Row::ShowAll {
+                search,
+                total: h.total,
+            });
+        }
+    }
+}
+
+/// "Show all 12 results in Search".
+pub(crate) fn show_all_label(total: usize) -> String {
+    let results = if total == 1 { "result" } else { "results" };
+    format!("Show all {total} {results} in Search")
+}
 
 /// The Command box's text and dropdown.
 #[derive(Default)]
@@ -38,9 +161,13 @@ pub(crate) struct CommandBoxUi {
     pub(crate) suggestions: Vec<Suggestion>,
     /// The text `suggestions` were made for; `None` makes them again.
     for_text: Option<String>,
-    /// The highlighted suggestion.
+    /// The dropdown's rows as last drawn.
+    pub(crate) rows: Vec<Row>,
+    /// The highlighted row, counting only the rows that can be picked. When the rows are
+    /// made again for the same suggestions (the Search preview's Verses arriving), it moves
+    /// with the row it was on.
     pub(crate) selected: usize,
-    /// ↑/↓ moved the highlight: scroll it into view.
+    /// The highlight moved: scroll it into view.
     scroll_to_selected: bool,
     /// The suggestions were made again: the list shows from its first row, the highlighted
     /// one (it may still be scrolled from the last time it showed).
@@ -53,6 +180,16 @@ pub(crate) struct CommandBoxUi {
     /// Where the dropdown was drawn last frame, so a click on it is not lost to the box
     /// losing focus at the press.
     pub(super) dropdown: Option<Rect>,
+    /// Pickable rows a page (PgUp/PgDn) moves by: those that fitted last frame.
+    page: usize,
+    /// Pickable rows below the list's bottom edge last frame ("N more"); `None` when every
+    /// row fitted and there is no scroll bar.
+    pub(crate) more: Option<usize>,
+    /// The Search preview's Verse texts, laid out off the UI thread by the text pipeline.
+    snippets: SnippetCache,
+    /// The Search preview's Verses whose text was drawn last frame (the others still wait for
+    /// their layout).
+    pub(crate) verses_drawn: usize,
 }
 
 impl CommandBoxUi {
@@ -63,6 +200,63 @@ impl CommandBoxUi {
         self.focus = true;
         self.caret_at_end = true;
     }
+
+    /// The rows that can be picked, in order.
+    fn picks(&self) -> Vec<&Row> {
+        self.rows.iter().filter(|r| r.is_pickable()).collect()
+    }
+
+    /// The highlighted row.
+    pub(crate) fn selected_row(&self) -> Option<&Row> {
+        self.picks().get(self.selected).copied()
+    }
+
+    /// Show `rows`, the highlight staying on the row it was on (unless that row is gone). Rows
+    /// put in or taken out above it move it: it is scrolled to where it went, so it does not
+    /// slip out of view.
+    fn set_rows(&mut self, rows: Vec<Row>) {
+        let held = self.selected_row().cloned();
+        let was_at = self.selected_top();
+        self.rows = rows;
+        let picks = self.picks();
+        let last = picks.len().saturating_sub(1);
+        let moved = held.and_then(|h| picks.iter().position(|r| **r == h));
+        self.selected = moved.unwrap_or(self.selected).min(last);
+        if was_at.is_some() && self.selected_top() != was_at {
+            self.scroll_to_selected = true;
+        }
+    }
+
+    /// How far down the list the highlighted row starts.
+    fn selected_top(&self) -> Option<f32> {
+        let mut top = 0.0;
+        let mut pick = 0;
+        for row in &self.rows {
+            if row.is_pickable() {
+                if pick == self.selected {
+                    return Some(top);
+                }
+                pick += 1;
+            }
+            top += row.height();
+        }
+        None
+    }
+
+    /// The text the Search preview previews: the Search suggestion's.
+    fn search_text(&self) -> Option<&str> {
+        self.suggestions.iter().find_map(|s| match &s.action {
+            CommandBoxAction::Search(t) => Some(t.as_str()),
+            _ => None,
+        })
+    }
+}
+
+/// What the keys asked of the dropdown this frame.
+#[derive(Default)]
+struct Keys {
+    run: Option<bool>,
+    leave: bool,
 }
 
 impl Shell {
@@ -70,30 +264,14 @@ impl Shell {
     pub(super) fn command_box(&mut self, ui: &mut Ui) {
         let id = egui::Id::unique(BOX_ID);
         let had_focus = ui.memory(|m| m.has_focus(id));
-        let mut picked: Option<(usize, bool)> = None;
-        let mut leave = false;
+        let mut keys = Keys::default();
         if had_focus {
-            let cb = &mut self.st.command_box;
-            let last = cb.suggestions.len().saturating_sub(1);
-            cb.scroll_to_selected = false;
-            ui.input_mut(|i| {
-                if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
-                    cb.selected = (cb.selected + 1).min(last);
-                    cb.scroll_to_selected = true;
-                }
-                if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
-                    cb.selected = cb.selected.saturating_sub(1);
-                    cb.scroll_to_selected = true;
-                }
-                if i.consume_key(Modifiers::ALT, Key::Enter) {
-                    picked = Some((cb.selected, true));
-                } else if i.consume_key(Modifiers::NONE, Key::Enter) {
-                    picked = Some((cb.selected, false));
-                }
-                leave = i.consume_key(Modifiers::NONE, Key::Escape);
-            });
+            keys = self.command_box_keys(ui);
         }
+        // Enter runs the row highlighted as drawn, whatever the rows made below put there.
         let cb = &mut self.st.command_box;
+        let mut picked: Option<(Row, bool)> =
+            (keys.run).and_then(|alt| Some((cb.selected_row()?.clone(), alt)));
         let mut out = egui::TextEdit::singleline(&mut cb.text)
             .id(id)
             .hint_text(super::with_key(&self.st.session, HINT, "command_box.focus"))
@@ -113,13 +291,17 @@ impl Shell {
             cb.for_text = None;
         }
         let focused = r.has_focus() || ui.memory(|m| m.has_focus(id));
+        let mut remade = false;
         if focused && (cb.for_text.as_deref() != Some(cb.text.as_str()) || r.gained_focus()) {
             cb.suggestions = self.st.session.command_box_suggestions(&cb.text);
             cb.for_text = Some(cb.text.clone());
             cb.selected = 0;
+            // New rows: the highlight starts again at the first.
+            cb.rows.clear();
             cb.from_the_top = true;
+            remade = true;
         }
-        if leave {
+        if keys.leave {
             ui.memory_mut(|m| m.surrender_focus(id));
         }
         // Keep drawing the dropdown while a press on it completes into a click.
@@ -129,105 +311,281 @@ impl Shell {
                     && i.pointer.interact_pos().is_some_and(|p| d.contains(p))
             })
         });
-        if !leave && (focused || pressing_on_dropdown) && !cb.suggestions.is_empty() {
-            if let Some(i) = self.dropdown(ui, r.rect) {
-                picked = Some(i);
+        let shown = !keys.leave && (focused || pressing_on_dropdown) && !cb.suggestions.is_empty();
+        // The Search preview searches the text once the typing stops, off this thread.
+        let now = ui.input(|i| i.time);
+        let preview_text = shown
+            .then(|| cb.search_text().map(str::to_string))
+            .flatten();
+        let session = &mut self.st.session;
+        session.update_search_preview(preview_text.as_deref(), now);
+        if let Some(due) = session.search_preview_due_in(now) {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(due));
+        }
+        // A search started this frame, after the frame's background repaint was asked for: its
+        // Verses are applied by the frames that follow, not by the next key or caret blink.
+        if session.search_preview_running() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
+        }
+        let cb = &mut self.st.command_box;
+        cb.set_rows(rows(&cb.suggestions, session.search_preview()));
+        if remade && let Some(alt) = keys.run {
+            // Text typed in the frame of the Enter: it runs the first of the new rows, even when
+            // the rows before the text had none to run.
+            picked = cb.selected_row().map(|row| (row.clone(), alt));
+        }
+        if shown {
+            if let Some((i, alt)) = self.dropdown(ui, r.rect) {
+                let cb = &self.st.command_box;
+                picked = cb.picks().get(i).map(|r| ((*r).clone(), alt));
             }
         } else {
-            self.st.command_box.dropdown = None;
+            let cb = &mut self.st.command_box;
+            cb.dropdown = None;
+            cb.more = None;
         }
-        if let Some((choice, new_tab)) = picked {
-            self.run_choice(ui, choice, new_tab);
+        if let Some((row, new_tab)) = picked {
+            self.run_pick(ui, row, new_tab);
         }
     }
 
-    /// The suggestions under the box, right edges aligned. Returns the one clicked (and
-    /// whether Alt was held).
-    fn dropdown(&mut self, ui: &Ui, field: Rect) -> Option<(usize, bool)> {
+    /// Take the dropdown's keys from the box: the highlight's moves, Enter, Esc. Returns
+    /// whether to run the highlighted row (and with Alt) and whether to leave the box.
+    fn command_box_keys(&mut self, ui: &Ui) -> Keys {
         let cb = &mut self.st.command_box;
+        let last = cb.picks().len().saturating_sub(1);
+        let page = cb.page.max(1);
+        cb.scroll_to_selected = false;
+        let mut keys = Keys::default();
+        // With no rows to move through, the keys are left to the box's caret.
+        let moves_the_highlight = !cb.picks().is_empty();
+        ui.input_mut(|i| {
+            let at = cb.selected;
+            let moves = [
+                (Key::ArrowDown, at + 1),
+                (Key::ArrowUp, at.saturating_sub(1)),
+                (Key::PageDown, at + page),
+                (Key::PageUp, at.saturating_sub(page)),
+                (Key::End, last),
+                (Key::Home, 0),
+            ];
+            for (key, to) in moves {
+                if moves_the_highlight && i.consume_key(Modifiers::NONE, key) {
+                    cb.selected = to.min(last);
+                    cb.scroll_to_selected = true;
+                }
+            }
+            if i.consume_key(Modifiers::ALT, Key::Enter) {
+                keys.run = Some(true);
+            } else if i.consume_key(Modifiers::NONE, Key::Enter) {
+                keys.run = Some(false);
+            }
+            keys.leave = i.consume_key(Modifiers::NONE, Key::Escape);
+        });
+        keys
+    }
+
+    /// The results panel under the box, right edges aligned, inside the window. Returns the
+    /// pickable row clicked (and whether Alt was held).
+    fn dropdown(&mut self, ui: &Ui, field: Rect) -> Option<(usize, bool)> {
+        let st = &mut self.st;
+        let session = &st.session;
+        let cb = &mut st.command_box;
+        let mut verses = VerseText {
+            snippets: &mut cb.snippets,
+            atlas: &mut st.atlas,
+            settings: preview_settings(session.text),
+            palette: hit_palette(&theme::c()),
+        };
         let details: Vec<String> = (cb.suggestions.iter())
-            .map(|s| shown_detail(&self.st.session, s))
+            .map(|s| shown_detail(session, s))
             .collect();
-        let width = field.width().max(size::POPOVER);
+        // The rows were made from this preview this frame.
+        let rtl = matches!(session.search_preview(), SearchPreview::Hits(h) if h.rtl);
+        let screen = ui.ctx().content_rect();
+        let frame = crate::components::popover_frame().inner_margin(inset::BAR);
+        let margin = frame.total_margin();
+        // Wider than the box, at most half the window; never off its left edge.
+        let width = (size::RESULTS.min(screen.width() * share::RESULTS_WIDTH))
+            .max(field.width())
+            .min(screen.width() - 2.0 * space::M);
+        let right = field.right().max(screen.left() + space::M + width);
+        let top = field.bottom() + space::XS;
+        let tallest = (screen.height() * share::RESULTS_HEIGHT)
+            .min(screen.bottom() - space::M - top)
+            .max(ROW);
+        let list_height = tallest - margin.sum().y;
+        let inner_width = width - margin.sum().x;
+        let picks = cb.rows.iter().filter(|r| r.is_pickable()).count();
         let mut clicked = None;
+        let mut more = None;
+        let mut fitted = 0;
+        let mut verses_drawn = 0;
         let shown = egui::Area::new(egui::Id::unique(BOX_ID).with("dropdown"))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(field.right(), field.bottom() + space::XS))
+            .fixed_pos(pos2(right, top))
             .pivot(Align2::RIGHT_TOP)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
-                crate::components::popover_frame()
-                    .inner_margin(inset::BAR)
-                    .show(ui, |ui| {
-                        // All commands (#226) can be more rows than fit: they scroll, keeping
-                        // the highlighted one in view.
-                        // Made again, it forgets where it was scrolled to, and any scroll
-                        // to a highlight still under way.
-                        if cb.from_the_top {
-                            let list = ui.make_persistent_id(egui::IdSalt::new(LIST));
-                            ui.data_mut(|d| d.remove::<egui::scroll_area::State>(list));
-                        }
-                        let list = egui::ScrollArea::vertical()
-                            .id_salt(LIST)
-                            .max_height(ROW * MAX_ROWS as f32 + ROW / 2.0);
-                        list.show(ui, |ui| {
-                            let c = theme::c();
-                            for (i, (s, detail)) in cb.suggestions.iter().zip(&details).enumerate()
-                            {
-                                let (rect, resp) =
-                                    ui.allocate_exact_size(vec2(width, ROW), Sense::click());
-                                if i == cb.selected && cb.scroll_to_selected {
-                                    ui.scroll_to_rect(rect, None);
-                                }
-                                let painter = ui.painter();
-                                if i == cb.selected {
-                                    crate::components::selected_row(painter, rect, radius::S);
-                                } else if resp.hovered() {
-                                    painter.rect_filled(rect, radius::S, c.hover);
-                                }
-                                let font = egui::TextStyle::Body.resolve(ui.style());
-                                let detail_rect = painter.text(
-                                    pos2(rect.right() - space::M, rect.center().y),
-                                    Align2::RIGHT_CENTER,
-                                    detail,
-                                    font.clone(),
-                                    c.muted,
-                                );
-                                let label = painter.layout_no_wrap(s.label.clone(), font, c.ink);
-                                let room = (detail_rect.left() - rect.left() - space::XXL).max(0.0);
-                                let clip =
-                                    Rect::from_min_size(rect.min, vec2(room + space::M, ROW));
-                                painter.with_clip_rect(clip).galley(
-                                    pos2(
-                                        rect.left() + space::M,
-                                        rect.center().y - label.size().y / 2.0,
-                                    ),
-                                    label,
-                                    c.ink,
-                                );
-                                resp.widget_info(|| {
-                                    egui::WidgetInfo::selected(
-                                        egui::Role::ListBoxOption,
-                                        true,
-                                        i == cb.selected,
-                                        format!("{} · {detail}", s.label),
-                                    )
-                                });
-                                if resp.clicked() {
-                                    clicked = Some((i, ui.input(|i| i.modifiers.alt)));
-                                }
+                frame.show(ui, |ui| {
+                    ui.set_width(inner_width);
+                    // A solid bar, shown whenever the rows do not all fit, hovered or not, in
+                    // the app's scroll thumb grey.
+                    let solid = egui::style::ScrollStyle::solid();
+                    ui.spacing_mut().scroll = egui::style::ScrollStyle {
+                        bar_width: size::SCROLLBAR,
+                        dormant_handle_opacity: solid.interact_handle_opacity,
+                        active_handle_opacity: solid.interact_handle_opacity,
+                        ..solid
+                    };
+                    let c = theme::c();
+                    let w = &mut ui.visuals_mut().widgets;
+                    w.inactive.bg_fill = c.muted.gamma_multiply(crate::tokens::alpha::HALF);
+                    w.hovered.bg_fill = c.muted;
+                    w.active.bg_fill = c.ink;
+                    // Made again, it forgets where it was scrolled to, and any scroll
+                    // to a highlight still under way.
+                    if cb.from_the_top {
+                        let list = ui.make_persistent_id(egui::IdSalt::new(LIST));
+                        ui.data_mut(|d| d.remove::<egui::scroll_area::State>(list));
+                    }
+                    let list = egui::ScrollArea::vertical()
+                        .id_salt(LIST)
+                        .auto_shrink([false, true])
+                        .max_height(list_height)
+                        .min_scrolled_height(list_height)
+                        .scroll_bar_visibility(
+                            egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
+                        );
+                    let out = list.show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        let view = ui.clip_rect();
+                        let mut pick = 0;
+                        let mut below = 0;
+                        let mut first: Option<Rect> = None;
+                        let rows_id = egui::Id::unique(BOX_ID).with(LIST);
+                        for row in &cb.rows {
+                            let (_, rect) =
+                                ui.allocate_space(vec2(ui.available_width(), row.height()));
+                            let first = *first.get_or_insert(rect);
+                            if !row.is_pickable() {
+                                paint_note(ui, rect, row);
+                                continue;
                             }
-                        });
+                            let id = row.widget_id(rows_id, &cb.suggestions);
+                            let resp = ui.interact(rect, id, Sense::click());
+                            if rect.center().y > view.bottom() {
+                                below += 1;
+                            } else if rect.top() >= view.top() {
+                                fitted += 1;
+                            }
+                            let selected = pick == cb.selected;
+                            if selected && cb.scroll_to_selected {
+                                // The first row shows its heading too.
+                                let to = if pick == 0 { rect.union(first) } else { rect };
+                                ui.scroll_to_rect(to, None);
+                            }
+                            let painter = ui.painter();
+                            if selected {
+                                crate::components::selected_row(painter, rect, radius::S);
+                            } else if resp.hovered() {
+                                painter.rect_filled(rect, radius::S, theme::c().hover);
+                            }
+                            let (name, resp) = match row {
+                                Row::Suggestion(i) => {
+                                    let s = &cb.suggestions[*i];
+                                    let detail = &details[*i];
+                                    let elided = paint_line(ui, rect, &s.label, detail);
+                                    let resp = if elided {
+                                        resp.on_hover_text(s.label.clone())
+                                    } else {
+                                        resp
+                                    };
+                                    (format!("{} · {detail}", s.label), resp)
+                                }
+                                Row::Hit(hit) => {
+                                    let drawn = paint_hit(ui, rect, hit, rtl, &mut verses);
+                                    verses_drawn += usize::from(drawn.is_some());
+                                    // The whole Verse, through the text pipeline too.
+                                    let resp = if drawn == Some(true) {
+                                        resp.on_hover_ui(|ui| {
+                                            paint_whole_hit(ui, hit, rtl, &mut verses);
+                                        })
+                                    } else {
+                                        resp
+                                    };
+                                    let name = format!("{} · {}", hit.reference, hit.snippet.text);
+                                    (name, resp)
+                                }
+                                Row::ShowAll { total, .. } => {
+                                    let label = show_all_label(*total);
+                                    paint_line(ui, rect, &label, "Search");
+                                    (label, resp)
+                                }
+                                Row::AddBible => {
+                                    paint_line(ui, rect, ADD_A_BIBLE, "Get Bibles");
+                                    (format!("{ADD_A_BIBLE} · Get Bibles"), resp)
+                                }
+                                Row::Heading { .. } | Row::Note(_) => continue,
+                            };
+                            let at = pick;
+                            resp.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::Role::ListBoxOption,
+                                    true,
+                                    selected,
+                                    format!("{name}, {} of {picks}", at + 1),
+                                )
+                            });
+                            if resp.clicked() {
+                                clicked = Some((pick, ui.input(|i| i.modifiers.alt)));
+                            }
+                            pick += 1;
+                        }
+                        below
                     });
+                    let overflows = out.content_size.y > out.inner_rect.height();
+                    if overflows {
+                        more = Some(out.inner);
+                        if out.inner > 0 {
+                            paint_more(ui, out.inner_rect, out.inner);
+                        }
+                    }
+                });
             });
         cb.from_the_top = false;
+        cb.verses_drawn = verses_drawn;
         cb.dropdown = Some(shown.response.rect);
+        cb.more = more;
+        cb.page = fitted.max(1);
         clicked
     }
 
-    /// Run suggestion `choice` for the box's text; on success the box empties and lets the
-    /// keyboard go back to the Workspace, unless the command put it back in the box (All
-    /// commands, Command box, #226). On failure the text stays, to be corrected.
+    /// Run `row`: a suggestion through `command_box.run`, a Search preview Verse, Show all,
+    /// or Get Bibles. On success the box empties and lets the keyboard go back to the
+    /// Workspace, unless the command put it back in the box (All commands, Command box, #226).
+    /// On failure the text stays, to be corrected.
+    fn run_pick(&mut self, ui: &Ui, row: Row, new_tab: bool) {
+        let ran = match row {
+            Row::Suggestion(i) | Row::ShowAll { search: i, .. } => {
+                return self.run_choice(ui, i, new_tab);
+            }
+            Row::Hit(hit) => self.run("command_box.open_hit", &hit.open_params(new_tab)),
+            Row::AddBible => self.run("library.get_bibles", &json!({})),
+            Row::Heading { .. } | Row::Note(_) => None,
+        };
+        if ran.is_some() {
+            let cb = &mut self.st.command_box;
+            cb.text.clear();
+            cb.suggestions.clear();
+            cb.for_text = None;
+            self.left_the_box(ui);
+        }
+    }
+
+    /// Run suggestion `choice` for the box's text; see [`Self::run_pick`].
     fn run_choice(&mut self, ui: &Ui, choice: usize, new_tab: bool) {
         let cb = &mut self.st.command_box;
         if choice >= cb.suggestions.len() {
@@ -251,11 +609,298 @@ impl Shell {
             cb.for_text = for_text;
             return;
         }
+        self.left_the_box(ui);
+    }
+
+    /// After a row ran: the dropdown closes and the keyboard goes back to the Workspace,
+    /// unless the command put it back in the box.
+    fn left_the_box(&mut self, ui: &Ui) {
+        let cb = &mut self.st.command_box;
         cb.dropdown = None;
+        cb.more = None;
         if !cb.focus {
             ui.memory_mut(|m| m.surrender_focus(egui::Id::unique(BOX_ID)));
         }
     }
+}
+
+/// `text` on one line in `font` and `color`, cut with "…" to `width`.
+fn one_line(
+    ui: &Ui,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+    width: f32,
+) -> Arc<egui::Galley> {
+    let mut job = LayoutJob::simple_singleline(text.to_string(), font, color);
+    job.wrap = TextWrapping::truncate_at_width(width.max(0.0));
+    ui.fonts_mut(|f| f.layout_job(job))
+}
+
+/// A one-line row: `label` on the left, `detail` on the right; the label is cut with "…"
+/// where it would reach the detail. Returns whether it was cut.
+fn paint_line(ui: &Ui, rect: Rect, label: &str, detail: &str) -> bool {
+    let c = theme::c();
+    let painter = ui.painter();
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let detail_rect = painter.text(
+        pos2(rect.right() - space::M, rect.center().y),
+        Align2::RIGHT_CENTER,
+        detail,
+        font.clone(),
+        c.muted,
+    );
+    let room = detail_rect.left() - rect.left() - space::M - space::XXL;
+    let galley = one_line(ui, label, font, c.ink, room);
+    let elided = galley.elided;
+    let at = pos2(
+        rect.left() + space::M,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    painter.galley(at, galley, c.ink);
+    elided
+}
+
+/// The Page palette the Search preview's Verses are drawn in: as dark (and as High contrast)
+/// as the Theme, never the Page tone's own, so its ink and Search hit tint read on the chrome
+/// whatever Page tone sits beside it.
+pub(crate) fn hit_palette(c: &crate::tokens::Chrome) -> Palette {
+    let tone = if c.dark {
+        obs_engine::PageTone::Dark
+    } else {
+        obs_engine::PageTone::Paper
+    };
+    Palette::for_theme(tone, c.high_contrast)
+}
+
+/// The Search preview's Verse texts in Body size: Resource text in the Reading fonts, sized to
+/// the chrome around it.
+fn preview_settings(reading: TextSettings) -> TextSettings {
+    TextSettings {
+        size: text::BODY,
+        ..reading
+    }
+}
+
+/// What the Search preview's Verses are laid out and drawn with: the text pipeline's snippet
+/// layouts and glyph atlas, in [`preview_settings`] and [`hit_palette`].
+struct VerseText<'a> {
+    snippets: &'a mut SnippetCache,
+    atlas: &'a mut AtlasTexture,
+    settings: TextSettings,
+    palette: Palette,
+}
+
+impl VerseText<'_> {
+    /// `hit`'s text laid out `width` wide, or `None` (and a frame asked for) while a worker
+    /// lays it out.
+    fn laid(
+        &mut self,
+        ui: &Ui,
+        hit: &obs_engine::PreviewHit,
+        rtl: bool,
+        width: f32,
+    ) -> Option<Arc<obs_layout::LaidBlock>> {
+        let text = &hit.snippet.text;
+        let laid = (self.snippets).get(text, ColorRole::Ink, rtl, width, &self.settings);
+        if laid.is_none() {
+            ui.ctx().request_repaint();
+        }
+        laid
+    }
+
+    /// Draw `laid` at `origin` as far as `painter`'s clip rect shows it, `hit`'s matches
+    /// tinted behind it.
+    fn paint(
+        &mut self,
+        painter: &egui::Painter,
+        laid: &obs_layout::LaidBlock,
+        hit: &obs_engine::PreviewHit,
+        origin: egui::Pos2,
+    ) {
+        for r in &hit.snippet.highlights {
+            for [x0, y0, x1, y1] in crate::compare_view::range_rects(laid, r) {
+                let tint = Rect::from_min_max(origin + vec2(x0, y0), origin + vec2(x1, y1));
+                painter.rect_filled(tint, 0.0, self.palette.search_hit);
+            }
+        }
+        self.atlas.paint(painter, laid, origin, &self.palette);
+    }
+
+    /// A grey bar where the text will be.
+    fn placeholder(&self, painter: &egui::Painter, origin: egui::Pos2, width: f32) {
+        let line = self.settings.size * self.settings.line_spacing;
+        let color = theme::c().rule;
+        crate::components::text_placeholder(painter, origin, width, line, color);
+    }
+}
+
+/// A Search preview Verse: its reference, then the first line of its text, flush with the
+/// Bible's direction, the matches tinted and a cut line ended with "…". Returns whether the
+/// text was cut, or `None` while it waits for its layout.
+fn paint_hit(
+    ui: &Ui,
+    rect: Rect,
+    hit: &obs_engine::PreviewHit,
+    rtl: bool,
+    verses: &mut VerseText<'_>,
+) -> Option<bool> {
+    let c = theme::c();
+    let painter = ui.painter();
+    let body = egui::TextStyle::Body.resolve(ui.style());
+    let width = rect.width() - 2.0 * space::M;
+    let reference = one_line(ui, &hit.reference, body.clone(), c.ink, width);
+    let left = rect.left() + space::M;
+    let top = rect.top() + space::XS + reference.size().y;
+    painter.galley(pos2(left, rect.top() + space::XS), reference, c.ink);
+    let ink = verses.palette.ink;
+    let ellipsis = painter.layout_no_wrap("…".to_string(), body, ink);
+    // Room for the "…" at the line's end: its right in left-to-right text, its left in
+    // right-to-left text.
+    let room = ellipsis.size().x + space::XS;
+    let text_width = (width - room).max(size::TEXT_MIN);
+    let origin = pos2(if rtl { left + room } else { left }, top);
+    let Some(laid) = verses.laid(ui, hit, rtl, text_width) else {
+        verses.placeholder(painter, origin, text_width.min(size::POPOVER_TEXT));
+        return None;
+    };
+    let Some(first) = laid.lines.first() else {
+        return Some(false);
+    };
+    let line = Rect::from_min_max(
+        pos2(rect.left(), top + first.top),
+        pos2(rect.right(), top + first.bottom),
+    );
+    let clipped = painter.with_clip_rect(line.intersect(painter.clip_rect()));
+    verses.paint(&clipped, &laid, hit, origin);
+    let cut = laid.lines.len() > 1;
+    if cut {
+        let (start, end) = (first.items.iter()).fold((f32::MAX, f32::MIN), |(a, b), item| {
+            (a.min(item.x), b.max(item.x + item.width))
+        });
+        let (x, align) = if rtl {
+            (origin.x + start - space::XXS, Align2::RIGHT_CENTER)
+        } else {
+            (origin.x + end + space::XXS, Align2::LEFT_CENTER)
+        };
+        let at = align.align_size_within_rect(
+            ellipsis.size(),
+            Rect::from_x_y_ranges(x..=x, line.y_range()),
+        );
+        painter.galley(at.min, ellipsis, ink);
+    }
+    Some(cut)
+}
+
+/// A cut Verse whole, for its hover popup: the text pipeline's layout of it, as wide as a
+/// popover's text.
+fn paint_whole_hit(
+    ui: &mut Ui,
+    hit: &obs_engine::PreviewHit,
+    rtl: bool,
+    verses: &mut VerseText<'_>,
+) {
+    let width = size::POPOVER_TEXT;
+    let Some(laid) = verses.laid(ui, hit, rtl, width) else {
+        let line = verses.settings.size * verses.settings.line_spacing;
+        let (rect, _) = ui.allocate_exact_size(vec2(width, line), Sense::hover());
+        verses.placeholder(ui.painter(), rect.min, width);
+        return;
+    };
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, laid.height), Sense::hover());
+    let text = &hit.snippet.text;
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
+    let painter = ui
+        .painter()
+        .with_clip_rect(rect.expand(space::XS).intersect(ui.clip_rect()));
+    verses.paint(&painter, &laid, hit, rect.min);
+}
+
+/// A heading (its title and count) or a note that cannot be picked.
+fn paint_note(ui: &Ui, rect: Rect, row: &Row) {
+    let c = theme::c();
+    let painter = ui.painter();
+    match row {
+        Row::Heading { title, count } => {
+            let font = egui::TextStyle::Small.resolve(ui.style());
+            let y = rect.center().y;
+            painter.text(
+                pos2(rect.left() + space::M, y),
+                Align2::LEFT_CENTER,
+                title,
+                font.clone(),
+                c.muted,
+            );
+            painter.text(
+                pos2(rect.right() - space::M, y),
+                Align2::RIGHT_CENTER,
+                count.to_string(),
+                font,
+                c.muted,
+            );
+        }
+        Row::Note(note) => {
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            let galley = one_line(ui, note, font, c.muted, rect.width() - 2.0 * space::M);
+            let at = pos2(
+                rect.left() + space::M,
+                rect.center().y - galley.size().y / 2.0,
+            );
+            painter.galley(at, galley, c.muted);
+        }
+        _ => {}
+    }
+}
+
+/// The list's bottom edge when rows follow below it: a fade into the panel, and a "N more"
+/// pill with a chevron down at its right, over the rows.
+fn paint_more(ui: &Ui, view: Rect, n: usize) {
+    let c = theme::c();
+    let painter = ui.painter();
+    let band = Rect::from_min_max(pos2(view.left(), view.bottom() - ROW), view.right_bottom());
+    let mut fade = egui::Mesh::default();
+    // Into the popover's fill.
+    let clear = egui::Color32::TRANSPARENT;
+    fade.colored_vertex(band.left_top(), clear);
+    fade.colored_vertex(band.right_top(), clear);
+    fade.colored_vertex(band.right_bottom(), c.field);
+    fade.colored_vertex(band.left_bottom(), c.field);
+    fade.add_triangle(0, 1, 2);
+    fade.add_triangle(0, 2, 3);
+    painter.add(fade);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let label = painter.layout_no_wrap(format!("{n} more"), font, c.ink);
+    let pill_size = vec2(
+        label.size().x + size::ICON_SMALL + space::XS + 2.0 * space::M,
+        size::CHIP,
+    );
+    let pill = Rect::from_min_size(
+        pos2(
+            view.right() - space::XS - pill_size.x,
+            band.center().y - pill_size.y / 2.0,
+        ),
+        pill_size,
+    );
+    painter.rect(
+        pill,
+        radius::PILL,
+        c.field,
+        egui::Stroke::new(crate::tokens::stroke::HAIR, c.rule),
+        egui::StrokeKind::Inside,
+    );
+    let text_at = pos2(
+        pill.left() + space::M,
+        pill.center().y - label.size().y / 2.0,
+    );
+    painter.galley(text_at, label, c.ink);
+    let chevron = Rect::from_center_size(
+        pos2(
+            pill.right() - space::M - size::ICON_SMALL / 2.0,
+            pill.center().y,
+        ),
+        vec2(size::ICON_SMALL, size::ICON_SMALL),
+    );
+    icons::paint(painter, Icon::ChevronDown, chevron, size::ICON_SMALL, c.ink);
 }
 
 /// `s`'s detail as shown: a command's key as the platform writes it (`⌘W` on macOS, #262).

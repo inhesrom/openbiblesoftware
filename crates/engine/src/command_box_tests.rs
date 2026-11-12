@@ -555,3 +555,35 @@ fn a_command_that_asks_first_opens_settings_asking_instead_of_running() {
     assert!(!s.history().is_empty(), "nothing deleted");
     assert!(!s.search_history().is_empty(), "nothing deleted");
 }
+
+/// The dropdown's headings (#295): each suggestion under its kind, headings in the order of
+/// their best suggestion, so the best of all stays first.
+#[test]
+fn suggestions_group_under_headings_best_first() {
+    let t = Temp::new("groups");
+    let mut s = launch(&t);
+    let list = s.command_box_suggestions("jn 3:16");
+    let groups = suggestion_groups(&list);
+    assert_eq!(groups[0].heading, "Go to");
+    assert_eq!(groups[0].suggestions, [0]);
+    let search = groups.iter().find(|g| g.heading == "Search").unwrap();
+    assert_eq!(search.suggestions.len(), 1);
+    let all: usize = groups.iter().map(|g| g.suggestions.len()).sum();
+    assert_eq!(all, list.len(), "every suggestion once");
+
+    // All commands: one heading, the list in its own order.
+    let list = s.command_box_suggestions(">");
+    let groups = suggestion_groups(&list);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].heading, "Commands");
+    assert_eq!(groups[0].suggestions, (0..list.len()).collect::<Vec<_>>());
+    for (action, heading) in [
+        (CommandBoxAction::WordStudy(strongs("G26")), "Word Study"),
+        (CommandBoxAction::OpenResource("bsb".into()), "Resources"),
+        (CommandBoxAction::RestoreLayout("x".into()), "Layouts"),
+        (CommandBoxAction::ScrollSpeed(150), "Settings"),
+        (CommandBoxAction::Recent("x".into()), "Recent"),
+    ] {
+        assert_eq!(action.group(), heading);
+    }
+}

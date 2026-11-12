@@ -589,6 +589,7 @@ mod tests {
             "text-size",
             "text-size-tools",
             "resource-text-size",
+            "search-preview",
         ] {
             assert!(
                 names.contains(&feature),
@@ -651,6 +652,33 @@ mod tests {
                 "text-size: an action took 530.0 ms to show (max 100)",
                 "text-size-tools: no action time measured",
             ]
+        );
+    }
+
+    /// The Command box's Search preview (#295) shows a whole-Bible ★ Bible's hits within
+    /// about 150 ms of the last key; slower, or not timed, fails.
+    #[test]
+    fn a_search_preview_slower_than_150_ms_fails_the_gate() {
+        let t = thresholds();
+        assert_eq!(t.features["search-preview"].max_action_ms, Some(150.0));
+        let mut r = report(0.0, 0, 1.2);
+        for s in &mut r.scenarios {
+            if s.name == "search-preview" {
+                s.action_ms_max = Some(400.0);
+            }
+        }
+        assert_eq!(
+            violations(&r, &t),
+            ["search-preview: an action took 400.0 ms to show (max 150)"]
+        );
+        for s in &mut r.scenarios {
+            if s.name == "search-preview" {
+                s.action_ms_max = None;
+            }
+        }
+        assert_eq!(
+            violations(&r, &t),
+            ["search-preview: no action time measured"]
         );
     }
 

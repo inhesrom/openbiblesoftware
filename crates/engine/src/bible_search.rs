@@ -728,7 +728,7 @@ pub struct BibleSearches {
     rerunning: bool,
     /// Outlines by [`outline_key`], shared with the jobs that read them.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
+    pub(crate) outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
     /// Outlines being read ahead of a search, by job.
     warming: BTreeMap<JobId, String>,
     /// Bibles whose index became searchable, waiting for their outline to be read ahead
@@ -801,9 +801,10 @@ fn library_fingerprint(library: &Library) -> u64 {
 }
 
 /// What a search job hands back.
-struct RunOutput {
-    results: Arc<BibleResults>,
-    first_page: Vec<Vec<Snippet>>,
+pub(crate) struct RunOutput {
+    pub(crate) results: Arc<BibleResults>,
+    /// The snippets of the first rows ([`desktop::RunInput::snippet_rows`]).
+    pub(crate) first_page: Vec<Vec<Snippet>>,
     /// Bibles whose index failed the search: (resource id, abbreviation, error), for
     /// [`Session::index_search_failed`].
     damaged: Vec<(String, String, String)>,
@@ -1139,6 +1140,7 @@ impl Session {
             stale,
             lexicons,
             outlines: Arc::clone(&self.bible_search.outlines),
+            snippet_rows: PAGE_ROWS,
         };
         let generation = self.search_tab(tab).map_or(0, SearchTab::generation);
         let job = self
@@ -1427,7 +1429,7 @@ impl Session {
     /// A Bible or Library search job's indexes that failed the search: each is rebuilt
     /// ([`Session::index_search_failed`]), and its results list it as indexing rather than
     /// failed.
-    fn repair_damaged_indexes(&mut self, out: &mut crate::jobs::JobOutput) {
+    pub(crate) fn repair_damaged_indexes(&mut self, out: &mut crate::jobs::JobOutput) {
         if let Some(run) = out.downcast_mut::<RunOutput>() {
             let r = Arc::make_mut(&mut run.results);
             let mut lists = crate::search::NotSearched {
@@ -1541,7 +1543,7 @@ pub(crate) mod desktop {
     use crate::jobs::JobContext;
 
     /// A Bible a search job searches.
-    pub(super) struct JobBible {
+    pub(crate) struct JobBible {
         pub id: String,
         pub abbreviation: String,
         pub rtl: bool,
@@ -1550,7 +1552,7 @@ pub(crate) mod desktop {
         pub outline_key: String,
     }
 
-    pub(super) struct RunInput {
+    pub(crate) struct RunInput {
         pub query: String,
         /// Word forms on (#180).
         pub word_forms: bool,
@@ -1562,9 +1564,12 @@ pub(crate) mod desktop {
         pub stale: Vec<String>,
         pub lexicons: Vec<PathBuf>,
         pub outlines: Outlines,
+        /// How many rows' snippets come with the results: a page ([`PAGE_ROWS`]) for the
+        /// Search Tool, the shown hits for the Command box's Search preview.
+        pub snippet_rows: usize,
     }
 
-    pub(super) type Outlines = Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>;
+    pub(crate) type Outlines = Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>;
 
     /// A Bible's outline, read once per [`outline_key`]: from its Verse map (which lists every
     /// Verse) when it has one, else from its verse list.
@@ -1624,7 +1629,7 @@ pub(crate) mod desktop {
         }
     }
 
-    pub(super) fn run(input: RunInput, ctx: &JobContext) -> Result<RunOutput, String> {
+    pub(crate) fn run(input: RunInput, ctx: &JobContext) -> Result<RunOutput, String> {
         let started = std::time::Instant::now();
         let lookup = lemma_lookup(input.lexicons.clone());
         let parsed = parse_query(&input.query, input.word_forms)?;
@@ -1696,7 +1701,7 @@ pub(crate) mod desktop {
             .filter(|(b, _)| results.bibles.iter().any(|r| r.id == b.id))
             .map(|(b, _)| Some(b.obr.clone()))
             .collect();
-        let first_page = page_snippets(&results, &obrs, 0);
+        let first_page = rows_snippets(&results, &obrs, 0..input.snippet_rows);
         Ok(RunOutput {
             results,
             first_page,
@@ -1710,10 +1715,20 @@ pub(crate) mod desktop {
         obrs: &[Option<PathBuf>],
         page: usize,
     ) -> Vec<Vec<Snippet>> {
+        rows_snippets(results, obrs, page * PAGE_ROWS..(page + 1) * PAGE_ROWS)
+    }
+
+    /// The snippets of `rows` (those of the results), reading each hit's text and spans from
+    /// its Bible.
+    fn rows_snippets(
+        results: &BibleResults,
+        obrs: &[Option<PathBuf>],
+        rows: Range<usize>,
+    ) -> Vec<Vec<Snippet>> {
         let mut readers: HashMap<usize, Option<ObrReader>> = HashMap::new();
         let mut texts: HashMap<(usize, UnitId), Option<String>> = HashMap::new();
-        let start = page * PAGE_ROWS;
-        let end = (start + PAGE_ROWS).min(results.rows.len());
+        let start = rows.start;
+        let end = rows.end.min(results.rows.len());
         let mut out = Vec::with_capacity(end.saturating_sub(start));
         for row in results.rows.get(start..end).unwrap_or_default() {
             let mut snippets = Vec::with_capacity(row.hits.len());
