@@ -61,6 +61,16 @@ are immediate egui viewports drawn by the one `Shell`.
   window's keys.
 - A Tab dragged out keeps the pointer's last desktop position while dragged, so a pointer
   that leaves the window (`PointerGone`) still places the new window where it left.
+- macOS title bar (#297): with `Shell::set_unified_title_bar`, a Floating window's viewport is
+  built with `unified_title_bar` too (its title, the Panels' active Tabs, is kept for the
+  Window menu and VoiceOver but not shown), and its top tab bars are its title bar: the dock
+  starts at the window's top edge (centred on the traffic lights as near as the tab bar's
+  height allows), and the tab bar under the traffic lights leaves them their room
+  (`State::traffic_lights`, `Behavior::tab_bar_left_ui`). That room moves the window when
+  dragged and zooms or minimizes it when double-clicked, as the main window's menu bar does;
+  the tab bar's own empty space keeps its own meaning (it moves its Panel when the window
+  holds more than one). In full screen the room collapses.
+  See [menus.md](menus.md#the-macos-title-bar-297).
 
 ## Tests
 

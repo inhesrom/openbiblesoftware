@@ -17,6 +17,9 @@ mod fonts;
 #[cfg(test)]
 mod live_tests;
 mod system_motion;
+// macOS: the menu bar is the window's title bar (#297); elsewhere only `main_viewport` is used.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod title_bar;
 
 fn bench(args: &[String]) -> ExitCode {
     let mut cfg = BenchConfig::default();
@@ -271,9 +274,7 @@ fn main() -> ExitCode {
     }
     start_diagnostics();
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title(obs_ui_egui::APP_TITLE)
-            .with_inner_size([1280.0, 800.0]),
+        viewport: title_bar::main_viewport(),
         ..Default::default()
     };
     let file = args.first().map(Into::into);
@@ -281,9 +282,11 @@ fn main() -> ExitCode {
         obs_ui_egui::APP_TITLE,
         options,
         Box::new(|_cc| {
+            let app = obs_ui_egui::App::with_file(file);
+            #[cfg(target_os = "macos")]
+            let app = app.with_unified_title_bar(Arc::new(title_bar::OsTitleBar::start()));
             Ok(Box::new(
-                obs_ui_egui::App::with_file(file)
-                    .with_fetch(Arc::new(fetch::HttpFetch::new()))
+                app.with_fetch(Arc::new(fetch::HttpFetch::new()))
                     .with_system_language(sys_locale::get_locale())
                     .with_update_checks()
                     .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))
