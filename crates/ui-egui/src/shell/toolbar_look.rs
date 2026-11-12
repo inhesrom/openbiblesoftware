@@ -255,7 +255,7 @@ pub(super) fn expanded_launcher(
     let left = icon.right() + ICON_GAP;
     let room = rect.right() - BUTTON_PAD - left;
     let color = if open { lk.accent } else { lk.ink };
-    let label = elided(p, which.title().to_string(), label_font(), room, color);
+    let label = crate::components::elided(p, which.title(), label_font(), color, room);
     let after = left + label.size().x + DETAIL_GAP;
     p.galley(
         pos2(left, rect.center().y - label.size().y / 2.0),
@@ -264,7 +264,7 @@ pub(super) fn expanded_launcher(
     );
     let rest = rect.right() - BUTTON_PAD - after;
     if !detail.is_empty() && rest > 0.0 {
-        let line = elided(p, detail.to_string(), small_font(), rest, lk.muted);
+        let line = crate::components::elided(p, detail, small_font(), lk.muted, rest);
         p.galley(
             pos2(after, rect.center().y - line.size().y / 2.0),
             line,
@@ -300,12 +300,12 @@ pub(super) fn pop_out_button(ui: &mut Ui, icon: Icon, label: Option<&str>, width
     icons::paint(p, icon, square, icons::LARGE, lk.accent);
     if let Some(label) = label {
         let left = square.right() - BUTTON_PAD + ICON_GAP;
-        let text = elided(
+        let text = crate::components::elided(
             p,
-            label.to_string(),
+            label,
             label_font(),
-            rect.right() - BUTTON_PAD - left,
             lk.muted,
+            rect.right() - BUTTON_PAD - left,
         );
         p.galley(
             pos2(left, rect.center().y - text.size().y / 2.0),
