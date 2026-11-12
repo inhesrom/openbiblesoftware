@@ -1249,3 +1249,75 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Timeline in a side Panel, Light](gallery/timeline-in-a-side-panel-light-1x.png) | ![Timeline in a side Panel, Dark](gallery/timeline-in-a-side-panel-dark-1x.png) | ![Timeline in a side Panel, Sepia](gallery/timeline-in-a-side-panel-sepia-1x.png) |
 | [2×](gallery/timeline-in-a-side-panel-light-2x.png) | [2×](gallery/timeline-in-a-side-panel-dark-2x.png) | [2×](gallery/timeline-in-a-side-panel-sepia-2x.png) |
+
+## Headers and rows in a narrow Panel
+
+### Search in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search in a side Panel, Light](gallery/search-in-a-side-panel-light-1x.png) | ![Search in a side Panel, Dark](gallery/search-in-a-side-panel-dark-1x.png) | ![Search in a side Panel, Sepia](gallery/search-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/search-in-a-side-panel-light-2x.png) | [2×](gallery/search-in-a-side-panel-dark-2x.png) | [2×](gallery/search-in-a-side-panel-sepia-2x.png) |
+
+### Search in a side Panel, Larger Interface size
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search in a side Panel, Larger Interface size, Light](gallery/search-in-a-side-panel-larger-interface-size-light-1x.png) | ![Search in a side Panel, Larger Interface size, Dark](gallery/search-in-a-side-panel-larger-interface-size-dark-1x.png) | ![Search in a side Panel, Larger Interface size, Sepia](gallery/search-in-a-side-panel-larger-interface-size-sepia-1x.png) |
+| [2×](gallery/search-in-a-side-panel-larger-interface-size-light-2x.png) | [2×](gallery/search-in-a-side-panel-larger-interface-size-dark-2x.png) | [2×](gallery/search-in-a-side-panel-larger-interface-size-sepia-2x.png) |
+
+### Search Analysis in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search Analysis in a side Panel, Light](gallery/search-analysis-in-a-side-panel-light-1x.png) | ![Search Analysis in a side Panel, Dark](gallery/search-analysis-in-a-side-panel-dark-1x.png) | ![Search Analysis in a side Panel, Sepia](gallery/search-analysis-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/search-analysis-in-a-side-panel-light-2x.png) | [2×](gallery/search-analysis-in-a-side-panel-dark-2x.png) | [2×](gallery/search-analysis-in-a-side-panel-sepia-2x.png) |
+
+### Search Analysis in a centre Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search Analysis in a centre Panel, Light](gallery/search-analysis-in-a-centre-panel-light-1x.png) | ![Search Analysis in a centre Panel, Dark](gallery/search-analysis-in-a-centre-panel-dark-1x.png) | ![Search Analysis in a centre Panel, Sepia](gallery/search-analysis-in-a-centre-panel-sepia-1x.png) |
+| [2×](gallery/search-analysis-in-a-centre-panel-light-2x.png) | [2×](gallery/search-analysis-in-a-centre-panel-dark-2x.png) | [2×](gallery/search-analysis-in-a-centre-panel-sepia-2x.png) |
+
+### Library Search in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library Search in a side Panel, Light](gallery/library-search-in-a-side-panel-light-1x.png) | ![Library Search in a side Panel, Dark](gallery/library-search-in-a-side-panel-dark-1x.png) | ![Library Search in a side Panel, Sepia](gallery/library-search-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/library-search-in-a-side-panel-light-2x.png) | [2×](gallery/library-search-in-a-side-panel-dark-2x.png) | [2×](gallery/library-search-in-a-side-panel-sepia-2x.png) |
+
+### Notes in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Notes in a side Panel, Light](gallery/notes-in-a-side-panel-light-1x.png) | ![Notes in a side Panel, Dark](gallery/notes-in-a-side-panel-dark-1x.png) | ![Notes in a side Panel, Sepia](gallery/notes-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/notes-in-a-side-panel-light-2x.png) | [2×](gallery/notes-in-a-side-panel-dark-2x.png) | [2×](gallery/notes-in-a-side-panel-sepia-2x.png) |
+
+### Bible Tab in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Bible Tab in a side Panel, Light](gallery/bible-tab-in-a-side-panel-light-1x.png) | ![Bible Tab in a side Panel, Dark](gallery/bible-tab-in-a-side-panel-dark-1x.png) | ![Bible Tab in a side Panel, Sepia](gallery/bible-tab-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/bible-tab-in-a-side-panel-light-2x.png) | [2×](gallery/bible-tab-in-a-side-panel-dark-2x.png) | [2×](gallery/bible-tab-in-a-side-panel-sepia-2x.png) |
+
+### Bible and Commentary, Larger Interface size
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Bible and Commentary, Larger Interface size, Light](gallery/bible-and-commentary-larger-interface-size-light-1x.png) | ![Bible and Commentary, Larger Interface size, Dark](gallery/bible-and-commentary-larger-interface-size-dark-1x.png) | ![Bible and Commentary, Larger Interface size, Sepia](gallery/bible-and-commentary-larger-interface-size-sepia-1x.png) |
+| [2×](gallery/bible-and-commentary-larger-interface-size-light-2x.png) | [2×](gallery/bible-and-commentary-larger-interface-size-dark-2x.png) | [2×](gallery/bible-and-commentary-larger-interface-size-sepia-2x.png) |
+
+### Settings in a side Panel, Keyboard shortcuts
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Settings in a side Panel, Keyboard shortcuts, Light](gallery/settings-in-a-side-panel-keyboard-shortcuts-light-1x.png) | ![Settings in a side Panel, Keyboard shortcuts, Dark](gallery/settings-in-a-side-panel-keyboard-shortcuts-dark-1x.png) | ![Settings in a side Panel, Keyboard shortcuts, Sepia](gallery/settings-in-a-side-panel-keyboard-shortcuts-sepia-1x.png) |
+| [2×](gallery/settings-in-a-side-panel-keyboard-shortcuts-light-2x.png) | [2×](gallery/settings-in-a-side-panel-keyboard-shortcuts-dark-2x.png) | [2×](gallery/settings-in-a-side-panel-keyboard-shortcuts-sepia-2x.png) |
+
+### A new Tab at the end of a full tab bar
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![A new Tab at the end of a full tab bar, Light](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-light-1x.png) | ![A new Tab at the end of a full tab bar, Dark](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-dark-1x.png) | ![A new Tab at the end of a full tab bar, Sepia](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-sepia-1x.png) |
+| [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-light-2x.png) | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-dark-2x.png) | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-sepia-2x.png) |
