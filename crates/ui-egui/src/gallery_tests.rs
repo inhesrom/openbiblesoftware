@@ -82,10 +82,12 @@ enum Section {
     ReadingText,
     /// Tabs in a side Panel at its default width, with long text (#301).
     NarrowPanels,
+    /// Headers and rows in a side Panel and at a Larger Interface size (#303).
+    PanelFit,
 }
 
 impl Section {
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 8] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
@@ -93,6 +95,7 @@ impl Section {
         Section::States,
         Section::ReadingText,
         Section::NarrowPanels,
+        Section::PanelFit,
     ];
 
     fn heading(self) -> &'static str {
@@ -104,6 +107,7 @@ impl Section {
             Section::States => "Empty, loading and error states",
             Section::ReadingText => "Reading text",
             Section::NarrowPanels => "Narrow Panels",
+            Section::PanelFit => "Headers and rows in a narrow Panel",
         }
     }
 }
@@ -183,6 +187,7 @@ fn surfaces() -> Vec<Surface> {
             super::timeline::crowded_timeline_menus(),
         ),
         (Section::NarrowPanels, super::narrow_panels::narrow_panels()),
+        (Section::PanelFit, super::panel_fit::panel_fit()),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -668,7 +673,8 @@ fn dialogs_and_popovers() -> Vec<Run> {
                     &json!({ "passage": "Gen 1:1", "body": "Beginnings", "notebook": study }),
                 );
                 run_split(h, "tool.notes", json!({}));
-                let p = h.at("Study");
+                // In the Notebook list (a card names its Notebook too).
+                let p = leftmost(h, "Study");
                 right_click(h, p);
                 h.click_text("Delete…");
             },
@@ -863,7 +869,7 @@ fn menus_and_choosers() -> Vec<Run> {
                 // Beside the Interlinear toggle.
                 let lines = spot(h, "[chevron-down]", |r| {
                     (r.center().y - label.center().y).abs() < 10.0
-                        && (r.center().x - label.center().x).abs() < 50.0
+                        && (r.center().x - label.center().x).abs() < 80.0
                 });
                 h.click(lines);
             },
@@ -1660,6 +1666,11 @@ fn gallery_reading_text() {
 #[test]
 fn gallery_narrow_panels() {
     gallery(Section::NarrowPanels);
+}
+
+#[test]
+fn gallery_panel_fit() {
+    gallery(Section::PanelFit);
 }
 
 // ---------------------------------------------------------------------------------------

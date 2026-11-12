@@ -707,9 +707,27 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell.rs",
-        "&& (t.header_controls - measured).abs() > 0.5",
+        "&& (*kept - now).abs() > 0.5",
         "0.5",
         "a tolerance: a header width change smaller than this is not a resize",
+    ),
+    (
+        "shell/search_views.rs",
+        "let t = ((room - least_sum) / (full_sum - least_sum)).clamp(0.0, 1.0);",
+        "1.0",
+        "a clamp bound: how far each Analysis column is from its least to its own width",
+    ),
+    (
+        "shell/search_views.rs",
+        "if (offset - x).abs() > 0.5 {",
+        "0.5",
+        "a tolerance: a scroll change smaller than this does not move the Analysis header",
+    ),
+    (
+        "components.rs",
+        "&& before.is_none_or(|b| b.iter().zip(&now).any(|(a, b)| (a - b).abs() > 0.5))",
+        "0.5",
+        "a tolerance: a row's width change smaller than this is not a resize",
     ),
     (
         "shell.rs",

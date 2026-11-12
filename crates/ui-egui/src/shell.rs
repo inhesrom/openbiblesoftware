@@ -169,8 +169,10 @@ struct TabUi {
     /// resource (#151), oldest first; Back or Forward to that place scrolls there again.
     parked: Vec<ParkedScroll>,
     /// How wide the header's right-hand controls were last frame, so the header box leaves
-    /// room for them.
+    /// room for them: the Tab's own (menu, star, Aa), and a Resource's (parallel resources,
+    /// Interlinear), which go on a second line when the box would be too short (#303).
     header_controls: f32,
+    header_resource_controls: f32,
     /// A Resource or Text Comparison Tab's Find bar, while it is open (Ctrl+F, #175).
     find: Option<crate::find::FindBar>,
     /// A Resource Tab's Contents pane: its filter, open lines and highlighted line (#176).
@@ -2164,6 +2166,7 @@ impl State {
         let ui_state = TabUi {
             parked: old.parked,
             header_controls: old.header_controls,
+            header_resource_controls: old.header_resource_controls,
             ..TabUi::default()
         };
         self.load(tab, ui_state, None);
@@ -2211,6 +2214,7 @@ impl State {
         let ui_state = TabUi {
             parked,
             header_controls: old.header_controls,
+            header_resource_controls: old.header_resource_controls,
             ..TabUi::default()
         };
         self.load(tab, ui_state, width);
@@ -3232,7 +3236,7 @@ impl State {
             .inner_margin(inset::BAR)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
+                let second_line = ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = space::XS;
                     let narrow = ui.available_width() < size::HEADER_NARROW;
                     ui.add_space(space::XS);
@@ -3259,8 +3263,21 @@ impl State {
                         self.history_buttons(ui, tab);
                     }
                     // The box leaves room for the controls on the right (measured last frame).
-                    let controls = self.tabs.get(&tab).map_or(0.0, |t| t.header_controls);
-                    let room = ui.available_width() - controls - 2.0 * ui.spacing().item_spacing.x;
+                    // A Resource's controls give way to a second line before the box is too
+                    // short for a whole reference (#303).
+                    let (controls, resource_controls) =
+                        self.tabs.get(&tab).map_or((0.0, 0.0), |t| {
+                            (t.header_controls, t.header_resource_controls)
+                        });
+                    let gap = ui.spacing().item_spacing.x;
+                    let room = ui.available_width() - controls - 2.0 * gap;
+                    let second_line = resource_controls > 0.0
+                        && room - resource_controls - gap < size::HEADER_BOX_NARROW;
+                    let room = if second_line {
+                        room
+                    } else {
+                        room - resource_controls - gap
+                    };
                     let width = room
                         .min(if narrow {
                             size::HEADER_BOX_NARROW
@@ -3271,30 +3288,32 @@ impl State {
                     self.header_box(ui, tab, header, width);
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.tab_menu(ui, tab, narrow);
+                        // Filters is in the Tab menu only when it is in neither line.
+                        self.tab_menu(ui, tab, narrow && !second_line);
                         self.favorite_star(ui, tab);
                         self.text_size_button(ui, tab);
-                        if matches!(kind, TabKind::Resource(_)) {
-                            if !narrow {
-                                self.filters_menu(ui, tab);
-                            }
-                            self.interlinear_controls(ui, tab, narrow);
-                            self.parallel_resources(ui, tab, narrow);
-                        }
                         let measured = ui.min_rect().width();
-                        if let Some(t) = self.tabs.get_mut(&tab)
-                            && (t.header_controls - measured).abs() > 0.5
-                        {
-                            t.header_controls = measured;
-                            ui.ctx().request_repaint();
+                        self.header_widths(ui, tab, Some(measured), None);
+                        if !second_line {
+                            self.resource_controls(ui, tab, kind, narrow);
                         }
-                        if !narrow {
+                        // The Resource's name, when there is room for more than a few letters.
+                        if !narrow && ui.available_width() >= size::HEADER_TITLE_MIN {
                             ui.add(
                                 egui::Label::new(crate::components::hint_text(title)).truncate(),
                             );
                         }
                     });
+                    second_line
                 });
+                if second_line.inner {
+                    let line = vec2(ui.available_width(), ui.spacing().interact_size.y);
+                    let rtl = egui::Layout::right_to_left(egui::Align::Center);
+                    ui.allocate_ui_with_layout(line, rtl, |ui| {
+                        ui.spacing_mut().item_spacing.x = space::XS;
+                        self.resource_controls(ui, tab, kind, false);
+                    });
+                }
                 if let Some(e) = self.tabs.get(&tab).and_then(|t| t.error.clone()) {
                     ui.label(RichText::new(e).small().color(theme::c().warn));
                 }
@@ -3316,6 +3335,42 @@ impl State {
             r.bottom() - stroke::HAIR / 2.0,
             crate::components::rule_stroke(),
         );
+    }
+
+    /// A Resource Tab's own header controls, laid out right to left: Filters (in the Tab menu
+    /// when `narrow`), Interlinear and the parallel resources, compact when `narrow`. Their
+    /// width is kept for the next frame's layout (#303).
+    fn resource_controls(&mut self, ui: &mut Ui, tab: TabId, kind: &TabKind, narrow: bool) {
+        if !matches!(kind, TabKind::Resource(_)) {
+            return;
+        }
+        let r = ui.horizontal(|ui| {
+            if !narrow {
+                self.filters_menu(ui, tab);
+            }
+            self.interlinear_controls(ui, tab, narrow);
+            self.parallel_resources(ui, tab, narrow);
+        });
+        self.header_widths(ui, tab, None, Some(r.response.rect.width()));
+    }
+
+    /// Keep the widths of a header's right-hand controls measured this frame, asking for
+    /// another frame when one changed.
+    fn header_widths(&mut self, ui: &Ui, tab: TabId, own: Option<f32>, resource: Option<f32>) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        for (kept, now) in [
+            (&mut t.header_controls, own),
+            (&mut t.header_resource_controls, resource),
+        ] {
+            if let Some(now) = now
+                && (*kept - now).abs() > 0.5
+            {
+                *kept = now;
+                ui.ctx().request_repaint();
+            }
+        }
     }
 
     fn title(&self, tab: TabId, kind: &TabKind) -> String {
@@ -3944,6 +3999,11 @@ impl egui_tiles::Behavior<TabId> for State {
                 self.session.workspace.user_focused(t);
             }
             self.tab_button_drawn(t, &resp);
+            if let Some(panel) = self.session.workspace.panel_of(t)
+                && self.session.workspace.active_in(panel) == Some(t)
+            {
+                scroll_new_active_tab_into_view(panel, t, &resp);
+            }
             let linkable = self
                 .session
                 .workspace
@@ -4095,6 +4155,17 @@ impl egui_tiles::Behavior<TabId> for State {
             all_panes_must_have_tabs: true,
             ..Default::default()
         }
+    }
+}
+
+/// Scroll a Panel's tab bar to its active Tab when that Tab has just become active (opened,
+/// or chosen by a command), so a new Tab at the end of a full bar is not left hidden under the
+/// bar's scroll arrow (#303). Only then: scrolling the bar away from it by hand stays put.
+fn scroll_new_active_tab_into_view(panel: PanelId, tab: TabId, resp: &egui::Response) {
+    let id = egui::Id::unique(("tab-bar-active", panel));
+    if resp.ctx.data(|d| d.get_temp::<TabId>(id)) != Some(tab) {
+        resp.ctx.data_mut(|d| d.insert_temp(id, tab));
+        resp.scroll_to_me(None);
     }
 }
 

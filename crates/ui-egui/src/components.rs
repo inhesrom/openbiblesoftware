@@ -3,7 +3,7 @@
 //! ([`crate::theme::c`]). A surface that needs one of these uses it rather than restyling
 //! an egui widget itself, so the same thing looks the same in every Tab, pane and window.
 
-use egui::{Frame, Response, RichText, Stroke, TextEdit, Ui};
+use egui::{Frame, Response, RichText, Stroke, TextEdit, Ui, vec2};
 
 use crate::icons::{self, Icon};
 use crate::theme::{self, display};
@@ -320,6 +320,137 @@ pub fn section_header(ui: &mut Ui, title: &str) -> Response {
             .strong()
             .color(theme::c().muted),
     )
+}
+
+// ---------------------------------------------------------------------------------------
+// Rows that fit their Panel (#303): in a narrow side Panel a row's controls go onto more lines
+// rather than being drawn over each other or past the Panel's edge. Their widths are measured
+// as they are drawn, so a row settles a frame after its width changes.
+
+/// Last frame's widths of a row's parts, and asks for another frame when they changed.
+fn measured_widths<const N: usize>(ui: &Ui, id: egui::Id, now: Option<[f32; N]>) -> [f32; N] {
+    let before = ui.data(|d| d.get_temp::<[f32; N]>(id));
+    if let Some(now) = now
+        && before.is_none_or(|b| b.iter().zip(&now).any(|(a, b)| (a - b).abs() > 0.5))
+    {
+        ui.data_mut(|d| d.insert_temp(id, now));
+        ui.ctx().request_repaint();
+    }
+    before.unwrap_or([0.0; N])
+}
+
+/// The width a wrapped group of controls needs on one line: its width, or the whole row when
+/// it took more than one line (so it is not tried beside anything again).
+fn wrapped_width(ui: &Ui, rect: egui::Rect, row: f32) -> f32 {
+    let line = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+    if rect.height() > line {
+        row
+    } else {
+        rect.width()
+    }
+}
+
+/// **RowWithEnd**: controls from the left (`start`) and one group against the row's right
+/// edge (`end`, laid out right to left). When the row is too narrow for both, `start` wraps
+/// onto more lines and `end` takes a line of its own, still at the right, rather than being
+/// drawn over `start`. Each control wraps whole: a Button never wraps its own label onto two
+/// lines. `cx` is what both parts change (each gets it in turn).
+pub fn row_with_end<C, R>(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    cx: &mut C,
+    start: impl FnOnce(&mut Ui, &mut C),
+    end: impl FnOnce(&mut Ui, &mut C) -> R,
+) -> R {
+    let id = ui.make_persistent_id(("row-with-end", id_salt));
+    let [start_w, end_w] = measured_widths(ui, id, None);
+    let gap = ui.spacing().item_spacing.x;
+    let fits = start_w + gap + end_w <= ui.available_width();
+    let (widths, out) = if fits {
+        ui.horizontal(|ui| {
+            let start_w = ui.horizontal(|ui| start(ui, cx)).response.rect.width();
+            let (end_w, out) = ui
+                .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let r = ui.horizontal(|ui| end(ui, cx));
+                    (r.response.rect.width(), r.inner)
+                })
+                .inner;
+            ([start_w, end_w], out)
+        })
+        .inner
+    } else {
+        let row = ui.available_width();
+        let rect = ui
+            .horizontal_wrapped(|ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                start(ui, cx);
+            })
+            .response
+            .rect;
+        let start_w = wrapped_width(ui, rect, row);
+        // A line of its own, as tall as a control.
+        let line = vec2(ui.available_width(), ui.spacing().interact_size.y);
+        let (end_w, out) = ui
+            .allocate_ui_with_layout(
+                line,
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    let r = ui.horizontal(|ui| end(ui, cx));
+                    (r.response.rect.width(), r.inner)
+                },
+            )
+            .inner;
+        ([start_w, end_w], out)
+    };
+    measured_widths(ui, id, Some(widths));
+    out
+}
+
+/// **FieldRow**: a field that takes the row's spare width (`field` gets the width to give
+/// it), then `controls`. When that would leave the field less than `min` wide, the field takes
+/// the whole row and the controls go under it, wrapping whole: a Button never wraps its own
+/// label onto two lines.
+pub fn field_row<C>(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    min: f32,
+    cx: &mut C,
+    field: impl FnOnce(&mut Ui, &mut C, f32),
+    controls: impl FnOnce(&mut Ui, &mut C),
+) {
+    let id = ui.make_persistent_id(("field-row", id_salt));
+    let [controls_w] = measured_widths(ui, id, None);
+    let gap = ui.spacing().item_spacing.x;
+    let room = ui.available_width();
+    let beside = room - controls_w - gap;
+    let controls_w = if beside >= min {
+        ui.horizontal(|ui| {
+            field(ui, cx, beside);
+            ui.horizontal(|ui| controls(ui, cx)).response.rect.width()
+        })
+        .inner
+    } else {
+        ui.horizontal(|ui| field(ui, cx, room));
+        let rect = ui
+            .horizontal_wrapped(|ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                controls(ui, cx);
+            })
+            .response
+            .rect;
+        wrapped_width(ui, rect, room)
+    };
+    measured_widths(ui, id, Some([controls_w]));
+}
+
+/// **Scroll bars that always show** in `ui` (egui's float out of sight until hovered): for a
+/// table wider than its Tab, so it shows that it scrolls sideways (#303).
+pub fn shown_scroll_bars(ui: &mut Ui) {
+    ui.spacing_mut().scroll = egui::style::ScrollStyle {
+        floating_width: space::XS,
+        dormant_handle_opacity: crate::tokens::alpha::HALF,
+        ..egui::style::ScrollStyle::floating()
+    };
 }
 
 /// **Menu**: a button that opens a drop-down menu (a submenu inside a menu).

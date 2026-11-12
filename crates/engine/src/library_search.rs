@@ -354,11 +354,18 @@ impl LibraryResults {
 
     /// A group's header: `TCC — Test Covenant Commentary · 3 hits`.
     pub fn group_header(&self, group: &LibraryGroup) -> String {
-        let hits = plural(group.rows.len(), "hit", "hits");
+        let (name, hits) = self.group_header_parts(group);
+        format!("{name}{hits}")
+    }
+
+    /// A group's header in two parts: the Resource (`TCC — Test Covenant Commentary`), which
+    /// a narrow Tab cuts short, and its count (` · 3 hits`), which it always shows (#303).
+    pub fn group_header_parts(&self, group: &LibraryGroup) -> (String, String) {
+        let hits = format!(" · {}", plural(group.rows.len(), "hit", "hits"));
         if group.abbreviation == group.title || group.title.is_empty() {
-            format!("{} · {hits}", group.abbreviation)
+            (group.abbreviation.clone(), hits)
         } else {
-            format!("{} — {} · {hits}", group.abbreviation, group.title)
+            (format!("{} — {}", group.abbreviation, group.title), hits)
         }
     }
 

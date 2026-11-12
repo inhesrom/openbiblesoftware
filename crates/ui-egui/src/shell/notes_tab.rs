@@ -52,13 +52,13 @@ use super::annotate::{menu_label, paint_swatch, selection_params};
 use crate::heights::HeightIndex;
 use crate::icons::{self, Icon};
 use crate::theme;
-use crate::tokens::{alpha, scale, size, space, stroke};
+use crate::tokens::{alpha, scale, share, size, space, stroke};
 use crate::workers::SnippetCache;
 
 /// A card being edited saves this long after the last keystroke.
 pub(crate) const AUTOSAVE_SECS: f64 = 1.0;
 
-/// The Notebook column's width.
+/// The Notebook column's width (at most; a narrow Tab gives it a share).
 const COLUMN: f32 = size::SIDE_LIST;
 /// Space between cards.
 const GAP: f32 = space::M;
@@ -250,7 +250,9 @@ impl State {
         self.refresh_notes(tab);
         self.reveal_card(tab);
         let rect = ui.max_rect();
-        let column = Rect::from_min_max(rect.min, pos2(rect.left() + COLUMN, rect.bottom()));
+        // A narrow Tab (a side Panel) leaves the cards most of its width (#303).
+        let column_w = COLUMN.min(rect.width() * share::SIDE_PANE);
+        let column = Rect::from_min_max(rect.min, pos2(rect.left() + column_w, rect.bottom()));
         let cards = Rect::from_min_max(pos2(column.right() + stroke::HAIR, rect.top()), rect.max);
         ui.painter().rect_filled(column, 0.0, theme::c().surface);
         ui.painter().vline(
@@ -607,6 +609,7 @@ impl State {
                     ui.horizontal(|ui| {
                         let r = ui.add(
                             egui::Button::selectable(selected, name)
+                                .truncate()
                                 .min_size(vec2(
                                     ui.available_width() - space::XXXL,
                                     size::CONTROL_COMPACT,
@@ -842,13 +845,19 @@ impl State {
     fn card_list(&mut self, ui: &mut Ui, tab: TabId, run: &mut Vec<(&'static str, Value)>) {
         let cards = Arc::clone(&self.notes_ui.cards);
         let order = self.session.notes.order;
-        ui.horizontal(|ui| {
-            for o in [CardOrder::Bible, CardOrder::Modified] {
-                if ui.selectable_label(order == o, o.label()).clicked() && order != o {
-                    run.push(("notes.order", json!({ "value": o.id() })));
+        // The count goes under the order switch in a narrow Tab (#303).
+        crate::components::row_with_end(
+            ui,
+            ("notes-order", tab),
+            run,
+            |ui, run| {
+                for o in [CardOrder::Bible, CardOrder::Modified] {
+                    if ui.selectable_label(order == o, o.label()).clicked() && order != o {
+                        run.push(("notes.order", json!({ "value": o.id() })));
+                    }
                 }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            },
+            |ui, _| {
                 let n = cards.len();
                 let what = if n == 1 {
                     "1 Annotation".to_string()
@@ -856,8 +865,8 @@ impl State {
                     format!("{n} Annotations")
                 };
                 ui.label(crate::components::hint_text(what));
-            });
-        });
+            },
+        );
         ui.add_space(space::XS);
         self.notes_ui.drawn.clear();
         self.notes_ui.drawn_lines.clear();
@@ -941,64 +950,74 @@ impl State {
             .fill(self.palette.page)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    match &a.content {
-                        Content::Highlight { style } => {
-                            let (rect, r) = ui.allocate_exact_size(
-                                egui::Vec2::splat(icons::BODY),
-                                Sense::hover(),
-                            );
-                            let book = self.marks.styles(&self.session);
-                            let look = book.appearance(style);
-                            r.on_hover_text(book.label(style));
-                            paint_swatch(ui, rect, &look, &self.palette, false);
-                        }
-                        Content::Note { .. } => {
-                            // The grip a Note is dragged by onto text, to move it there (#216).
-                            let grip = ui
-                                .add(
-                                    icons::image(
-                                        ui.ctx(),
-                                        Icon::Note,
-                                        icons::BODY,
-                                        icons::page_muted(&self.palette),
+                // The Notebook and the menu go under the reference in a narrow Tab (#303).
+                crate::components::row_with_end(
+                    ui,
+                    ("card-head", &a.id),
+                    &mut (&mut *self, &mut *run),
+                    |ui, (this, run)| {
+                        match &a.content {
+                            Content::Highlight { style } => {
+                                let (rect, r) = ui.allocate_exact_size(
+                                    egui::Vec2::splat(icons::BODY),
+                                    Sense::hover(),
+                                );
+                                let book = this.marks.styles(&this.session);
+                                let look = book.appearance(style);
+                                r.on_hover_text(book.label(style));
+                                paint_swatch(ui, rect, &look, &this.palette, false);
+                            }
+                            Content::Note { .. } => {
+                                // The grip a Note is dragged by onto text, to move it there
+                                // (#216).
+                                let grip = ui
+                                    .add(
+                                        icons::image(
+                                            ui.ctx(),
+                                            Icon::Note,
+                                            icons::BODY,
+                                            icons::page_muted(&this.palette),
+                                        )
+                                        .sense(Sense::drag()),
                                     )
-                                    .sense(Sense::drag()),
-                                )
-                                .on_hover_cursor(egui::CursorIcon::Grab)
-                                .on_hover_text(
-                                    "Drag onto a Resource's text to move this Note there",
-                                )
-                                .accessible_name("Drag to move this Note");
-                            if grip.drag_started() {
-                                self.note_drag_started(ui, &a.id, &card.reference);
+                                    .on_hover_cursor(egui::CursorIcon::Grab)
+                                    .on_hover_text(
+                                        "Drag onto a Resource's text to move this Note there",
+                                    )
+                                    .accessible_name("Drag to move this Note");
+                                if grip.drag_started() {
+                                    this.note_drag_started(ui, &a.id, &card.reference);
+                                }
                             }
                         }
-                    }
-                    let reference = RichText::new(&card.reference).strong();
-                    if card.followable() {
-                        let r = crate::components::link(ui, reference)
-                            .on_hover_text("Go to the text (Ctrl/Cmd-click: in a new Tab)");
-                        if r.clicked() {
-                            let split = ui.input(|i| i.modifiers.command);
-                            run.push(("notes.follow", json!({ "id": a.id, "split": split })));
+                        let reference = RichText::new(&card.reference).strong();
+                        if card.followable() {
+                            let r = crate::components::link(ui, reference)
+                                .on_hover_text("Go to the text (Ctrl/Cmd-click: in a new Tab)");
+                            if r.clicked() {
+                                let split = ui.input(|i| i.modifiers.command);
+                                run.push(("notes.follow", json!({ "id": a.id, "split": split })));
+                            }
+                        } else {
+                            ui.label(reference);
                         }
-                    } else {
-                        ui.label(reference);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    },
+                    |ui, (this, run)| {
                         crate::components::menu(
                             ui,
                             RichText::new("…").color(theme::c().muted),
                             |ui| {
-                                self.card_menu(ui, card, run);
+                                this.card_menu(ui, card, run);
                             },
                         )
                         .response
                         .accessible_name("Note menu");
-                        ui.label(crate::components::hint_text(&card.notebook));
-                    });
-                });
+                        ui.add(
+                            egui::Label::new(crate::components::hint_text(&card.notebook))
+                                .truncate(),
+                        );
+                    },
+                );
                 if let Some(m) = &card.missing {
                     ui.label(RichText::new(m).small().color(theme::c().warn))
                         .on_hover_text("Its Annotations come back when it is imported again");

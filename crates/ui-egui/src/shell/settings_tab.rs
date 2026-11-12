@@ -125,7 +125,9 @@ impl State {
         let mut run = None;
         let is_default = self.session.setting_is_default(setting.id);
         ui.add_space(space::M);
-        ui.horizontal(|ui| {
+        // Every row wraps within the Tab: one wider than a side Panel would widen the whole
+        // page, and cut every row after it at the Panel's edge (#303).
+        ui.horizontal_wrapped(|ui| {
             match setting.kind {
                 SettingKind::Toggle {
                     command,
@@ -259,7 +261,7 @@ impl State {
                 // None: the help line says the others follow the Text size.
                 for (id, size) in own {
                     let name = self.session.text_size_name(&id);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(
                             RichText::new(format!("{name} — {size:.0} pt")).color(theme::c().ink),
                         );
@@ -276,7 +278,7 @@ impl State {
                 }
             }
             SettingKind::Font(slot) => {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(font_name(&self.session, slot)).color(theme::c().ink));
                     if ui
                         .button("Choose…")
@@ -320,7 +322,7 @@ impl State {
                 } else {
                     format!("Hidden: {}", hidden.join(", "))
                 };
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     muted(ui, &text);
                     if ui.button("Open Home").clicked() {
                         run = Some(("home.open", json!({})));
@@ -345,7 +347,7 @@ impl State {
                 let shown: Vec<&str> = (self.session.toolbar.shown().into_iter())
                     .map(obs_engine::Launcher::title)
                     .collect();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let text = if shown.is_empty() {
                         "None shown".to_string()
                     } else {
@@ -401,7 +403,7 @@ impl State {
         let mut run = None;
         let enabled = self.session.is_enabled(command);
         if asks && self.settings_ui.confirming == Some(setting.id) {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.colored_label(
                     theme::c().warn,
                     format!("{}? This cannot be undone.", setting.label),
@@ -427,7 +429,8 @@ impl State {
                 .map_or(setting.label, |c| c.label)
                 .to_string()
         };
-        ui.horizontal(|ui| {
+        // What it does wraps beside its button, within the Tab (#303).
+        ui.horizontal_top(|ui| {
             let r = ui
                 .add_enabled(enabled, crate::components::button(label))
                 .on_disabled_hover_text("Nothing to do now");
@@ -438,7 +441,7 @@ impl State {
                     run = Some((command, json!({})));
                 }
             }
-            muted(ui, setting.help);
+            ui.add(egui::Label::new(RichText::new(setting.help).color(theme::c().muted)).wrap());
         });
         run
     }

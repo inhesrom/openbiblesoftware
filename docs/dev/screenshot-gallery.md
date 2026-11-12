@@ -14,7 +14,14 @@ compared with its golden image (ADR 0019). The goldens are in
 `cargo xtask ci` runs the same tests in its `test` gate, so CI fails on a difference. The tests
 are `crates/ui-egui/src/gallery_tests.rs` (`shell::tests::gallery::`); one test per section
 (Tabs; toolbar panes, menus and windows; dialogs and popovers; menus and choosers in Tabs and
-windows; empty, loading and error states; reading text) so they run in parallel.
+windows; empty, loading and error states; reading text; narrow Panels; headers and rows in a
+narrow Panel) so they run in parallel.
+
+The section "Headers and rows in a narrow Panel" (#303) is `panel_fit` in
+`panel_fit_tests.rs`: Search, its Analysis and Library results, Notes, a Bible's header,
+Settings and a full tab bar in the QA sweep's 1280 × 800 window, in a side Panel or at a
+Larger Interface size. The same file's tests check that nothing there is drawn past the
+Panel's edge or over another control.
 
 ## Reading a failure
 
