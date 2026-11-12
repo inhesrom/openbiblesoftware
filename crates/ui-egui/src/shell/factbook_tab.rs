@@ -58,6 +58,7 @@ impl State {
         let Some(Key::Headword(id)) = key else {
             if hint_page(
                 ui,
+                self.guide_frame(),
                 "Type the name of a person or place in the box above (Abraham, John, Bethel), \
                  or click a name in a Passage Guide's People & places.",
                 "Show Abraham",
@@ -87,7 +88,7 @@ impl State {
             .is_some_and(|t| t.entry_history.current().is_some());
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         let mut action: Option<FactbookAction> = None;
-        crate::components::page_frame().show(ui, |ui| {
+        self.guide_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
                 ui.label(crate::components::title_text(format!("“{name}”")));

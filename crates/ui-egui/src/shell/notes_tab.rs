@@ -803,8 +803,13 @@ impl State {
                 };
                 ui.label(format!("Delete the Notebook “{}”? {what}", d.name));
                 if d.count > 0 {
-                    ui.radio_value(&mut d.delete, false, format!("Move them to “{default}”"));
-                    ui.radio_value(&mut d.delete, true, "Delete them");
+                    crate::components::radio_value(
+                        ui,
+                        &mut d.delete,
+                        false,
+                        format!("Move them to “{default}”"),
+                    );
+                    crate::components::radio_value(ui, &mut d.delete, true, "Delete them");
                 }
                 ui.label(crate::components::hint_text(format!("{undo}.")));
                 ui.horizontal(|ui| {

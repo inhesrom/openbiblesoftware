@@ -1428,3 +1428,36 @@ fn the_scales_are_ordered() {
     assert!(ordered(&[stroke::HAIR, stroke::MEDIUM, stroke::THICK]));
     assert!(ordered(&[size::ICON_SMALL, size::ICON, size::ICON_LARGE]));
 }
+
+/// #306: every check box and radio button is the shared Toggle or Radio component
+/// (`components::toggle`, `toggle_enabled`, `radio`, `radio_value`), which outlines it so
+/// that it shows unchecked in Dark; egui's own would draw it with the Rule border, nearly
+/// invisible on a Field-coloured dialog.
+#[test]
+fn every_check_box_and_radio_button_is_a_shared_component() {
+    const RAW: [&str; 5] = [
+        ".checkbox(",
+        "Checkbox::new(",
+        ".radio(",
+        ".radio_value(",
+        "RadioButton::new(",
+    ];
+    let mut found = Vec::new();
+    for path in ui_sources() {
+        if path.ends_with("components.rs") {
+            continue;
+        }
+        let code = code_of(&std::fs::read_to_string(&path).unwrap());
+        let squeezed: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+        for raw in RAW {
+            if squeezed.contains(raw) {
+                found.push(format!("{}: {raw}", relative(&path)));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "use components::toggle or components::radio:\n{}",
+        found.join("\n")
+    );
+}

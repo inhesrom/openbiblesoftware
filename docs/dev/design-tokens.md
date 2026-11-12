@@ -39,14 +39,26 @@ started when motion is not reduced).
 | IconButton | `components::icon_button(ui, icon, name)` |
 | TextField | `components::text_field(&mut text)` |
 | SearchField | `components::search_field(&mut text, hint, width)` |
-| Toggle | `components::toggle(ui, &mut on, label)` |
+| Toggle | `components::toggle(ui, &mut on, label)`; greyed out: `toggle_enabled(ui, enabled, &mut on, label)` |
+| Radio | `components::radio(ui, selected, label)`, `radio_value(ui, &mut current, value, label)` |
 | Menu | `components::menu(ui, title, contents)` |
 | Popover | `components::popover_frame()` |
 | Card | `components::card_frame()`; a notice: `notice_frame(colour)` |
 | SectionHeader | `components::section_header(ui, title)` |
-| Tab page, band, chip | `page_frame()`, `band_frame()`, `chip_frame()`, `removable_chip(ui, label, what)` |
+| Tab page, band, chip | `page_frame()`, `band_frame()`, `chip_frame()`, `removable_chip(ui, label, what)`; a Guide's page: `guide_page_frame(palette.page)` |
 | Text styles | `title_text`, `subtitle_text`, `label_text`, `hint_text`, `caption_text` |
 | Painted helpers | `hover_outline`, `scroll_thumb`, `text_placeholder`, `rule_stroke` |
+
+Check boxes and radio buttons are always the Toggle and Radio components (#306): they outline
+the box and the circle in Muted (egui's Rule border nearly vanishes on a Field-coloured dialog
+in Dark) and draw the check mark as thick as the focus ring.
+`tokens::tests::every_check_box_and_radio_button_is_a_shared_component` fails on an egui
+`checkbox`, `radio` or `radio_value` anywhere else.
+
+A Guide's page is the Page tone, as its Resource snippets are, so they sit on the page and not
+on slabs of their own (#306); when the chrome's text does not read on the tone (Paper chosen in
+a dark Theme) it stays the field and each snippet keeps its own page
+(`theme::text_reads_on`).
 
 ## The lint
 

@@ -421,8 +421,7 @@ impl State {
 /// "Open Home at launch" and Reset cards.
 fn home_settings_row(ui: &mut Ui, open_at_launch: bool, run: &mut Run) {
     let mut on = open_at_launch;
-    if ui
-        .checkbox(&mut on, "Open Home at launch")
+    if crate::components::toggle(ui, &mut on, "Open Home at launch")
         .on_hover_text("Show Home at every launch, on top of the Workspace as you left it")
         .changed()
     {

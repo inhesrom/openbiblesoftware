@@ -77,6 +77,7 @@ impl State {
         let Some(Key::Headword(topic)) = key else {
             if hint_page(
                 ui,
+                self.guide_frame(),
                 "Type a topic in the box above (Forgiveness, Prayer, Faith), or put this Guide in \
                  a Dictionary's Link set to follow it.",
                 "Show Forgiveness",
@@ -123,7 +124,7 @@ impl State {
             .is_some_and(|t| t.entry_history.current().is_some());
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         let mut action: Option<TopicAction> = None;
-        crate::components::page_frame().show(ui, |ui| {
+        self.guide_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
                 ui.label(crate::components::title_text(format!("“{text}”")));

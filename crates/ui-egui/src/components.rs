@@ -114,9 +114,58 @@ fn underlined(ui: &Ui, r: Response, galley: &egui::Galley) -> Response {
     r
 }
 
-/// **Toggle**: a check box with its label.
+/// **Toggle**: a check box with its label, its box outlined so that it shows unchecked
+/// ([`with_control_outline`]).
 pub fn toggle<'a>(ui: &mut Ui, on: &'a mut bool, label: impl egui::IntoAtoms<'a>) -> Response {
-    ui.checkbox(on, label)
+    with_control_outline(ui, |ui| ui.checkbox(on, label))
+}
+
+/// A [`toggle`] that is greyed out and does nothing unless `enabled`.
+pub fn toggle_enabled<'a>(
+    ui: &mut Ui,
+    enabled: bool,
+    on: &'a mut bool,
+    label: impl egui::IntoAtoms<'a>,
+) -> Response {
+    with_control_outline(ui, |ui| {
+        ui.add_enabled(enabled, egui::Checkbox::new(on, label))
+    })
+}
+
+/// **Radio**: one choice of several, with its label, selected when `selected`; its circle
+/// outlined as a [`toggle`]'s box is.
+pub fn radio<'a>(ui: &mut Ui, selected: bool, label: impl egui::IntoAtoms<'a>) -> Response {
+    with_control_outline(ui, |ui| ui.radio(selected, label))
+}
+
+/// A [`radio`] that sets `current` to `value` when clicked.
+pub fn radio_value<'a, V: PartialEq>(
+    ui: &mut Ui,
+    current: &mut V,
+    value: V,
+    label: impl egui::IntoAtoms<'a>,
+) -> Response {
+    with_control_outline(ui, |ui| ui.radio_value(current, value, label))
+}
+
+/// Draw check boxes and radio buttons with `add`, their edge in Muted and their check mark
+/// as thick as the focus ring (#306). egui fills the box with the Field colour and borders it
+/// in Rule, which nearly vanishes on a Field-coloured dialog or page; Muted reads at WCAG AA
+/// on every background of the chrome ([`theme::contrast_shorts`]), more than the 3:1 a
+/// control's edge needs. Hovered, the edge is Lapis.
+fn with_control_outline<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let saved = ui.visuals().widgets.clone();
+    let c = theme::c();
+    // Menus take the border off their items; a check box keeps its edge there too.
+    let width = theme::border_width(&c);
+    let w = &mut ui.visuals_mut().widgets;
+    w.inactive.bg_stroke = Stroke::new(width, c.muted);
+    w.hovered.bg_stroke = Stroke::new(width, c.lapis);
+    w.inactive.fg_stroke.width = stroke::THICK;
+    w.hovered.fg_stroke.width = stroke::THICK;
+    let response = add(ui);
+    ui.visuals_mut().widgets = saved;
+    response
 }
 
 /// **Popover**: the frame of a pop-up over the Workspace (a Launcher pane, a hover card).
@@ -153,6 +202,20 @@ pub fn page_frame() -> Frame {
     Frame::new()
         .fill(theme::c().field)
         .inner_margin(inset::PAGE)
+}
+
+/// The page of a Guide Tab: the Page tone `page`, which the Guide's Resource text is drawn on,
+/// so its snippets sit on the page and not on slabs of their own (#306). When the chrome's
+/// text would not read on it (Paper chosen in a dark Theme), the field, as [`page_frame`];
+/// each snippet then keeps its own page.
+pub fn guide_page_frame(page: egui::Color32) -> Frame {
+    let c = theme::c();
+    let fill = if theme::text_reads_on(&c, page) {
+        page
+    } else {
+        c.field
+    };
+    page_frame().fill(fill)
 }
 
 /// A bar across a Tab under its header (a view switcher, a chart's controls).
