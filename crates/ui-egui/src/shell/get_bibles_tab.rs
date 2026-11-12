@@ -23,10 +23,12 @@ use super::import_tab::megabytes;
 use super::library_tab::{section, type_singular};
 use crate::icons::{self, Icon};
 use crate::theme;
-use crate::tokens::{size, space};
+use crate::tokens::{size, space, text};
 
-/// Every row (and section header) is this tall, so the list can be virtualized.
+/// Every row is this tall, so the list can be virtualized.
 const ROW_HEIGHT: f32 = size::ROW_TRIPLE;
+/// The space above a section's header: a section gap, not a row's height.
+const HEADER_GAP: f32 = space::XL;
 
 /// The Tab's own search and language filter.
 #[derive(Debug, Default)]
@@ -170,6 +172,36 @@ pub(super) fn spdx_badge(spdx: &str) -> (&'static str, Color32) {
     } else {
         licence_badge(Some(spdx).filter(|s| !s.is_empty()))
     }
+}
+
+/// A licence in words, for About and Credits (LIBRARY-8): "Public domain" for every spelling
+/// of it, a Creative Commons id as its name ("CC BY 4.0", "CC BY-SA 4.0", "CC0 1.0"),
+/// "Unknown" for none; a SWORD download's `LicenseRef-` id as its Library row badge reads
+/// ("GPL", "Copyrighted", "Other licence"); any other id (a font's "OFL-1.1") as it is. The
+/// SPDX id is for the hover.
+pub(super) fn licence_name(spdx: &str) -> String {
+    if spdx.is_empty() || spdx == obs_model::LICENSE_UNKNOWN {
+        return "Unknown".to_string();
+    }
+    if spdx_badge(spdx).0 == "Public domain" {
+        return "Public domain".to_string();
+    }
+    if let Some(rest) = spdx.strip_prefix("CC0") {
+        return format!("CC0 {}", rest.trim_start_matches('-'))
+            .trim_end()
+            .to_string();
+    }
+    if let Some(rest) = spdx.strip_prefix("CC-") {
+        let (terms, version) = match rest.rsplit_once('-') {
+            Some((terms, v)) if v.chars().all(|c| c.is_ascii_digit() || c == '.') => (terms, v),
+            _ => (rest, ""),
+        };
+        return format!("CC {terms} {version}").trim_end().to_string();
+    }
+    if spdx.starts_with("LicenseRef-") {
+        return spdx_badge(spdx).0.to_string();
+    }
+    spdx.to_string()
 }
 
 fn licence_class_colour(class: LicenceClass) -> Color32 {
@@ -448,23 +480,50 @@ impl State {
             items.push(Item::Header(all_title, all.len()));
             items.extend(all.into_iter().map(Item::Listing));
 
+            // Rows and headers each as tall as they need: a header in a row's slot left a
+            // band of nothing above every section (LIBRARY-5). Only those in view are drawn.
+            let gap = ui.spacing().item_spacing.y;
+            let header_h = HEADER_GAP
+                + ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(text::CAPTION)))
+                + gap;
+            let height = |item: &Item| match item {
+                Item::Header(..) => header_h,
+                Item::Listing(_) => ROW_HEIGHT + gap,
+            };
+            let total: f32 = items.iter().map(height).sum();
+            crate::components::keep_clear_of_scroll_bar(ui);
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .show_rows(ui, ROW_HEIGHT, items.len(), |ui, range| {
-                    for item in &items[range] {
-                        ui.allocate_ui(egui::vec2(ui.available_width(), ROW_HEIGHT), |ui| {
-                            ui.set_min_height(ROW_HEIGHT);
-                            match item {
-                                Item::Header(title, n) => {
-                                    ui.add_space(ROW_HEIGHT - size::CONTROL_COMPACT);
-                                    section(ui, &format!("{title} · {n}"));
-                                }
-                                Item::Listing(b) => {
-                                    let status = self.session.listing_status(b);
-                                    let show_type = shown_filter == ResourceFilter::All;
-                                    if let Some(a) = listing_row(ui, b, &status, show_type) {
-                                        action = Some(a);
-                                    }
+                .show_viewport(ui, |ui, viewport| {
+                    ui.set_height(total - gap);
+                    let origin = ui.max_rect().min;
+                    let width = ui.available_width();
+                    let mut top = 0.0;
+                    for (i, item) in items.iter().enumerate() {
+                        let h = height(item);
+                        let shown = top + h > viewport.top() && top < viewport.bottom();
+                        let rect = egui::Rect::from_min_size(
+                            origin + egui::vec2(0.0, top),
+                            egui::vec2(width, h - gap),
+                        );
+                        top += h;
+                        if !shown {
+                            continue;
+                        }
+                        let builder = egui::UiBuilder::new()
+                            .max_rect(rect)
+                            .scope_id(ui.scope_id().with(("get-resources-item", i)));
+                        ui.scope_builder(builder, |ui| match item {
+                            Item::Header(title, n) => {
+                                ui.add_space(HEADER_GAP);
+                                section(ui, &format!("{title} · {n}"));
+                            }
+                            Item::Listing(b) => {
+                                ui.set_min_height(ROW_HEIGHT);
+                                let status = self.session.listing_status(b);
+                                let show_type = shown_filter == ResourceFilter::All;
+                                if let Some(a) = listing_row(ui, b, &status, show_type) {
+                                    action = Some(a);
                                 }
                             }
                         });
@@ -630,6 +689,12 @@ fn listing_row(
         }
         ui.add_space(space::M);
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+            // Every line ends in "…" within what is left of the control, and nothing paints
+            // under it (a long line of facts ran under Download).
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+            // Each line's own width: a line that overflows widens the column for the next.
+            let width = ui.available_width();
             ui.add(
                 egui::Label::new(RichText::new(&b.title).strong().color(theme::c().ink)).truncate(),
             );
@@ -677,22 +742,29 @@ fn listing_row(
                 .collect();
             if let Some(url) = &b.evidence_url {
                 // Open catalogue rows: the archived licence evidence, one click away.
-                ui.horizontal(|ui| {
-                    crate::components::hyperlink_to(
-                        ui,
-                        RichText::new("Licence evidence").small(),
-                        url,
-                    )
-                    .on_hover_text(url);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(width, 0.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        crate::components::hyperlink_to(
+                            ui,
+                            RichText::new("Licence evidence").small(),
+                            url,
+                        )
+                        .on_hover_text(url);
+                        ui.add(
+                            egui::Label::new(crate::components::hint_text(notes.join(" · ")))
+                                .truncate(),
+                        );
+                    },
+                );
+            } else if !notes.is_empty() {
+                ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
                     ui.add(
                         egui::Label::new(crate::components::hint_text(notes.join(" · ")))
                             .truncate(),
                     );
                 });
-            } else if !notes.is_empty() {
-                ui.add(
-                    egui::Label::new(crate::components::hint_text(notes.join(" · "))).truncate(),
-                );
             }
         });
     });

@@ -159,6 +159,7 @@ fn surfaces() -> Vec<Surface> {
     }
     let lists = [
         (Section::Tabs, super::library_rows::library_rows()),
+        (Section::Tabs, super::library_wording::library_wording()),
         (Section::PanesMenusAndWindows, every_overlay()),
         (Section::PanesMenusAndWindows, menus_and_toolbar()),
         (Section::DialogsAndPopovers, dialogs_and_popovers()),

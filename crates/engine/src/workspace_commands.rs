@@ -1110,10 +1110,30 @@ fn request(p: &Params<'_>) -> OpenRequest {
     }
 }
 
+/// What an Import report Tab names: the Resource's abbreviation once it is in the Library,
+/// else (a failed Import) the source's name as the Tab showed it while running.
+fn report_name(s: &Session, id: &str) -> String {
+    if let Some(entry) = s.library.get(id) {
+        return entry.manifest.abbreviation.clone();
+    }
+    let Some(record) = s.imports.report(id) else {
+        return id.to_owned();
+    };
+    if let Some(origin) = &record.origin {
+        return origin.module.clone();
+    }
+    if let Some(open) = &record.open_origin {
+        return open.id.clone();
+    }
+    std::path::Path::new(&record.source)
+        .file_stem()
+        .map_or_else(|| id.to_owned(), |n| n.to_string_lossy().into_owned())
+}
+
 pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
-        TabKind::ImportReport(_) => "Import report".into(),
+        TabKind::ImportReport(id) => crate::import::report_title(&report_name(s, id)),
         TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
         TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),

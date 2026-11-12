@@ -3,7 +3,7 @@
 use egui::{RichText, Ui};
 use obs_engine::{
     DEFERRED_INDEX, ImportIndexStatus, ImportPhase, ImportRecord, ImportReport, IndexStatus,
-    UNAVAILABLE_INDEX,
+    UNAVAILABLE_INDEX, failure_message,
 };
 use serde_json::json;
 
@@ -32,7 +32,7 @@ impl State {
         };
         // The Search index's live state, once the Resource is in the library (#58).
         let index = self.session.search.status(id).cloned();
-        let mut action: Option<&'static str> = None;
+        let mut action: Option<ReportAction> = None;
         crate::components::page_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::vertical()
@@ -49,13 +49,19 @@ impl State {
                     ui.label(crate::components::title_text(title));
                     ui.label(RichText::new(&record.source).color(theme::c().muted));
                     ui.add_space(space::L);
+                    if record.phase == ImportPhase::Failed {
+                        // What went wrong in plain words, the error under Details, and a way
+                        // on (LIBRARY-13); not three phases of "not built".
+                        action = failed(ui, &record);
+                        return;
+                    }
                     phases(ui, &record, index.as_ref());
                     let running = matches!(
                         record.phase,
                         ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
                     );
                     if running && ui.button("Cancel").clicked() {
-                        action = Some("import.cancel");
+                        action = Some(ReportAction::Run("import.cancel"));
                     }
                     if let Some(report) = &record.report {
                         ui.add_space(space::L);
@@ -63,20 +69,32 @@ impl State {
                         ui.add_space(space::XL);
                         ui.horizontal(|ui| {
                             if ui.button("Open").clicked() {
-                                action = Some("resource.open");
+                                action = Some(ReportAction::Run("resource.open"));
                             }
                             if ui.button("About").clicked() {
-                                action = Some("resource.about");
+                                action = Some(ReportAction::Run("resource.about"));
                             }
                             if ui.button("Remove import…").clicked() {
-                                action = Some("library.remove");
+                                action = Some(ReportAction::Run("library.remove"));
                             }
                         });
                     }
                 });
         });
-        if let Some(command) = action {
-            self.run(command, &json!({ "id": id }));
+        match action {
+            Some(ReportAction::ImportAnother) => self.pick_import = true,
+            Some(ReportAction::Close) => {
+                let kind = obs_engine::TabKind::ImportReport(id.to_string());
+                let tab =
+                    (self.session.workspace.tabs()).find_map(|t| (t.kind == kind).then_some(t.id));
+                if let Some(tab) = tab {
+                    self.run("tab.close", &json!({ "tab": tab.0 }));
+                }
+            }
+            Some(ReportAction::Run(command)) => {
+                self.run(command, &json!({ "id": id }));
+            }
+            None => {}
         }
     }
 
@@ -173,13 +191,42 @@ impl State {
     }
 }
 
-/// Parse, then the Search index: live progress from the worker, never simulated.
+/// A failed Import's report: what went wrong in plain words with the error itself under
+/// Details, then Import another… (a file the user picks: not after a download, whose row on
+/// Get Resources has Retry) and Close.
+fn failed(ui: &mut Ui, record: &ImportRecord) -> Option<ReportAction> {
+    let error = record.error.as_deref().unwrap_or_default();
+    let mut action = None;
+    crate::components::error_notice(ui, failure_message(error), error);
+    ui.add_space(space::L);
+    ui.horizontal(|ui| {
+        let downloaded = record.origin.is_some() || record.open_origin.is_some();
+        if !downloaded && ui.button("Import another…").clicked() {
+            action = Some(ReportAction::ImportAnother);
+        }
+        if ui.button("Close").clicked() {
+            action = Some(ReportAction::Close);
+        }
+    });
+    action
+}
+
+/// What a Button on an Import report asks for: a command on the Resource, or one of a failed
+/// report's own actions.
+enum ReportAction {
+    Run(&'static str),
+    ImportAnother,
+    Close,
+}
+
 /// Bytes as "4.5 MB".
 #[allow(clippy::cast_precision_loss)]
 pub(super) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
+/// Download, Parse, then the Search index: live progress from the worker, never simulated.
+/// A failed Import's report shows [`failed`] instead.
 fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
     if let Some(origin) = &record.origin {
         section(ui, "Download");
@@ -194,9 +241,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
             ImportPhase::Download => {
                 ui.add(waiting(format!("Downloading from {}…", origin.repo)));
             }
-            ImportPhase::Failed if record.report.is_none() => {
-                ui.label("Download stopped");
-            }
+            ImportPhase::Failed => {}
             _ => {
                 ui.label(format!("Downloaded from {}", origin.repo));
             }
@@ -219,12 +264,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
         ImportPhase::Index | ImportPhase::Complete => {
             ui.label("Parse complete");
         }
-        ImportPhase::Failed => {
-            ui.colored_label(
-                theme::c().warn,
-                record.error.as_deref().unwrap_or("Import failed"),
-            );
-        }
+        ImportPhase::Failed => {}
     }
     ui.add_space(space::M);
     section(ui, "Search index");
@@ -240,9 +280,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
         (ImportPhase::Index, _) => {
             ui.add(waiting("Search index: starting…"));
         }
-        (ImportPhase::Failed, _) => {
-            ui.label("Search index: not built");
-        }
+        (ImportPhase::Failed, _) => {}
         // Not built by the Import: the background rebuild's live state.
         (ImportPhase::Complete, ImportIndexStatus::Deferred | ImportIndexStatus::Failed(_)) => {
             match (index, &record.index) {
@@ -282,6 +320,68 @@ fn waiting(what: impl Into<egui::WidgetText>) -> egui::ProgressBar {
     crate::components::progress_bar(0.0, what).animate(true)
 }
 
+/// "1 note", "3 notes".
+fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// What an Import brought in, in the words of what it is (LIBRARY-10): a Bible's Bible books,
+/// Verses, notes and Tagged words; a Commentary's, Lexicon's or Dictionary's entries; a
+/// dataset's cross-references, people and places, or events. Only a Bible's counts show when
+/// they are zero, so a Commentary never reads "0 Bible books · 0 Verses".
+pub(super) fn summary_counts(report: &ImportReport) -> String {
+    let mut parts = Vec::new();
+    let mut nonzero = |n: usize, one: &str, many: &str| {
+        if n > 0 {
+            parts.push(plural(n, one, many));
+        }
+    };
+    let dataset = report.cross_references
+        + report.entities
+        + report.mentions
+        + report.events
+        + report.parallel_sections
+        > 0;
+    if report.entries > 0 {
+        nonzero(report.entries, "entry", "entries");
+        nonzero(report.notes, "note", "notes");
+        nonzero(report.scripture_refs, "Bible reference", "Bible references");
+        nonzero(report.tagged_words, "Strong's link", "Strong's links");
+    } else if dataset {
+        nonzero(
+            report.cross_references,
+            "Cross-reference",
+            "Cross-references",
+        );
+        nonzero(
+            report.parallel_sections,
+            "section with Parallel passages",
+            "sections with Parallel passages",
+        );
+        nonzero(report.entities, "person or place", "people and places");
+        nonzero(report.mentions, "mention", "mentions");
+        nonzero(
+            report.events,
+            "era, lifespan or event",
+            "eras, lifespans and events",
+        );
+    } else {
+        parts.push(plural(report.books.len(), "Bible book", "Bible books"));
+        parts.push(plural(report.verses, "Verse", "Verses"));
+        parts.push(plural(report.notes, "note", "notes"));
+        parts.push(plural(report.tagged_words, "Tagged word", "Tagged words"));
+    }
+    if parts.is_empty() {
+        "Nothing to read was found.".to_string()
+    } else {
+        parts.join(" · ")
+    }
+}
+
 /// What was brought in, dropped markup, Unmapped/Absent counts and licence warnings.
 fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
     section(ui, "Summary");
@@ -291,20 +391,11 @@ fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
             .color(theme::c().ink),
     );
     ui.label(format!(
-        "{} source file(s) · {}",
-        report.source_files.len(),
+        "{} · {}",
+        plural(report.source_files.len(), "source file", "source files"),
         report.source_format
     ));
-    ui.label(format!(
-        "{} Bible book(s) · {} Verses · {} notes · {} Tagged words",
-        report.books.len(),
-        report.verses,
-        report.notes,
-        report.tagged_words
-    ));
-    if report.entries > 0 {
-        ui.label(format!("{} entries", report.entries));
-    }
+    ui.label(summary_counts(report));
     if let Some(counts) = report.verse_map {
         ui.label(format!("Unmapped verses: {}", counts.unmapped));
         ui.label(format!("Absent verses: {}", counts.absent));

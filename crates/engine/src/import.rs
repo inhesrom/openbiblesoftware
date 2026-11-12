@@ -155,6 +155,44 @@ impl Imports {
     }
 }
 
+/// An Import report Tab's title, naming what was imported ("Import report · GEN-1") so two
+/// reports side by side can be told apart: the source's name while it runs, the Resource's
+/// abbreviation once it is in the Library.
+pub(crate) fn report_title(name: &str) -> String {
+    format!("Import report · {name}")
+}
+
+/// What a failed Import's report says, in plain words; the error itself shows only under
+/// Details. `error` is the job's message, as [`ImportRecord::error`] keeps it: the source's
+/// description, ": ", then the error. Only the error is read, so a file or folder whose name
+/// holds one of the phrases below is not mistaken for that failure.
+pub fn failure_message(error: &str) -> &'static str {
+    let e = error
+        .split_once(": ")
+        .map_or(error, |(_, e)| e)
+        .to_ascii_lowercase();
+    if e.ends_with("import cancelled") {
+        "The Import was cancelled."
+    } else if e.contains("no such file or directory") || e.contains("cannot find the") {
+        "That file or folder does not exist. It may have been moved, renamed or deleted."
+    } else if e.contains("permission denied") || e.contains("access is denied") {
+        "The app is not allowed to read that file or folder."
+    } else if e.contains("no \\id line")
+        || e.contains("no bible books found")
+        || e.contains("stream did not contain valid utf-8")
+    {
+        "That is not a USFM file or folder of Bible books, nor a SWORD module's .conf file."
+    } else if e.contains("several modules") {
+        "That SWORD folder holds several modules. Choose one module's .conf file in mods.d/."
+    } else if e.contains("cannot be imported") || e.contains("has no entries") {
+        "The app cannot import this SWORD module yet."
+    } else if e.contains("download from ") {
+        "The download did not finish. Check the connection, then try again."
+    } else {
+        "The app could not read this source, so nothing was added to your Library."
+    }
+}
+
 /// The start of the preference key of each Resource's latest Import report.
 pub(crate) const REPORT_PREF_PREFIX: &str = "import-report/";
 
@@ -178,6 +216,23 @@ impl Session {
             }
         }
         self.fill_installed_versions();
+    }
+
+    /// Import report Tabs of `id` take its abbreviation once it is in the Library.
+    fn retitle_import_reports(&mut self, id: &str) {
+        let kind = TabKind::ImportReport(id.to_string());
+        let title = crate::workspace_commands::title_of(self, &kind);
+        let tabs: Vec<_> = self
+            .workspace
+            .tabs()
+            .filter(|t| t.kind == kind)
+            .map(|t| t.id)
+            .collect();
+        for tab in tabs {
+            if let Some(t) = self.workspace.tab_mut(tab) {
+                t.title.clone_from(&title);
+            }
+        }
     }
 
     /// Save the latest Import record of `id` in the User database.
@@ -252,6 +307,7 @@ impl Session {
                         }
                         let replaced = self.library.get(&id).is_some();
                         self.library.add(out.entry);
+                        self.retitle_import_reports(&id);
                         self.remove_older_search_indexes(&id);
                         // An update is in: nothing to put back.
                         self.imports.replacing.remove(&id);
@@ -394,9 +450,10 @@ fn open_report(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             "No Import report for this Resource",
         ));
     }
+    let title = crate::workspace_commands::title_of(s, &TabKind::ImportReport(id.into()));
     let tab = s.workspace.open(
         TabKind::ImportReport(id.into()),
-        "Import report".into(),
+        title,
         OpenRequest::default(),
     );
     Ok(json!({"tab": tab.0}))
@@ -532,10 +589,11 @@ impl Session {
             }
             n += 1;
         };
+        let name = source.stem();
         let job = self.submit_import(source, &dir, &id, None);
         let tab = self.workspace.open(
             TabKind::ImportReport(id.clone()),
-            "Import report".into(),
+            report_title(&name),
             OpenRequest::default(),
         );
         Ok((id, tab.0, job))

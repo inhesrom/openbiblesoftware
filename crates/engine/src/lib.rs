@@ -256,7 +256,7 @@ pub use home::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX,
+    ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX, failure_message,
 };
 pub use interlinear::{
     InterlinearKind, InterlinearLine, InterlinearLines, LexiconWord, cell_gloss, cell_texts,
