@@ -1,7 +1,8 @@
 //! The movable, customizable toolbar (#141) through the headless harness: each position from
 //! the View menu (mouse and keyboard alone), the grip and the right-click menu, Auto-hide,
 //! Customize toolbar…, hidden Launchers through their shortcut and the Command box, a small
-//! window's » button, and every position after a restart.
+//! window's » button, every position after a restart, and a side Toolbar's pop-out control
+//! (Expanded and Collapsed, #291).
 
 use egui::Key;
 use obs_engine::{Launcher, ToolbarPosition};
@@ -138,6 +139,17 @@ fn assert_at(h: &Harness, edge: ToolbarPosition) {
 
 /// Alt+L drops the Library pane down from its button, on the side away from the edge.
 fn assert_pane_beside_button(h: &mut Harness, edge: ToolbarPosition) {
+    let name = format!("toolbar-{}", edge.id());
+    assert_pane_beside(
+        h,
+        edge,
+        (edge != ToolbarPosition::Top).then_some(&[name.as_str()][..]),
+    );
+}
+
+/// Alt+L drops the Library pane down from its button, on the side away from the edge; with
+/// `previews`, its image is written under each name, in Light then Dark when two are given.
+fn assert_pane_beside(h: &mut Harness, edge: ToolbarPosition, previews: Option<&[&str]>) {
     h.events.push(Event::PointerMoved(pos2(700.0, 500.0)));
     key(h, Key::L, Modifiers::ALT);
     h.frames(2);
@@ -152,8 +164,17 @@ fn assert_pane_beside_button(h: &mut Harness, edge: ToolbarPosition) {
     }
     let screen = Rect::from_min_size(Pos2::ZERO, h.screen);
     assert!(screen.contains_rect(pane), "{pane:?}");
-    if edge != ToolbarPosition::Top {
-        preview(h, &format!("toolbar-{}", edge.id()));
+    for (i, name) in previews.unwrap_or_default().iter().enumerate() {
+        let theme = if i == 0 { "light" } else { "dark" };
+        if previews.is_some_and(|p| p.len() > 1) {
+            h.shell.run("view.theme", &json!({ "value": theme }));
+            h.frames(3);
+        }
+        preview(h, name);
+    }
+    if previews.is_some_and(|p| p.len() > 1) {
+        h.shell.run("view.theme", &json!({ "value": "system" }));
+        h.frames(2);
     }
     key(h, Key::Escape, Modifiers::NONE);
     assert_eq!(h.shell.st.toolbar.open, None);
@@ -474,6 +495,407 @@ fn a_small_window_puts_the_launchers_it_has_no_room_for_in_a_more_button() {
     h.screen = vec2(1400.0, 900.0);
     h.frames(3);
     assert_eq!(h.shell.st.toolbar.overflow, None);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The pop-out control: Expanded and Collapsed side Toolbars (#291).
+
+fn expanded(h: &Harness) -> bool {
+    h.shell.st.session.toolbar.expanded
+}
+
+fn pop_out(h: &Harness) -> Rect {
+    h.shell.st.toolbar.pop_out.expect("the pop-out control")
+}
+
+/// The text painted inside the Library's row on the toolbar.
+fn library_row_texts(h: &Harness) -> Vec<&str> {
+    let row = button(h, Launcher::Library);
+    (h.shapes.iter())
+        .filter(|(r, _)| row.contains(r.center()))
+        .map(|(_, t)| t.as_str())
+        .collect()
+}
+
+/// The toolbar is Expanded at `edge`: wider than Collapsed, each Launcher's row showing its
+/// label and detail line in full, the Workspace beside the wider column, and the Library pane
+/// opening beside it.
+fn assert_expanded(h: &mut Harness, edge: ToolbarPosition, collapsed: Rect) {
+    let bar = bar(h);
+    assert!(
+        bar.width() > collapsed.width() + 40.0,
+        "wider: {bar:?} {collapsed:?}"
+    );
+    let texts = bar_texts(h);
+    for which in Launcher::ALL {
+        assert!(
+            texts.contains(&which.title()),
+            "{}: {texts:?}",
+            which.title()
+        );
+        let key = crate::key_labels::label(h.shell.st.session.shortcut(which.command()).unwrap());
+        assert!(texts.contains(&key.as_str()), "{key}: {texts:?}");
+    }
+    assert_uncut(h);
+    assert!(texts.contains(&"Collapse"), "{texts:?}");
+    assert_at_wide(h, edge);
+    let light = format!("toolbar-{}-expanded-light", edge.id());
+    let dark = format!("toolbar-{}-expanded-dark", edge.id());
+    assert_pane_beside(h, edge, Some(&[light.as_str(), dark.as_str()]));
+}
+
+/// How wide a Collapsed side Toolbar's buttons are.
+fn look_collapsed() -> f32 {
+    crate::shell::toolbar_look::grip_size(true).x
+}
+
+/// The column is narrower than its maximum, so no row's text is cut short with "…".
+fn assert_uncut(h: &Harness) {
+    use crate::shell::toolbar_look as look;
+    let most = look::bar_thickness_around(look::expanded_width(crate::tokens::size::FIELD));
+    assert!(bar(h).width() < most, "{:?} {most}", bar(h));
+}
+
+/// Like [`assert_at`] for an Expanded side Toolbar: at its edge, stacked, the Workspace beside.
+fn assert_at_wide(h: &Harness, edge: ToolbarPosition) {
+    let bar = bar(h);
+    let ws = workspace(h);
+    match edge {
+        ToolbarPosition::Left => assert!(ws.left() >= bar.right(), "{ws:?} {bar:?}"),
+        ToolbarPosition::Right => assert!(ws.right() <= bar.left(), "{ws:?} {bar:?}"),
+        _ => unreachable!(),
+    }
+    let rows: Vec<Rect> = Launcher::ALL.iter().map(|w| button(h, *w)).collect();
+    for pair in rows.windows(2) {
+        assert!(pair[0].bottom() <= pair[1].top(), "stacked: {rows:?}");
+    }
+    assert!(pop_out(h).top() >= rows[3].bottom(), "at the toolbar's end");
+}
+
+/// Acceptance: at the Left and Right one click on the pop-out control expands the toolbar to
+/// icons, labels and detail lines, pushing the Workspace over, and one click collapses it;
+/// the choice survives a restart; Top and Bottom have no control.
+#[test]
+fn one_click_on_the_pop_out_control_expands_and_collapses_a_side_toolbar() {
+    let db = temp_db("toolbar-expanded");
+    let mut h = Harness::launch(Some(&db));
+    assert_eq!(h.shell.st.toolbar.pop_out, None, "not at the Top");
+    for (edge, label) in [
+        (ToolbarPosition::Left, "Left"),
+        (ToolbarPosition::Right, "Right"),
+    ] {
+        view_position(&mut h, label);
+        assert!(!expanded(&h));
+        let collapsed = bar(&h);
+        let narrow = workspace(&h);
+        let control = pop_out(&h);
+        assert!(bar(&h).contains_rect(control), "{control:?}");
+        h.click(control.center());
+        assert!(expanded(&h), "{label}: one click expands");
+        // The control is still under the pointer: a second click there would undo it.
+        assert!(pop_out(&h).contains(control.center()), "{:?}", pop_out(&h));
+        assert!(
+            workspace(&h).width() < narrow.width() - 40.0,
+            "the Workspace is pushed over"
+        );
+        assert_expanded(&mut h, edge, collapsed);
+
+        // After a restart.
+        drop(h);
+        h = Harness::launch(Some(&db));
+        assert!(expanded(&h), "{label} after a restart");
+        assert_eq!(position(&h), edge);
+        assert!(library_row_texts(&h).contains(&"Library"));
+
+        let control = pop_out(&h);
+        h.click(control.center());
+        assert!(!expanded(&h), "{label}: one click collapses");
+        assert_at(&h, edge);
+        assert!((bar(&h).width() - collapsed.width()).abs() < 1.0);
+        assert!((workspace(&h).width() - narrow.width()).abs() < 1.0);
+    }
+    // Bottom: no control, and Expanded changes nothing there.
+    h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+    view_position(&mut h, "Bottom");
+    assert_eq!(h.shell.st.toolbar.pop_out, None);
+    assert_at(&h, ToolbarPosition::Bottom);
+    drop(h);
+    std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
+}
+
+/// The Library's row paints its shortcut; its detail line counts updates, as the badge does
+/// Collapsed; the column's width has a cap.
+#[test]
+fn the_expanded_library_row_paints_its_shortcut_and_its_detail_line_counts_updates() {
+    let mut h = Harness::new();
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "left" }));
+    h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+    h.frames(2);
+    let detail = h.shell.launcher_detail(Launcher::Library, 2);
+    assert_eq!(detail, "Alt+L · 2 updates");
+    assert_eq!(
+        h.shell.launcher_detail(Launcher::Library, 1),
+        "Alt+L · 1 update"
+    );
+    assert_eq!(h.shell.launcher_detail(Launcher::Guides, 0), "Alt+G");
+    assert!(
+        library_row_texts(&h).contains(&"Alt+L"),
+        "{:?}",
+        library_row_texts(&h)
+    );
+    // A Launcher with no key has no shortcut in its line.
+    h.shell
+        .run("keys.clear", &json!({ "command": "toolbar.tools" }));
+    assert_eq!(h.shell.launcher_detail(Launcher::Tools, 0), "");
+    // The column's width has a cap, whatever the text.
+    use crate::shell::toolbar_look as look;
+    assert_eq!(
+        look::expanded_width(10_000.0),
+        look::expanded_width(crate::tokens::size::FIELD)
+    );
+}
+
+/// Acceptance: Expanded and Collapsed are reachable from the toolbar's right-click menu,
+/// Customize toolbar…, the Command box and the shortcut (Ctrl+Shift+B).
+#[test]
+fn right_click_customize_the_command_box_and_the_shortcut_expand_and_collapse_it() {
+    let mut h = Harness::new();
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "right" }));
+    h.frames(2);
+    // Right-click: Expanded, then Collapsed.
+    for (item, on) in [("Expanded", true), ("Collapsed", false)] {
+        let at = button(&h, Launcher::Guides).center();
+        right_click(&mut h, at);
+        let p = topmost(&h, item);
+        h.click(p);
+        assert_eq!(expanded(&h), on, "right-click {item}");
+    }
+    // Not offered at the Top.
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "top" }));
+    h.frames(2);
+    let at = button(&h, Launcher::Guides).center();
+    right_click(&mut h, at);
+    assert!(h.find("Expanded").is_none() && h.find("Collapsed").is_none());
+    key(&mut h, Key::Escape, Modifiers::NONE);
+
+    // Customize toolbar…: its two choices.
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "left" }));
+    h.shell.run("view.toolbar_customize", &json!({}));
+    h.frames(3);
+    h.click_text("Expanded");
+    assert!(expanded(&h), "Customize: Expanded");
+    h.click_text("Collapsed");
+    assert!(!expanded(&h), "Customize: Collapsed");
+    h.click_text("Done");
+
+    // The Command box: its label.
+    key(&mut h, Key::L, CTRL);
+    h.events.push(Event::Text("Expanded toolbar".into()));
+    h.frames(2);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(expanded(&h), "the Command box");
+
+    // Its shortcut flips it back.
+    key(&mut h, Key::B, CTRL | Modifiers::SHIFT);
+    assert!(!expanded(&h), "Ctrl+Shift+B");
+    key(&mut h, Key::B, CTRL | Modifiers::SHIFT);
+    assert!(expanded(&h), "Ctrl+Shift+B again");
+}
+
+/// Acceptance: F6 puts the keyboard on the toolbar, Tab reaches the pop-out control, whose
+/// accessible name states the toolbar's state, and Enter flips it.
+#[test]
+fn the_keyboard_reaches_the_pop_out_control_and_hears_its_state() {
+    let mut h = Harness::new();
+    h.ctx.enable_accesskit();
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "left" }));
+    h.frames(3);
+    let collapsed = crate::shell::toolbar_bar::pop_out_name(false);
+    let expanded_name = crate::shell::toolbar_bar::pop_out_name(true);
+    assert!(collapsed.contains("collapsed") && expanded_name.contains("expanded"));
+    // F6 from the menu bar to the toolbar's first Launcher.
+    for _ in 0..4 {
+        key(&mut h, Key::F6, Modifiers::NONE);
+        if focused(&h).as_deref() == Some("Library") {
+            break;
+        }
+    }
+    assert_eq!(focused(&h).as_deref(), Some("Library"));
+    tab_to(&mut h, collapsed);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(expanded(&h), "Enter expands");
+    h.frames(2);
+    assert_eq!(
+        focused(&h).as_deref(),
+        Some(expanded_name),
+        "it keeps the keyboard"
+    );
+    let node = {
+        let tree = h.tree.as_ref().unwrap();
+        (tree.nodes.iter())
+            .find(|(id, _)| *id == tree.focus)
+            .map(|(_, n)| n.toggled())
+            .unwrap()
+    };
+    assert_eq!(node, Some(egui::accesskit::Toggled::True));
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(!expanded(&h), "Enter collapses");
+}
+
+/// The open pane is beside an Expanded column at `edge`, never over it.
+fn assert_pane_beside_column(h: &Harness, edge: ToolbarPosition) {
+    let pane = h.shell.st.toolbar.pane.expect("the pane");
+    let bar = bar(h);
+    match edge {
+        ToolbarPosition::Left => assert!(pane.left() >= bar.right(), "{pane:?} {bar:?}"),
+        ToolbarPosition::Right => assert!(pane.right() <= bar.left(), "{pane:?} {bar:?}"),
+        _ => unreachable!(),
+    }
+}
+
+/// An Expanded column's » button and a hidden Launcher's fallback anchor are narrower than
+/// the column; their panes still open beside it, at the Left and the Right.
+#[test]
+fn an_expanded_toolbar_opens_panes_from_more_and_for_hidden_launchers_beside_the_column() {
+    let mut h = Harness::new();
+    h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+    for (edge, value) in [
+        (ToolbarPosition::Left, "left"),
+        (ToolbarPosition::Right, "right"),
+    ] {
+        h.shell
+            .run("view.toolbar_position", &json!({ "value": value }));
+        // A short window: choose the last Launcher in » from ».
+        h.screen = vec2(1000.0, 230.0);
+        h.frames(4);
+        let tb = &h.shell.st.toolbar;
+        let more = tb.overflow.expect("a » button");
+        assert!(more.width() < bar(&h).width() - 40.0, "{more:?}");
+        let last = (Launcher::ALL.into_iter())
+            .rfind(|w| tb.buttons[w] == more)
+            .expect("a Launcher in »");
+        h.click(more.center());
+        let p = topmost(&h, last.title());
+        h.click(p);
+        assert_eq!(h.shell.st.toolbar.open, Some(last), "{value}");
+        assert_pane_beside_column(&h, edge);
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        assert_eq!(h.shell.st.toolbar.open, None);
+
+        // The Library hidden: Alt+L opens it from the toolbar's start, beside the column.
+        h.screen = vec2(1400.0, 900.0);
+        h.shell.run(
+            "toolbar.show_launcher",
+            &json!({ "launcher": Launcher::Library.id(), "shown": false }),
+        );
+        h.frames(3);
+        assert!(!h.shell.st.toolbar.buttons.contains_key(&Launcher::Library));
+        h.events.push(Event::PointerMoved(pos2(700.0, 500.0)));
+        key(&mut h, Key::L, Modifiers::ALT);
+        assert_eq!(h.shell.st.toolbar.open, Some(Launcher::Library), "{value}");
+        assert_pane_beside_column(&h, edge);
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        h.shell.run(
+            "toolbar.show_launcher",
+            &json!({ "launcher": Launcher::Library.id(), "shown": true }),
+        );
+    }
+}
+
+/// With every Launcher hidden, F6 still reaches a side Toolbar: its pop-out control.
+#[test]
+fn f6_lands_on_the_pop_out_control_when_every_launcher_is_hidden() {
+    let mut h = Harness::new();
+    h.ctx.enable_accesskit();
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "left" }));
+    for which in Launcher::ALL {
+        h.shell.run(
+            "toolbar.show_launcher",
+            &json!({ "launcher": which.id(), "shown": false }),
+        );
+    }
+    h.frames(3);
+    let name = crate::shell::toolbar_bar::pop_out_name(false);
+    for _ in 0..4 {
+        key(&mut h, Key::F6, Modifiers::NONE);
+        if focused(&h).as_deref() == Some(name) {
+            break;
+        }
+    }
+    assert_eq!(focused(&h).as_deref(), Some(name));
+}
+
+/// Acceptance: with Auto-hide an Expanded toolbar is drawn over the Workspace at its edge;
+/// a small window's » button and the pop-out control both stay in the window; a Larger
+/// Interface size still fits every label.
+#[test]
+fn expanded_works_with_auto_hide_the_more_button_and_interface_size() {
+    let mut h = Harness::new();
+    h.shell
+        .run("view.toolbar_position", &json!({ "value": "left" }));
+    h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+    h.shell.run("view.toolbar_auto_hide", &json!({}));
+    let middle = pos2(700.0, 450.0);
+    h.events.push(Event::PointerMoved(middle));
+    h.frames(3);
+    assert_eq!(h.shell.st.toolbar.bar, None, "hidden");
+    let ws = workspace(&h);
+    h.events.push(Event::PointerMoved(pos2(1.0, 450.0)));
+    h.frames(2);
+    let shown = bar(&h);
+    assert!(
+        shown.left() <= 10.0 && shown.width() > look_collapsed() + 40.0,
+        "{shown:?}"
+    );
+    assert!(ws.left() < shown.right(), "drawn over the Workspace");
+    assert_eq!(workspace(&h), ws, "the Workspace stays where it is");
+    assert!(bar_texts(&h).contains(&"Layouts"));
+    // The pop-out control works while revealed.
+    let control = pop_out(&h);
+    h.events.push(Event::PointerMoved(control.center()));
+    h.frames(2);
+    h.click(control.center());
+    assert!(!expanded(&h));
+    h.shell.run("view.toolbar_auto_hide", &json!({}));
+    h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+    h.frames(2);
+
+    // A short window: Launchers go into », and the pop-out control stays in the window.
+    h.screen = vec2(1000.0, 230.0);
+    h.frames(4);
+    let tb = &h.shell.st.toolbar;
+    let more = tb.overflow.expect("a » button");
+    assert!(Launcher::ALL.iter().any(|w| tb.buttons[w] == more));
+    assert!(pop_out(&h).bottom() <= h.screen.y, "{:?}", pop_out(&h));
+    assert!(more.bottom() <= pop_out(&h).top());
+    preview(&h, "toolbar-left-expanded-overflow");
+    h.screen = vec2(1400.0, 900.0);
+    h.frames(3);
+    assert_eq!(h.shell.st.toolbar.overflow, None);
+
+    // Larger Interface size: every label and detail still in full.
+    let normal = bar(&h);
+    h.shell
+        .run("view.interface_size", &json!({ "value": "larger" }));
+    h.frames(4);
+    let texts = bar_texts(&h);
+    for which in Launcher::ALL {
+        assert!(texts.contains(&which.title()), "{texts:?}");
+    }
+    assert_uncut(&h);
+    assert_at_wide(&h, ToolbarPosition::Left);
+    // Points stay points: the column keeps its width in points as the window zooms.
+    assert!(
+        (bar(&h).width() - normal.width()).abs() < 2.0,
+        "{:?} {normal:?}",
+        bar(&h)
+    );
 }
 
 /// Visual evidence for `docs/previews/<name>.png` when `UPDATE_PREVIEWS` is set.

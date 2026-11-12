@@ -529,6 +529,18 @@ fn menus_and_toolbar() -> Vec<Run> {
             },
         ),
         (
+            "Toolbar menu, left, expanded",
+            |h| {
+                h.shell
+                    .run("view.toolbar_position", &json!({ "value": "left" }));
+                h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+                h.frames(3);
+                let library = h.shell.st.toolbar.buttons[&Launcher::Library].center();
+                right_click(h, library);
+            },
+            |h| popup(h) && shows(h, "Expanded") && shows(h, "Collapse"),
+        ),
+        (
             "More launchers",
             |h| {
                 h.screen = egui::vec2(1100.0, 600.0);
@@ -2011,7 +2023,8 @@ const SITES: &[(&str, &str, &[&str])] = &[
         &[
             "- the toolbar's menu (toolbar_menu) on its background: drawn as on a Launcher",
             "- the toolbar's menu (toolbar_menu) on its grip: drawn as on a Launcher",
-            "toolbar-menu-position",
+            "toolbar-menu-position toolbar-menu-left-expanded",
+            "- the toolbar's menu (toolbar_menu) on its pop-out control: drawn as on a Launcher",
         ],
     ),
     (

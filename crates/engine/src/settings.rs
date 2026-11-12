@@ -431,6 +431,19 @@ pub const SETTINGS: &[Setting] = &[
         },
     ),
     setting(
+        "toolbar_expanded",
+        S::Toolbar,
+        "Expanded toolbar",
+        "At the left or right, show each Launcher's label, shortcut and status beside its icon",
+        "toolbar expand expanded collapse collapsed pop out sidebar side labels wide",
+        SettingKind::Toggle {
+            command: "view.toolbar_expanded",
+            param: Some("on"),
+            default: false,
+            get: |s| s.toolbar.expanded,
+        },
+    ),
+    setting(
         "toolbar_labels",
         S::Toolbar,
         "Toolbar buttons",

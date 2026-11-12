@@ -34,6 +34,7 @@ and is saved in the User database as before.
 | | Home cards, Guide sections | arranged on Home and in each Guide | `home.reset_cards`, `guide.reset_arrangement {guide}` for each arranged Guide |
 | Toolbar | Toolbar position, Toolbar buttons | `view.toolbar_position`, `toolbar.labels` | `{value: top}`, `{value: both}` |
 | | Auto-hide toolbar | `view.toolbar_auto_hide` | the toggle, when on |
+| | Expanded toolbar (#291): Left and Right only | `view.toolbar_expanded {on}` | `on: false` |
 | | Launchers | Customize toolbar… (`view.toolbar_customize`) | `toolbar.move_launcher` and `toolbar.show_launcher` for each, in default order |
 | Keyboard shortcuts | Keyboard shortcuts (the list itself) | `keys.set`, `keys.clear`, `keys.reset` | `keys.reset_all` |
 | Library folders and downloads | Library folder (shown; `OBS_LIBRARY`) | — | — |
