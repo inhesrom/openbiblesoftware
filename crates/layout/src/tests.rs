@@ -962,3 +962,130 @@ fn footnote_markers_off_lay_out_no_markers() {
         assert_eq!(object_runs(&p), []);
     }
 }
+
+/// Rom 8:31-32 as one prose paragraph.
+fn romans_8_31_unit() -> TextUnit {
+    let v31 = "If God be for us, who can be against us?";
+    let v32 = "He that spared not his own Son.";
+    let text = format!("{v31} {v32}");
+    let r32 = v31.len() + 1..text.len();
+    let verse = |range: std::ops::Range<usize>, n: u16| {
+        span(
+            range,
+            SpanKind::Verse {
+                verse: Verse::new(Book::Romans, 8, n),
+                last: n,
+            },
+        )
+    };
+    let mut spans = vec![
+        span(
+            0..text.len(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        ),
+        verse(0..v31.len() + 1, 31),
+        verse(r32, 32),
+    ];
+    spans.sort_by_key(|s| (s.start, std::cmp::Reverse(s.end)));
+    TextUnit {
+        id: UnitId::book(Book::Romans),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    }
+}
+
+/// PERSONAL-5 (#305): a Note's end gets room for its marker, before the next verse number,
+/// so the marker no longer covers that number or the next word.
+#[test]
+fn a_notes_end_has_room_for_its_marker_before_the_next_verse_number() {
+    let unit = romans_8_31_unit();
+    let settings = TextSettings {
+        size: 17.0,
+        ..TextSettings::default()
+    };
+    let block = unit_blocks(&unit).remove(0);
+    let us = find(&unit.text, "us?").end;
+    let v32 = find(&unit.text, "He that").start;
+    let objects = |p: &Paragraph| -> Vec<(String, InlineObject)> {
+        (p.runs.iter())
+            .filter_map(|r| match &r.source {
+                RunSource::Object { object, .. } => Some((r.text.clone(), object.clone())),
+                RunSource::Text { .. } => None,
+            })
+            .collect()
+    };
+    let plain = block_paragraph(&unit, &block, Direction::Ltr, &settings);
+    // Ends just after "us?", and at the next verse's start (after the space): the room comes
+    // before the number either way.
+    for end in [us, v32] {
+        let p = block_paragraph_with_note_room(&unit, &block, Direction::Ltr, &settings, &[end]);
+        assert_eq!(
+            p.text().replace('\u{2003}', ""),
+            plain.text(),
+            "text is kept"
+        );
+        let objects: Vec<InlineObject> = objects(&p).into_iter().map(|(_, o)| o).collect();
+        assert_eq!(
+            objects,
+            [
+                InlineObject::VerseNumber(Verse::new(Book::Romans, 8, 31)),
+                InlineObject::NoteRoom,
+                InlineObject::VerseNumber(Verse::new(Book::Romans, 8, 32))
+            ]
+        );
+        let room = p
+            .runs
+            .iter()
+            .position(|r| {
+                r.source
+                    == RunSource::Object {
+                        anchor: end,
+                        object: InlineObject::NoteRoom,
+                    }
+            })
+            .expect("a room anchored at the end");
+        assert_eq!(p.runs[room - 1].text.trim_end().chars().last(), Some('?'));
+
+        let laid = layout(&p, 600.0, ShapeCache::shared());
+        let items: Vec<&LaidItem> = laid.lines.iter().flat_map(|l| &l.items).collect();
+        let room = items
+            .iter()
+            .find(|i| {
+                matches!(
+                    laid.to_unit(i.bytes.start),
+                    Some(UnitPos::Object {
+                        object: InlineObject::NoteRoom,
+                        ..
+                    })
+                )
+            })
+            .expect("the room is laid out");
+        assert_eq!(room.shaped.missing_glyphs(), 0, "the face has the em space");
+        // About 0.65 em: the marker's 0.42 em and a little space each side.
+        let ems = room.width / 17.0;
+        assert!((0.6..0.7).contains(&ems), "{ems} em");
+        let number = items
+            .iter()
+            .find(|i| {
+                matches!(
+                    laid.to_unit(i.bytes.start),
+                    Some(UnitPos::Object {
+                        object: InlineObject::VerseNumber(v),
+                        ..
+                    }) if v.verse == 32
+                )
+            })
+            .unwrap();
+        assert!(
+            number.x >= room.x + room.width - 0.01,
+            "{number:?} after {room:?}"
+        );
+    }
+    // An end at the block's start is the block before's; none is no room.
+    let p = block_paragraph_with_note_room(&unit, &block, Direction::Ltr, &settings, &[0]);
+    assert_eq!(p, plain);
+}

@@ -1133,3 +1133,33 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![History: empty, Light](gallery/history-empty-light-1x.png) | ![History: empty, Dark](gallery/history-empty-dark-1x.png) | ![History: empty, Sepia](gallery/history-empty-sepia-1x.png) |
 | [2×](gallery/history-empty-light-2x.png) | [2×](gallery/history-empty-dark-2x.png) | [2×](gallery/history-empty-sepia-2x.png) |
+
+## Reading text
+
+### Italic words in a Commentary
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Italic words in a Commentary, Light](gallery/italic-words-in-a-commentary-light-1x.png) | ![Italic words in a Commentary, Dark](gallery/italic-words-in-a-commentary-dark-1x.png) | ![Italic words in a Commentary, Sepia](gallery/italic-words-in-a-commentary-sepia-1x.png) |
+| [2×](gallery/italic-words-in-a-commentary-light-2x.png) | [2×](gallery/italic-words-in-a-commentary-dark-2x.png) | [2×](gallery/italic-words-in-a-commentary-sepia-2x.png) |
+
+### A Highlight over several lines
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![A Highlight over several lines, Light](gallery/a-highlight-over-several-lines-light-1x.png) | ![A Highlight over several lines, Dark](gallery/a-highlight-over-several-lines-dark-1x.png) | ![A Highlight over several lines, Sepia](gallery/a-highlight-over-several-lines-sepia-1x.png) |
+| [2×](gallery/a-highlight-over-several-lines-light-2x.png) | [2×](gallery/a-highlight-over-several-lines-dark-2x.png) | [2×](gallery/a-highlight-over-several-lines-sepia-2x.png) |
+
+### The jump flash over several lines
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![The jump flash over several lines, Light](gallery/the-jump-flash-over-several-lines-light-1x.png) | ![The jump flash over several lines, Dark](gallery/the-jump-flash-over-several-lines-dark-1x.png) | ![The jump flash over several lines, Sepia](gallery/the-jump-flash-over-several-lines-sepia-1x.png) |
+| [2×](gallery/the-jump-flash-over-several-lines-light-2x.png) | [2×](gallery/the-jump-flash-over-several-lines-dark-2x.png) | [2×](gallery/the-jump-flash-over-several-lines-sepia-2x.png) |
+
+### A Note marker before the next verse number
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![A Note marker before the next verse number, Light](gallery/a-note-marker-before-the-next-verse-number-light-1x.png) | ![A Note marker before the next verse number, Dark](gallery/a-note-marker-before-the-next-verse-number-dark-1x.png) | ![A Note marker before the next verse number, Sepia](gallery/a-note-marker-before-the-next-verse-number-sepia-1x.png) |
+| [2×](gallery/a-note-marker-before-the-next-verse-number-light-2x.png) | [2×](gallery/a-note-marker-before-the-next-verse-number-dark-2x.png) | [2×](gallery/a-note-marker-before-the-next-verse-number-sepia-2x.png) |

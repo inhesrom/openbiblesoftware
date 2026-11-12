@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use obs_layout::{HeightEstimate, LaidBlock, Paragraph, TextSettings, UnitPos, block_paragraph};
+use obs_layout::{
+    HeightEstimate, LaidBlock, Paragraph, TextSettings, UnitPos, block_paragraph_with_note_room,
+};
 use obs_scripture::Verse;
 
 use crate::doc::ReadingDoc;
@@ -162,26 +164,49 @@ pub struct ReadingView {
     estimates_size: f32,
     /// What the last frame since the text was last laid out anew cost (`None`: none yet).
     drawn: Option<FrameStats>,
+    /// Where the Notes whose markers it draws end, in document order: the text makes room for
+    /// each marker there (#305).
+    note_ends: Arc<Vec<DocPos>>,
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
-/// an `estimate`, room for them). Justified text of an English Resource is hyphenated (#209).
+/// an `estimate`, room for them), and room for the markers of Notes ending at `note_ends`.
+/// Justified text of an English Resource is hyphenated (#209).
 fn paragraph(
     doc: &ReadingDoc,
     i: usize,
     settings: &TextSettings,
     interlinear: Option<&InterlinearSource>,
+    note_ends: &[DocPos],
     estimate: bool,
 ) -> Option<Paragraph> {
+    let b = doc.blocks.get(i)?;
+    let ends = block_note_ends(note_ends, b.unit, &b.source.range);
     let mut p = match interlinear {
-        Some(source) => source.paragraph(doc, i, settings, estimate)?,
-        None => {
-            let b = doc.blocks.get(i)?;
-            block_paragraph(doc.units.get(b.unit)?, &b.source, doc.direction(), settings)
-        }
+        Some(source) => source.paragraph(doc, i, settings, &ends, estimate)?,
+        None => block_paragraph_with_note_room(
+            doc.units.get(b.unit)?,
+            &b.source,
+            doc.direction(),
+            settings,
+            &ends,
+        ),
     };
     p.hyphenate = p.justify && hyphenates(&doc.manifest.language);
     Some(p)
+}
+
+/// The unit bytes of `note_ends` in unit `unit` that end text of a block over `range`: past
+/// its start, up to and including its end.
+fn block_note_ends(
+    note_ends: &[DocPos],
+    unit: usize,
+    range: &std::ops::Range<usize>,
+) -> Vec<usize> {
+    (note_ends.iter())
+        .filter(|p| p.unit == unit && range.start < p.byte && p.byte <= range.end)
+        .map(|p| p.byte)
+        .collect()
 }
 
 /// Whether text in `language` (a BCP 47 tag or ISO 639 code) is hyphenated when justified:
@@ -221,6 +246,7 @@ impl ReadingView {
             estimates_key: None,
             estimates_size: TextSettings::DEFAULT_SIZE,
             drawn: None,
+            note_ends: Arc::new(Vec::new()),
         };
         view.set_width(600.0);
         view
@@ -276,6 +302,37 @@ impl ReadingView {
         }
     }
 
+    /// Make room in the text for the markers of Notes ending at `ends` (#305), in any order.
+    /// Only the blocks where a Note's end came or went are laid out again, at once, so the
+    /// text around them does not flicker; layouts still with the workers are dropped.
+    pub fn set_note_ends(&mut self, mut ends: Vec<DocPos>) {
+        ends.sort_unstable();
+        ends.dedup();
+        if ends == *self.note_ends {
+            return;
+        }
+        let old = std::mem::replace(&mut self.note_ends, Arc::new(ends));
+        let changed: std::collections::BTreeSet<usize> = (old.iter())
+            .filter(|p| self.note_ends.binary_search(p).is_err())
+            .chain(
+                self.note_ends
+                    .iter()
+                    .filter(|p| old.binary_search(p).is_err()),
+            )
+            .filter_map(|p| self.doc.block_at(p.unit, p.byte.saturating_sub(1)))
+            .collect();
+        if changed.is_empty() {
+            return;
+        }
+        self.generation += 1;
+        self.client.forget_pending();
+        for i in changed {
+            if self.laid.remove(&i).is_some() {
+                self.laid(i);
+            }
+        }
+    }
+
     fn reset_heights(&mut self) {
         self.glide = None;
         // Keep the reader on the same verse across a relayout. A Commentary scrolled by hand
@@ -298,7 +355,7 @@ impl ReadingView {
             let source = self.interlinear.as_deref();
             self.estimates = (0..self.doc.blocks.len())
                 .map(|i| {
-                    paragraph(&self.doc, i, &self.settings, source, true)
+                    paragraph(&self.doc, i, &self.settings, source, &[], true)
                         .map_or_else(HeightEstimate::default, |p| HeightEstimate::of(&p))
                 })
                 .collect();
@@ -340,6 +397,7 @@ impl ReadingView {
             i,
             &self.settings,
             self.interlinear.as_deref(),
+            &self.note_ends,
             false,
         )?;
         let l = Arc::new(lay_out(&p, self.width));
@@ -524,8 +582,16 @@ impl ReadingView {
         let key = self.key(i);
         let (doc, settings, width) = (Arc::clone(&self.doc), self.settings, self.width);
         let interlinear = self.interlinear.clone();
+        let note_ends = Arc::clone(&self.note_ends);
         self.client.submit_with(key, move || {
-            match paragraph(&doc, i, &settings, interlinear.as_deref(), false) {
+            match paragraph(
+                &doc,
+                i,
+                &settings,
+                interlinear.as_deref(),
+                &note_ends,
+                false,
+            ) {
                 Some(p) => lay_out(&p, width),
                 // Checked above: the block exists.
                 None => lay_out(

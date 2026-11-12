@@ -60,7 +60,9 @@ impl TextBuf {
     pub fn push_text(&mut self, piece: &str) {
         for c in piece.nfc() {
             if c.is_whitespace() {
-                if !self.at_block_start {
+                // A space already emitted (`flush_space`, as a styled span opens) is this
+                // run's one space: `word <i> is</i>` keeps one space before "is" (#305).
+                if !self.at_block_start && !self.text.ends_with(' ') {
                     self.pending_space = true;
                 }
                 continue;
@@ -172,6 +174,21 @@ mod tests {
         b.lead_with_headword("Abaddon");
         assert_eq!(b.text, "ABADDON\nthe destroyer");
         assert_eq!(b.spans.len(), 2);
+    }
+
+    /// READING-7 (#305): a styled span opened after a space (`flush_space`) whose own text
+    /// starts with a space adds no second space.
+    #[test]
+    fn a_span_opened_after_a_space_that_starts_with_a_space_adds_no_second_one() {
+        let mut b = TextBuf::new();
+        b.push_text("Thy word ");
+        b.flush_space();
+        let start = b.pos();
+        b.push_text(" is");
+        let end = b.pos();
+        b.push_text(" a lamp");
+        assert_eq!(b.text, "Thy word is a lamp");
+        assert_eq!(&b.text[start..end], "is");
     }
 
     #[test]

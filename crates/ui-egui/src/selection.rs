@@ -267,11 +267,14 @@ fn add_block_rects(
         return;
     }
     for (li, line) in laid.lines.iter().enumerate() {
+        // One rectangle per stretch of a line, not per word: a band painted a word at a
+        // time shows a notch wherever its rounded, anti-aliased edges meet (#305).
+        let mut runs: Vec<Option<[f32; 4]>> = vec![None; active.len()];
         for item in &line.items {
             // The text's own band: interlinear lines under it are not part of a range (#143);
             // a drop numeral is marked over all of it (#209).
             let (y0, y1) = laid.range_band(li, item);
-            let mut runs: Vec<Option<[f32; 4]>> = vec![None; active.len()];
+            let (y0, y1) = (top + y0, top + y1);
             for (bytes, x0, x1) in item.clusters() {
                 // A text cluster covers unit bytes `[b, b + len)`: a ligature ("fi") is one
                 // cluster of several letters, marked when a range reaches into any of them.
@@ -287,7 +290,11 @@ fn add_block_rects(
                     let inside = p < end && start < q;
                     let run = &mut runs[k];
                     match (run.as_mut(), inside) {
-                        (Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {
+                        (Some(r), true)
+                            if r[1] == y0
+                                && r[3] == y1
+                                && ((r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5) =>
+                        {
                             r[0] = r[0].min(x0);
                             r[2] = r[2].max(x1);
                         }
@@ -295,7 +302,7 @@ fn add_block_rects(
                             if let Some(r) = run.take() {
                                 out[i].push(r);
                             }
-                            *run = Some([x0, top + y0, x1, top + y1]);
+                            *run = Some([x0, y0, x1, y1]);
                         }
                         (_, false) => {
                             if let Some(r) = run.take() {
@@ -305,10 +312,10 @@ fn add_block_rects(
                     }
                 }
             }
-            for (k, run) in runs.into_iter().enumerate() {
-                if let Some(r) = run {
-                    out[active[k]].push(r);
-                }
+        }
+        for (k, run) in runs.into_iter().enumerate() {
+            if let Some(r) = run {
+                out[active[k]].push(r);
             }
         }
     }

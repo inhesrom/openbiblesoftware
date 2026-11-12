@@ -603,9 +603,10 @@ fn marks_in_a_right_to_left_bible_stay_inside_the_pane() {
     let mut h = launch_with(&dir, &[kjv, hebrew], "Gen 1:1");
     let heb = h.tab_id("HEB");
     let (_, right) = column(&h, heb);
+    // Its first line's rect (one per line, #305) reaches the column's right edge.
     let first = verse_rects(&h, heb, gn(2))[0];
     assert!(
-        first.right() < right - 20.0,
+        first.right() > right - 1.0,
         "1:2 starts its line: {first:?}"
     );
 

@@ -263,7 +263,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "selection.rs",
-        "(Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {",
+        "&& ((r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5) =>",
         "0.5",
         "a tolerance: selection rects that touch join",
     ),

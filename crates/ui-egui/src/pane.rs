@@ -517,6 +517,13 @@ pub fn reading_pane(
         }
     });
     view.set_width(text_rect.width());
+    // The text makes room for each Note marker at its Note's end (#305).
+    view.set_note_ends(
+        (marks.iter())
+            .filter(|m| m.kind == MarkKind::Note)
+            .map(|m| m.end)
+            .collect(),
+    );
     view.text_origin = [text_rect.left(), rect.top()];
     view.pane_rect = [rect.left(), rect.top(), rect.right(), rect.bottom()];
     view.set_clock(ui.input(|i| i.time));
@@ -1159,8 +1166,8 @@ fn text_band([x0, y0, x1, y1]: [f32; 4], size: f32) -> [f32; 4] {
 }
 
 /// Where a Note's marker goes, relative to the text's left edge and the viewport top: just
-/// past the end of its range (to the left of it in right-to-left text), raised like a
-/// superscript. `None` while the range's end is not laid out in view.
+/// past the end of its range (to the left of it in right-to-left text), in the room the text
+/// leaves there for it ([`ReadingView::set_note_ends`]), raised like a superscript. `None` while the range's end is not laid out in view.
 fn note_marker(
     view: &ReadingView,
     in_view: &[usize],

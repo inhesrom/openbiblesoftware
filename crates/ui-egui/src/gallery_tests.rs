@@ -77,15 +77,19 @@ enum Section {
     MenusAndChoosers,
     /// Each surface's empty, loading and error states (#223).
     States,
+    /// Text as the reading pane draws it where the visual QA sweep found it drawn wrong
+    /// (#305).
+    ReadingText,
 }
 
 impl Section {
-    const ALL: [Section; 5] = [
+    const ALL: [Section; 6] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
         Section::MenusAndChoosers,
         Section::States,
+        Section::ReadingText,
     ];
 
     fn heading(self) -> &'static str {
@@ -95,6 +99,7 @@ impl Section {
             Section::DialogsAndPopovers => "Dialogs and popovers",
             Section::MenusAndChoosers => "Menus and choosers in Tabs and windows",
             Section::States => "Empty, loading and error states",
+            Section::ReadingText => "Reading text",
         }
     }
 }
@@ -165,6 +170,7 @@ fn surfaces() -> Vec<Surface> {
         (Section::DialogsAndPopovers, dialogs_and_popovers()),
         (Section::MenusAndChoosers, menus_and_choosers()),
         (Section::States, super::pane_states::pane_states()),
+        (Section::ReadingText, reading_text()),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -1110,6 +1116,141 @@ fn menus_and_choosers() -> Vec<Run> {
 }
 
 // ---------------------------------------------------------------------------------------
+// Reading text (#305).
+
+/// The BSB's Tab beside the KJV, with Genesis 1:`verse` selected whole.
+fn bsb_verse_selected(h: &mut Harness, verse: u16) -> TabId {
+    let tab = open_bsb(h);
+    let v = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tab)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
+    let verse = obs_scripture::Verse::new(obs_scripture::Book::Genesis, 1, verse);
+    let (unit, byte) = v.doc.verse_position(verse).unwrap();
+    let range = v.doc.verse_range_at(unit, byte).unwrap();
+    v.selection = Some(crate::Selection {
+        anchor: crate::DocPos {
+            unit,
+            byte: range.start,
+        },
+        head: crate::DocPos {
+            unit,
+            byte: range.end,
+        },
+        granularity: Default::default(),
+    });
+    h.frames(2);
+    tab
+}
+
+fn annotations(h: &Harness) -> Vec<obs_engine::Annotation> {
+    h.shell.st.session.annotations(None).unwrap()
+}
+
+/// Matthew Henry on Ps 119:105 as the Starter's converter makes it from Wikisource's
+/// wikitext, whose italic runs open with a space inside the quotes (`word '' is''`).
+fn mhc_psalm_119() -> obs_model::Resource {
+    let mut manifest = obs_model::Manifest::new(
+        "mhc-ps119",
+        "Matthew Henry on Psalm 119 (test)",
+        "MHC",
+        obs_model::ResourceType::Commentary,
+        "en",
+    );
+    manifest.license = "LicenseRef-PublicDomain".into();
+    let mut import = obs_formats::StudyImport::new(manifest);
+    obs_formats::import_mhc(
+        &mut import,
+        "<mediawiki><page><title>MHC/Volume 3/Psalms/Chapter 119</title><revision><text>\
+         ==Verses 105-106==\n\
+         {{sup|105}} NUN. Thy word '' is'' a lamp unto my feet, and a light unto my path.\n\n\
+         Observe here, 1. The nature of the word of God, and the great intention of giving it \
+         to the world; it is a\n'' lamp and a light.'' It discovers to us, concerning God and \
+         ourselves, that which otherwise we could not have known. 2. The use we should make of \
+         it. It must be not only a '' light to our eyes,'' to gratify them, and fill our heads \
+         with speculations, but a '' light to our feet'' and\n'' to our path,'' to direct us \
+         in the right ordering of our conversation.\n\n\
+         {{sup|106}} I have sworn, and I will perform '' it,'' that I will keep thy righteous \
+         judgments.\n\
+         </text></revision></page></mediawiki>",
+    )
+    .unwrap();
+    import.finish().unwrap().0
+}
+
+/// The Commentary above in the Library, open beside the KJV at Ps 119:105.
+fn open_mhc_psalm_119(h: &mut Harness) {
+    let resource = mhc_psalm_119();
+    let dir = std::env::temp_dir().join(format!("obs-gallery-mhc-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("mhc-ps119.obr");
+    obs_store::write_obr(&resource, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    let tab = h
+        .shell
+        .run(
+            "resource.open",
+            &json!({ "id": "mhc-ps119", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    h.shell
+        .run("tab.go", &json!({ "tab": tab, "text": "Ps 119:105" }));
+    settle(h);
+    settle_all(h);
+}
+
+/// Each defect the visual QA sweep found in the reading pane's text, as drawn now (#305).
+fn reading_text() -> Vec<Run> {
+    vec![
+        ("Italic words in a Commentary", open_mhc_psalm_119, |h| {
+            (h.shell.st.tabs.values()).any(|t| {
+                (t.view.as_ref()).is_some_and(|v| v.doc.manifest.resource_id == "mhc-ps119")
+            })
+        }),
+        (
+            "A Highlight over several lines",
+            |h| {
+                bsb_verse_selected(h, 2);
+                key(h, Key::Num1, Modifiers::ALT);
+                settle_all(h);
+            },
+            |h| annotations(h).len() == 1,
+        ),
+        (
+            "The jump flash over several lines",
+            |h| {
+                let tab = open_bsb(h);
+                h.shell
+                    .run("tab.go", &json!({ "tab": tab.0, "text": "Gen 1:2" }));
+            },
+            |h| (h.shell.st.tabs.values()).any(|t| t.flash.is_some()),
+        ),
+        (
+            "A Note marker before the next verse number",
+            |h| {
+                bsb_verse_selected(h, 2);
+                key(h, Key::N, Modifiers::COMMAND | Modifiers::SHIFT);
+                type_text(h, "The Spirit hovering.");
+                key(h, Key::Escape, Modifiers::NONE);
+                settle_all(h);
+            },
+            |h| {
+                annotations(h)
+                    .iter()
+                    .any(|a| a.body() == "The Spirit hovering.")
+            },
+        ),
+    ]
+}
+
+// ---------------------------------------------------------------------------------------
 // Drawing.
 
 /// A fresh launch with the gallery's fixtures in `look`.
@@ -1477,6 +1618,11 @@ fn gallery_menus_and_choosers() {
 #[test]
 fn gallery_states() {
     gallery(Section::States);
+}
+
+#[test]
+fn gallery_reading_text() {
+    gallery(Section::ReadingText);
 }
 
 // ---------------------------------------------------------------------------------------
