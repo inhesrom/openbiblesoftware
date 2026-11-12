@@ -598,10 +598,13 @@ fn a_chips_menu_lists_its_events_and_opens_one() {
     let n = chip_count(&label).unwrap();
     h.click(chip.center());
     h.frames(3);
+    // Each item is "title · dates"; a chip may count a Theographic Event among the crowded
+    // ones ("Southern Kingdom (Judah)", where the chips fall once the summary has its own
+    // row, #301).
     let items: Vec<String> = h
         .texts()
         .into_iter()
-        .filter(|t| t.starts_with("Crowded event ") && t.contains(" · "))
+        .filter(|t| t.contains(" · ") && t.ends_with(" BC"))
         .map(str::to_string)
         .collect();
     assert!(egui::Popup::is_any_open(&h.ctx), "the menu opened");
@@ -611,7 +614,10 @@ fn a_chips_menu_lists_its_events_and_opens_one() {
         "the menu lists the chip's {n} Events: {items:?}"
     );
     preview(&h, "timeline-crowded-menu-kittest");
-    let first = items[0].clone();
+    let first = (items.iter())
+        .find(|t| t.starts_with("Crowded event "))
+        .expect("a crowded Event in the menu")
+        .clone();
     let (title, _) = first.split_once(" · ").expect("title · dates");
     let number: i32 = title.trim_start_matches("Crowded event ").parse().unwrap();
     let verse = u16::try_from((number - 1) % 34 + 1).unwrap();

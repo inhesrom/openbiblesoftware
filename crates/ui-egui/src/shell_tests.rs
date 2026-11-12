@@ -3619,6 +3619,8 @@ mod library_rows;
 mod library_wording;
 #[path = "menu_audit_tests.rs"]
 mod menu_audit;
+#[path = "narrow_panels_tests.rs"]
+mod narrow_panels;
 #[path = "note_margin_tests.rs"]
 mod note_margin_ui;
 #[path = "page_tone_tests.rs"]

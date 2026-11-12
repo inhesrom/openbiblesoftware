@@ -406,16 +406,26 @@ impl State {
                         .show(ui, |ui| {
                             for (label, value) in about_fields(&m) {
                                 ui.label(RichText::new(label).color(theme::c().muted));
+                                // Wrapped to the Panel: a long Edition would otherwise
+                                // widen the whole page past it (#301).
                                 match label {
                                     // In words; the SPDX id on hover (LIBRARY-8).
                                     LICENCE => {
-                                        ui.label(licence_name(&value)).on_hover_text(&value);
+                                        ui.add(egui::Label::new(licence_name(&value)).wrap())
+                                            .on_hover_text(&value);
                                     }
                                     // Its web address a link, as Credits shows it
                                     // (LIBRARY-12).
-                                    SOURCE => super::credits_tab::linked_text(ui, &value),
+                                    // Wrapped in its Grid cell, not a child Ui (which
+                                    // would take the rest of the page's height).
+                                    SOURCE => {
+                                        let wrap_mode = ui.style().wrap_mode;
+                                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                                        super::credits_tab::linked_text(ui, &value);
+                                        ui.style_mut().wrap_mode = wrap_mode;
+                                    }
                                     _ => {
-                                        ui.label(value);
+                                        ui.add(egui::Label::new(value).wrap());
                                     }
                                 }
                                 ui.end_row();
@@ -429,7 +439,7 @@ impl State {
                                     .add(crate::components::search_field(
                                         text,
                                         "older, reformed",
-                                        size::FIELD_WIDE,
+                                        size::FIELD_WIDE.min(ui.available_width()),
                                     ))
                                     .on_hover_text(
                                         "Your own labels for this Resource, comma-separated; \
@@ -447,7 +457,7 @@ impl State {
                     ui.add_space(space::L);
                     section(ui, "Attribution");
                     // Verbatim, through the text pipeline (fonts for every script).
-                    let width = ui.available_width();
+                    let width = crate::components::fill_width(ui);
                     let palette = self.palette;
                     if m.attribution.is_empty() {
                         ui.label("None recorded.");

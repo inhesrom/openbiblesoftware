@@ -160,6 +160,48 @@ pub fn band_frame() -> Frame {
     Frame::new().inner_margin(inset::BAND)
 }
 
+// ---------------------------------------------------------------------------------------
+// Narrow Panels (#301): a Tab's page scrolls only up and down, so a row wider than its Panel
+// widens the whole page (egui grows a layout to what it holds) and everything after it that
+// fills the width is laid out past the Panel's edge, where it is cut off. Rows of text wrap,
+// and what fills the width takes no more than the Panel shows.
+
+/// The width a full-width block (Resource text, a reading pane) takes at the cursor: what the
+/// layout has left, never past the visible right edge (the Panel's).
+pub fn fill_width(ui: &Ui) -> f32 {
+    let visible = ui.clip_rect().right() - ui.cursor().left();
+    ui.available_width().min(visible).max(0.0)
+}
+
+/// A title and a muted detail on one line (a Resource and the section it shows): in a narrow
+/// Panel the title wraps and the detail goes under it whole.
+pub fn title_and_detail(ui: &mut Ui, title: RichText, detail: RichText) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(title);
+        ui.add(egui::Label::new(detail).extend());
+    });
+}
+
+/// A Tool's summary after its controls ("Acts 13 · 15 places"), inside a
+/// `horizontal_wrapped` row: where it fits, else on a row of its own under them, and cut
+/// short (the whole text on hover) only when even that row is too narrow.
+pub fn toolbar_summary(ui: &mut Ui, summary: String) -> Response {
+    let text = RichText::new(summary).color(theme::c().muted);
+    let width = egui::WidgetText::from(text.clone())
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Body,
+        )
+        .size()
+        .x;
+    if width > ui.available_width() {
+        ui.end_row();
+    }
+    ui.add(egui::Label::new(text).truncate())
+}
+
 /// A chip: a rounded outline round a short label and its controls.
 pub fn chip_frame() -> Frame {
     let c = theme::c();
@@ -174,7 +216,7 @@ pub fn chip_frame() -> Frame {
 /// returns whether Close was clicked.
 pub fn removable_chip(ui: &mut Ui, label: &str, what: &str) -> bool {
     let mut clicked = false;
-    chip_frame().show(ui, |ui| {
+    chip(ui, ("removable-chip", label), |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::XXS;
             ui.label(label_text(label));
@@ -182,6 +224,30 @@ pub fn removable_chip(ui: &mut Ui, label: &str, what: &str) -> bool {
         });
     });
     clicked
+}
+
+/// A chip ([`chip_frame`]) round `add_contents`, kept whole in a `horizontal_wrapped` row:
+/// one that does not fit after the chips before it starts the next row, rather than running
+/// past the Panel's edge (#301). egui sizes a frame only once it is drawn, so the chip is
+/// placed by its size last frame (`id_salt` names it among its row's chips).
+pub fn chip<R>(
+    ui: &mut Ui,
+    id_salt: impl egui::AsIdSalt,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let id = ui.scope_id().with(id_salt);
+    let last: Option<egui::Vec2> = ui.data(|d| d.get_temp(id));
+    let shown = ui.allocate_ui(last.unwrap_or(egui::Vec2::ZERO), |ui| {
+        chip_frame().show(ui, add_contents).inner
+    });
+    let size = shown.response.rect.size();
+    if last != Some(size) {
+        ui.data_mut(|d| d.insert_temp(id, size));
+        if last.is_none() {
+            ui.ctx().request_discard("a chip's size");
+        }
+    }
+    shown
 }
 
 /// **SectionHeader**: a small, muted, upper-case heading over a group of rows.
