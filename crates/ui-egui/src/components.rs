@@ -453,19 +453,6 @@ pub fn shown_scroll_bars(ui: &mut Ui) {
     };
 }
 
-/// `text` on one line at most `width` wide, cut short with "…" when it does not fit.
-pub fn elided(
-    painter: &egui::Painter,
-    text: &str,
-    font: egui::FontId,
-    color: egui::Color32,
-    width: f32,
-) -> std::sync::Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(0.0));
-    painter.layout_job(job)
-}
-
 /// **Menu**: a button that opens a drop-down menu (a submenu inside a menu).
 pub fn menu<'a, R>(
     ui: &mut Ui,
