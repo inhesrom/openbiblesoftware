@@ -110,11 +110,26 @@ fn search(h: &mut Harness, tab: TabId, query: &str) {
 fn ctrl_comma_opens_settings_ready_to_search() {
     let mut h = Harness::new();
     let tab = open_settings(&mut h);
-    // Every section is listed.
-    for title in ["TEXT AND FONTS", "INTERFACE SIZE", "THEME AND PAGE TONE"] {
+    // Every section is listed, the first ones in view.
+    for title in ["TEXT AND FONTS", "INTERFACE SIZE"] {
         assert!(in_tab(&h, tab, title).is_some(), "{title}: {:?}", h.texts());
     }
     preview(&h, "settings-tab");
+    let body = pane_rect(&h, tab).center();
+    h.events.push(Event::PointerMoved(body));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -200.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(3);
+    assert!(
+        in_tab(&h, tab, "THEME AND PAGE TONE").is_some(),
+        "{:?}",
+        h.texts()
+    );
     // Typed straight into the search box.
     h.events.push(Event::Text("sepia".into()));
     h.frames(2);
@@ -516,7 +531,8 @@ fn the_scroll_speed_slider_applies_at_once_and_resets_to_1x() {
 
     // The whole Tab at 1×: a wheel line moves it this far.
     search(&mut h, tab, "");
-    let anchor = setting_by_id("interface_size").unwrap().help;
+    // A help line well inside the first screen of the Tab.
+    let anchor = setting_by_id("font_interface").unwrap().help;
     let at_one = wheel_settings(&mut h, tab, anchor);
     assert!(at_one > 10.0, "{at_one}");
 

@@ -12,6 +12,7 @@ use std::ops::Range;
 
 use egui::{Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::library_search::row_label;
+use obs_engine::resource_text_size::ResourceTextSizes;
 use obs_engine::{BibleResults, LibraryResults, SearchTab};
 use obs_layout::{ColorRole, TextSettings};
 
@@ -76,6 +77,8 @@ pub struct SearchView {
     width: f32,
     viewport_height: f32,
     settings: TextSettings,
+    /// The Resources with their own Text size (#292): each hit is drawn at its Resource's.
+    own_sizes: ResourceTextSizes,
     /// The top of the view: a row, and how far into it.
     anchor: (usize, f32),
     /// Bring this row into view at the next frame.
@@ -95,6 +98,7 @@ impl SearchView {
             width: 400.0,
             viewport_height: 400.0,
             settings,
+            own_sizes: ResourceTextSizes::default(),
             anchor: (0, 0.0),
             reveal: None,
             snippets: SnippetCache::default(),
@@ -106,15 +110,37 @@ impl SearchView {
     pub fn set_settings(&mut self, settings: TextSettings) {
         if settings != self.settings {
             self.settings = settings;
-            // Hits queued for layout at the old settings are not wanted any more (#299).
-            self.snippets.forget_pending();
-            self.last = SearchFrame::default();
-            self.reset_heights();
+            self.text_size_changed();
         }
+    }
+
+    /// The Resources with their own Text size (#292); a change lays the hits out again at
+    /// their new sizes.
+    pub fn set_own_sizes(&mut self, own: &ResourceTextSizes) {
+        if *own != self.own_sizes {
+            self.own_sizes = own.clone();
+            self.text_size_changed();
+        }
+    }
+
+    fn text_size_changed(&mut self) {
+        // Hits queued for layout at the old settings are not wanted any more (#299).
+        self.snippets.forget_pending();
+        self.last = SearchFrame::default();
+        self.reset_heights();
     }
 
     pub fn settings(&self) -> &TextSettings {
         &self.settings
+    }
+
+    /// The Text settings Resource `resource`'s hits are drawn with: its own size, else the
+    /// global one.
+    pub fn settings_of(&self, resource: &str) -> TextSettings {
+        TextSettings {
+            size: self.own_sizes.get(resource).unwrap_or(self.settings.size),
+            ..self.settings
+        }
     }
 
     /// Whether the last frame drew hits in view, every one with its text (none as a
@@ -125,7 +151,12 @@ impl SearchView {
     }
 
     fn line_height(&self) -> f32 {
-        self.settings.size * self.settings.line_spacing * scale::ROW_LINE
+        line_height(&self.settings)
+    }
+
+    /// The row line height of Resource `resource`'s hits (at its own Text size, #292).
+    fn line_height_of(&self, resource: &str) -> f32 {
+        line_height(&self.settings_of(resource))
     }
 
     fn text_width(&self) -> f32 {
@@ -134,25 +165,39 @@ impl SearchView {
 
     /// Rows are estimated at two lines per hit until laid out.
     fn estimate(&self, hits: usize) -> f32 {
-        ROW_HEAD + hits as f32 * (2.0 * self.line_height() + HIT_GAP) + ROW_GAP
+        ROW_HEAD + hits as f32 * hit_estimate(self.line_height()) + ROW_GAP
     }
 
     /// A Library row: its label and three lines of excerpt (and its group's header).
-    fn library_estimate(&self, starts_group: bool) -> f32 {
+    fn library_estimate(&self, starts_group: bool, line_height: f32) -> f32 {
         let head = if starts_group { GROUP_HEAD } else { 0.0 };
-        head + self.line_height() * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP
+        head + line_height * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP
     }
 
-    /// Estimated heights of the Tab's result rows.
+    /// Estimated heights of the Tab's result rows, each hit at its Resource's Text size.
     fn estimates(&self, tab: &SearchTab) -> Vec<f32> {
         match (&tab.results, &tab.library_results) {
-            (Some(r), _) => r
-                .rows
-                .iter()
-                .map(|row| self.estimate(row.hits.len()))
+            (Some(r), _) => (r.rows.iter())
+                .map(|row| {
+                    let hits: f32 = (row.hits.iter())
+                        .map(|h| {
+                            let line = r
+                                .bibles
+                                .get(h.bible)
+                                .map_or_else(|| self.line_height(), |b| self.line_height_of(&b.id));
+                            hit_estimate(line)
+                        })
+                        .sum();
+                    ROW_HEAD + hits + ROW_GAP
+                })
                 .collect(),
             (None, Some(r)) => (0..r.rows.len())
-                .map(|i| self.library_estimate(r.starts_group(i)))
+                .map(|i| {
+                    let line = r
+                        .group_of(i)
+                        .map_or_else(|| self.line_height(), |g| self.line_height_of(&g.id));
+                    self.library_estimate(r.starts_group(i), line)
+                })
                 .collect(),
             (None, None) => Vec::new(),
         }
@@ -511,6 +556,16 @@ fn placeholder(paint: &mut Paint<'_>, origin: Pos2, width: f32, height: f32) {
     );
 }
 
+/// A row line's height at `settings`.
+fn line_height(settings: &TextSettings) -> f32 {
+    settings.size * settings.line_spacing * scale::ROW_LINE
+}
+
+/// A hit is estimated at two lines until laid out.
+fn hit_estimate(line_height: f32) -> f32 {
+    2.0 * line_height + HIT_GAP
+}
+
 /// One Verse row: the reference, then each Bible's label and text. Returns its height,
 /// whether it is fully laid out, and where its highlight area starts.
 #[allow(clippy::too_many_arguments)]
@@ -526,7 +581,6 @@ fn bible_row(
     paint: &mut Paint<'_>,
 ) -> (f32, bool, f32) {
     let palette = paint.palette;
-    let settings = view.settings;
     let text_left = left + LABEL_WIDTH;
     let text_width = view.text_width();
     let row = &results.rows[i];
@@ -544,6 +598,7 @@ fn bible_row(
         let bible = results.bibles.get(h.bible);
         let abbreviation = bible.map_or("", |b| b.abbreviation.as_str());
         let rtl = bible.is_some_and(|b| b.rtl);
+        let settings = bible.map_or(view.settings, |b| view.settings_of(&b.id));
         paint.painter.text(
             pos2(left, row_y + space::XXS),
             Align2::LEFT_TOP,
@@ -563,7 +618,7 @@ fn bible_row(
             );
             label_h += text::CAPTION_LINE;
         }
-        let mut height = view.line_height();
+        let mut height = line_height(&settings);
         let origin = pos2(text_left, row_y);
         let snippet = tab.snippet(i, j);
         let laid = snippet.and_then(|s| {
@@ -618,11 +673,12 @@ fn library_row(
     paint: &mut Paint<'_>,
 ) -> (f32, bool, f32) {
     let palette = paint.palette;
-    let settings = view.settings;
-    let mut label_settings = settings;
-    label_settings.size *= LABEL_SCALE;
     let row = &results.rows[i];
     let group = results.group_of(i);
+    let settings = group.map_or(view.settings, |g| view.settings_of(&g.id));
+    let line_height = line_height(&settings);
+    let mut label_settings = settings;
+    label_settings.size *= LABEL_SCALE;
     let mut row_y = y;
     if results.starts_group(i)
         && let Some(g) = group
@@ -654,13 +710,13 @@ fn library_row(
         Some(laid) => paint_laid(paint, atlas, &laid, &[], origin),
         None => {
             measured = false;
-            let h = view.line_height() * LABEL_SCALE;
+            let h = line_height * LABEL_SCALE;
             placeholder(paint, origin, text_width * share::LABEL, h);
             h
         }
     };
     row_y += space::XXS + label_h + space::XXS;
-    let mut height = view.line_height();
+    let mut height = line_height;
     let origin = pos2(text_left, row_y);
     let snippet = tab.snippet(i, 0);
     let laid = snippet.and_then(|s| {

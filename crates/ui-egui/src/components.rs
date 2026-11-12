@@ -331,6 +331,22 @@ pub fn menu<'a, R>(
     ui.menu_button(title, add_contents)
 }
 
+/// A [`menu`] that a click inside leaves open (one outside, or Esc, closes it): for menus
+/// with controls used in place, such as a slider. Its items close it themselves
+/// (`ui.close()`).
+pub fn menu_staying_open<'a, R>(
+    ui: &mut Ui,
+    title: impl egui::IntoAtoms<'a>,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let config = egui::containers::menu::MenuConfig::new()
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    let (response, inner) = egui::containers::menu::MenuButton::new(title)
+        .config(config)
+        .ui(ui, add_contents);
+    egui::InnerResponse::new(inner.map(|i| i.inner), response)
+}
+
 /// A hairline Stroke in the rule colour.
 pub fn rule_stroke() -> Stroke {
     Stroke::new(stroke::HAIR, theme::c().rule)

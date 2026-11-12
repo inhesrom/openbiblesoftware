@@ -72,6 +72,7 @@ mod search_tab;
 mod search_views;
 mod settings_tab;
 mod starter_tab;
+mod text_size_controls;
 mod theme_editor_window;
 mod tile_handles;
 mod timeline_tab;
@@ -1926,9 +1927,11 @@ pub(crate) fn pressed_as(
 /// Usually both, as egui matches: some keys need them on some layouts (Ctrl+Plus is
 /// Ctrl+Shift+= on a US keyboard). None when another binding in `all` is the same key with the
 /// same Ctrl (or Cmd) and other Shift or Alt, so the two are told apart exactly: Ctrl+Shift+Z
-/// is never Ctrl+Z, even when there is nothing to redo. A binding with other Ctrl is told
-/// apart by Ctrl itself (Ctrl+1 a Panel, Alt+1 a Highlight, #215). Never an extra Alt on
-/// Ctrl+digit: Ctrl+Alt is AltGr on Windows, which types { [ ] } on digits on some layouts.
+/// is never Ctrl+Z, even when there is nothing to redo; but when the others differ in Alt only,
+/// Shift may still be held, so Ctrl+Plus (Ctrl+Shift+= on a US keyboard) and Ctrl+Alt+Plus
+/// (#292) are both pressed with it. A binding with other Ctrl is told apart by Ctrl itself
+/// (Ctrl+1 a Panel, Alt+1 a Highlight, #215). Never an extra Alt on Ctrl+digit: Ctrl+Alt is
+/// AltGr on Windows, which types { [ ] } on digits on some layouts.
 pub(crate) fn extra_held(
     sc: egui::KeyboardShortcut,
     all: &[egui::KeyboardShortcut],
@@ -1941,10 +1944,17 @@ pub(crate) fn extra_held(
                 sc.modifiers.mac_cmd,
             )
     };
-    if (all.iter()).any(|o| {
+    let mut others = (all.iter()).filter(|o| {
         o.logical_key == sc.logical_key && o.modifiers != sc.modifiers && same_ctrl(o.modifiers)
-    }) {
-        return egui::Modifiers::NONE;
+    });
+    if let Some(first) = others.next() {
+        let alt_only = std::iter::once(first)
+            .chain(others)
+            .all(|o| o.modifiers.shift == sc.modifiers.shift);
+        return egui::Modifiers {
+            shift: alt_only,
+            ..egui::Modifiers::NONE
+        };
     }
     use egui::Key::{Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9};
     let digit = matches!(
@@ -2273,7 +2283,8 @@ impl State {
         if let Some(TabKind::Resource(id)) = &kind {
             match self.doc(id) {
                 Ok(doc) => {
-                    let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
+                    let mut view =
+                        ReadingView::new(Arc::clone(&doc), self.session.text_settings_of(id));
                     if let Some(width) = width {
                         view.set_width(width);
                     }
@@ -2574,9 +2585,14 @@ impl State {
         let palette = self.palette;
         // The Tab's own Reading layout over the defaults (#209). A change lays the text out
         // again, keeping the Current location.
+        // At the Resource's own Text size, if it has one (#292).
+        let own = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+            Some(TabKind::Resource(id)) => self.session.text_settings_of(id),
+            _ => self.session.text,
+        };
         let mut text = obs_layout::TextSettings {
             layout: self.session.reading_layout(tab),
-            ..self.session.text
+            ..own
         };
         text.footnote_markers = self
             .session
@@ -3044,6 +3060,7 @@ impl State {
             return;
         };
         view.set_settings(self.session.text);
+        view.set_own_sizes(self.session.resource_text_sizes());
         view.set(docs, base, comparison.differences, extent);
         if location != view.synced {
             if let Some(v) = location {
@@ -3061,6 +3078,9 @@ impl State {
             .map(crate::find::FindBar::found)
             .unwrap_or_default();
         let out = comparison_pane(ui, view, &mut self.atlas, &palette, found);
+        if let Some(bible) = &out.clicked_into {
+            self.session.workspace.clicked_into(tab, bible);
+        }
         if (out.user_moved || found_moved || out.find_moved)
             && let Some(v) = view.current_location()
             && Some(v) != view.synced
@@ -3253,6 +3273,7 @@ impl State {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         self.tab_menu(ui, tab, narrow);
                         self.favorite_star(ui, tab);
+                        self.text_size_button(ui, tab);
                         if matches!(kind, TabKind::Resource(_)) {
                             if !narrow {
                                 self.filters_menu(ui, tab);
@@ -3587,10 +3608,15 @@ impl State {
             .is_some_and(|t| t.kind.has_find_bar());
         let find_key = key_of(&self.session, "tab.find");
         let close_key = key_of(&self.session, "tab.close");
-        crate::components::menu(
+        // The Text size row is used in place (#292), so a click inside the menu leaves it
+        // open; every item that does something closes it itself.
+        crate::components::menu_staying_open(
             ui,
             icons::image(ui.ctx(), icons::Icon::More, icons::BODY, theme::c().muted),
             |ui| {
+                if self.text_size_row(ui, tab) {
+                    ui.separator();
+                }
                 if findable
                     && ui
                         .add(crate::components::button("Find…").shortcut_text(find_key))

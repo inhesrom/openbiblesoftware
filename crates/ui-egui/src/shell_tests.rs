@@ -3110,6 +3110,9 @@ mod annotation;
 #[path = "text_size_tests.rs"]
 mod text_size;
 
+#[path = "resource_text_size_tests.rs"]
+mod resource_text_size;
+
 #[path = "annotations_across_tests.rs"]
 mod annotations_across;
 

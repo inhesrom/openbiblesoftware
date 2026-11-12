@@ -1761,6 +1761,13 @@ fn assert_layout_restored_whole(s: &mut Session, written: &obs_store::UserStore,
         .as_array_mut()
         .unwrap()
         .retain(|r| panels.contains(&r[1]));
+    // A Tab's field stored as null says nothing (a Search Tab's `search: null` is a new
+    // search's fields), so the restored Tab may hold its default there.
+    for t in expected["tabs"].as_array_mut().unwrap() {
+        if let Some(t) = t.as_object_mut() {
+            t.retain(|_, v| !v.is_null());
+        }
+    }
     s.run("layout.restore", &json!({ "name": "Study" }))
         .unwrap_or_else(|e| panic!("{what}: {e}"));
     let mut now = serde_json::to_value(s.workspace.snapshot()).unwrap();

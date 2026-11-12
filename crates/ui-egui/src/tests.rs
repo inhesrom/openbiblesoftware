@@ -820,8 +820,9 @@ fn every_shell_scenario_shows_its_feature_and_measures_it() {
         assert!(settle < bench::SETTLE_LIMIT, "{r:?}");
         assert!(r.sync_layout_p50_ms >= 3.0, "{r:?}");
         assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
-        // The Text size scenarios (#299) also time each press in milliseconds, for the gate.
-        let timed = r.name.starts_with("text-size");
+        // The Text size scenarios (#299, #292) also time each change in milliseconds, for the
+        // gate.
+        let timed = r.name.contains("text-size");
         assert_eq!(r.action_ms_max.is_some(), timed, "{r:?}");
     }
 }

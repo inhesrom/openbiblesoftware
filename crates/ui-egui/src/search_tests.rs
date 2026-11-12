@@ -12,7 +12,7 @@ use obs_engine::{Library, TabId};
 use super::*;
 
 /// Removes the fixture folder (after the Harness, which may hold files open, is dropped).
-struct Files(PathBuf);
+pub(super) struct Files(PathBuf);
 
 impl Drop for Files {
     fn drop(&mut self) {
@@ -21,7 +21,7 @@ impl Drop for Files {
 }
 
 /// Run queued engine jobs (Inline mode) and draw until nothing is pending.
-fn settle(h: &mut Harness) {
+pub(super) fn settle(h: &mut Harness) {
     for _ in 0..2000 {
         h.shell.st.session.jobs().pump(16);
         h.frame();
@@ -47,7 +47,7 @@ fn settle(h: &mut Harness) {
 
 /// The Harness with a library of real `.obr` files (KJV, WEB, a long Psalm and TAHOT) whose
 /// Search indexes are built.
-fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
+pub(super) fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
     harness_of(
         name,
         &[
@@ -83,7 +83,7 @@ fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files)
 }
 
 /// KJV, two Commentaries (TCC ★, TC2), a Lexicon (TLX) and a Dictionary (TBD).
-fn library_harness(name: &str) -> (Harness, Files) {
+pub(super) fn library_harness(name: &str) -> (Harness, Files) {
     use obs_engine::testing::study;
     harness_of(
         name,
@@ -97,7 +97,7 @@ fn library_harness(name: &str) -> (Harness, Files) {
     )
 }
 
-fn search_tab(h: &Harness) -> TabId {
+pub(super) fn search_tab(h: &Harness) -> TabId {
     h.shell
         .st
         .session
@@ -136,7 +136,7 @@ fn rects_of(h: &Harness, color: egui::Color32) -> Vec<Rect> {
 }
 
 /// Open the Search Tool, type `query` into its box and press Enter.
-fn type_query(h: &mut Harness, query: &str) {
+pub(super) fn type_query(h: &mut Harness, query: &str) {
     type_query_in(h, obs_engine::SearchMode::Bible, query);
 }
 
@@ -155,7 +155,7 @@ fn switch_mode(h: &mut Harness, label: &str) {
 }
 
 /// [`type_query`] in a mode (switched to with the switch if the Tab is in another one).
-fn type_query_in(h: &mut Harness, mode: obs_engine::SearchMode, query: &str) {
+pub(super) fn type_query_in(h: &mut Harness, mode: obs_engine::SearchMode, query: &str) {
     if !h
         .shell
         .st

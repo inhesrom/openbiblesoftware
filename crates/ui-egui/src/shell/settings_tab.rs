@@ -150,8 +150,13 @@ impl State {
                 }
             }
             if let Some(is_default) = is_default {
-                let r = crate::components::link_enabled(ui, !is_default, "Reset")
-                    .accessible_name(format!("Reset {}", setting.label))
+                // A list of Resources' own sizes, each with its Reset: this resets them all.
+                let reset = match setting.kind {
+                    SettingKind::ResourceTextSizes => "Reset all",
+                    _ => "Reset",
+                };
+                let r = crate::components::link_enabled(ui, !is_default, reset)
+                    .accessible_name(format!("{reset} {}", setting.label))
                     .on_hover_text("Back to the default")
                     .on_disabled_hover_text("Already the default");
                 if r.clicked() {
@@ -245,6 +250,29 @@ impl State {
                 });
                 if speed != before {
                     run = Some(("view.scroll_speed", json!({ "value": f64::from(speed) })));
+                }
+            }
+            SettingKind::ResourceTextSizes => {
+                let own: Vec<(String, f32)> = (self.session.resource_text_sizes().iter())
+                    .map(|(id, size)| (id.to_string(), size))
+                    .collect();
+                // None: the help line says the others follow the Text size.
+                for (id, size) in own {
+                    let name = self.session.text_size_name(&id);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("{name} — {size:.0} pt")).color(theme::c().ink),
+                        );
+                        let r = crate::components::link(ui, "Reset")
+                            .accessible_name(format!("Reset the Text size of {name}"))
+                            .on_hover_text(format!("{name} follows the Text size again"));
+                        if r.clicked() {
+                            run = Some((
+                                "settings.reset",
+                                json!({ "setting": setting.id, "resource": id }),
+                            ));
+                        }
+                    });
                 }
             }
             SettingKind::Font(slot) => {

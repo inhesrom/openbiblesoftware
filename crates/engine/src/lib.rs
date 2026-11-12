@@ -136,6 +136,9 @@ mod reanchor_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod reduce_motion_tests;
 pub mod resource_navigation;
+pub mod resource_text_size;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod resource_text_size_tests;
 pub mod saved_searches;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod saved_searches_tests;
