@@ -8,7 +8,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Effect, OpenRequest, PanelId, PendingVisit, Placement, Side, Tab, TabId, Workspace};
+use super::{
+    Effect, OpenRequest, PanelId, PendingVisit, Placement, Side, Tab, TabId, Workspace, after,
+    first_free_id,
+};
 use crate::persist::{LayoutNode, TabSnapshot};
 
 /// Recently closed keeps at most this many closings.
@@ -157,10 +160,13 @@ impl Workspace {
             Some((p, side, levels)) => (Some(p), side, levels),
             None => (None, Side::Right, 0),
         };
-        self.next_closed += 1;
+        let id = first_free_id(after(self.next_closed), |id| {
+            self.closed.closed.iter().any(|c| c.id == id)
+        });
+        self.next_closed = id;
         let list = &mut self.closed;
         list.closed.push(ClosedTabs {
-            id: self.next_closed,
+            id,
             tabs: snapshots,
             active,
             generation: list.generation,
@@ -220,8 +226,7 @@ impl Workspace {
             }
             // The rest of a closed Panel's Tabs go into the Panel the first one opened.
             placement = Some(Placement::Panel(panel));
-            self.next_tab += 1;
-            let tab = TabId(self.next_tab);
+            let tab = self.take_tab_id();
             let entry = self.panels.entry(panel).or_default();
             entry.0.push(tab);
             entry.1 = Some(tab);

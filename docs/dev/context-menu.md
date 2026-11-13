@@ -52,9 +52,9 @@ new Search Tab opens instead of replacing the open one's query).
 - `word_study.open {strongs, new_tab?}` — Word Study (moves the focused or most recent Word Study).
 - `word_study.choose {words, new_tab?}` — the English-word chooser for an untagged word (a
   Strong's number studies that number).
-- `lexicon.open {strongs, new_tab?}` — the first Lexicon in Preferred order with an entry for
-  the number (an extended number falls back to its base), through
-  `ResourceStore::lookup_strongs`; the most recent Tab of that Lexicon in the opener's Link
+- `lexicon.open {strongs, resource?, new_tab?}` — the first Lexicon in Preferred order with an
+  entry for the number (an extended number falls back to its base), through
+  `ResourceStore::lookup_strongs`, or with `resource` that Lexicon (Word Info's Open in …); the most recent Tab of that Lexicon in the opener's Link
   set (from an unlinked Tab, an unlinked one) moves, else one opens and joins the opener's Link
   set. A Tab of it in another Link set is left alone: moving it would move that set.
 - `dictionary.lookup {text, new_tab?}` — the first Dictionary in Preferred order with that

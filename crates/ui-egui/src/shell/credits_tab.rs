@@ -12,6 +12,7 @@ use obs_engine::credits::{
 use obs_engine::{Library, TabId};
 
 use super::State;
+use super::get_bibles_tab::licence_name;
 use super::library_tab::section;
 use crate::theme;
 use crate::tokens::{self, size, space, stroke, text};
@@ -72,7 +73,8 @@ fn credit_row(ui: &mut Ui, c: &Credit, library: &Library) {
     // The deed's link on a line of its own: a link wrapped across lines is not one
     // accessible node.
     field(ui, "Licence", |ui| {
-        ui.label(&c.license);
+        // In words, as About and the Library say it; the SPDX id on hover.
+        ui.label(licence_name(&c.license)).on_hover_text(&c.license);
         if let Some(url) = &c.license_url {
             crate::components::hyperlink_to(ui, "licence deed", url).on_hover_text(url);
         }
@@ -134,7 +136,7 @@ fn field(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
 /// `text` with every `http(s)://` URL in it made a link (e.g. "STEP Bible,
 /// https://www.STEPBible.org"). One wrapped label, so long unbroken runs (commit hashes) wrap
 /// inside the column; a click is mapped to the character under the pointer.
-fn linked_text(ui: &mut Ui, text: &str) {
+pub(super) fn linked_text(ui: &mut Ui, text: &str) {
     let parts = split_urls(text);
     if !parts.iter().any(|(_, is_url)| *is_url) {
         ui.label(text);

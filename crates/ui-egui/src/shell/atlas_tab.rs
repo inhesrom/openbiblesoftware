@@ -38,6 +38,14 @@ pub(super) struct MapUi {
     found: Option<MapPlace>,
 }
 
+#[cfg(test)]
+impl MapUi {
+    /// Where the map looked last frame.
+    pub(super) fn view(&self) -> Option<MapView> {
+        self.view
+    }
+}
+
 /// Width of the place list beside the map, when the Tab is wide enough for it.
 const LIST_WIDTH: f32 = size::SIDE_LIST;
 
@@ -47,6 +55,10 @@ const MIN_SPAN: f64 = 3.0;
 
 /// Smallest box of the Factbook's map: enough land around a place to see where it is.
 pub(super) const MINI_MAP_SPAN: f64 = 7.0;
+
+/// Smallest box of the Factbook's map of a place with several possible locations: fitted to
+/// them, so they spread apart rather than sit on one spot of a regional map (#304).
+pub(super) const LOCATIONS_SPAN: f64 = 0.25;
 
 /// How near (screen points) the pointer must be to a marker to hover or click it.
 const HIT_RADIUS: f32 = chart::HIT;
@@ -131,7 +143,9 @@ pub(super) fn map_canvas(
             view.pan(f64::from(d.x), f64::from(d.y), world);
         }
         if response.hovered() {
-            let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+            // Wheel zoom, the same at every Scroll speed (#293).
+            let scroll = crate::motion::unscaled_scroll_delta(ui.ctx()).y;
+            let pinch = ui.input(egui::InputState::zoom_delta);
             let factor = f64::from(pinch) * (f64::from(scroll) / 300.0).exp();
             if (factor - 1.0).abs() > 1e-6
                 && let Some(p) = response.hover_pos()
@@ -251,28 +265,51 @@ pub(super) fn map_canvas(
             Some(m.place.entity.as_str()) == selected,
         );
     }
-    // Labels: strongest first, each only where it covers no label already placed.
+    // Labels: strongest first, each only where it covers no label already placed and, where
+    // it can, no other place's marker (#301, #304); a label that fits nowhere is left out
+    // (hovering names it).
     let font = FontId::proportional(text::SMALL);
+    let reach = |m: &Marker<'_>| marker_reach(m.strong, Some(m.place.entity.as_str()) == selected);
     let mut placed: Vec<Rect> = Vec::new();
-    for m in markers.iter().rev() {
+    for (i, m) in markers.iter().enumerate().rev() {
         if !rect.contains(m.at) {
             continue;
         }
         let galley = painter.layout_no_wrap(m.label.clone(), font.clone(), ink);
         let size = galley.size();
-        // Right of the marker, else left, above or below: inside the map, clear of others.
+        // Right of the marker, else left, above or below, else at a corner, else a line
+        // above or below its right or left (in a cluster of markers, #304): inside the map,
+        // clear of others, each clear of its own marker's reach (#301).
+        let gap = reach(m) + space::XS;
+        let corner = gap * std::f32::consts::FRAC_1_SQRT_2;
+        let line = size.y + space::XXS;
         let candidates = [
-            vec2(space::M, -size.y / 2.0),
-            vec2(-space::M - size.x, -size.y / 2.0),
-            vec2(-size.x / 2.0, -space::M - size.y),
-            vec2(-size.x / 2.0, space::M),
+            vec2(gap, -size.y / 2.0),
+            vec2(-gap - size.x, -size.y / 2.0),
+            vec2(-size.x / 2.0, -gap - size.y),
+            vec2(-size.x / 2.0, gap),
+            vec2(corner, -corner - size.y),
+            vec2(corner, corner),
+            vec2(-corner - size.x, -corner - size.y),
+            vec2(-corner - size.x, corner),
+            vec2(gap, -size.y / 2.0 + line),
+            vec2(gap, -size.y / 2.0 - line),
+            vec2(-gap - size.x, -size.y / 2.0 + line),
+            vec2(-gap - size.x, -size.y / 2.0 - line),
         ];
-        let Some(at) = candidates
-            .into_iter()
-            .map(|offset| Rect::from_min_size(m.at + offset, size))
-            .find(|r| {
-                rect.contains_rect(*r) && !placed.iter().any(|p| p.expand(space::PX).intersects(*r))
-            })
+        let spots = candidates.map(|offset| Rect::from_min_size(m.at + offset, size));
+        let free = |r: &Rect| {
+            rect.contains_rect(*r) && !placed.iter().any(|p| p.expand(space::PX).intersects(*r))
+        };
+        // Clear of the other markers too where there is such a spot.
+        let off_markers = |r: &Rect| {
+            let halo = r.expand(space::XXS);
+            (markers.iter().enumerate())
+                .all(|(j, o)| j == i || halo.distance_to_pos(o.at) >= reach(o) + space::PX)
+        };
+        let Some(at) = (spots.iter().find(|r| free(r) && off_markers(r)))
+            .or_else(|| spots.iter().find(|r| free(r)))
+            .copied()
         else {
             continue;
         };
@@ -356,6 +393,20 @@ fn lines(
             .map(|p| to_screen(f64::from(p[0]), f64::from(p[1])))
             .collect();
         painter.add(Shape::line(points, stroke));
+    }
+}
+
+/// How far a marker reaches from its centre: its radius and outline, and a picked one's ring.
+fn marker_reach(strong: bool, picked: bool) -> f32 {
+    let r = if strong {
+        chart::MARKER_STRONG
+    } else {
+        chart::MARKER
+    };
+    if picked {
+        r + chart::RING_GAP + stroke::THICK
+    } else {
+        r + stroke::MEDIUM
     }
 }
 
@@ -504,7 +555,7 @@ impl State {
         let mut refit = state.fitted != Some(passage);
         // The search row.
         let mut zoom: Option<f64> = None;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.add(crate::components::search_field(
                 &mut state.query,
                 "Find a place…",
@@ -539,7 +590,7 @@ impl State {
             if unlocated > 0 {
                 status.push_str(&format!(", {unlocated} without a location"));
             }
-            ui.add(egui::Label::new(RichText::new(status).color(theme::c().muted)).truncate());
+            crate::components::toolbar_summary(ui, status);
         });
         // Search results, under the box.
         let query = state.query.trim().to_string();

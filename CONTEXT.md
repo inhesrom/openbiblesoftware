@@ -288,7 +288,7 @@ A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Compari
 _Avoid_: Utility, Widget
 
 **Word Info**:
-The Tool that shows a Tagged word's Lemma, Strong's number, Morphology and Gloss when the user hovers over or clicks the word.
+The Tool that shows a Tagged word's Lemma, Strong's number, Morphology and Gloss when the user hovers over or clicks the word. Its Lexicon gloss is the one the Word Study header shows: the first entry with a short gloss, Lexicon by Lexicon in Preferred order (any language, extended or base number), else the first entry found, so a Greek ★ Lexicon never hides a Hebrew word's entry; an entry with no short gloss names its Lexicon with Open in …, which opens that Lexicon at the entry, rather than saying there is none.
 _Avoid_: Info panel, Information tool
 
 **Text Comparison**:
@@ -300,7 +300,7 @@ The Tool that maps the places a Passage names, on a base map built into the app 
 _Avoid_: Map view, Bible map, Atlas Resource
 
 **Timeline**:
-The Tool that shows biblical history on a zoomable horizontal axis: the Eras as a band of named periods, then Lifespans, then Events, each at its dates as the index gives them. It follows its Link set: the Events the Passage tells are emphasised, with the Lifespans of the people they name, and the view centres on the one it tells most of; a Verse no Event tells widens to its chapter. Clicking an Event opens its Passage (its Link set moves there, or the ★ Bible opens at it), clicking a Lifespan opens the person's Factbook, clicking an Era shows all of it. Dates say how sure they are: "c. 2246 BC" where the source marks a date approximate, ranges for what lasts ("1055–1015 BC"), and a day only where the source gives one.
+The Tool that shows biblical history on a zoomable horizontal axis: the Eras as a band of named periods, then Lifespans, then Events, each at its dates as the index gives them. It follows its Link set: the Events the Passage tells are emphasised, with the Lifespans of the people they name, and the view centres on the one it tells most of; a Verse no Event tells widens to its chapter. Clicking an Event opens its Passage (its Link set moves there, or the ★ Bible opens at it), clicking a Lifespan opens the person's Factbook, clicking an Era shows all of it. Where entries crowd the axis, one with no room for its bar or marker and its name is not drawn over the others: a "+N" chip under the Lifespans or at the bottom of the Events counts those starting there, and its menu lists them to open. Dates say how sure they are: "c. 2246 BC" where the source marks a date approximate, ranges for what lasts ("1055–1015 BC"), and a day only where the source gives one.
 _Avoid_: Chronology (as the Tool's name), Time chart, History view
 
 **Era**:
@@ -360,8 +360,12 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name or a command's name ("close tab") runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database; `>` lists All commands.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name or a command's name ("close tab") runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database; `>` lists All commands. Its dropdown is a results panel: the suggestions under headings with their counts, and the Search preview under the Search row.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
+
+**Search preview**:
+The first five Verses of the ★ Bible that match what is typed in the Command box, shown under its Search row as the user types (once the typing stops), each with its reference and its text with the match highlighted, and how many Verses match in all. Clicking one goes there as Go to does; "Show all N results in Search" opens the Search Tool as Enter on the Search row does. Without a Bible it offers Get Bibles; while the ★ Bible's Search index is being built it says so and fills in when it is ready.
+_Avoid_: Live search, Instant results, Quick search
 
 **All commands**:
 The Command box listing only commands (Help → All commands, Ctrl+Shift+P, or `>` typed in the box): every command it can run, menu commands first, each with its Keyboard shortcut; typing after `>` filters them, and a command that acts on a Tab acts on the focused one. Commands that need what only their own place has (a selection, a dropped item) and commands for scripts are not in it.
@@ -376,7 +380,7 @@ A toolbar button with an icon and a label (Library, Guides, Tools, Layouts) that
 _Avoid_: Ribbon, Toolbar menu, Pane (for its drop-down)
 
 **Toolbar**:
-The bar holding the Launchers. It sits at the Top of the window (in the menu bar) by default, or at the Bottom, Left or Right: its Toolbar position, chosen in View → Toolbar position, by right-clicking it, or by dragging its grip to that edge. At the Left and Right it shows icons only, with the labels in the tooltips. Customize toolbar… shows or hides each Launcher, orders them, and picks icons and labels, icons only or labels only; a Launcher with no room in a small window goes into its » button. With Auto-hide it is drawn over the Workspace only while the pointer is at its window edge or Alt is held. A hidden Launcher still opens from its shortcut and the Command box. All of this is a preference in the User database, never part of a Layout.
+The bar holding the Launchers. It sits at the Top of the window (in the menu bar) by default, or at the Bottom, Left or Right: its Toolbar position, chosen in View → Toolbar position, by right-clicking it, or by dragging its grip to that edge. At the Left and Right it is Collapsed, showing icons only with the labels in the tooltips, or Expanded, a wider column showing each Launcher's icon, label and a detail line (its shortcut and status); its pop-out control, its right-click menu, Customize toolbar…, Settings and the Command box switch between them, and an Expanded toolbar pushes the Workspace over. Customize toolbar… shows or hides each Launcher, orders them, and picks icons and labels, icons only or labels only; a Launcher with no room in a small window goes into its » button. With Auto-hide it is drawn over the Workspace only while the pointer is at its window edge or Alt is held. A hidden Launcher still opens from its shortcut and the Command box. All of this is a preference in the User database, never part of a Layout.
 _Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
 
 **Keyboard shortcut**:
@@ -428,8 +432,12 @@ The bar Ctrl+F opens under a Resource or Text Comparison Tab's header (also the 
 _Avoid_: Search (for this), Find dialog, Quick find
 
 **Text size**:
-How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset Text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). The default is 20 pt, the same for Bibles and every other Resource, and the readable range is 12–40 pt: a saved size below 12 (left by an older build) opens at the default once, with a notice. A point is a logical pixel, so on a 2× display text keeps its size and gets sharper. It never changes the Interface size.
+How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset Text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). The default is 20 pt, the same for Bibles and every other Resource, and the readable range is 12–40 pt: a saved size below 12 (left by an older build) opens at the default once, with a notice. A point is a logical pixel, so on a 2× display text keeps its size and gets sharper. It never changes the Interface size. A Resource with its Own Text size is drawn at that instead.
 _Avoid_: Zoom, Font size
+
+**Own Text size**:
+A Text size one Resource has for itself, overriding the global one in every Tab of that Resource: a Greek or Hebrew Bible or a dense Commentary can read larger than the English Bible beside it. It is an absolute size in the same 12–40 pt range, set from the Text size row of a Tab's ⋯ menu or its header's Aa button (A−, a slider, A+, Reset), or with Ctrl/Cmd+Alt and +, − or 0 for the focused Tab's Resource. The global Larger and Smaller text never move it; Reset makes the Resource follow the global Text size again. In a Text Comparison or Search Tab each row is drawn at its Resource's size, and the controls change the Resource last clicked into. It is kept in the User database (so it follows the Resource across Layouts, the Last session and a Backup), and Settings → Text and fonts lists every Resource that has one, each with Reset, and Reset all.
+_Avoid_: Zoom, Font size, Per-tab size, Override
 
 **Reading layout**:
 How Resource text flows on a reading pane's page: Paragraphs (where the Bible starts them) or One verse per line; Large chapter numbers (a numeral two lines tall opening each chapter); Section headings shown or hidden (a Bible's own headings only); the Reading column width (Narrow, Medium, Wide or Full width); and Justified text, with English words hyphenated to fit and Greek and Hebrew never hyphenated. Each Tab sets its own in View → Reading layout; whatever it has not set follows the defaults in Settings. A Tab's choices are saved in Layouts and the Last session. Changing one lays the text out again at the same Current location.
@@ -465,6 +473,10 @@ _Avoid_: Page colour, Background, Reading theme
 **Reduce motion**:
 Makes every change of the interface instant: scrolling takes each wheel step at once, a jump lands at once with its flash held rather than fading, pop-ups and Panels appear at their final size, and loading placeholders rest. It is on when the user turns it on (View → Reduce motion, or Settings → Motion) or when the operating system's own reduce motion setting is on. Off, these changes ease over a fraction of a second (the motion tokens).
 _Avoid_: Animations off, Disable animations, Accessibility mode
+
+**Scroll speed**:
+How far a mouse-wheel step, a trackpad swipe or an arrow key scrolls, everywhere in the app (Resource text, Text Comparison, Search results, Notes, the Library, Settings, menus and Floating windows): one multiplier from 0.25× to 4×, 1× by default, set in Settings → Motion. It is kept in the User database with the other preferences, never in a Layout. Page Up and Page Down still move one page, and zooming with Ctrl+wheel or in the Atlas and the Timeline is not affected.
+_Avoid_: Scroll sensitivity, Wheel speed, Scroll rate
 
 **Empty state**:
 What a Tab or pane shows when it has nothing to show yet: one plain sentence saying why (nothing typed, nothing in the library, nothing matches the filter) and one Button that fills it — Show an example (Show John 3:16-18, Show G26 (love), Search for “love”), Clear the filter, Open the Library, or, when a Resource is missing, the buttons that get it (Add the Starter library…, Get Lexicons…). No pane is left blank.
@@ -547,7 +559,7 @@ The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entri
 _Avoid_: Bible Word Study, Lexical study
 
 **Factbook**:
-The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Map (a place at each of its Place locations with their Confidence; for a person, the places they lived in), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
+The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Map (a place at each of its Place locations with their Confidence, the map fitted to them; for a person, the places they lived in), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
 _Avoid_: Encyclopedia, Profile, Person page
 
 **Topic Guide**:
@@ -601,7 +613,7 @@ A Notebook's setting for whether its Annotations are drawn in Resource text. Ann
 _Avoid_: Visible, Filter, Layer
 
 **Note display**:
-How one Resource Tab shows the Notes in its text, chosen in View → Note display for the focused Tab and kept with it in Layouts and the Last session: **Icons** (the default: a small Note marker where each Note is), **Margin** (the markers, and each Note as a card in the **Note margin**, a column beside the text), or **Hidden** (no Notes; Highlights still show). The Note margin's width follows the Tab's Reading column, and a Tab too narrow for it shows Icons. A card starts on the line of its Note's marker and scrolls with the text; cards that would overlap stack in text order, each with a leader line back to its line. A card shows the Note's first lines; clicking it shows the whole Note (a long one scrolls inside its card), and clicking that text edits it in place with the Note editor. Its links and Bible references are live, as in the Notes Tool. Notes from another Bible (Passage anchors) have cards there too, beside the verse number's marker.
+How one Resource Tab shows the Notes in its text, chosen in View → Note display for the focused Tab and kept with it in Layouts and the Last session: **Icons** (the default: a small Note marker where each Note is, in a space of its own the text leaves after the Note's last word), **Margin** (the markers, and each Note as a card in the **Note margin**, a column beside the text), or **Hidden** (no Notes; Highlights still show). The Note margin's width follows the Tab's Reading column, and a Tab too narrow for it shows Icons. A card starts on the line of its Note's marker and scrolls with the text; cards that would overlap stack in text order, each with a leader line back to its line. A card shows the Note's first lines; clicking it shows the whole Note (a long one scrolls inside its card), and clicking that text edits it in place with the Note editor. Its links and Bible references are live, as in the Notes Tool. Notes from another Bible (Passage anchors) have cards there too, beside the verse number's marker.
 _Avoid_: Notes mode, Sidebar, Annotation view, Show in text (that is a Notebook's)
 
 **Anchor**:

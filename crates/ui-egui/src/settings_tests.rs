@@ -110,11 +110,26 @@ fn search(h: &mut Harness, tab: TabId, query: &str) {
 fn ctrl_comma_opens_settings_ready_to_search() {
     let mut h = Harness::new();
     let tab = open_settings(&mut h);
-    // Every section is listed.
-    for title in ["TEXT AND FONTS", "INTERFACE SIZE", "THEME AND PAGE TONE"] {
+    // Every section is listed, the first ones in view.
+    for title in ["TEXT AND FONTS", "INTERFACE SIZE"] {
         assert!(in_tab(&h, tab, title).is_some(), "{title}: {:?}", h.texts());
     }
     preview(&h, "settings-tab");
+    let body = pane_rect(&h, tab).center();
+    h.events.push(Event::PointerMoved(body));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -200.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(3);
+    assert!(
+        in_tab(&h, tab, "THEME AND PAGE TONE").is_some(),
+        "{:?}",
+        h.texts()
+    );
     // Typed straight into the search box.
     h.events.push(Event::Text("sepia".into()));
     h.frames(2);
@@ -450,4 +465,110 @@ fn privacy_and_data_opens_back_up_and_restore() {
         TabKind::Backups
     );
     assert_eq!(h.shell.st.session.workspace.focused(), Some(backups));
+}
+
+/// The Scroll speed slider's track, from the AccessKit tree.
+fn scroll_speed_slider(h: &Harness) -> Rect {
+    let tree = h.tree.as_ref().expect("the AccessKit tree");
+    let node = (tree.nodes.iter().map(|(_, n)| n))
+        .find(|n| n.role() == egui::accesskit::Role::Slider && n.label() == Some("Scroll speed"))
+        .unwrap_or_else(|| panic!("no Scroll speed slider: {:?}", h.texts()));
+    let b = node.bounds().unwrap();
+    // Points: the harness draws at one pixel a point.
+    #[allow(clippy::cast_possible_truncation)]
+    let r = Rect::from_min_max(
+        pos2(b.x0 as f32, b.y0 as f32),
+        pos2(b.x1 as f32, b.y1 as f32),
+    );
+    r
+}
+
+/// How far one mouse-wheel line over the Settings Tab scrolls it: how far `anchor`'s text
+/// moves up.
+fn wheel_settings(h: &mut Harness, tab: TabId, anchor: &str) -> f32 {
+    let top = |h: &Harness| {
+        in_tab(h, tab, anchor)
+            .unwrap_or_else(|| panic!("{anchor:?} is not in the Tab: {:?}", h.texts()))
+            .top()
+    };
+    let before = top(h);
+    h.events
+        .push(Event::PointerMoved(pane_rect(h, tab).center()));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: vec2(0.0, -1.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(3);
+    before - top(h)
+}
+
+/// #293 acceptance: Settings → Motion has a Scroll speed slider at 1×, found by "scroll",
+/// "wheel" and "speed". Moving it applies at once (the Settings Tab itself then scrolls at the
+/// new speed: its live preview), it is kept across a restart, and Reset puts 1× back.
+#[test]
+fn the_scroll_speed_slider_applies_at_once_and_resets_to_1x() {
+    let db = temp_db("settings-scroll-speed");
+    let mut h = Harness::launch(Some(&db));
+    h.ctx.enable_accesskit();
+    let tab = open_settings(&mut h);
+    for query in ["scroll", "wheel", "speed", "trackpad"] {
+        search(&mut h, tab, query);
+        assert!(in_tab(&h, tab, "Scroll speed").is_some(), "{query:?}");
+        assert!(in_tab(&h, tab, "1×").is_some(), "{query:?}: at 1×");
+    }
+    // Under Motion, beside Reduce motion.
+    search(&mut h, tab, "motion");
+    let (motion, reduce, speed) = (
+        in_tab(&h, tab, "MOTION").expect("the Motion section"),
+        in_tab(&h, tab, "Reduce motion").unwrap(),
+        in_tab(&h, tab, "Scroll speed").unwrap(),
+    );
+    assert!(motion.top() < reduce.top() && reduce.top() < speed.top());
+    preview(&h, "settings-scroll-speed");
+
+    // The whole Tab at 1×: a wheel line moves it this far.
+    search(&mut h, tab, "");
+    // A help line well inside the first screen of the Tab.
+    let anchor = setting_by_id("font_interface").unwrap().help;
+    let at_one = wheel_settings(&mut h, tab, anchor);
+    assert!(at_one > 10.0, "{at_one}");
+
+    // A click near the slider's right end: about 3× (the slider is logarithmic).
+    search(&mut h, tab, "scroll speed");
+    let track = scroll_speed_slider(&h);
+    h.click(pos2(track.left() + track.width() * 0.9, track.center().y));
+    let speed = h.shell.st.session.appearance.scroll_speed;
+    assert!((2.0..4.0).contains(&speed), "{speed}");
+    assert_eq!(
+        h.shell.st.session.setting_is_default("scroll_speed"),
+        Some(false)
+    );
+    let shown = obs_engine::appearance::scroll_speed_label(f64::from(speed));
+    assert!(
+        in_tab(&h, tab, &shown).is_some(),
+        "{shown}: {:?}",
+        h.texts()
+    );
+
+    // Live: the Settings Tab itself scrolls at the new speed from the next frame.
+    search(&mut h, tab, "");
+    let moved = wheel_settings(&mut h, tab, anchor);
+    assert!(
+        (moved - at_one * speed).abs() < 1.0,
+        "{moved} at {speed}×, {at_one} at 1×"
+    );
+    drop(h);
+
+    // Kept across a restart; Reset puts 1× back.
+    let mut h = Harness::launch(Some(&db));
+    assert_eq!(h.shell.st.session.appearance.scroll_speed, speed);
+    let tab = open_settings(&mut h);
+    search(&mut h, tab, "scroll speed");
+    let p = reset_of(&h, tab, "Scroll speed");
+    h.click(p);
+    assert_eq!(h.shell.st.session.appearance.scroll_speed, 1.0);
+    assert!(in_tab(&h, tab, "1×").is_some());
 }

@@ -859,6 +859,19 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             view_saved(s, json!({ "on": s.appearance.reduce_motion }))
         },
     },
+    CommandSpec {
+        id: "view.scroll_speed",
+        label: "Scroll speed",
+        shortcut: None,
+        params: &[ParamSpec {
+            name: "value",
+            kind: ParamKind::Number,
+            required: true,
+            help: "How far a wheel step, trackpad swipe or arrow key scrolls: 0.25 to 4 (1 is the default)",
+        }],
+        enabled: always,
+        run: set_scroll_speed,
+    },
     simple("help.about", "About Open Bible", None, always, about),
     open_cmd("help.credits", "Credits", None, |s, p| {
         open(s, p, TabKind::Credits)
@@ -1097,10 +1110,30 @@ fn request(p: &Params<'_>) -> OpenRequest {
     }
 }
 
+/// What an Import report Tab names: the Resource's abbreviation once it is in the Library,
+/// else (a failed Import) the source's name as the Tab showed it while running.
+fn report_name(s: &Session, id: &str) -> String {
+    if let Some(entry) = s.library.get(id) {
+        return entry.manifest.abbreviation.clone();
+    }
+    let Some(record) = s.imports.report(id) else {
+        return id.to_owned();
+    };
+    if let Some(origin) = &record.origin {
+        return origin.module.clone();
+    }
+    if let Some(open) = &record.open_origin {
+        return open.id.clone();
+    }
+    std::path::Path::new(&record.source)
+        .file_stem()
+        .map_or_else(|| id.to_owned(), |n| n.to_string_lossy().into_owned())
+}
+
 pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
-        TabKind::ImportReport(_) => "Import report".into(),
+        TabKind::ImportReport(id) => crate::import::report_title(&report_name(s, id)),
         TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
         TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),
@@ -1536,6 +1569,23 @@ fn set_text_size(s: &mut Session, size: f32) -> Result<Value, CommandError> {
     s.workspace
         .push_effect(Effect::Message(format!("Text {} pt", s.text.size)));
     Ok(out)
+}
+
+/// `view.scroll_speed {value}` (#293): the Scroll speed, saved with the View preferences (never
+/// in a Layout). A value outside 0.25 to 4 is refused, not clamped, so a typo does not stick.
+fn set_scroll_speed(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    use crate::appearance::{
+        SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, scroll_speed_checked, scroll_speed_json,
+    };
+    let v = p.f64("value").unwrap_or(f64::NAN);
+    let speed = scroll_speed_checked(v).ok_or_else(|| {
+        failed(
+            "view.scroll_speed",
+            format!("Scroll speed is {SCROLL_SPEED_MIN} to {SCROLL_SPEED_MAX}, not {v}"),
+        )
+    })?;
+    s.appearance.scroll_speed = speed;
+    view_saved(s, json!({ "value": scroll_speed_json(speed) }))
 }
 
 /// `view.font`: choose the font of one slot by family and style (#138). The UI loads it and

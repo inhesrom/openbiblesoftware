@@ -136,10 +136,18 @@ mod reanchor_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod reduce_motion_tests;
 pub mod resource_navigation;
+pub mod resource_text_size;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod resource_text_size_tests;
 pub mod saved_searches;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod saved_searches_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod scroll_speed_tests;
 pub mod search;
+pub mod search_preview;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod search_preview_tests;
 #[cfg(test)]
 mod search_tests;
 pub mod search_views;
@@ -183,6 +191,8 @@ pub mod visual_filters;
 #[cfg(test)]
 mod visual_filters_tests;
 pub mod word_info;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod word_info_tests;
 pub mod word_sections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod word_sections_tests;
@@ -213,7 +223,8 @@ pub use bible_search::{
 pub use collections::{Collection, CollectionRule, CollectionSet, parse_rules, rules_text};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use command_box::{
-    COMMANDS_PREFIX, CommandBoxAction, IN_PLACE_COMMANDS, SCRIPTING_COMMANDS, Suggestion, is_listed,
+    COMMANDS_PREFIX, CommandBoxAction, IN_PLACE_COMMANDS, SCRIPTING_COMMANDS, Suggestion,
+    SuggestionGroup, is_listed, suggestion_groups,
 };
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
@@ -252,7 +263,7 @@ pub use home::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX,
+    ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX, failure_message,
 };
 pub use interlinear::{
     InterlinearKind, InterlinearLine, InterlinearLines, LexiconWord, cell_gloss, cell_texts,
@@ -299,6 +310,7 @@ pub use search::{
     INDEX_VERSION, IndexStatus, ResourceHits, SearchIndexes, SearchRequest, SearchResults,
     default_search_cache_dir,
 };
+pub use search_preview::{PREVIEW_DEBOUNCE, PREVIEW_HITS, PreviewHit, PreviewHits, SearchPreview};
 pub use search_views::{
     AnalysisColumn, AnalysisRow, AnalysisSort, ChartBar, ChartBy, HitGrid, ResultsFilter,
     ResultsView, SearchAnalysis, chart_bars,

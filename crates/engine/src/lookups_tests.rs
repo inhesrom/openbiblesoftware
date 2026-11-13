@@ -274,3 +274,54 @@ fn passage_keyed_tools_open_at_a_passage_in_the_openers_link_set() {
             .is_err()
     );
 }
+
+/// #294 review: with `resource`, `lexicon.open` opens that Lexicon (Word Info's Open in …)
+/// even when another one comes first in Preferred order.
+#[test]
+fn lexicon_open_with_a_resource_opens_that_lexicon() {
+    let t = Temp::new("lexicon-resource");
+    let mut s = session(&t);
+    let later = testing::lexicon("z-hebrew", "ZHL", &[("H1254", "בָּרָא", "to create")]);
+    let path = t.0.join("z-hebrew.obr");
+    obs_store::write_obr(&later, &path).unwrap();
+    s.library.add_file(&path).unwrap();
+    let preferred = s
+        .run("lexicon.open", &json!({ "strongs": "H1254A" }))
+        .unwrap();
+    assert_eq!(preferred["resource"], "a-hebrew");
+    let named = s
+        .run(
+            "lexicon.open",
+            &json!({ "strongs": "H1254A", "resource": "z-hebrew" }),
+        )
+        .unwrap();
+    assert_eq!(named["resource"], "z-hebrew");
+    assert_eq!(
+        s.workspace.tab(tab(&named)).unwrap().kind,
+        TabKind::Resource("z-hebrew".into())
+    );
+    assert_eq!(
+        key_of(&s, tab(&named)),
+        Some(Key::StrongsNumber("H1254".parse().unwrap()))
+    );
+    let no_entry = s
+        .run(
+            "lexicon.open",
+            &json!({ "strongs": "H1254", "resource": "lexicon" }),
+        )
+        .unwrap_err();
+    assert!(
+        no_entry.to_string().contains("has no entry for H1254"),
+        "{no_entry}"
+    );
+    let not_a_lexicon = s
+        .run(
+            "lexicon.open",
+            &json!({ "strongs": "H1254", "resource": "easton" }),
+        )
+        .unwrap_err();
+    assert!(
+        not_a_lexicon.to_string().contains("No Lexicon “easton”"),
+        "{not_a_lexicon}"
+    );
+}

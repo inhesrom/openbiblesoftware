@@ -9,19 +9,22 @@
 //! Feature scenarios (#183) follow the reading ones: `interlinear` (every pane with
 //! interlinear lines), `reading-layout` (every Reading layout option on, #209) and `find`
 //! (stepping a Find bar through matches far apart) on the same panes, and the Shell-driven ones of [`tools`] (Atlas, Search Grid and Chart, Exegetical and
-//! Topic Guides, Get Resources, Text size), each with its own settle-frame count.
+//! Topic Guides, Get Resources, Text size, the Command box's Search preview), each with its
+//! own settle-frame count.
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod library;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod scale;
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod search_preview;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod text_size;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tools;
 
 /// The Shell-driven feature scenarios, in report order.
-pub const SHELL_SCENARIOS: [&str; 8] = [
+pub const SHELL_SCENARIOS: [&str; 10] = [
     "atlas",
     "search-grid",
     "search-chart",
@@ -30,6 +33,8 @@ pub const SHELL_SCENARIOS: [&str; 8] = [
     "get-resources",
     "text-size",
     "text-size-tools",
+    "resource-text-size",
+    "search-preview",
 ];
 
 /// Most frames an action may take to show its result before the bench gives up on it.

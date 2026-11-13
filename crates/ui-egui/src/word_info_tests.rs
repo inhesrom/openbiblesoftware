@@ -59,7 +59,7 @@ fn kjv_strongs_doc() -> Arc<ReadingDoc> {
 
 /// A Hebrew Lexicon whose entries open with the headword line, then the gloss paragraph; the
 /// unit title is the headword, which a KJV word borrows as its Lemma.
-fn hebrew_lexicon_doc() -> Arc<ReadingDoc> {
+fn hebrew_lexicon() -> obs_model::Resource {
     use obs_model::{ResourceType, UnitId, UnitKind};
     let mut m = Manifest::new(
         "heb-lexicon",
@@ -99,7 +99,7 @@ fn hebrew_lexicon_doc() -> Arc<ReadingDoc> {
             false,
         );
     }
-    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+    b.build().unwrap()
 }
 
 /// Where `word`'s glyphs sit on screen in `tab`'s reading pane.
@@ -176,7 +176,7 @@ fn word_info_follows_hover_only_after_the_dwell_and_is_sticky() {
 #[test]
 fn hovering_tahot_bara_shows_strongs_morphology_and_a_gloss() {
     let (mut h, heb) = hebrew_harness();
-    add_doc(&mut h.shell, hebrew_lexicon_doc());
+    let _lexicon = add_obr(&mut h.shell, &hebrew_lexicon());
     let spot = word_spot(&h, heb, "בָּרָ֣א");
     h.events.push(Event::PointerMoved(spot));
     h.frames(14);
@@ -198,7 +198,10 @@ fn hovering_tahot_bara_shows_strongs_morphology_and_a_gloss() {
     assert_eq!(shown.reference, "Genesis 1:1 (HEB)");
     // The first Lexicon in Preferred order supplies the card's gloss.
     assert_eq!(shown.main.lexicon.as_ref().unwrap().abbreviation, "THL");
-    assert_eq!(shown.main.lexicon.as_ref().unwrap().text, "to create.");
+    assert_eq!(
+        shown.main.lexicon.as_ref().unwrap().text.as_deref(),
+        Some("to create.")
+    );
     // The panel paints the number, the Morphology, the glosses and the reference.
     for t in [
         "H1254A",
@@ -250,7 +253,7 @@ fn a_prefixed_hebrew_word_lists_its_prefix_under_parts() {
 fn a_kjv_strongs_word_shows_the_english_word_and_the_lemma_card() {
     let mut h = Harness::new();
     add_doc(&mut h.shell, kjv_strongs_doc());
-    add_doc(&mut h.shell, hebrew_lexicon_doc());
+    let _lexicon = add_obr(&mut h.shell, &hebrew_lexicon());
     h.shell.run("resource.open", &json!({ "id": "kjv-test" }));
     h.frames(4);
     h.click(h.tab_at("Word Info"));
@@ -279,7 +282,10 @@ fn a_kjv_strongs_word_shows_the_english_word_and_the_lemma_card() {
     );
     assert_eq!(shown.main.morphology, None, "a TH code is not read");
     assert_eq!(shown.main.morph_code.as_deref(), Some("strongMorph:TH8804"));
-    assert_eq!(shown.main.lexicon.as_ref().unwrap().text, "to create.");
+    assert_eq!(
+        shown.main.lexicon.as_ref().unwrap().text.as_deref(),
+        Some("to create.")
+    );
     assert_eq!(shown.reference, "Genesis 1:1 (KJVT)");
     for t in ["H1254A", "Genesis 1:1 (KJVT)"] {
         assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
@@ -506,7 +512,7 @@ fn word_info_previews() {
         return;
     }
     let (mut h, heb) = hebrew_harness();
-    add_doc(&mut h.shell, hebrew_lexicon_doc());
+    let _lexicon = add_obr(&mut h.shell, &hebrew_lexicon());
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/word-info");
     std::fs::create_dir_all(&dir).unwrap();
@@ -530,14 +536,18 @@ fn word_info_previews() {
 }
 
 /// A Resource imported from the SWORD test modules (`crates/formats/tests/assets/sword`).
-fn sword_doc(module: &str) -> Arc<ReadingDoc> {
+fn sword_resource(module: &str) -> obs_model::Resource {
     let source = obs_formats::SwordSource::open(
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/sword"),
     )
     .unwrap();
     let (resource, _) =
         obs_formats::import_sword(&source, module, &obs_formats::SwordOptions::default()).unwrap();
-    Arc::new(ReadingDoc::from_resource(resource))
+    resource
+}
+
+fn sword_doc(module: &str) -> Arc<ReadingDoc> {
+    Arc::new(ReadingDoc::from_resource(sword_resource(module)))
 }
 
 /// Acceptance (#133): hovering a word in an imported SWORD Greek NT (tagged as CrossWire's
@@ -548,7 +558,7 @@ fn hovering_a_word_in_an_imported_sword_greek_nt_shows_lemma_morphology_and_glos
     let gnt = sword_doc("ObsGreekNt");
     let gnt_id = gnt.manifest.resource_id.clone();
     add_doc(&mut h.shell, gnt);
-    add_doc(&mut h.shell, sword_doc("ObsGreek"));
+    let _lexicon = add_obr(&mut h.shell, &sword_resource("ObsGreek"));
     h.shell.run("resource.open", &json!({ "id": gnt_id }));
     h.frames(4);
     h.click(h.tab_at("Word Info"));
@@ -576,7 +586,10 @@ fn hovering_a_word_in_an_imported_sword_greek_nt_shows_lemma_morphology_and_glos
     assert_eq!(shown.main.morph_code.as_deref(), Some("V-AAI-3S"));
     assert!(shown.main.lemma.is_some(), "{shown:?}");
     let gloss = shown.main.lexicon.as_ref().expect("a Lexicon gloss");
-    assert!(gloss.text.contains("to love"), "{gloss:?}");
+    assert!(
+        gloss.text.as_deref().is_some_and(|t| t.contains("to love")),
+        "{gloss:?}"
+    );
     assert_eq!(shown.reference, "John 3:16 (OBS-GNT)");
     assert!(shown.transliteration.is_some());
     for t in [
@@ -590,5 +603,167 @@ fn hovering_a_word_in_an_imported_sword_greek_nt_shows_lemma_morphology_and_glos
         h.texts().iter().any(|t| t.contains("to love")),
         "{:?}",
         h.texts()
+    );
+}
+
+/// #294: a Greek ★ Lexicon (as a CrossWire Strong's Greek ranked first) has no H-numbers.
+/// Word Info read only the ★ Lexicon and said "No Lexicon entry" for H7225 while Word Study
+/// found the Hebrew Lexicon further down; both now read every Lexicon in Preferred order.
+#[test]
+fn a_greek_star_lexicon_does_not_hide_the_hebrew_gloss() {
+    let (mut h, heb) = hebrew_harness();
+    let greek = sword_resource("ObsGreek");
+    let greek_id = greek.manifest.resource_id.clone();
+    let _greek = add_obr(&mut h.shell, &greek);
+    let _hebrew = add_obr(&mut h.shell, &hebrew_lexicon());
+    let library = &mut h.shell.st.session.library;
+    library.set_preferred_order(vec![greek_id.clone(), "heb-lexicon".into()]);
+    let star = library.preferred(obs_model::ResourceType::Lexicon).unwrap();
+    assert_eq!(star.manifest.resource_id, greek_id, "a Greek ★ Lexicon");
+    let spot = word_spot(&h, heb, "בְּרֵאשִׁ֖ית");
+    h.events.push(Event::PointerMoved(spot));
+    h.frames(14);
+    let shown = h.shell.st.session.word_info.shown.clone().expect("shown");
+    assert_eq!(shown.main.strongs.to_string(), "H7225");
+    let gloss = shown
+        .main
+        .lexicon
+        .as_ref()
+        .expect("the Hebrew Lexicon's gloss");
+    assert_eq!(
+        (gloss.abbreviation.as_str(), gloss.text.as_deref()),
+        ("THL", Some("beginning, first."))
+    );
+    // The Word Study header reads the same gloss.
+    let header = obs_engine::word_study::header(
+        &h.shell.st.session.library,
+        &obs_engine::word_study::RenderingIndexes::default(),
+        shown.main.strongs,
+    );
+    assert_eq!(header.gloss.as_ref(), Some(gloss));
+    assert!(
+        h.texts().iter().any(|t| t.contains("beginning, first.")),
+        "{:?}",
+        h.texts()
+    );
+}
+
+/// A Lexicon whose only entry, H1254A, is a cross-reference with no gloss line to cut.
+fn cross_reference_lexicon() -> obs_model::Resource {
+    let mut m = Manifest::new(
+        "xref-lex",
+        "Cross-reference Lexicon",
+        "XRL",
+        obs_model::ResourceType::Lexicon,
+        "en",
+    );
+    m.key_schemes = vec![KeyScheme::StrongsNumber];
+    m.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(m);
+    let id = obs_model::UnitId::new("H1254A").unwrap();
+    let text = "בָּרָא v. II. ברא.";
+    b.add_unit(
+        id.clone(),
+        obs_model::UnitKind::Entry,
+        Some("בָּרָא".into()),
+        text.into(),
+    );
+    b.add_span(
+        &id,
+        0..text.len(),
+        SpanKind::Para {
+            style: ParaStyle::Prose,
+        },
+    );
+    b.add_key(
+        Key::StrongsNumber("H1254A".parse().unwrap()),
+        &id,
+        None,
+        false,
+    );
+    b.build().unwrap()
+}
+
+/// #294: an entry with no gloss line to cut (a cross-reference) names its Lexicon with
+/// Open in …, which opens the Lexicon at the entry, instead of "No Lexicon entry".
+#[test]
+fn an_entry_without_a_gloss_names_its_lexicon_and_opens_it() {
+    let (mut h, heb) = hebrew_harness();
+    let _lexicon = add_obr(&mut h.shell, &cross_reference_lexicon());
+    let spot = word_spot(&h, heb, "בָּרָ֣א");
+    h.events.push(Event::PointerMoved(spot));
+    h.frames(14);
+    let shown = h.shell.st.session.word_info.shown.clone().expect("shown");
+    let gloss = shown
+        .main
+        .lexicon
+        .as_ref()
+        .expect("the entry, without a gloss");
+    assert_eq!(
+        (gloss.abbreviation.as_str(), gloss.text.as_deref()),
+        ("XRL", None)
+    );
+    assert!(h.find("XRL: no short gloss").is_some(), "{:?}", h.texts());
+    assert!(h.find("Open in XRL").is_some(), "{:?}", h.texts());
+    h.click_text("Open in XRL");
+    h.frames(3);
+    let lexicon_tab = h.tab_id("XRL");
+    let tab = h.shell.st.session.workspace.tab(lexicon_tab).unwrap();
+    assert_eq!(
+        tab.entry_history.current(),
+        Some(Key::StrongsNumber("H1254A".parse().unwrap()))
+    );
+}
+
+/// #294 review: a pinned card keeps the Lexicon it names when the Preferred order changes,
+/// and Open in … opens that Lexicon, not the one now first with the number.
+#[test]
+fn open_in_opens_the_named_lexicon_after_the_preferred_order_changes() {
+    let (mut h, heb) = hebrew_harness();
+    let _xref = add_obr(&mut h.shell, &cross_reference_lexicon());
+    let card = |h: &Harness| {
+        let shown = h.shell.st.session.word_info.shown.clone().expect("shown");
+        let l = shown.main.lexicon.expect("a Lexicon");
+        (l.abbreviation, l.text)
+    };
+    let bara = word_spot(&h, heb, "בָּרָ֣א");
+    h.click(bara);
+    h.frames(3);
+    assert!(h.shell.st.session.word_info.pinned);
+    assert_eq!(card(&h), ("XRL".into(), None));
+    // A Lexicon with the number is added and moved first; the pinned card is unchanged.
+    let _hebrew = add_obr(&mut h.shell, &hebrew_lexicon());
+    assert!(
+        h.shell
+            .run("library.move", &json!({ "id": "heb-lexicon", "to": 0 }))
+            .is_some()
+    );
+    h.frames(3);
+    assert_eq!(
+        h.shell
+            .st
+            .session
+            .library
+            .preferred(obs_model::ResourceType::Lexicon)
+            .map(|e| e.manifest.resource_id.as_str()),
+        Some("heb-lexicon")
+    );
+    assert_eq!(card(&h), ("XRL".into(), None));
+    h.click_text("Open in XRL");
+    h.frames(3);
+    let tab = h.shell.st.session.workspace.tab(h.tab_id("XRL")).unwrap();
+    assert_eq!(tab.kind, TabKind::Resource("xref-lex".into()));
+    assert_eq!(
+        tab.entry_history.current(),
+        Some(Key::StrongsNumber("H1254A".parse().unwrap()))
+    );
+    assert!(
+        !h.shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .any(|t| t.kind == TabKind::Resource("heb-lexicon".into())),
+        "the preferred Lexicon did not open"
     );
 }

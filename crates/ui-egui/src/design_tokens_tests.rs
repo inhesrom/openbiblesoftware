@@ -47,7 +47,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "compare_view.rs",
-        "let per_line = (self.text_width() / (self.settings.size * 0.5)).max(10.0);",
+        "let per_line = (self.text_width() / (size * 0.5)).max(10.0);",
         "10.0",
         "characters a line holds at the least, for a height estimate",
     ),
@@ -59,7 +59,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "compare_view.rs",
-        "lines.max(1.0) * self.line_height() + ROW_GAP",
+        "lines.max(1.0) * self.line_height(row) + ROW_GAP",
         "1.0",
         "a block's height estimate is at least one line",
     ),
@@ -167,15 +167,9 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "pane.rs",
-        "view.scroll_by(40.0);",
+        "pub(crate) const ARROW_STEP: f32 = 40.0;",
         "40.0",
-        "how far an arrow key scrolls",
-    ),
-    (
-        "pane.rs",
-        "view.scroll_by(-40.0);",
-        "40.0",
-        "how far an arrow key scrolls",
+        "how far an arrow key scrolls at a Scroll speed of 1×",
     ),
     (
         "pane.rs",
@@ -233,7 +227,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "search_view.rs",
-        "head + self.line_height() * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP",
+        "head + line_height * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP",
         "3.0",
         "a Library hit's excerpt is three lines",
     ),
@@ -269,7 +263,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "selection.rs",
-        "(Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {",
+        "&& ((r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5) =>",
         "0.5",
         "a tolerance: selection rects that touch join",
     ),
@@ -289,6 +283,12 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "shell/atlas_tab.rs",
         "pub(super) const MINI_MAP_SPAN: f64 = 7.0;",
         "7.0",
+        "degrees of latitude, not points",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "pub(super) const LOCATIONS_SPAN: f64 = 0.25;",
+        "0.25",
         "degrees of latitude, not points",
     ),
     (
@@ -599,7 +599,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell/timeline_tab.rs",
-        "let factor = f64::from(pinch) * (f64::from(scroll.y) / 300.0).exp();",
+        "let factor = f64::from(pinch) * (f64::from(zoom) / 300.0).exp();",
         "300.0",
         "how fast the wheel zooms",
     ),
@@ -646,7 +646,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "a Panel's share in a thumbnail is never zero",
     ),
     (
-        "shell/toolbar_look.rs",
+        "components.rs",
         "job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));",
         "1.0",
         "a truncation width is never zero",
@@ -707,9 +707,27 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell.rs",
-        "&& (t.header_controls - measured).abs() > 0.5",
+        "&& (*kept - now).abs() > 0.5",
         "0.5",
         "a tolerance: a header width change smaller than this is not a resize",
+    ),
+    (
+        "shell/search_views.rs",
+        "let t = ((room - least_sum) / (full_sum - least_sum)).clamp(0.0, 1.0);",
+        "1.0",
+        "a clamp bound: how far each Analysis column is from its least to its own width",
+    ),
+    (
+        "shell/search_views.rs",
+        "if (offset - x).abs() > 0.5 {",
+        "0.5",
+        "a tolerance: a scroll change smaller than this does not move the Analysis header",
+    ),
+    (
+        "components.rs",
+        "&& before.is_none_or(|b| b.iter().zip(&now).any(|(a, b)| (a - b).abs() > 0.5))",
+        "0.5",
+        "a tolerance: a row's width change smaller than this is not a resize",
     ),
     (
         "shell.rs",
@@ -1354,11 +1372,26 @@ let ok = ink.lerp_to_gamma(lapis, 1.0 - t);
 #[test]
 fn an_allowlist_entry_matches_its_whole_line_and_literal_only() {
     let entry = |file: &str, text: &str, literal: &str| allowed_entry(file, text, literal);
-    assert!(entry("pane.rs", "        view.scroll_by(40.0);", "40.0").is_some());
-    assert!(entry("pane.rs", "view.scroll_by(40.0 + 6.0);", "6.0").is_none());
-    assert!(entry("pane.rs", "view.scroll_by(40.0).expand(1.0);", "40.0").is_none());
-    assert!(entry("view.rs", "view.scroll_by(40.0);", "40.0").is_none());
-    assert!(entry("pane.rs", "view.scroll_by(40.0);", "4.0").is_none());
+    let line = "pub(crate) const ARROW_STEP: f32 = 40.0;";
+    assert!(entry("pane.rs", &format!("    {line}"), "40.0").is_some());
+    assert!(
+        entry(
+            "pane.rs",
+            "pub(crate) const ARROW_STEP: f32 = 40.0 + 6.0;",
+            "6.0"
+        )
+        .is_none()
+    );
+    assert!(
+        entry(
+            "pane.rs",
+            "pub(crate) const ARROW_STEP: f32 = 40.0.max(1.0);",
+            "40.0"
+        )
+        .is_none()
+    );
+    assert!(entry("view.rs", line, "40.0").is_none());
+    assert!(entry("pane.rs", line, "4.0").is_none());
 }
 
 /// A one-point size is a measurement inside a sink too: a focus ring pushed out, a clip
@@ -1412,4 +1445,37 @@ fn the_scales_are_ordered() {
     assert!(ordered(&[radius::S, radius::M, radius::L, radius::XL]));
     assert!(ordered(&[stroke::HAIR, stroke::MEDIUM, stroke::THICK]));
     assert!(ordered(&[size::ICON_SMALL, size::ICON, size::ICON_LARGE]));
+}
+
+/// #306: every check box and radio button is the shared Toggle or Radio component
+/// (`components::toggle`, `toggle_enabled`, `radio`, `radio_value`), which outlines it so
+/// that it shows unchecked in Dark; egui's own would draw it with the Rule border, nearly
+/// invisible on a Field-coloured dialog.
+#[test]
+fn every_check_box_and_radio_button_is_a_shared_component() {
+    const RAW: [&str; 5] = [
+        ".checkbox(",
+        "Checkbox::new(",
+        ".radio(",
+        ".radio_value(",
+        "RadioButton::new(",
+    ];
+    let mut found = Vec::new();
+    for path in ui_sources() {
+        if path.ends_with("components.rs") {
+            continue;
+        }
+        let code = code_of(&std::fs::read_to_string(&path).unwrap());
+        let squeezed: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+        for raw in RAW {
+            if squeezed.contains(raw) {
+                found.push(format!("{}: {raw}", relative(&path)));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "use components::toggle or components::radio:\n{}",
+        found.join("\n")
+    );
 }

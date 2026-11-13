@@ -28,6 +28,23 @@ const BAR_MAX: f32 = chart::BAR_MAX;
 /// The Analysis table's fixed columns (Context takes the rest).
 const COLUMN_WIDTHS: [f32; 5] = chart::ANALYSIS_COLUMNS;
 const CONTEXT_MIN: f32 = chart::ANALYSIS_CONTEXT_MIN;
+
+/// The Analysis table's column widths in `room`: each column its own width while the table
+/// fits, Context taking the rest. In a narrower Tab every column gives way in proportion, down
+/// to its least, so a centre Panel shows all six; past that the table scrolls sideways (#303).
+pub(super) fn analysis_widths(room: f32) -> [f32; 6] {
+    let mut full = [CONTEXT_MIN; 6];
+    full[..5].copy_from_slice(&COLUMN_WIDTHS);
+    let least = chart::ANALYSIS_COLUMNS_LEAST;
+    let full_sum: f32 = full.iter().sum();
+    let least_sum: f32 = least.iter().sum();
+    if room >= full_sum {
+        full[5] = room - (full_sum - CONTEXT_MIN);
+        return full;
+    }
+    let t = ((room - least_sum) / (full_sum - least_sum)).clamp(0.0, 1.0);
+    std::array::from_fn(|i| least[i] + (full[i] - least[i]) * t)
+}
 /// A table cell's inset from its column's left.
 const CELL_PAD: f32 = space::L;
 
@@ -316,19 +333,17 @@ impl State {
         let palette = self.palette;
         let line = settings.size * settings.line_spacing * scale::ROW_LINE;
         let row_height = line + space::S;
-        let full = ui.available_width();
-        let fixed: f32 = COLUMN_WIDTHS.iter().sum();
-        let context_width = (full - fixed - 2.0 * CELL_PAD).max(CONTEXT_MIN);
-        let widths: Vec<f32> = COLUMN_WIDTHS
-            .iter()
-            .copied()
-            .chain(std::iter::once(context_width))
-            .collect();
+        let widths = analysis_widths(ui.available_width() - 2.0 * CELL_PAD);
         let total: f32 = widths.iter().sum::<f32>() + 2.0 * CELL_PAD;
         let sort = st.analysis_sort;
+        // The header stays on top and scrolls sideways with the rows (by last frame's offset).
+        let offset_id = ui.make_persistent_id(("search-analysis-x", tab));
+        let offset = ui.data(|d| d.get_temp::<f32>(offset_id)).unwrap_or(0.0);
         egui::ScrollArea::horizontal()
-            .id_salt(("search-analysis-h", tab))
-            .auto_shrink([false, false])
+            .id_salt(("search-analysis-head-row", tab))
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .scroll_source(egui::scroll_area::ScrollSource::NONE)
+            .horizontal_scroll_offset(offset)
             .show(ui, |ui| {
                 // Header.
                 let (head, _) = ui.allocate_exact_size(vec2(total, size::ROW), Sense::hover());
@@ -383,92 +398,102 @@ impl State {
                     }
                     x += w;
                 }
-                egui::ScrollArea::vertical()
-                    .id_salt(("search-analysis", tab))
-                    .auto_shrink([false, false])
-                    .show_rows(ui, row_height, order.len(), |ui, range| {
-                        for k in range {
-                            let row = &analysis.rows[order[k]];
-                            let (rect, r) =
-                                ui.allocate_exact_size(vec2(total, row_height), Sense::click());
-                            let clip = rect.intersect(ui.clip_rect());
-                            let painter = ui.painter().with_clip_rect(clip);
-                            if r.hovered() {
-                                painter.rect_filled(rect, 0.0, palette.hover);
-                            }
-                            let mut x = rect.left() + CELL_PAD;
-                            let cells: Vec<Rect> = widths
-                                .iter()
-                                .map(|w| {
-                                    let c = Rect::from_min_size(
-                                        Pos2::new(x, rect.top() + space::XS),
-                                        vec2(w - space::M, line),
-                                    );
-                                    x += w;
-                                    c
-                                })
-                                .collect();
-                            for (i, text) in [
-                                (0, row.reference.as_str()),
-                                (1, row.bible.as_str()),
-                                (4, row.morphology.as_str()),
-                            ] {
-                                // On the pipeline text's baseline, near the bottom of its line.
-                                painter.with_clip_rect(cells[i].intersect(clip)).text(
-                                    cells[i].left_center() + vec2(0.0, space::XS),
-                                    Align2::LEFT_CENTER,
-                                    text,
-                                    FontId::proportional(text::LABEL),
-                                    if i == 0 { theme::c().ink } else { muted },
-                                );
-                            }
-                            self.table_cell_text(ui, cells[2], clip, &row.word, row.rtl, None);
-                            let lemma_rtl = is_hebrew(&row.lemma);
-                            self.table_cell_text(ui, cells[3], clip, &row.lemma, lemma_rtl, None);
-                            let (excerpt, word) = row.excerpt(5, 8);
-                            self.table_cell_text(ui, cells[5], clip, &excerpt, row.rtl, Some(word));
-                            painter.hline(
-                                rect.x_range(),
-                                rect.bottom() - stroke::HAIR / 2.0,
-                                Stroke::new(
-                                    stroke::HAIR,
-                                    palette.verse_number.gamma_multiply(alpha::TINT),
-                                ),
-                            );
-                            let label = format!(
-                                "{} {} {} {} {}",
-                                row.reference, row.bible, row.word, row.lemma, row.morphology
-                            );
-                            r.widget_info(|| {
-                                egui::WidgetInfo::labeled(egui::Role::Button, true, &label)
-                            });
-                            // The Morphology cell's tooltip: the whole parsing (a long one is
-                            // clipped in the cell) and the code as the Bible tags it.
-                            let on_morphology = r.hover_pos().is_some_and(|p| cells[4].contains(p));
-                            let r = if on_morphology && !row.morph_codes.is_empty() {
-                                r.on_hover_text(format!(
-                                    "{}\nMorphology code: {}",
-                                    row.morphology, row.morph_codes
-                                ))
-                            } else {
-                                r
-                            };
-                            if r.clicked() {
-                                let split = ui.input(|i| i.modifiers.command);
-                                run.push((
-                                    "search.open",
-                                    json!({
-                                        "tab": tab.0,
-                                        "row": row.row,
-                                        "hit": row.hit,
-                                        "all": true,
-                                        "split": split,
-                                    }),
-                                ));
-                            }
-                        }
-                    });
             });
+        // Scroll bars that always show: a table wider than its Tab shows that it scrolls
+        // sideways, its bar at the Tab's bottom and the rows' at its right edge (#303).
+        let rows = ui.scope(|ui| {
+            crate::components::shown_scroll_bars(ui);
+            egui::ScrollArea::both()
+                .id_salt(("search-analysis", tab))
+                .auto_shrink([false, false])
+                .show_rows(ui, row_height, order.len(), |ui, range| {
+                    for k in range {
+                        let row = &analysis.rows[order[k]];
+                        let (rect, r) =
+                            ui.allocate_exact_size(vec2(total, row_height), Sense::click());
+                        let clip = rect.intersect(ui.clip_rect());
+                        let painter = ui.painter().with_clip_rect(clip);
+                        if r.hovered() {
+                            painter.rect_filled(rect, 0.0, palette.hover);
+                        }
+                        let mut x = rect.left() + CELL_PAD;
+                        let cells: Vec<Rect> = widths
+                            .iter()
+                            .map(|w| {
+                                let c = Rect::from_min_size(
+                                    Pos2::new(x, rect.top() + space::XS),
+                                    vec2(w - space::M, line),
+                                );
+                                x += w;
+                                c
+                            })
+                            .collect();
+                        for (i, text) in [
+                            (0, row.reference.as_str()),
+                            (1, row.bible.as_str()),
+                            (4, row.morphology.as_str()),
+                        ] {
+                            // On the pipeline text's baseline, near the bottom of its line.
+                            painter.with_clip_rect(cells[i].intersect(clip)).text(
+                                cells[i].left_center() + vec2(0.0, space::XS),
+                                Align2::LEFT_CENTER,
+                                text,
+                                FontId::proportional(text::LABEL),
+                                if i == 0 { theme::c().ink } else { muted },
+                            );
+                        }
+                        self.table_cell_text(ui, cells[2], clip, &row.word, row.rtl, None);
+                        let lemma_rtl = is_hebrew(&row.lemma);
+                        self.table_cell_text(ui, cells[3], clip, &row.lemma, lemma_rtl, None);
+                        let (excerpt, word) = row.excerpt(5, 8);
+                        self.table_cell_text(ui, cells[5], clip, &excerpt, row.rtl, Some(word));
+                        painter.hline(
+                            rect.x_range(),
+                            rect.bottom() - stroke::HAIR / 2.0,
+                            Stroke::new(
+                                stroke::HAIR,
+                                palette.verse_number.gamma_multiply(alpha::TINT),
+                            ),
+                        );
+                        let label = format!(
+                            "{} {} {} {} {}",
+                            row.reference, row.bible, row.word, row.lemma, row.morphology
+                        );
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::Role::Button, true, &label)
+                        });
+                        // The Morphology cell's tooltip: the whole parsing (a long one is
+                        // clipped in the cell) and the code as the Bible tags it.
+                        let on_morphology = r.hover_pos().is_some_and(|p| cells[4].contains(p));
+                        let r = if on_morphology && !row.morph_codes.is_empty() {
+                            r.on_hover_text(format!(
+                                "{}\nMorphology code: {}",
+                                row.morphology, row.morph_codes
+                            ))
+                        } else {
+                            r
+                        };
+                        if r.clicked() {
+                            let split = ui.input(|i| i.modifiers.command);
+                            run.push((
+                                "search.open",
+                                json!({
+                                    "tab": tab.0,
+                                    "row": row.row,
+                                    "hit": row.hit,
+                                    "all": true,
+                                    "split": split,
+                                }),
+                            ));
+                        }
+                    }
+                })
+        });
+        let x = rows.inner.state.clamped_offset().x;
+        if (offset - x).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(offset_id, x));
+            ui.ctx().request_repaint();
+        }
         if export {
             self.spawn_csv_picker(ui.ctx(), tab, &st.query);
         }

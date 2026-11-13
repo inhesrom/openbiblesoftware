@@ -174,6 +174,34 @@ impl std::fmt::Display for ChromeShort {
     }
 }
 
+/// The colour roles the chrome draws text in.
+const TEXT_ROLES: [ThemeRole; 5] = [
+    ThemeRole::Ink,
+    ThemeRole::Muted,
+    ThemeRole::Lapis,
+    ThemeRole::Verdigris,
+    ThemeRole::Warn,
+];
+
+/// Whether every text colour of `ch` reads on `ground` as [`contrast_shorts`] asks of the
+/// chrome's own backgrounds: a Guide's page is the Page tone only when it does (#306).
+pub fn text_reads_on(ch: &Chrome, ground: Color32) -> bool {
+    let needed = text_contrast(ch);
+    TEXT_ROLES
+        .into_iter()
+        .all(|r| contrast(role_color(ch, r), ground) >= needed)
+}
+
+/// The width of a control's border: medium in High contrast, so controls show their edges
+/// without colour (#224), else a hairline.
+pub fn border_width(ch: &Chrome) -> f32 {
+    if ch.high_contrast {
+        stroke::MEDIUM
+    } else {
+        stroke::HAIR
+    }
+}
+
 /// Every pair of `ch`'s colours that does not reach WCAG (#182, #224): each text colour on
 /// each background it can sit on (AA, AAA in High contrast), the star and the focus ring at
 /// 3:1, the text on each chip and badge, and in High contrast the borders at 3:1 so controls
@@ -188,16 +216,10 @@ pub fn contrast_shorts(ch: &Chrome) -> Vec<ChromeShort> {
         ThemeRole::Selection,
     ];
     let text = text_contrast(ch);
-    let mut drawn: Vec<(String, Color32, f32)> = [
-        ThemeRole::Ink,
-        ThemeRole::Muted,
-        ThemeRole::Lapis,
-        ThemeRole::Verdigris,
-        ThemeRole::Warn,
-    ]
-    .into_iter()
-    .map(|r| (label(r).to_string(), role_color(ch, r), text))
-    .collect();
+    let mut drawn: Vec<(String, Color32, f32)> = TEXT_ROLES
+        .into_iter()
+        .map(|r| (label(r).to_string(), role_color(ch, r), text))
+        .collect();
     drawn.push(("Star marks".to_string(), ch.gilt, MARK_CONTRAST));
     drawn.push(("Focus ring".to_string(), ch.lapis, MARK_CONTRAST));
     if ch.high_contrast {
@@ -401,11 +423,7 @@ fn style(style: &mut egui::Style, ch: &Chrome) {
     let control = corner(radius::M);
     // High contrast (#224): controls show their edges in a border that reads at 3:1, not by
     // a fill colour alone.
-    let border = if ch.high_contrast {
-        stroke::MEDIUM
-    } else {
-        stroke::HAIR
-    };
+    let border = border_width(ch);
     let w = &mut v.widgets;
     w.noninteractive.bg_fill = ch.surface;
     w.noninteractive.weak_bg_fill = ch.surface;

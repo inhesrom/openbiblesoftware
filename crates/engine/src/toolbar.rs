@@ -516,8 +516,9 @@ impl Session {
             windows: Vec::new(),
             recently_closed: Default::default(),
         };
-        let mut next = (self.workspace.next_tab_id(), 0u64);
-        snap.layout = Some(self.place(&plan, &mut snap, &mut next));
+        let mut tab_ids = self.workspace.free_tab_ids();
+        let mut next_panel = 0u64;
+        snap.layout = Some(self.place(&plan, &mut snap, &mut tab_ids, &mut next_panel));
         Ok(snap)
     }
 
@@ -525,16 +526,16 @@ impl Session {
         &self,
         plan: &Plan,
         snap: &mut WorkspaceSnapshot,
-        next: &mut (u64, u64),
+        tab_ids: &mut dyn Iterator<Item = u64>,
+        next_panel: &mut u64,
     ) -> LayoutNode {
         match plan {
             Plan::Panel(tabs) => {
-                next.1 += 1;
-                let panel = next.1;
+                // A Built-in Layout's few Panels replace every Panel, so they count from 1.
+                *next_panel += 1;
+                let panel = *next_panel;
                 let mut ids = Vec::new();
-                for t in tabs {
-                    let id = next.0;
-                    next.0 += 1;
+                for (t, id) in tabs.iter().zip(&mut *tab_ids) {
                     ids.push(id);
                     snap.tabs.push(TabSnapshot {
                         id,
@@ -571,13 +572,13 @@ impl Session {
             Plan::Row(children) => LayoutNode::Row {
                 children: children
                     .iter()
-                    .map(|(c, s)| (self.place(c, snap, next), *s))
+                    .map(|(c, s)| (self.place(c, snap, tab_ids, next_panel), *s))
                     .collect(),
             },
             Plan::Column(children) => LayoutNode::Column {
                 children: children
                     .iter()
-                    .map(|(c, s)| (self.place(c, snap, next), *s))
+                    .map(|(c, s)| (self.place(c, snap, tab_ids, next_panel), *s))
                     .collect(),
             },
         }

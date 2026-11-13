@@ -248,22 +248,22 @@ pub enum QueryErrorKind {
 impl fmt::Display for QueryErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            QueryErrorKind::Empty => write!(f, "type something to search for"),
+            QueryErrorKind::Empty => write!(f, "Type something to search for"),
             QueryErrorKind::BadStrongs(s) => {
                 write!(f, "“{s}” is not a Strong's number (try G5485 or H1254A)")
             }
             QueryErrorKind::UnknownField(s) => {
                 write!(f, "“{s}:” is not a search field (use strong: or lemma:)")
             }
-            QueryErrorKind::EmptyField(s) => write!(f, "{s}: needs something after it"),
+            QueryErrorKind::EmptyField(s) => write!(f, "“{s}:” needs something after it"),
             QueryErrorKind::OnlyExcluded => {
                 write!(
                     f,
-                    "add a word that must match; excluded words alone match nothing"
+                    "Add a word that must match; excluded words alone match nothing"
                 )
             }
             QueryErrorKind::ExcludedAlternative => {
-                write!(f, "an excluded word cannot be an OR alternative")
+                write!(f, "An excluded word cannot be an OR alternative")
             }
             QueryErrorKind::EmptyMorph => {
                 write!(f, "@ needs Morphology after it, such as @verb aorist")
@@ -288,7 +288,7 @@ impl fmt::Display for QueryErrorKind {
             ),
             QueryErrorKind::TooDeep => write!(
                 f,
-                "the query nests too deeply (at most {MAX_NESTING} parentheses, NOTs and proximity operators inside one another)"
+                "The query nests too deeply (at most {MAX_NESTING} parentheses, NOTs and proximity operators inside one another)"
             ),
         }
     }

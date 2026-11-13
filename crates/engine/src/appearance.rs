@@ -177,6 +177,38 @@ pub const TEXT_SIZE_DEFAULT: f32 = TextSettings::DEFAULT_SIZE;
 /// it, and any View change saved the size too, so a size equal to it was not chosen.
 const TEXT_SIZE_OLD_DEFAULT: f32 = 17.0;
 
+/// Scroll speed limits (#293): how far a mouse-wheel step, a trackpad swipe or an arrow key
+/// scrolls, as a multiple of egui's own step. The default is today's behaviour.
+pub const SCROLL_SPEED_MIN: f32 = 0.25;
+pub const SCROLL_SPEED_MAX: f32 = 4.0;
+pub const SCROLL_SPEED_DEFAULT: f32 = 1.0;
+
+/// A Scroll speed as it is kept and shown: within [`SCROLL_SPEED_MIN`] and
+/// [`SCROLL_SPEED_MAX`], to a hundredth. `None` when `v` is not a number or outside them.
+pub fn scroll_speed_checked(v: f64) -> Option<f32> {
+    let range = f64::from(SCROLL_SPEED_MIN)..=f64::from(SCROLL_SPEED_MAX);
+    if !range.contains(&v) {
+        return None;
+    }
+    // Within the range, so it fits in f32.
+    #[allow(clippy::cast_possible_truncation)]
+    let kept = ((v * 100.0).round() / 100.0) as f32;
+    Some(kept)
+}
+
+/// A Scroll speed as JSON keeps it: to a hundredth, without f32's tail (0.3, not
+/// 0.30000001192092896).
+pub fn scroll_speed_json(v: f32) -> f64 {
+    (f64::from(v) * 100.0).round() / 100.0
+}
+
+/// A Scroll speed as the Settings Tab and the Command box write it: `1×`, `0.25×`, `1.5×`.
+pub fn scroll_speed_label(v: f64) -> String {
+    let s = format!("{v:.2}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    format!("{s}×")
+}
+
 /// Line spacing choices, as multiples of the tallest font on a line.
 pub const LINE_SPACINGS: [(&str, &str, f32); 4] = [
     ("compact", "Compact", 1.1),
@@ -218,6 +250,9 @@ pub struct Appearance {
     /// View → Reduce motion (#225): the in-app half of Reduce motion (the operating system's
     /// setting is the other). Off by default.
     pub reduce_motion: bool,
+    /// Settings → Motion → Scroll speed (#293): the multiplier on every mouse-wheel,
+    /// trackpad and arrow-key scroll step, [`SCROLL_SPEED_DEFAULT`] by default.
+    pub scroll_speed: f32,
 }
 
 impl Default for Appearance {
@@ -228,6 +263,7 @@ impl Default for Appearance {
             interface_size: InterfaceSize::default(),
             show_highlights: true,
             reduce_motion: false,
+            scroll_speed: SCROLL_SPEED_DEFAULT,
         }
     }
 }
@@ -368,6 +404,7 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Valu
         "verse_numbers": verse_numbers_id(t.verse_numbers),
         "highlights": a.show_highlights,
         "reduce_motion": a.reduce_motion,
+        "scroll_speed": scroll_speed_json(a.scroll_speed),
         "fonts": f.to_json(),
         "reading_layout": serde_json::to_value(t.layout).unwrap_or(Value::Null),
     })
@@ -465,6 +502,10 @@ pub(crate) fn apply_json(
     }
     if let Some(b) = v["reduce_motion"].as_bool() {
         a.reduce_motion = b;
+    }
+    if let Some(x) = v["scroll_speed"].as_f64() {
+        let x = x.clamp(f64::from(SCROLL_SPEED_MIN), f64::from(SCROLL_SPEED_MAX));
+        a.scroll_speed = scroll_speed_checked(x).unwrap_or(SCROLL_SPEED_DEFAULT);
     }
     if let Ok(layout) = serde_json::from_value(v["reading_layout"].clone()) {
         t.layout = layout;

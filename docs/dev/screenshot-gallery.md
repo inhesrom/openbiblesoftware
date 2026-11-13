@@ -1,7 +1,7 @@
 # Screenshot gallery (#222)
 
-Every Tab kind, toolbar pane, menu, window, dialog and popover, and each surface's empty,
-loading and error states (#223), drawn headlessly in Light, Dark and Sepia at 1× and 2×, and
+Every Tab kind, toolbar pane, menu, window, dialog and popover, each surface's empty,
+loading and error states (#223), and Tabs in a narrow side Panel (#301), drawn headlessly in Light, Dark and Sepia at 1× and 2×, and
 compared with its golden image (ADR 0019). The goldens are in
 `docs/previews/gallery/`; [`docs/previews/gallery.md`](../previews/gallery.md) shows them all.
 
@@ -14,7 +14,14 @@ compared with its golden image (ADR 0019). The goldens are in
 `cargo xtask ci` runs the same tests in its `test` gate, so CI fails on a difference. The tests
 are `crates/ui-egui/src/gallery_tests.rs` (`shell::tests::gallery::`); one test per section
 (Tabs; toolbar panes, menus and windows; dialogs and popovers; menus and choosers in Tabs and
-windows) so they run in parallel.
+windows; empty, loading and error states; reading text; narrow Panels; headers and rows in a
+narrow Panel) so they run in parallel.
+
+The section "Headers and rows in a narrow Panel" (#303) is `panel_fit` in
+`panel_fit_tests.rs`: Search, its Analysis and Library results, Notes, a Bible's header,
+Settings and a full tab bar in the QA sweep's 1280 × 800 window, in a side Panel or at a
+Larger Interface size. The same file's tests check that nothing there is drawn past the
+Panel's edge or over another control.
 
 ## Reading a failure
 
@@ -64,6 +71,23 @@ fetch that fails), and what shows it is on screen. A surface that gains a new st
 there. The same file's tests check that no error state shows the error itself before Details,
 that Retry asks again, that each empty state's Button fills its Tab, and that no Tab is blank in
 an empty Library.
+
+The reading text section (#305) is `reading_text` in `gallery_tests.rs`: the reading pane's text
+where the visual QA sweep found it drawn wrong (a Commentary's italic words as the Starter's
+converter makes them, a Highlight and the jump flash over several lines, a Note marker before
+the next verse number). A rendering fix of the reading pane adds its case there.
+
+Crowded charts (#304) are drawn with data the Starter subset has too little of: the Timeline
+with `crowded_events` (`timeline_tests.rs`: more Events and Lifespans than the axis has rows
+for, in the Tabs section, and a "+N" chip's menu in the menus section) and the Factbook Map of a
+place with several Place locations (`factbook_maps` in `atlas_tests.rs`: Arimathea from the
+geocoding excerpt). Each writes its index into the launch's library folder and adds it.
+
+The Narrow Panels section is `narrow_panels` in `narrow_panels_tests.rs`: a Passage Guide, an
+About page, a Text Comparison, the Atlas and the Timeline in a side Panel at its default width,
+with the long titles, fields and summaries that once ran past its edge. The same file's tests
+open each in the QA sweep's 1280 × 800 window and fail on any text or Resource-text glyph drawn
+past the Panel's right edge, on a summary cut short, and on an Atlas label over a marker.
 
 `every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
 each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo

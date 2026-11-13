@@ -22,6 +22,10 @@ pub enum InlineObject {
     /// One interlinear line under a Tagged word (#143), anchored at the word's first byte;
     /// `row` 0 is the line just under the word.
     InterlinearCell { row: usize },
+    /// Blank room at the end of the range of one of the user's Notes, anchored at the range's
+    /// end: the reading pane draws the Note marker in it, clear of the next word or verse
+    /// number (#305).
+    NoteRoom,
 }
 
 /// Where a run's text comes from.

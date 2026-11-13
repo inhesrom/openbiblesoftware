@@ -37,6 +37,8 @@ struct Harness {
     last_shapes: Vec<egui::epaint::ClippedShape>,
     /// URLs the app asked the platform to open (hyperlinks clicked), oldest first.
     opened: Vec<String>,
+    /// What the app asked of the main window (move, zoom …), oldest first.
+    commands: Vec<egui::ViewportCommand>,
     /// Text the app put on the clipboard, oldest first.
     copied: Vec<String>,
     /// The window's size in points (1400 × 900 unless a test makes it smaller).
@@ -70,6 +72,30 @@ fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
         path: format!("/nonexistent/{id}.obr").into(),
     });
     shell.st.docs.insert(id, doc);
+}
+
+/// A Resource's `.obr` file in the temporary directory, removed when dropped.
+struct ObrFile(std::path::PathBuf);
+impl Drop for ObrFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Write `resource` to a real `.obr` file and add it to the library as a library Resource is:
+/// what the engine reads from disk (Word Info's Lexicon gloss, #294) finds it. Keep the
+/// returned file alive for the test.
+fn add_obr(shell: &mut Shell, resource: &obs_model::Resource) -> ObrFile {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "obs-shell-{}-{n}-{}.obr",
+        std::process::id(),
+        resource.manifest.resource_id
+    ));
+    obs_store::write_obr(resource, &path).unwrap();
+    shell.st.session.library.add_file(&path).unwrap();
+    ObrFile(path)
 }
 
 impl Harness {
@@ -178,6 +204,7 @@ impl Harness {
             textures: std::collections::HashMap::new(),
             last_shapes: Vec::new(),
             opened: Vec::new(),
+            commands: Vec::new(),
             copied: Vec::new(),
             screen: vec2(1400.0, 900.0),
             root_info: egui::ViewportInfo::default(),
@@ -237,27 +264,16 @@ impl Harness {
             }
             self.root_info.focused = Some(here);
         }
-        // No GPU here: texture uploads are kept as images, for screenshots only.
-        for (id, deltas) in std::mem::take(&mut out.textures_delta.set) {
-            for delta in deltas {
-                let egui::ImageData::Color(img) = delta.image;
-                match (delta.pos, self.textures.get_mut(&id)) {
-                    (Some([x0, y0]), Some(tex)) => {
-                        for y in 0..img.size[1] {
-                            for x in 0..img.size[0] {
-                                tex.pixels[(y0 + y) * tex.size[0] + x0 + x] =
-                                    img.pixels[y * img.size[0] + x];
-                            }
-                        }
-                    }
-                    _ => {
-                        self.textures.insert(id, (*img).clone());
-                    }
-                }
-            }
+        // No GPU here: texture uploads are kept as images, for screenshots only (floating
+        // windows' too, which share the main window's textures).
+        let floating = (self.native.as_ref()).map(|n| std::mem::take(&mut n.borrow_mut().textures));
+        for delta in floating.into_iter().flatten() {
+            self.keep_textures(delta);
         }
-        out.textures_delta.clear();
-        self.repaint_delay = out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        self.keep_textures(std::mem::take(&mut out.textures_delta));
+        let root = &out.viewport_output[&egui::ViewportId::ROOT];
+        self.repaint_delay = root.repaint_delay;
+        self.commands.extend(root.commands.iter().cloned());
         self.last_shapes = out.shapes.clone();
         for c in &out.platform_output.commands {
             match c {
@@ -280,6 +296,30 @@ impl Harness {
             collect_rects(&c.shape, &mut self.rects);
             collect_icons(&self.ctx, &c.shape, &mut self.shapes);
         }
+    }
+
+    /// Texture uploads, applied to the images kept for screenshots.
+    fn keep_textures(&mut self, mut delta: egui::TexturesDelta) {
+        for (id, deltas) in std::mem::take(&mut delta.set) {
+            for delta in deltas {
+                let egui::ImageData::Color(img) = delta.image;
+                match (delta.pos, self.textures.get_mut(&id)) {
+                    (Some([x0, y0]), Some(tex)) => {
+                        for y in 0..img.size[1] {
+                            for x in 0..img.size[0] {
+                                tex.pixels[(y0 + y) * tex.size[0] + x0 + x] =
+                                    img.pixels[y * img.size[0] + x];
+                            }
+                        }
+                    }
+                    _ => {
+                        self.textures.insert(id, (*img).clone());
+                    }
+                }
+            }
+        }
+        // Freed textures stay: the screenshots only read the ones still drawn.
+        delta.clear();
     }
 
     /// A frame after a 60 Hz frame interval, so workers get the time a real frame gives them.
@@ -426,12 +466,21 @@ impl Harness {
     /// height and 8-bit RGB rows, top to bottom.
     fn pixels(&self) -> (usize, usize, Vec<u8>) {
         // In device pixels: a 2× window (`root_info.native_pixels_per_point`) shoots at 2×.
-        let ppp = self.ctx.pixels_per_point();
+        self.rasterize(&self.last_shapes, self.screen, self.ctx.pixels_per_point())
+    }
+
+    /// `shapes`, a window `screen` points large drawn at `ppp`, rasterized as [`Self::pixels`].
+    fn rasterize(
+        &self,
+        shapes: &[egui::epaint::ClippedShape],
+        screen: egui::Vec2,
+        ppp: f32,
+    ) -> (usize, usize, Vec<u8>) {
         let (w, h) = (
-            (self.screen.x * ppp).round() as usize,
-            (self.screen.y * ppp).round() as usize,
+            (screen.x * ppp).round() as usize,
+            (screen.y * ppp).round() as usize,
         );
-        let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
+        let prims = self.ctx.tessellate(shapes.to_vec(), ppp);
         let mut px = vec![[0.0f32; 3]; w * h];
         for p in &prims {
             let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
@@ -579,7 +628,8 @@ fn collect(shape: &Shape, out: &mut Vec<(Rect, String)>) {
     match shape {
         Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
         Shape::Text(t) => {
-            let rect = Rect::from_min_size(t.pos, t.galley.size());
+            // Where the text is: a right-aligned galley lies left of its position.
+            let rect = t.galley.rect.translate(t.pos.to_vec2());
             out.push((rect, t.galley.text().to_string()));
         }
         _ => {}
@@ -1772,6 +1822,18 @@ mod library {
         r.center()
     }
 
+    /// Click a language chip: the topmost text with its name (rows name their language too).
+    fn click_chip(h: &mut Harness, language: &str) {
+        let r = h
+            .shapes
+            .iter()
+            .filter(|(_, t)| t == language)
+            .map(|(r, _)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("no {language} chip: {:?}", h.texts()));
+        h.click(r.center());
+    }
+
     /// Where a row's drag handle is.
     fn handle(h: &Harness, abbrev: &str) -> Pos2 {
         let y = row_pos(h, abbrev).y;
@@ -1833,8 +1895,8 @@ mod library {
         for t in [
             "BIBLES",
             "Test Bible",
-            "hbo",
-            "LicenseRef-PD",
+            // The licence in words; its SPDX id is in the tooltip and the About Tab (#302).
+            "Public domain",
             "English",
             "Hebrew",
         ] {
@@ -1846,6 +1908,14 @@ mod library {
                 h.texts()
             );
         }
+        // A row names its language as the chips do, never by its code (#307).
+        assert!(
+            !h.shapes
+                .iter()
+                .any(|(r, s)| (s == "hbo" || s == "en") && panel.contains(r.center())),
+            "{:?}",
+            h.texts()
+        );
         assert_eq!(starred(&h), "TB");
 
         h.shell.st.session.library.add(LibraryEntry {
@@ -2162,19 +2232,19 @@ mod library {
         h.frames(2);
         assert_eq!(row_names(&h), ["HEB", "HNUM"]);
         // With the Hebrew chip on as well, only the Hebrew-language one is left.
-        h.click_text("Hebrew");
+        click_chip(&mut h, "Hebrew");
         assert_eq!(row_names(&h), ["HEB"]);
         // The English chip adds English Resources that also match the text.
-        h.click_text("English");
+        click_chip(&mut h, "English");
         assert_eq!(row_names(&h), ["HEB", "HNUM"]);
         // Clearing the text leaves the chips filtering.
         let t = h.tab_id("Library");
         h.shell.st.tabs.get_mut(&t).unwrap().filter.clear();
         h.frames(2);
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        h.click_text("English");
+        click_chip(&mut h, "English");
         assert_eq!(row_names(&h), ["HEB"]);
-        h.click_text("Hebrew");
+        click_chip(&mut h, "Hebrew");
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
         // A filter that matches nothing says so.
         h.shell.st.tabs.get_mut(&t).unwrap().filter = "zzz".into();
@@ -2186,7 +2256,7 @@ mod library {
     #[test]
     fn removing_the_last_resource_of_a_selected_language_restores_unfiltered_rows() {
         let mut h = Harness::new();
-        h.click_text("Hebrew");
+        click_chip(&mut h, "Hebrew");
         assert_eq!(row_names(&h), ["HEB"]);
         let p = row_pos(&h, "HEB");
         right_click(&mut h, p);
@@ -2206,8 +2276,8 @@ mod library {
         assert!(h.find("Nothing matches the filter.").is_none());
 
         // The remaining chip still toggles normally; no hidden selection survives.
-        h.click_text("English");
-        h.click_text("English");
+        click_chip(&mut h, "English");
+        click_chip(&mut h, "English");
         assert_eq!(row_names(&h), ["TB", "HNUM"]);
         assert!(h.shell.st.tabs[&tab].languages.is_empty());
     }
@@ -2342,7 +2412,8 @@ mod library {
         assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
         for text in [
             "Licence",
-            "CC0-1.0",
+            // In words (#307), the SPDX id on hover.
+            "CC0 1.0",
             "Source",
             "https://github.com/inhesrom/openbiblesoftware",
             "ATTRIBUTION",
@@ -2399,7 +2470,7 @@ mod library {
         for t in [
             "Test Bible",
             "Licence",
-            "LicenseRef-PD",
+            "Public domain",
             "ATTRIBUTION",
             "CHANGES WE MADE",
             "Reformatted for the app.",
@@ -3065,6 +3136,9 @@ mod annotation;
 #[path = "text_size_tests.rs"]
 mod text_size;
 
+#[path = "resource_text_size_tests.rs"]
+mod resource_text_size;
+
 #[path = "annotations_across_tests.rs"]
 mod annotations_across;
 
@@ -3218,7 +3292,9 @@ mod import {
         assert!(
             h.panels()
                 .iter()
-                .any(|(_, t)| t.iter().any(|t| t == "Import report"))
+                .any(|(_, t)| t.iter().any(|t| t.starts_with("Import report · "))),
+            "{:?}",
+            h.panels()
         );
         assert!(h.find("Import in progress").is_some(), "{:?}", h.texts());
         assert!(h.find(&source.display().to_string()).is_some());
@@ -3344,7 +3420,7 @@ mod import {
         let rec = record(&h, &id);
         assert_eq!(rec.phase, ImportPhase::Complete, "{:?}", rec.error);
         assert!(!rec.report.unwrap().license_missing);
-        for want in ["Import complete", "1 source file(s) · sword (OSIS)"] {
+        for want in ["Import complete", "1 source file · sword (OSIS)"] {
             assert!(h.find(want).is_some(), "{want:?} missing: {:?}", h.texts());
         }
         h.click_text("Open");
@@ -3379,8 +3455,8 @@ mod import {
         for want in [
             "Import complete",
             UNAVAILABLE_INDEX,
-            "2 source file(s) · usfm",
-            "2 Bible book(s) · 2 Verses · 0 notes · 0 Tagged words",
+            "2 source files · usfm",
+            "2 Bible books · 2 Verses · 0 notes · 0 Tagged words",
             "Unmapped verses: 0",
             &format!("Absent verses: {}", report.verse_map.unwrap().absent),
             "Dropped markup (1)",
@@ -3418,7 +3494,8 @@ mod import {
             "{:?}",
             h.panels()
         );
-        h.click_text("Import report");
+        // The report Tab names the Resource once it is in (#307).
+        h.click_text("Import report · WEB-1");
         h.click_text("About");
         assert!(
             h.panels()
@@ -3549,6 +3626,8 @@ mod user_guide;
 
 #[path = "a11y_audit_tests.rs"]
 mod a11y_audit;
+#[path = "control_outline_tests.rs"]
+mod control_outline;
 #[path = "floating_windows_tests.rs"]
 mod floating_windows;
 #[path = "footnotes_tests.rs"]
@@ -3565,14 +3644,22 @@ mod key_labels;
 mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "library_rows_tests.rs"]
+mod library_rows;
+#[path = "library_wording_tests.rs"]
+mod library_wording;
 #[path = "menu_audit_tests.rs"]
 mod menu_audit;
+#[path = "narrow_panels_tests.rs"]
+mod narrow_panels;
 #[path = "note_margin_tests.rs"]
 mod note_margin_ui;
 #[path = "page_tone_tests.rs"]
 mod page_tone;
 #[path = "pane_states_tests.rs"]
 mod pane_states;
+#[path = "panel_fit_tests.rs"]
+mod panel_fit;
 #[path = "reading_layout_tests.rs"]
 mod reading_layout;
 #[path = "recently_closed_tests.rs"]
@@ -3583,6 +3670,8 @@ mod settings;
 mod tab_focus;
 #[path = "theme_editor_tests.rs"]
 mod theme_editor;
+#[path = "title_bar_tests.rs"]
+mod title_bar;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]

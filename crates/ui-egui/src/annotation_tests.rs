@@ -538,6 +538,55 @@ fn an_empty_note_is_not_saved_and_esc_saves_a_written_one() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// PERSONAL-5 (#305): a Note on a verse's text ends where the next verse's number is. Its
+/// marker has room of its own in the text there, clear of that number and of every glyph.
+#[test]
+fn a_notes_marker_has_room_of_its_own_before_the_next_verse_number() {
+    let dir = folder("note-room");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, b) = {
+        let doc = &view(&h, tb).doc;
+        let verse = obs_scripture::Verse::new(obs_scripture::Book::Genesis, 30, 2);
+        let (unit, byte) = doc.verse_position(verse).unwrap();
+        let range = doc.verse_range_at(unit, byte).unwrap();
+        let at = |byte| DocPos { unit, byte };
+        (at(range.start), at(range.end))
+    };
+    let v = h.shell.st.tabs.get_mut(&tb).unwrap().view.as_mut().unwrap();
+    v.selection = Some(crate::Selection {
+        anchor: a,
+        head: b,
+        granularity: Default::default(),
+    });
+    h.frame();
+    press_key(&mut h, egui::Key::N, cmd_shift());
+    h.events.push(Event::Text("Room of its own.".into()));
+    h.frame();
+    press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
+    assert_eq!(h.shell.st.session.annotations(None).unwrap().len(), 1);
+    h.frames(2);
+    let marker = h.shell.st.palette.note_marker;
+    let markers = painted_any(&h, marker);
+    let [marker] = markers[..] else {
+        panic!("one Note marker: {markers:?}");
+    };
+    // Gen 30:3's number follows on the marker's line.
+    let after: Vec<&Rect> = (h.glyphs.iter())
+        .filter(|g| g.left() >= marker.left() && (g.center().y - marker.center().y).abs() < 12.0)
+        .collect();
+    assert!(!after.is_empty(), "text follows the marker on its line");
+    let covered: Vec<&Rect> = (h.glyphs.iter())
+        .filter(|g| {
+            let i = g.intersect(marker);
+            i.width() > 0.5 && i.height() > 0.5
+        })
+        .collect();
+    assert!(covered.is_empty(), "{marker:?} covers glyphs {covered:?}");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// The Note editor saves its text as typed (#186 review): white space is CommonMark, so four
 /// leading spaces make a code block whose `**` shows as typed, and trimming them would turn
 /// it bold.
@@ -835,6 +884,66 @@ fn assert_aligned(h: &Harness, color: Color32, word: &str) -> Rect {
         );
     }
     union(&rects)
+}
+
+/// A block wholly in TB's pane with text on three lines or more: its range and how many
+/// lines it takes.
+fn block_of_three_lines(h: &Harness, tab: TabId) -> (DocPos, DocPos, usize) {
+    let v = view(h, tab);
+    let pane = pane(h);
+    let [_, oy] = v.text_origin;
+    for (index, top, laid) in v.laid_in_view(900.0) {
+        let lines = laid.lines.iter().filter(|l| !l.items.is_empty()).count();
+        if lines < 3 || oy + top < pane.top() || oy + top + laid.height > pane.bottom() - 60.0 {
+            continue;
+        }
+        let block = &v.doc.blocks[index];
+        let at = |byte| DocPos {
+            unit: block.unit,
+            byte,
+        };
+        return (
+            at(block.source.range.start),
+            at(block.source.range.end),
+            lines,
+        );
+    }
+    panic!("no block of three lines in view");
+}
+
+/// One rect per line top.
+fn one_per_line(rects: &[Rect], lines: usize) {
+    assert_eq!(rects.len(), lines, "{rects:?}");
+    let mut tops: Vec<i32> = rects.iter().map(|r| r.top().round() as i32).collect();
+    tops.dedup();
+    assert_eq!(tops.len(), lines, "{rects:?}");
+}
+
+/// READING-8 (#305): the selection, the jump flash and a Background Highlight over many words
+/// are one band per line, not one per word: rounded, anti-aliased bands a word long left a
+/// notch wherever two met.
+#[test]
+fn a_selection_and_highlight_over_many_words_are_one_band_per_line() {
+    let dir = folder("bands");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, b, lines) = block_of_three_lines(&h, tb);
+    // The rects the selection, the flash and Highlights are painted from.
+    one_per_line(&screen_rects(&h, tb, a, b), lines);
+    let v = h.shell.st.tabs.get_mut(&tb).unwrap().view.as_mut().unwrap();
+    v.selection = Some(crate::Selection {
+        anchor: a,
+        head: b,
+        granularity: Default::default(),
+    });
+    h.frame();
+    let selection = h.shell.st.palette.selection;
+    one_per_line(&painted(&h, selection), lines);
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT);
+    let yellow = h.shell.st.palette.built_in_color("yellow");
+    one_per_line(&painted(&h, yellow), lines);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]

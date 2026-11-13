@@ -667,6 +667,17 @@ pub mod bibles {
         bible("psalms", "PSA", &refs, None, &[])
     }
 
+    /// A right-to-left Bible ("HEB") of Genesis 1:1-3 whose verses begin with the Latin word
+    /// "love" and go on in Hebrew: mixed-direction text for the Search preview (#295).
+    pub fn hebrew_love() -> Resource {
+        let verses = [
+            (v(Book::Genesis, 1, 1), "love בְּרֵאשִׁית בָּרָא אֱלֹהִים"),
+            (v(Book::Genesis, 1, 2), "love וְהָאָרֶץ הָיְתָה תֹהוּ"),
+            (v(Book::Genesis, 1, 3), "love וַיֹּאמֶר אֱלֹהִים יְהִי אוֹר"),
+        ];
+        build_bible("heb-love", "HEB", &verses, None, &[], Direction::Rtl, false)
+    }
+
     /// The Psalms of the STEPBible TAHOT test excerpt (Job–Song), imported the way the
     /// Starter library imports TAHOT: Hebrew verse numbers and a Verse map, so its Ps 3:1 is
     /// the superscription (Standard Ps 3:title) and its Ps 3:2 is Standard Ps 3:1.

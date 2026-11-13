@@ -57,6 +57,9 @@ icons! {
     Remove => "minus",
     More => "ellipsis",
     Overflow => "chevrons-right",
+    // A side Toolbar's pop-out control (#291): towards the left or the right.
+    PopOutLeft => "chevrons-left",
+    PopOutRight => "chevrons-right",
     Grip => "grip-vertical",
     ChevronLeft => "chevron-left",
     ChevronRight => "chevron-right",

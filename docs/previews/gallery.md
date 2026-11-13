@@ -2,7 +2,7 @@
 
 <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); do not edit. -->
 
-Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
+Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
 
 ## Tabs
 
@@ -195,6 +195,97 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Timeline, Light](gallery/tab-timeline-light-1x.png) | ![Timeline, Dark](gallery/tab-timeline-dark-1x.png) | ![Timeline, Sepia](gallery/tab-timeline-sepia-1x.png) |
 | [2×](gallery/tab-timeline-light-2x.png) | [2×](gallery/tab-timeline-dark-2x.png) | [2×](gallery/tab-timeline-sepia-2x.png) |
 
+### Library rows: narrow Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library rows: narrow Panel, Light](gallery/library-rows-narrow-panel-light-1x.png) | ![Library rows: narrow Panel, Dark](gallery/library-rows-narrow-panel-dark-1x.png) | ![Library rows: narrow Panel, Sepia](gallery/library-rows-narrow-panel-sepia-1x.png) |
+| [2×](gallery/library-rows-narrow-panel-light-2x.png) | [2×](gallery/library-rows-narrow-panel-dark-2x.png) | [2×](gallery/library-rows-narrow-panel-sepia-2x.png) |
+
+### Library rows: Larger Interface size
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library rows: Larger Interface size, Light](gallery/library-rows-larger-interface-size-light-1x.png) | ![Library rows: Larger Interface size, Dark](gallery/library-rows-larger-interface-size-dark-1x.png) | ![Library rows: Larger Interface size, Sepia](gallery/library-rows-larger-interface-size-sepia-1x.png) |
+| [2×](gallery/library-rows-larger-interface-size-light-2x.png) | [2×](gallery/library-rows-larger-interface-size-dark-2x.png) | [2×](gallery/library-rows-larger-interface-size-sepia-2x.png) |
+
+### Library rows: Filter match in a cut title
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library rows: Filter match in a cut title, Light](gallery/library-rows-filter-match-in-a-cut-title-light-1x.png) | ![Library rows: Filter match in a cut title, Dark](gallery/library-rows-filter-match-in-a-cut-title-dark-1x.png) | ![Library rows: Filter match in a cut title, Sepia](gallery/library-rows-filter-match-in-a-cut-title-sepia-1x.png) |
+| [2×](gallery/library-rows-filter-match-in-a-cut-title-light-2x.png) | [2×](gallery/library-rows-filter-match-in-a-cut-title-dark-2x.png) | [2×](gallery/library-rows-filter-match-in-a-cut-title-sepia-2x.png) |
+
+### Get Resources: Lexicons, section gaps
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Lexicons, section gaps, Light](gallery/get-resources-lexicons-section-gaps-light-1x.png) | ![Get Resources: Lexicons, section gaps, Dark](gallery/get-resources-lexicons-section-gaps-dark-1x.png) | ![Get Resources: Lexicons, section gaps, Sepia](gallery/get-resources-lexicons-section-gaps-sepia-1x.png) |
+| [2×](gallery/get-resources-lexicons-section-gaps-light-2x.png) | [2×](gallery/get-resources-lexicons-section-gaps-dark-2x.png) | [2×](gallery/get-resources-lexicons-section-gaps-sepia-2x.png) |
+
+### Get Resources: rows beside the scroll bar
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: rows beside the scroll bar, Light](gallery/get-resources-rows-beside-the-scroll-bar-light-1x.png) | ![Get Resources: rows beside the scroll bar, Dark](gallery/get-resources-rows-beside-the-scroll-bar-dark-1x.png) | ![Get Resources: rows beside the scroll bar, Sepia](gallery/get-resources-rows-beside-the-scroll-bar-sepia-1x.png) |
+| [2×](gallery/get-resources-rows-beside-the-scroll-bar-light-2x.png) | [2×](gallery/get-resources-rows-beside-the-scroll-bar-dark-2x.png) | [2×](gallery/get-resources-rows-beside-the-scroll-bar-sepia-2x.png) |
+
+### Starter library: rows beside the scroll bar
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Starter library: rows beside the scroll bar, Light](gallery/starter-library-rows-beside-the-scroll-bar-light-1x.png) | ![Starter library: rows beside the scroll bar, Dark](gallery/starter-library-rows-beside-the-scroll-bar-dark-1x.png) | ![Starter library: rows beside the scroll bar, Sepia](gallery/starter-library-rows-beside-the-scroll-bar-sepia-1x.png) |
+| [2×](gallery/starter-library-rows-beside-the-scroll-bar-light-2x.png) | [2×](gallery/starter-library-rows-beside-the-scroll-bar-dark-2x.png) | [2×](gallery/starter-library-rows-beside-the-scroll-bar-sepia-2x.png) |
+
+### Library: an Import with no language or licence
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library: an Import with no language or licence, Light](gallery/library-an-import-with-no-language-or-licence-light-1x.png) | ![Library: an Import with no language or licence, Dark](gallery/library-an-import-with-no-language-or-licence-dark-1x.png) | ![Library: an Import with no language or licence, Sepia](gallery/library-an-import-with-no-language-or-licence-sepia-1x.png) |
+| [2×](gallery/library-an-import-with-no-language-or-licence-light-2x.png) | [2×](gallery/library-an-import-with-no-language-or-licence-dark-2x.png) | [2×](gallery/library-an-import-with-no-language-or-licence-sepia-2x.png) |
+
+### About: licence in words and Source link
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![About: licence in words and Source link, Light](gallery/about-licence-in-words-and-source-link-light-1x.png) | ![About: licence in words and Source link, Dark](gallery/about-licence-in-words-and-source-link-dark-1x.png) | ![About: licence in words and Source link, Sepia](gallery/about-licence-in-words-and-source-link-sepia-1x.png) |
+| [2×](gallery/about-licence-in-words-and-source-link-light-2x.png) | [2×](gallery/about-licence-in-words-and-source-link-dark-2x.png) | [2×](gallery/about-licence-in-words-and-source-link-sepia-2x.png) |
+
+### Import report: the file does not exist
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Import report: the file does not exist, Light](gallery/import-report-the-file-does-not-exist-light-1x.png) | ![Import report: the file does not exist, Dark](gallery/import-report-the-file-does-not-exist-dark-1x.png) | ![Import report: the file does not exist, Sepia](gallery/import-report-the-file-does-not-exist-sepia-1x.png) |
+| [2×](gallery/import-report-the-file-does-not-exist-light-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-dark-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-sepia-2x.png) |
+
+### Timeline: crowded, 1 Kings 6
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: crowded, 1 Kings 6, Light](gallery/timeline-crowded-1-kings-6-light-1x.png) | ![Timeline: crowded, 1 Kings 6, Dark](gallery/timeline-crowded-1-kings-6-dark-1x.png) | ![Timeline: crowded, 1 Kings 6, Sepia](gallery/timeline-crowded-1-kings-6-sepia-1x.png) |
+| [2×](gallery/timeline-crowded-1-kings-6-light-2x.png) | [2×](gallery/timeline-crowded-1-kings-6-dark-2x.png) | [2×](gallery/timeline-crowded-1-kings-6-sepia-2x.png) |
+
+### Timeline: crowded, in the right Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: crowded, in the right Panel, Light](gallery/timeline-crowded-in-the-right-panel-light-1x.png) | ![Timeline: crowded, in the right Panel, Dark](gallery/timeline-crowded-in-the-right-panel-dark-1x.png) | ![Timeline: crowded, in the right Panel, Sepia](gallery/timeline-crowded-in-the-right-panel-sepia-1x.png) |
+| [2×](gallery/timeline-crowded-in-the-right-panel-light-2x.png) | [2×](gallery/timeline-crowded-in-the-right-panel-dark-2x.png) | [2×](gallery/timeline-crowded-in-the-right-panel-sepia-2x.png) |
+
+### Timeline: crowded, whole
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: crowded, whole, Light](gallery/timeline-crowded-whole-light-1x.png) | ![Timeline: crowded, whole, Dark](gallery/timeline-crowded-whole-dark-1x.png) | ![Timeline: crowded, whole, Sepia](gallery/timeline-crowded-whole-sepia-1x.png) |
+| [2×](gallery/timeline-crowded-whole-light-2x.png) | [2×](gallery/timeline-crowded-whole-dark-2x.png) | [2×](gallery/timeline-crowded-whole-sepia-2x.png) |
+
+### Factbook Map: a place's several locations
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Factbook Map: a place's several locations, Light](gallery/factbook-map-a-place-s-several-locations-light-1x.png) | ![Factbook Map: a place's several locations, Dark](gallery/factbook-map-a-place-s-several-locations-dark-1x.png) | ![Factbook Map: a place's several locations, Sepia](gallery/factbook-map-a-place-s-several-locations-sepia-1x.png) |
+| [2×](gallery/factbook-map-a-place-s-several-locations-light-2x.png) | [2×](gallery/factbook-map-a-place-s-several-locations-dark-2x.png) | [2×](gallery/factbook-map-a-place-s-several-locations-sepia-2x.png) |
+
 ## Toolbar panes, menus and windows
 
 ### Library pane
@@ -379,6 +470,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Toolbar menu, Position, Light](gallery/toolbar-menu-position-light-1x.png) | ![Toolbar menu, Position, Dark](gallery/toolbar-menu-position-dark-1x.png) | ![Toolbar menu, Position, Sepia](gallery/toolbar-menu-position-sepia-1x.png) |
 | [2×](gallery/toolbar-menu-position-light-2x.png) | [2×](gallery/toolbar-menu-position-dark-2x.png) | [2×](gallery/toolbar-menu-position-sepia-2x.png) |
 
+### Toolbar menu, left, expanded
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Toolbar menu, left, expanded, Light](gallery/toolbar-menu-left-expanded-light-1x.png) | ![Toolbar menu, left, expanded, Dark](gallery/toolbar-menu-left-expanded-dark-1x.png) | ![Toolbar menu, left, expanded, Sepia](gallery/toolbar-menu-left-expanded-sepia-1x.png) |
+| [2×](gallery/toolbar-menu-left-expanded-light-2x.png) | [2×](gallery/toolbar-menu-left-expanded-dark-2x.png) | [2×](gallery/toolbar-menu-left-expanded-sepia-2x.png) |
+
 ### More launchers
 
 | Light | Dark | Sepia |
@@ -422,6 +520,20 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Reference preview, Light](gallery/reference-preview-light-1x.png) | ![Reference preview, Dark](gallery/reference-preview-dark-1x.png) | ![Reference preview, Sepia](gallery/reference-preview-sepia-1x.png) |
 | [2×](gallery/reference-preview-light-2x.png) | [2×](gallery/reference-preview-dark-2x.png) | [2×](gallery/reference-preview-sepia-2x.png) |
+
+### Reference preview, shortened
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Reference preview, shortened, Light](gallery/reference-preview-shortened-light-1x.png) | ![Reference preview, shortened, Dark](gallery/reference-preview-shortened-dark-1x.png) | ![Reference preview, shortened, Sepia](gallery/reference-preview-shortened-sepia-1x.png) |
+| [2×](gallery/reference-preview-shortened-light-2x.png) | [2×](gallery/reference-preview-shortened-dark-2x.png) | [2×](gallery/reference-preview-shortened-sepia-2x.png) |
+
+### Command box, a Hebrew Lemma
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Command box, a Hebrew Lemma, Light](gallery/command-box-a-hebrew-lemma-light-1x.png) | ![Command box, a Hebrew Lemma, Dark](gallery/command-box-a-hebrew-lemma-dark-1x.png) | ![Command box, a Hebrew Lemma, Sepia](gallery/command-box-a-hebrew-lemma-sepia-1x.png) |
+| [2×](gallery/command-box-a-hebrew-lemma-light-2x.png) | [2×](gallery/command-box-a-hebrew-lemma-dark-2x.png) | [2×](gallery/command-box-a-hebrew-lemma-sepia-2x.png) |
 
 ### Tab switcher
 
@@ -522,6 +634,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Tab menu, Add to Favorites folder, Light](gallery/tab-menu-add-to-favorites-folder-light-1x.png) | ![Tab menu, Add to Favorites folder, Dark](gallery/tab-menu-add-to-favorites-folder-dark-1x.png) | ![Tab menu, Add to Favorites folder, Sepia](gallery/tab-menu-add-to-favorites-folder-sepia-1x.png) |
 | [2×](gallery/tab-menu-add-to-favorites-folder-light-2x.png) | [2×](gallery/tab-menu-add-to-favorites-folder-dark-2x.png) | [2×](gallery/tab-menu-add-to-favorites-folder-sepia-2x.png) |
+
+### Text size popover
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Text size popover, Light](gallery/text-size-popover-light-1x.png) | ![Text size popover, Dark](gallery/text-size-popover-dark-1x.png) | ![Text size popover, Sepia](gallery/text-size-popover-sepia-1x.png) |
+| [2×](gallery/text-size-popover-light-2x.png) | [2×](gallery/text-size-popover-dark-2x.png) | [2×](gallery/text-size-popover-sepia-2x.png) |
 
 ### Add Tab menu
 
@@ -747,6 +866,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Reading plan, Bible chooser, Light](gallery/reading-plan-bible-chooser-light-1x.png) | ![Reading plan, Bible chooser, Dark](gallery/reading-plan-bible-chooser-dark-1x.png) | ![Reading plan, Bible chooser, Sepia](gallery/reading-plan-bible-chooser-sepia-1x.png) |
 | [2×](gallery/reading-plan-bible-chooser-light-2x.png) | [2×](gallery/reading-plan-bible-chooser-dark-2x.png) | [2×](gallery/reading-plan-bible-chooser-sepia-2x.png) |
 
+### Timeline: a chip's menu
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline: a chip's menu, Light](gallery/timeline-a-chip-s-menu-light-1x.png) | ![Timeline: a chip's menu, Dark](gallery/timeline-a-chip-s-menu-dark-1x.png) | ![Timeline: a chip's menu, Sepia](gallery/timeline-a-chip-s-menu-sepia-1x.png) |
+| [2×](gallery/timeline-a-chip-s-menu-light-2x.png) | [2×](gallery/timeline-a-chip-s-menu-dark-2x.png) | [2×](gallery/timeline-a-chip-s-menu-sepia-2x.png) |
+
 ## Empty, loading and error states
 
 ### Library: empty
@@ -818,6 +944,27 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Search: error, Light](gallery/search-error-light-1x.png) | ![Search: error, Dark](gallery/search-error-dark-1x.png) | ![Search: error, Sepia](gallery/search-error-sepia-1x.png) |
 | [2×](gallery/search-error-light-2x.png) | [2×](gallery/search-error-dark-2x.png) | [2×](gallery/search-error-sepia-2x.png) |
+
+### Search: unknown book in the Scope
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: unknown book in the Scope, Light](gallery/search-unknown-book-in-the-scope-light-1x.png) | ![Search: unknown book in the Scope, Dark](gallery/search-unknown-book-in-the-scope-dark-1x.png) | ![Search: unknown book in the Scope, Sepia](gallery/search-unknown-book-in-the-scope-sepia-1x.png) |
+| [2×](gallery/search-unknown-book-in-the-scope-light-2x.png) | [2×](gallery/search-unknown-book-in-the-scope-dark-2x.png) | [2×](gallery/search-unknown-book-in-the-scope-sepia-2x.png) |
+
+### Search: empty query
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: empty query, Light](gallery/search-empty-query-light-1x.png) | ![Search: empty query, Dark](gallery/search-empty-query-dark-1x.png) | ![Search: empty query, Sepia](gallery/search-empty-query-sepia-1x.png) |
+| [2×](gallery/search-empty-query-light-2x.png) | [2×](gallery/search-empty-query-dark-2x.png) | [2×](gallery/search-empty-query-sepia-2x.png) |
+
+### Search: unknown Morphology
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search: unknown Morphology, Light](gallery/search-unknown-morphology-light-1x.png) | ![Search: unknown Morphology, Dark](gallery/search-unknown-morphology-dark-1x.png) | ![Search: unknown Morphology, Sepia](gallery/search-unknown-morphology-sepia-1x.png) |
+| [2×](gallery/search-unknown-morphology-light-2x.png) | [2×](gallery/search-unknown-morphology-dark-2x.png) | [2×](gallery/search-unknown-morphology-sepia-2x.png) |
 
 ### Search: nothing matches
 
@@ -1070,3 +1217,142 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![History: empty, Light](gallery/history-empty-light-1x.png) | ![History: empty, Dark](gallery/history-empty-dark-1x.png) | ![History: empty, Sepia](gallery/history-empty-sepia-1x.png) |
 | [2×](gallery/history-empty-light-2x.png) | [2×](gallery/history-empty-dark-2x.png) | [2×](gallery/history-empty-sepia-2x.png) |
+
+## Reading text
+
+### Italic words in a Commentary
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Italic words in a Commentary, Light](gallery/italic-words-in-a-commentary-light-1x.png) | ![Italic words in a Commentary, Dark](gallery/italic-words-in-a-commentary-dark-1x.png) | ![Italic words in a Commentary, Sepia](gallery/italic-words-in-a-commentary-sepia-1x.png) |
+| [2×](gallery/italic-words-in-a-commentary-light-2x.png) | [2×](gallery/italic-words-in-a-commentary-dark-2x.png) | [2×](gallery/italic-words-in-a-commentary-sepia-2x.png) |
+
+### A Highlight over several lines
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![A Highlight over several lines, Light](gallery/a-highlight-over-several-lines-light-1x.png) | ![A Highlight over several lines, Dark](gallery/a-highlight-over-several-lines-dark-1x.png) | ![A Highlight over several lines, Sepia](gallery/a-highlight-over-several-lines-sepia-1x.png) |
+| [2×](gallery/a-highlight-over-several-lines-light-2x.png) | [2×](gallery/a-highlight-over-several-lines-dark-2x.png) | [2×](gallery/a-highlight-over-several-lines-sepia-2x.png) |
+
+### The jump flash over several lines
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![The jump flash over several lines, Light](gallery/the-jump-flash-over-several-lines-light-1x.png) | ![The jump flash over several lines, Dark](gallery/the-jump-flash-over-several-lines-dark-1x.png) | ![The jump flash over several lines, Sepia](gallery/the-jump-flash-over-several-lines-sepia-1x.png) |
+| [2×](gallery/the-jump-flash-over-several-lines-light-2x.png) | [2×](gallery/the-jump-flash-over-several-lines-dark-2x.png) | [2×](gallery/the-jump-flash-over-several-lines-sepia-2x.png) |
+
+### A Note marker before the next verse number
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![A Note marker before the next verse number, Light](gallery/a-note-marker-before-the-next-verse-number-light-1x.png) | ![A Note marker before the next verse number, Dark](gallery/a-note-marker-before-the-next-verse-number-dark-1x.png) | ![A Note marker before the next verse number, Sepia](gallery/a-note-marker-before-the-next-verse-number-sepia-1x.png) |
+| [2×](gallery/a-note-marker-before-the-next-verse-number-light-2x.png) | [2×](gallery/a-note-marker-before-the-next-verse-number-dark-2x.png) | [2×](gallery/a-note-marker-before-the-next-verse-number-sepia-2x.png) |
+
+## Narrow Panels
+
+### Passage Guide in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Passage Guide in a side Panel, Light](gallery/passage-guide-in-a-side-panel-light-1x.png) | ![Passage Guide in a side Panel, Dark](gallery/passage-guide-in-a-side-panel-dark-1x.png) | ![Passage Guide in a side Panel, Sepia](gallery/passage-guide-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/passage-guide-in-a-side-panel-light-2x.png) | [2×](gallery/passage-guide-in-a-side-panel-dark-2x.png) | [2×](gallery/passage-guide-in-a-side-panel-sepia-2x.png) |
+
+### About page in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![About page in a side Panel, Light](gallery/about-page-in-a-side-panel-light-1x.png) | ![About page in a side Panel, Dark](gallery/about-page-in-a-side-panel-dark-1x.png) | ![About page in a side Panel, Sepia](gallery/about-page-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/about-page-in-a-side-panel-light-2x.png) | [2×](gallery/about-page-in-a-side-panel-dark-2x.png) | [2×](gallery/about-page-in-a-side-panel-sepia-2x.png) |
+
+### Text Comparison beside a Passage Guide
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Text Comparison beside a Passage Guide, Light](gallery/text-comparison-beside-a-passage-guide-light-1x.png) | ![Text Comparison beside a Passage Guide, Dark](gallery/text-comparison-beside-a-passage-guide-dark-1x.png) | ![Text Comparison beside a Passage Guide, Sepia](gallery/text-comparison-beside-a-passage-guide-sepia-1x.png) |
+| [2×](gallery/text-comparison-beside-a-passage-guide-light-2x.png) | [2×](gallery/text-comparison-beside-a-passage-guide-dark-2x.png) | [2×](gallery/text-comparison-beside-a-passage-guide-sepia-2x.png) |
+
+### Atlas in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Atlas in a side Panel, Light](gallery/atlas-in-a-side-panel-light-1x.png) | ![Atlas in a side Panel, Dark](gallery/atlas-in-a-side-panel-dark-1x.png) | ![Atlas in a side Panel, Sepia](gallery/atlas-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/atlas-in-a-side-panel-light-2x.png) | [2×](gallery/atlas-in-a-side-panel-dark-2x.png) | [2×](gallery/atlas-in-a-side-panel-sepia-2x.png) |
+
+### Timeline in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Timeline in a side Panel, Light](gallery/timeline-in-a-side-panel-light-1x.png) | ![Timeline in a side Panel, Dark](gallery/timeline-in-a-side-panel-dark-1x.png) | ![Timeline in a side Panel, Sepia](gallery/timeline-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/timeline-in-a-side-panel-light-2x.png) | [2×](gallery/timeline-in-a-side-panel-dark-2x.png) | [2×](gallery/timeline-in-a-side-panel-sepia-2x.png) |
+
+## Headers and rows in a narrow Panel
+
+### Search in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search in a side Panel, Light](gallery/search-in-a-side-panel-light-1x.png) | ![Search in a side Panel, Dark](gallery/search-in-a-side-panel-dark-1x.png) | ![Search in a side Panel, Sepia](gallery/search-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/search-in-a-side-panel-light-2x.png) | [2×](gallery/search-in-a-side-panel-dark-2x.png) | [2×](gallery/search-in-a-side-panel-sepia-2x.png) |
+
+### Search in a side Panel, Larger Interface size
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search in a side Panel, Larger Interface size, Light](gallery/search-in-a-side-panel-larger-interface-size-light-1x.png) | ![Search in a side Panel, Larger Interface size, Dark](gallery/search-in-a-side-panel-larger-interface-size-dark-1x.png) | ![Search in a side Panel, Larger Interface size, Sepia](gallery/search-in-a-side-panel-larger-interface-size-sepia-1x.png) |
+| [2×](gallery/search-in-a-side-panel-larger-interface-size-light-2x.png) | [2×](gallery/search-in-a-side-panel-larger-interface-size-dark-2x.png) | [2×](gallery/search-in-a-side-panel-larger-interface-size-sepia-2x.png) |
+
+### Search Analysis in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search Analysis in a side Panel, Light](gallery/search-analysis-in-a-side-panel-light-1x.png) | ![Search Analysis in a side Panel, Dark](gallery/search-analysis-in-a-side-panel-dark-1x.png) | ![Search Analysis in a side Panel, Sepia](gallery/search-analysis-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/search-analysis-in-a-side-panel-light-2x.png) | [2×](gallery/search-analysis-in-a-side-panel-dark-2x.png) | [2×](gallery/search-analysis-in-a-side-panel-sepia-2x.png) |
+
+### Search Analysis in a centre Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Search Analysis in a centre Panel, Light](gallery/search-analysis-in-a-centre-panel-light-1x.png) | ![Search Analysis in a centre Panel, Dark](gallery/search-analysis-in-a-centre-panel-dark-1x.png) | ![Search Analysis in a centre Panel, Sepia](gallery/search-analysis-in-a-centre-panel-sepia-1x.png) |
+| [2×](gallery/search-analysis-in-a-centre-panel-light-2x.png) | [2×](gallery/search-analysis-in-a-centre-panel-dark-2x.png) | [2×](gallery/search-analysis-in-a-centre-panel-sepia-2x.png) |
+
+### Library Search in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Library Search in a side Panel, Light](gallery/library-search-in-a-side-panel-light-1x.png) | ![Library Search in a side Panel, Dark](gallery/library-search-in-a-side-panel-dark-1x.png) | ![Library Search in a side Panel, Sepia](gallery/library-search-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/library-search-in-a-side-panel-light-2x.png) | [2×](gallery/library-search-in-a-side-panel-dark-2x.png) | [2×](gallery/library-search-in-a-side-panel-sepia-2x.png) |
+
+### Notes in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Notes in a side Panel, Light](gallery/notes-in-a-side-panel-light-1x.png) | ![Notes in a side Panel, Dark](gallery/notes-in-a-side-panel-dark-1x.png) | ![Notes in a side Panel, Sepia](gallery/notes-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/notes-in-a-side-panel-light-2x.png) | [2×](gallery/notes-in-a-side-panel-dark-2x.png) | [2×](gallery/notes-in-a-side-panel-sepia-2x.png) |
+
+### Bible Tab in a side Panel
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Bible Tab in a side Panel, Light](gallery/bible-tab-in-a-side-panel-light-1x.png) | ![Bible Tab in a side Panel, Dark](gallery/bible-tab-in-a-side-panel-dark-1x.png) | ![Bible Tab in a side Panel, Sepia](gallery/bible-tab-in-a-side-panel-sepia-1x.png) |
+| [2×](gallery/bible-tab-in-a-side-panel-light-2x.png) | [2×](gallery/bible-tab-in-a-side-panel-dark-2x.png) | [2×](gallery/bible-tab-in-a-side-panel-sepia-2x.png) |
+
+### Bible and Commentary, Larger Interface size
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Bible and Commentary, Larger Interface size, Light](gallery/bible-and-commentary-larger-interface-size-light-1x.png) | ![Bible and Commentary, Larger Interface size, Dark](gallery/bible-and-commentary-larger-interface-size-dark-1x.png) | ![Bible and Commentary, Larger Interface size, Sepia](gallery/bible-and-commentary-larger-interface-size-sepia-1x.png) |
+| [2×](gallery/bible-and-commentary-larger-interface-size-light-2x.png) | [2×](gallery/bible-and-commentary-larger-interface-size-dark-2x.png) | [2×](gallery/bible-and-commentary-larger-interface-size-sepia-2x.png) |
+
+### Settings in a side Panel, Keyboard shortcuts
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Settings in a side Panel, Keyboard shortcuts, Light](gallery/settings-in-a-side-panel-keyboard-shortcuts-light-1x.png) | ![Settings in a side Panel, Keyboard shortcuts, Dark](gallery/settings-in-a-side-panel-keyboard-shortcuts-dark-1x.png) | ![Settings in a side Panel, Keyboard shortcuts, Sepia](gallery/settings-in-a-side-panel-keyboard-shortcuts-sepia-1x.png) |
+| [2×](gallery/settings-in-a-side-panel-keyboard-shortcuts-light-2x.png) | [2×](gallery/settings-in-a-side-panel-keyboard-shortcuts-dark-2x.png) | [2×](gallery/settings-in-a-side-panel-keyboard-shortcuts-sepia-2x.png) |
+
+### A new Tab at the end of a full tab bar
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![A new Tab at the end of a full tab bar, Light](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-light-1x.png) | ![A new Tab at the end of a full tab bar, Dark](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-dark-1x.png) | ![A new Tab at the end of a full tab bar, Sepia](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-sepia-1x.png) |
+| [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-light-2x.png) | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-dark-2x.png) | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-sepia-2x.png) |

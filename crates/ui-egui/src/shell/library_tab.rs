@@ -4,11 +4,12 @@
 //! the list together. The About Tab shows a Resource's manifest, licence, Attribution (drawn by
 //! the text pipeline, verbatim) and changes, and offers Remove…
 
-use egui::{Align2, FontId, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, FontId, Rangef, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{LibraryFilter, TabId, annotations_phrase, language_name};
 use obs_model::{Manifest, Origin, ResourceType};
 use serde_json::json;
 
+use super::get_bibles_tab::{licence_name, spdx_badge};
 use super::{RESOURCE_TYPES, State, type_name};
 use crate::icons::{self, Icon};
 use crate::pane::reading_pane;
@@ -167,6 +168,21 @@ impl State {
                     ui.set_height(total - gap);
                     let origin = ui.max_rect().min;
                     let width = ui.available_width();
+                    // The rows in view (and a dragged one) share their columns.
+                    let mut top = 0.0;
+                    let mut in_view = Vec::new();
+                    for item in &items {
+                        let h = height(item);
+                        let shown = top + h > viewport.top() && top < viewport.bottom();
+                        top += h;
+                        if let Item::Row(_, _, m) = item
+                            && (shown || dragging.as_deref() == Some(m.resource_id.as_str()))
+                        {
+                            in_view.push(*m);
+                        }
+                    }
+                    let columns = RowColumns::fit(Widest::of(ui, in_view), width);
+                    let needle = filter.text.trim().to_lowercase();
                     let mut top = 0.0;
                     for item in &items {
                         let h = height(item);
@@ -216,6 +232,8 @@ impl State {
                                     ui,
                                     tab,
                                     m,
+                                    &columns,
+                                    &needle,
                                     position == 0,
                                     selected.as_deref() == Some(id.as_str()),
                                     dragged_row,
@@ -388,7 +406,28 @@ impl State {
                         .show(ui, |ui| {
                             for (label, value) in about_fields(&m) {
                                 ui.label(RichText::new(label).color(theme::c().muted));
-                                ui.label(value);
+                                // Wrapped to the Panel: a long Edition would otherwise
+                                // widen the whole page past it (#301).
+                                match label {
+                                    // In words; the SPDX id on hover (LIBRARY-8).
+                                    LICENCE => {
+                                        ui.add(egui::Label::new(licence_name(&value)).wrap())
+                                            .on_hover_text(&value);
+                                    }
+                                    // Its web address a link, as Credits shows it
+                                    // (LIBRARY-12).
+                                    // Wrapped in its Grid cell, not a child Ui (which
+                                    // would take the rest of the page's height).
+                                    SOURCE => {
+                                        let wrap_mode = ui.style().wrap_mode;
+                                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                                        super::credits_tab::linked_text(ui, &value);
+                                        ui.style_mut().wrap_mode = wrap_mode;
+                                    }
+                                    _ => {
+                                        ui.add(egui::Label::new(value).wrap());
+                                    }
+                                }
                                 ui.end_row();
                             }
                             // Resource tags (#153): the user's own labels, for a
@@ -400,7 +439,7 @@ impl State {
                                     .add(crate::components::search_field(
                                         text,
                                         "older, reformed",
-                                        size::FIELD_WIDE,
+                                        size::FIELD_WIDE.min(ui.available_width()),
                                     ))
                                     .on_hover_text(
                                         "Your own labels for this Resource, comma-separated; \
@@ -418,7 +457,7 @@ impl State {
                     ui.add_space(space::L);
                     section(ui, "Attribution");
                     // Verbatim, through the text pipeline (fonts for every script).
-                    let width = ui.available_width();
+                    let width = crate::components::fill_width(ui);
                     let palette = self.palette;
                     if m.attribution.is_empty() {
                         ui.label("None recorded.");
@@ -541,11 +580,139 @@ struct RowResponse {
     handle: egui::Response,
 }
 
-/// Draw one row: [handle] [★] abbreviation, title, language, licence badge.
+/// The widest abbreviation, language and licence badge among some Library rows.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Widest {
+    abbreviation: f32,
+    language: f32,
+    badge: f32,
+}
+
+impl Widest {
+    fn of<'a>(ui: &Ui, rows: impl IntoIterator<Item = &'a Manifest>) -> Self {
+        let painter = ui.painter();
+        let width = |text: &str, size: f32| {
+            painter
+                .layout_no_wrap(
+                    text.to_string(),
+                    FontId::proportional(size),
+                    egui::Color32::PLACEHOLDER,
+                )
+                .size()
+                .x
+        };
+        let mut widest = Widest::default();
+        for m in rows {
+            widest.abbreviation = widest.abbreviation.max(width(&m.abbreviation, text::BODY));
+            widest.language = widest
+                .language
+                .max(width(row_language(&m.language), text::SMALL));
+            let (badge, _) = spdx_badge(&m.license);
+            widest.badge = widest
+                .badge
+                .max(width(badge, text::CAPTION) + 2.0 * BADGE_PAD);
+        }
+        widest
+    }
+}
+
+/// Where the parts of the Library rows in view go, as x ranges from a row's left edge (#302):
+/// one abbreviation, title, language and licence badge column for every row, so they line
+/// up. A narrow Panel (or a Larger Interface size) drops the badge, then the language, then
+/// narrows the abbreviation (to [`size::FIELD_NUMBER`]), before the title gets narrower than
+/// [`size::TITLE_MIN`]; text that still does not fit ends in "…".
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RowColumns {
+    abbreviation: Rangef,
+    title: Rangef,
+    language: Option<Rangef>,
+    badge: Option<Rangef>,
+}
+
+impl RowColumns {
+    fn fit(widest: Widest, width: f32) -> Self {
+        let left = HANDLE_W + space::XL;
+        let right = (width - space::XS).max(left);
+        // The abbreviation yields to the title, down to a short abbreviation's width.
+        let room = right - left;
+        let abbreviation = Rangef::new(
+            left,
+            left + widest
+                .abbreviation
+                .min(size::FIELD_NARROW)
+                .min((room - space::M - size::TITLE_MIN).max(size::FIELD_NUMBER)),
+        );
+        let title_left = abbreviation.max + space::M;
+        // A column's width with the gap before it; an empty column takes none.
+        let with_gap = |w: f32| if w > 0.0 { w + space::M } else { 0.0 };
+        let fits = |taken: f32| right - taken - title_left >= size::TITLE_MIN;
+        let language_w = with_gap(widest.language);
+        let badge_w = with_gap(widest.badge);
+        let (language, badge) = if fits(language_w + badge_w) {
+            (language_w > 0.0, badge_w > 0.0)
+        } else {
+            (language_w > 0.0 && fits(language_w), false)
+        };
+        let mut end = right;
+        let badge = badge.then(|| {
+            let r = Rangef::new(end - widest.badge, end);
+            end = r.min - space::M;
+            r
+        });
+        let language = language.then(|| {
+            let r = Rangef::new(end - widest.language, end);
+            end = r.min - space::M;
+            r
+        });
+        RowColumns {
+            abbreviation,
+            title: Rangef::new(title_left, end.max(title_left)),
+            language,
+            badge,
+        }
+    }
+}
+
+/// A row's language: its name, as the chips above say it, never its code (LIBRARY-9); nothing
+/// for a Resource whose language is not known (`und`), which the row's hover, its chip and
+/// About name "Unknown language": that long a name would take the licence badges' room from
+/// every row.
+pub(crate) fn row_language(tag: &str) -> &str {
+    if tag.is_empty() || tag == "und" {
+        ""
+    } else {
+        language_name(tag)
+    }
+}
+
+/// The space between a licence badge's edge and its text.
+const BADGE_PAD: f32 = space::S;
+
+/// Where the Filter's `needle` (lower case) first matches in `title`, ignoring case: the
+/// match's end, in chars, and the title from the start of the word it is in.
+fn filter_match<'t>(title: &'t str, needle: &str) -> Option<(usize, &'t str)> {
+    if needle.is_empty() {
+        return None;
+    }
+    let (chars_before, (at, _)) = title
+        .char_indices()
+        .enumerate()
+        .find(|(_, (i, _))| title[*i..].to_lowercase().starts_with(needle))?;
+    let word = title[..at].rfind(char::is_whitespace).map_or(0, |w| {
+        w + title[w..].chars().next().map_or(0, char::len_utf8)
+    });
+    Some((chars_before + needle.chars().count(), &title[word..]))
+}
+
+/// Draw one row: [handle] [★] abbreviation, title, language, licence badge, in `columns`.
+/// A title cut short before the part the Filter's `needle` matched shows from that word on.
+#[allow(clippy::too_many_arguments)]
 fn library_row(
     ui: &mut Ui,
     tab: TabId,
     m: &Manifest,
+    columns: &RowColumns,
+    needle: &str,
     first: bool,
     selected: bool,
     dragging: bool,
@@ -587,60 +754,62 @@ fn library_row(
             c.gilt,
         );
     }
-    let x = rect.left() + HANDLE_W + space::XL;
-    let abbrev = painter.text(
-        pos2(x, y),
-        Align2::LEFT_CENTER,
-        &m.abbreviation,
-        FontId::proportional(text::BODY),
-        c.ink,
+    // Each part on one line in its column, left-aligned and centred on the row.
+    let layout = |column: Rangef, text: &str, size: f32, color: egui::Color32| {
+        crate::components::elided(
+            &painter,
+            text,
+            FontId::proportional(size),
+            color,
+            column.span(),
+        )
+    };
+    let paint = |column: Rangef, galley: std::sync::Arc<egui::Galley>| {
+        let at = pos2(rect.left() + column.min, y - galley.size().y / 2.0);
+        painter.galley(at, galley, c.ink);
+    };
+    paint(
+        columns.abbreviation,
+        layout(columns.abbreviation, &m.abbreviation, text::BODY, c.ink),
     );
-    // Right side: licence badge, then language.
-    let badge_font = FontId::proportional(text::CAPTION);
-    let galley = painter.layout_no_wrap(m.license.clone(), badge_font.clone(), c.muted);
-    let pad = space::S;
-    let badge = Rect::from_min_size(
-        pos2(
-            rect.right() - galley.size().x - 2.0 * pad - space::XS,
-            y - size::BADGE / 2.0,
-        ),
-        vec2(galley.size().x + 2.0 * pad, size::BADGE),
-    );
-    painter.rect_stroke(
-        badge,
-        size::BADGE / 2.0,
-        Stroke::new(stroke::HAIR, c.rule),
-        egui::StrokeKind::Inside,
-    );
-    painter.text(
-        badge.center(),
-        Align2::CENTER_CENTER,
-        &m.license,
-        badge_font,
-        c.muted,
-    );
-    let lang = painter.text(
-        pos2(badge.left() - space::M, y),
-        Align2::RIGHT_CENTER,
-        &m.language,
-        FontId::proportional(text::SMALL),
-        c.muted,
-    );
-    let title_left = abbrev.right().max(x + size::FIELD_NUMBER) + space::M;
-    let title_clip = Rect::from_x_y_ranges(title_left..=lang.left() - space::M, rect.y_range());
-    if title_clip.width() > space::XXL {
-        ui.painter_at(title_clip).text(
-            pos2(title_left, y),
-            Align2::LEFT_CENTER,
-            &m.title,
-            FontId::proportional(text::LABEL),
-            c.ink,
+    let mut title = layout(columns.title, &m.title, text::LABEL, c.ink);
+    if title.elided
+        && let Some((end, from_word)) = filter_match(&m.title, needle)
+        // What shows, less the "…".
+        && end + 1 > title.rows.iter().map(|r| r.glyphs.len()).sum::<usize>()
+    {
+        title = layout(columns.title, &format!("…{from_word}"), text::LABEL, c.ink);
+    }
+    paint(columns.title, title);
+    if let Some(column) = columns.language {
+        let language = row_language(&m.language);
+        paint(column, layout(column, language, text::SMALL, c.muted));
+    }
+    let (licence, _) = spdx_badge(&m.license);
+    if let Some(column) = columns.badge {
+        let galley = painter.layout_no_wrap(
+            licence.to_string(),
+            FontId::proportional(text::CAPTION),
+            c.muted,
         );
+        let badge = Rect::from_min_size(
+            pos2(rect.left() + column.min, y - size::BADGE / 2.0),
+            vec2(galley.size().x + 2.0 * BADGE_PAD, size::BADGE),
+        );
+        painter.rect_stroke(
+            badge,
+            size::BADGE / 2.0,
+            Stroke::new(stroke::HAIR, c.rule),
+            egui::StrokeKind::Inside,
+        );
+        painter.galley(badge.center() - galley.size() / 2.0, galley, c.muted);
     }
     let body = body.on_hover_text(format!(
-        "{} · {} · {} — double-click or Enter to open, or drag it onto a Panel; right-click \
-         for more",
-        m.title, m.language, m.license
+        "{} · {} · {licence} ({}) — double-click or Enter to open, or drag it onto a Panel; \
+         right-click for more",
+        m.title,
+        language_name(&m.language),
+        m.license
     ));
     RowResponse { body, handle }
 }
@@ -738,9 +907,14 @@ pub(super) fn type_singular(t: ResourceType) -> &'static str {
     }
 }
 
+/// The About Tab's licence field: its value is the SPDX id, shown in words.
+const LICENCE: &str = "Licence";
+/// The About Tab's source field: a web address in it is a link.
+const SOURCE: &str = "Source";
+
 /// The manifest fields shown at the top of the About Tab.
 fn about_fields(m: &Manifest) -> Vec<(&'static str, String)> {
-    let mut out = vec![("Licence", m.license.clone())];
+    let mut out = vec![(LICENCE, m.license.clone())];
     if let Some(p) = &m.publisher {
         out.push(("Publisher", p.clone()));
     }
@@ -749,7 +923,7 @@ fn about_fields(m: &Manifest) -> Vec<(&'static str, String)> {
     }
     out.push(("Revision", m.revision.to_string()));
     if let Some(u) = &m.source_url {
-        out.push(("Source", u.clone()));
+        out.push((SOURCE, u.clone()));
     }
     out.push((
         "Origin",
@@ -859,5 +1033,101 @@ mod tests {
             drop_slot(&rows, "A", pos2(100.0, 36.0), drop_region()).map(|s| s.to),
             Some(1)
         );
+    }
+
+    /// Widths like the Starter library's: "Abbott-Smith", "grc", "Public domain".
+    const WIDEST: Widest = Widest {
+        abbreviation: 84.0,
+        language: 20.0,
+        badge: 80.0,
+    };
+
+    fn in_order(c: &RowColumns) -> Vec<Rangef> {
+        let mut out = vec![c.abbreviation, c.title];
+        out.extend(c.language);
+        out.extend(c.badge);
+        out
+    }
+
+    fn assert_apart(c: &RowColumns, width: f32) {
+        let parts = in_order(c);
+        for pair in parts.windows(2) {
+            assert!(pair[0].max + space::M <= pair[1].min + 0.01, "{c:?}");
+        }
+        assert!(parts.last().unwrap().max <= width - space::XS, "{c:?}");
+    }
+
+    #[test]
+    fn a_wide_row_has_every_column_and_a_title_of_its_own() {
+        let c = RowColumns::fit(WIDEST, 460.0);
+        assert!(c.language.is_some() && c.badge.is_some(), "{c:?}");
+        assert_eq!(c.abbreviation.span(), WIDEST.abbreviation);
+        assert!(c.title.span() >= size::TITLE_MIN, "{c:?}");
+        assert_eq!(c.badge.unwrap().max, 460.0 - space::XS);
+        assert_apart(&c, 460.0);
+    }
+
+    #[test]
+    fn a_narrowing_row_drops_the_badge_then_the_language_before_the_title() {
+        let mut dropped_badge_at = None;
+        let mut dropped_language_at = None;
+        for width in (100..=600).rev().map(|w| w as f32) {
+            let c = RowColumns::fit(WIDEST, width);
+            assert_apart(&c, width);
+            assert!(
+                c.language.is_some() || c.badge.is_none(),
+                "the language went before the badge: {c:?}"
+            );
+            if c.badge.is_some() || c.language.is_some() {
+                assert!(c.title.span() >= size::TITLE_MIN, "{width}: {c:?}");
+            }
+            if c.badge.is_none() && dropped_badge_at.is_none() {
+                dropped_badge_at = Some(width);
+            }
+            if c.language.is_none() && dropped_language_at.is_none() {
+                dropped_language_at = Some(width);
+            }
+        }
+        assert!(
+            dropped_badge_at > dropped_language_at,
+            "{dropped_badge_at:?}"
+        );
+    }
+
+    #[test]
+    fn a_long_abbreviation_yields_to_the_title() {
+        let long = Widest {
+            abbreviation: 300.0,
+            ..WIDEST
+        };
+        assert_eq!(
+            RowColumns::fit(long, 600.0).abbreviation.span(),
+            size::FIELD_NARROW
+        );
+        let c = RowColumns::fit(long, 260.0);
+        assert_eq!(c.title.span(), size::TITLE_MIN, "{c:?}");
+        assert_apart(&c, 260.0);
+        let c = RowColumns::fit(long, 180.0);
+        assert_eq!(c.abbreviation.span(), size::FIELD_NUMBER);
+        assert!(c.title.span() > size::FIELD_NUMBER, "{c:?}");
+        assert_apart(&c, 180.0);
+    }
+
+    #[test]
+    fn a_filter_match_starts_at_its_word() {
+        let kjv = "King James Version with Strong's Numbers";
+        assert_eq!(filter_match(kjv, "strong"), Some((30, "Strong's Numbers")));
+        assert_eq!(filter_match(kjv, "king"), Some((4, kjv)));
+        assert_eq!(
+            filter_match(kjv, "ames"),
+            Some((10, "James Version with Strong's Numbers"))
+        );
+        assert_eq!(
+            filter_match(kjv, "s ver"),
+            Some((14, "James Version with Strong's Numbers"))
+        );
+        assert_eq!(filter_match(kjv, "hebrew"), None);
+        assert_eq!(filter_match(kjv, ""), None);
+        assert_eq!(filter_match("Ἀρχὴ Λόγος", "λόγ"), Some((8, "Λόγος")));
     }
 }

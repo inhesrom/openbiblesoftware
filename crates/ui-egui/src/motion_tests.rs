@@ -419,3 +419,189 @@ fn a_glide_eases_through_laid_text_and_scrolling_takes_over_from_where_it_is_dra
     assert!(!v.is_gliding());
     assert!((v.position().0 - (mid + 10.0)).abs() < 0.5);
 }
+
+/// One wheel event over `over`: `dy` mouse-wheel lines or trackpad points down the page.
+fn wheel(h: &mut Harness, over: Pos2, unit: egui::MouseWheelUnit, dy: f32, modifiers: Modifiers) {
+    h.events.push(Event::PointerMoved(over));
+    h.events.push(Event::MouseWheel {
+        unit,
+        delta: vec2(0.0, -dy),
+        phase: egui::TouchPhase::Move,
+        source: match unit {
+            egui::MouseWheelUnit::Point => egui::MouseWheelSource::Trackpad,
+            _ => egui::MouseWheelSource::Wheel,
+        },
+        modifiers,
+    });
+}
+
+fn set_scroll_speed(h: &mut Harness, speed: f64) {
+    h.shell.run("view.scroll_speed", &json!({ "value": speed }));
+    assert_eq!(f64::from(h.shell.st.session.appearance.scroll_speed), speed);
+    h.frames(2);
+}
+
+/// How far TB scrolls for one wheel event, once it has settled (egui spreads a big step over
+/// several frames when motion is not reduced).
+fn wheeled(h: &mut Harness, tb: obs_engine::TabId, unit: egui::MouseWheelUnit, dy: f32) -> f64 {
+    let over = h.panels()[0].0.center();
+    let before = view_mut(h, tb).position().0;
+    wheel(h, over, unit, dy, Modifiers::NONE);
+    h.frames(60);
+    view_mut(h, tb).position().0 - before
+}
+
+/// #293 acceptance: at a Scroll speed of 0.5× and 2× a mouse-wheel step (lines) and a
+/// trackpad swipe (points) scroll a reading pane half and twice as far as at 1×, with Reduce
+/// motion on (each step lands in its frame) and off (egui's smoothing).
+#[test]
+fn scroll_speed_scales_wheel_lines_and_trackpad_points_by_its_factor() {
+    for reduce in [true, false] {
+        let mut h = Harness::new();
+        if !reduce {
+            h.system_motion(false);
+        }
+        h.frames(3);
+        assert_eq!(crate::motion::reduced(&h.ctx), reduce);
+        let tb = h.tab_id("TB");
+        for (unit, dy) in [
+            (egui::MouseWheelUnit::Line, 3.0),
+            (egui::MouseWheelUnit::Point, 90.0),
+        ] {
+            set_scroll_speed(&mut h, 1.0);
+            let one = wheeled(&mut h, tb, unit, dy);
+            assert!(one > 50.0, "reduce {reduce}, {unit:?}: {one}");
+            for speed in [0.5, 2.0] {
+                set_scroll_speed(&mut h, speed);
+                let moved = wheeled(&mut h, tb, unit, dy);
+                assert!(
+                    (moved - one * speed).abs() < 0.5,
+                    "reduce {reduce}, {unit:?} at {speed}×: {moved}, at 1×: {one}"
+                );
+                // Scrolling back up goes as far.
+                let back = wheeled(&mut h, tb, unit, -dy);
+                assert!((back + moved).abs() < 0.5, "{back} after {moved}");
+            }
+        }
+        // With Reduce motion, the whole scaled step in the frame it comes in.
+        if reduce {
+            set_scroll_speed(&mut h, 2.0);
+            let over = h.panels()[0].0.center();
+            let before = view_mut(&mut h, tb).position().0;
+            let line = h.ctx.options(|o| o.input_options.line_scroll_speed);
+            wheel(
+                &mut h,
+                over,
+                egui::MouseWheelUnit::Line,
+                1.0,
+                Modifiers::NONE,
+            );
+            h.frame();
+            let moved = view_mut(&mut h, tb).position().0 - before;
+            assert!((moved - f64::from(2.0 * line)).abs() < 0.5, "{moved}");
+        }
+    }
+}
+
+/// #293: Ctrl+wheel (Cmd+wheel on macOS) is a zoom, never a scroll: its zoom is the same at
+/// every Scroll speed, and the text does not move.
+#[test]
+fn ctrl_wheel_zoom_is_the_same_at_every_scroll_speed() {
+    for reduce in [true, false] {
+        let mut h = Harness::new();
+        if !reduce {
+            h.system_motion(false);
+        }
+        h.frames(3);
+        let tb = h.tab_id("TB");
+        let over = h.panels()[0].0.center();
+        let zoom_at = |h: &mut Harness, speed: f64, unit: egui::MouseWheelUnit, dy: f32| {
+            set_scroll_speed(h, speed);
+            let before = view_mut(h, tb).position().0;
+            wheel(h, over, unit, dy, Modifiers::COMMAND);
+            let mut zoom = 1.0;
+            for _ in 0..60 {
+                h.frame();
+                zoom *= h.ctx.input(egui::InputState::zoom_delta);
+            }
+            assert_eq!(view_mut(h, tb).position().0, before, "no scroll");
+            zoom
+        };
+        for (unit, dy) in [
+            (egui::MouseWheelUnit::Line, 2.0),
+            (egui::MouseWheelUnit::Point, 60.0),
+        ] {
+            let one = zoom_at(&mut h, 1.0, unit, dy);
+            assert!(
+                (one - 1.0).abs() > 0.05,
+                "reduce {reduce}, {unit:?}: the wheel zooms ({one})"
+            );
+            for speed in [0.5, 2.0] {
+                let zoom = zoom_at(&mut h, speed, unit, dy);
+                assert!(
+                    (zoom - one).abs() < 1e-3,
+                    "reduce {reduce}, {unit:?} at {speed}×: {zoom}, at 1×: {one}"
+                );
+            }
+        }
+    }
+}
+
+/// #293: an arrow key's step follows the Scroll speed; Page Down still moves one page.
+#[test]
+fn arrow_keys_follow_the_scroll_speed_and_page_down_moves_one_page() {
+    let mut h = Harness::new();
+    h.frames(3);
+    let tb = h.tab_id("TB");
+    let over = h.panels()[0].0.center();
+    let key = |h: &mut Harness, key: egui::Key| {
+        let before = view_mut(h, tb).position().0;
+        h.events.push(Event::PointerMoved(over));
+        h.events.push(Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(2);
+        view_mut(h, tb).position().0 - before
+    };
+    let arrow = f64::from(crate::pane::ARROW_STEP);
+    let mut pages = Vec::new();
+    for speed in [1.0, 0.5, 2.0] {
+        set_scroll_speed(&mut h, speed);
+        let down = key(&mut h, egui::Key::ArrowDown);
+        assert!((down - arrow * speed).abs() < 0.5, "{speed}×: {down}");
+        let up = key(&mut h, egui::Key::ArrowUp);
+        assert!((up + arrow * speed).abs() < 0.5, "{speed}×: {up}");
+        pages.push(key(&mut h, egui::Key::PageDown));
+    }
+    assert!(pages[0] > 100.0, "{pages:?}");
+    assert!(
+        pages.iter().all(|p| (p - pages[0]).abs() < 0.5),
+        "a page at every Scroll speed: {pages:?}"
+    );
+}
+
+/// The Atlas and the Timeline zoom by the wheel's own amount, whatever the Scroll speed.
+#[test]
+fn the_unscaled_scroll_delta_is_the_wheels_own_at_every_scroll_speed() {
+    let mut h = Harness::new();
+    h.frames(3);
+    let over = h.panels()[0].0.center();
+    let line = h.ctx.options(|o| o.input_options.line_scroll_speed);
+    for speed in [0.5, 1.0, 2.0] {
+        set_scroll_speed(&mut h, speed);
+        wheel(
+            &mut h,
+            over,
+            egui::MouseWheelUnit::Line,
+            1.0,
+            Modifiers::NONE,
+        );
+        h.frame();
+        let unscaled = crate::motion::unscaled_scroll_delta(&h.ctx).y;
+        assert!((unscaled + line).abs() < 1e-3, "{speed}×: {unscaled}");
+    }
+}

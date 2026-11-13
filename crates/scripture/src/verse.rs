@@ -37,6 +37,18 @@ impl Verse {
     pub fn osis(self) -> String {
         format!("{}.{}.{}", self.book.osis(), self.chapter, self.verse)
     }
+
+    /// The Verse an [`osis`](Self::osis) id names (`John.3.16`), or `None` for any other text.
+    pub fn from_osis(id: &str) -> Option<Self> {
+        let mut parts = id.split('.');
+        let book = Book::from_osis(parts.next()?)?;
+        let chapter = parts.next()?.parse().ok()?;
+        let verse = parts.next()?.parse().ok()?;
+        parts
+            .next()
+            .is_none()
+            .then_some(Self::new(book, chapter, verse))
+    }
 }
 
 impl fmt::Display for Verse {
@@ -444,6 +456,20 @@ mod tests {
             "Mal 4:6-Matt 1:1"
         );
         assert_eq!(v(Book::Psalms, 3, 0).osis(), "Ps.3.0");
+    }
+
+    #[test]
+    fn from_osis_reads_back_what_osis_writes() {
+        for verse in [
+            v(Book::John, 3, 16),
+            v(Book::Psalms, 3, 0),
+            v(Book::Esther, 10, 4),
+        ] {
+            assert_eq!(Verse::from_osis(&verse.osis()), Some(verse));
+        }
+        for bad in ["", "John", "John.3", "John.3.x", "Jn.3.16", "John.3.16.1"] {
+            assert_eq!(Verse::from_osis(bad), None, "{bad}");
+        }
     }
 
     #[test]

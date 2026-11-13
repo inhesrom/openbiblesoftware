@@ -20,8 +20,10 @@ The ★ marks the first Resource of each Resource type in your Preferred order: 
 ## Change how text looks
 
 - **View → Larger text** and **View → Smaller text** (Ctrl+Plus, Ctrl+Minus) change the Text size; Ctrl+0 resets it.
+- **One Resource larger or smaller**: click **Aa** in a Tab's header (or open the Tab menu at the right of the header) and drag the Text size slider, or click A− and A+. The text changes as you drag, in every Tab of that Resource, and the Resource keeps its own size: Larger and Smaller text no longer move it. **Reset** beside the slider makes it follow the Text size again. Ctrl+Alt+Plus, Ctrl+Alt+Minus and Ctrl+Alt+0 do the same for the focused Tab's Resource. In Text Comparison and Search each Bible's rows are drawn at its own size, and Aa changes the Bible you last clicked into. **Settings → Text and fonts** lists every Resource with its own size.
 - **View → Reading layout** sets paragraphs or one verse per line, large chapter numbers, section headings, the column width and justified text for the focused Tab.
 - **View → Theme** and **View → Page tone** change the colours; **View → Settings** (Ctrl+Comma) has every preference in one place.
+- **Scroll speed** in Settings (under Motion) makes the mouse wheel, the trackpad and the arrow keys scroll further or less far, from 0.25× to 4×, everywhere in the app; Reset puts 1× back. Page Up and Page Down still move one page.
 - **Interlinear** in the header of a Bible with Strong's numbers shows Interlinear lines: the Hebrew or Greek behind each word.
 
 ## Compare Bibles

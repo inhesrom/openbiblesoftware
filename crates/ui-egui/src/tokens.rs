@@ -133,8 +133,19 @@ pub mod size {
     /// A Tab header's Resource chooser, and in a narrow header.
     pub const HEADER_CHOOSER: f32 = 72.0;
     pub const HEADER_CHOOSER_NARROW: f32 = 52.0;
+    /// The least room a Tab header shows its Resource's name in (cut short with "…"); with
+    /// less, the name gives way (#303).
+    pub const HEADER_TITLE_MIN: f32 = 72.0;
     /// The Panels' tab bar.
     pub const TAB_BAR: f32 = 31.0;
+    /// macOS (#297): the system's title bar, in its own points (not the zoomed ones), as
+    /// macOS 27 draws it (measured on 27.0.1) over a window whose content fills it, the
+    /// traffic lights (three 14 pt buttons from 9 pt in, 9 pt apart) centred on its height.
+    /// macOS 11 to 15 draws a 28 pt bar with them from 7 pt in, which the same room covers.
+    pub const TITLE_BAR: f32 = 32.0;
+    /// macOS (#297): from the window's left edge to past the traffic lights' zoom button, with
+    /// the gap before the close button kept after it too, in the system's own points.
+    pub const TRAFFIC_LIGHTS: f32 = 78.0;
     /// Room kept for a scroll bar beside custom-drawn content.
     pub const SCROLLBAR: f32 = 10.0;
     /// The shortest a scroll bar's thumb gets.
@@ -166,12 +177,18 @@ pub mod size {
     pub const FIELD: f32 = 180.0;
     /// A wide text field: a name, a search, a rule.
     pub const FIELD_WIDE: f32 = 280.0;
+    /// The narrowest a list row's title column gets before the row drops its other columns
+    /// (a Library row's licence badge, then its language).
+    pub const TITLE_MIN: f32 = 120.0;
     /// The narrowest a block of laid-out text is given, however small its Panel.
     pub const TEXT_MIN: f32 = 40.0;
     /// The widest a line of chrome prose runs before it wraps (a message, a hint).
     pub const PROSE: f32 = 460.0;
     /// A hover card or a preview pop-up.
     pub const POPOVER: f32 = 360.0;
+    /// The Command box's dropdown, at most (#295): wider than the box, for long titles and
+    /// the Search preview's Verses.
+    pub const RESULTS: f32 = 640.0;
     /// The text column of a pop-up showing Resource text beside its marker (a Footnote).
     pub const POPOVER_TEXT: f32 = 340.0;
     /// A pop-up's scrolling text: the room it leaves for its header and the window's edges,
@@ -676,10 +693,12 @@ pub mod chart {
     pub const CELL: super::Vec2 = super::vec2(64.0, 24.0);
     /// A Grid cell's heat: the faintest share of lapis a cell with a hit takes.
     pub const HEAT_MIN: f32 = 0.15;
-    /// The Search Analysis table's fixed columns (Reference, Bible, Lemma, Gloss,
+    /// The Search Analysis table's fixed columns (Reference, Bible, Word, Lemma,
     /// Morphology; Context takes the rest), and its Context column at the least.
     pub const ANALYSIS_COLUMNS: [f32; 5] = [150.0, 64.0, 130.0, 120.0, 180.0];
     pub const ANALYSIS_CONTEXT_MIN: f32 = 260.0;
+    /// The least each column (Context last) gives way to in a narrow Tab (#303).
+    pub const ANALYSIS_COLUMNS_LEAST: [f32; 6] = [84.0, 48.0, 72.0, 72.0, 96.0, 120.0];
 
     /// The shortest an axis gets under its list.
     pub const AXIS_MIN: f32 = 120.0;
@@ -716,6 +735,10 @@ pub mod share {
     pub const LIST: f32 = 0.4;
     /// A dialog: at most this much of the window's height or width.
     pub const DIALOG: f32 = 0.75;
+    /// The Command box's dropdown (#295): at most this much of the window's width, and of
+    /// its height.
+    pub const RESULTS_WIDTH: f32 = 0.5;
+    pub const RESULTS_HEIGHT: f32 = 0.6;
     /// A loading skeleton's lines (#223), each this much of the skeleton's width: a short
     /// paragraph's ragged right edge.
     pub const SKELETON: [f32; 3] = [1.0, 0.85, 0.55];

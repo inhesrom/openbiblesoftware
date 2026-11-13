@@ -411,7 +411,7 @@ fn the_header_shows_lemma_transliteration_gloss_part_of_speech_and_occurrences()
     assert_eq!(h.transliteration.as_deref(), Some("bara"));
     let gloss = h.gloss.as_ref().unwrap();
     assert_eq!(gloss.abbreviation, "TBESH");
-    assert_eq!(gloss.text, "to create");
+    assert_eq!(gloss.text.as_deref(), Some("to create"));
     assert_eq!(h.part_of_speech.as_deref(), Some("verb"));
     // Counted in the Hebrew Bible, the number's original language, before the KJV.
     let o = h.occurrences.as_ref().unwrap();

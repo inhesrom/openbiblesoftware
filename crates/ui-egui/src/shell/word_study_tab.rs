@@ -38,6 +38,7 @@ impl State {
         let Some(Key::StrongsNumber(number)) = key else {
             if hint_page(
                 ui,
+                self.guide_frame(),
                 "Type a Strong's number (G5485, H1254A) or an English word (love) in the box \
                  above, or click Word Study in Word Info.",
                 "Show G26 (love)",
@@ -101,11 +102,22 @@ impl State {
                 ui.label(RichText::new(t).italics().color(theme::c().ink));
             }
             if let Some(g) = &h.gloss {
-                ui.label(RichText::new(format!("“{}”", g.text)).color(theme::c().ink));
-                ui.label(crate::components::hint_text(format!(
-                    "— {}",
-                    g.abbreviation
-                )));
+                match &g.text {
+                    Some(text) => {
+                        ui.label(RichText::new(format!("“{text}”")).color(theme::c().ink));
+                        ui.label(crate::components::hint_text(format!(
+                            "— {}",
+                            g.abbreviation
+                        )));
+                    }
+                    // The entry is below, under Lexicon entries.
+                    None => {
+                        ui.label(crate::components::hint_text(format!(
+                            "No short gloss — {}",
+                            g.abbreviation
+                        )));
+                    }
+                }
             }
         });
         let occurrences = match &h.occurrences {
@@ -140,7 +152,7 @@ impl State {
             .is_some_and(|t| t.entry_history.current().is_some());
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         let mut action: Option<Action> = None;
-        crate::components::page_frame().show(ui, |ui| {
+        self.guide_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
                 ui.label(crate::components::title_text(format!("“{words}”")));

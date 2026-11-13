@@ -4,8 +4,10 @@
 //! pointer input into a [`TimelineView`] change or a click. The axis is drawn with egui's
 //! painter: year ticks on top, the Eras as a band of named periods (shading the axis beneath
 //! them), then rows of Lifespans and of Events, each placed in the first row where its bar or
-//! marker and its label fit. What the Passage emphasises is drawn in full colour, the focus
-//! ringed in gilt; the rest is quieter. Drag pans, the wheel or a pinch zooms. A click on an
+//! marker and its label fit. Entries that fit in no row are not drawn: a row under their kind's
+//! rows counts them in "+N" chips where they are, and a chip's menu lists them (#304). What
+//! the Passage emphasises is drawn in full colour, the focus ringed in gilt; the rest is
+//! quieter. Drag pans, the wheel or a pinch zooms. A click on an
 //! Event opens its Passage, on a Lifespan its person's Factbook, on an Era fits the view to it.
 //! Each entry on the axis is a button of its own, so Tab reaches it and Enter opens it, and
 //! `Earlier`, `Later`, Zoom out, Zoom in and `Fit` move the view without a pointer.
@@ -70,13 +72,27 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
 }
 
+/// The entries of one kind laid out in rows: those drawn, how many rows they took, and those
+/// that fit in no row.
+struct Rows {
+    placed: Vec<Placed>,
+    used: usize,
+    hidden: Vec<usize>,
+}
+
+/// A "+N" chip in a kind's last row: entries that fit in no row, starting around here.
+struct MoreChip {
+    rect: Rect,
+    entries: Vec<usize>,
+}
+
 /// One entry laid out on the axis this frame.
 struct Placed {
     index: usize,
     /// The bar (a span) or the diamond (a point), on screen.
     shape: Rect,
-    /// Where its label goes, if there is room for one.
-    label: Option<(Pos2, Arc<egui::Galley>, Color32)>,
+    /// Where its label goes.
+    label: (Pos2, Arc<egui::Galley>, Color32),
     fill: Color32,
     strong: bool,
     focus: bool,
@@ -130,7 +146,7 @@ impl State {
         let focus = emphasis.focus.map(|i| &timeline.entries[i]);
 
         // Controls and status.
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .small_button("Earlier")
                 .on_hover_text("Show earlier years")
@@ -188,7 +204,7 @@ impl State {
                     "Enter a Bible reference or join a Link set to bring its events out".to_string()
                 }
             };
-            ui.add(egui::Label::new(RichText::new(status).color(theme::c().muted)).truncate());
+            crate::components::toolbar_summary(ui, status);
         });
 
         // The axis, and the list of the Passage's events under it.
@@ -389,8 +405,11 @@ fn axis(
     // Over the axis or an entry on it (the entries are widgets on top of the axis).
     let pointer = (ui.ctx().pointer_hover_pos()).filter(|_| ui.rect_contains_pointer(rect));
     if let Some(p) = pointer {
+        // Wheel zoom is the same at every Scroll speed (#293); a sideways swipe scrolls the
+        // axis at it.
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
-        let factor = f64::from(pinch) * (f64::from(scroll.y) / 300.0).exp();
+        let zoom = crate::motion::unscaled_scroll_delta(ui.ctx()).y;
+        let factor = f64::from(pinch) * (f64::from(zoom) / 300.0).exp();
         if (factor - 1.0).abs() > 1e-6 {
             view.zoom_about(factor, f64::from(p.x - rect.min.x), width, bounds);
         }
@@ -505,32 +524,42 @@ fn axis(
     // The axis is a few hundred points tall: a few dozen rows.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let all_rows = (((rect.max.y - rows_top) / ROW_H).floor() as usize).max(2);
-    let (lifespans, life_rows) = place_rows(
-        &painter,
-        timeline,
-        emphasis,
+    let place =
+        |kind, top, rows| place_rows(&painter, timeline, emphasis, kind, top, rows, rect, &x);
+    let mut chips: Vec<MoreChip> = Vec::new();
+    // Lifespans that fit in none of their rows: counted in a row under them.
+    let lifespans = place(
         EventKind::Lifespan,
         rows_top,
         LIFESPAN_ROWS.min(all_rows / 3).max(1),
-        rect,
-        &x,
     );
+    let mut life_rows = lifespans.used;
+    if !lifespans.hidden.is_empty() {
+        let y = rows_top + life_rows as f32 * ROW_H;
+        chips.extend(more_chips(
+            &painter,
+            timeline,
+            &lifespans.hidden,
+            y,
+            rect,
+            &x,
+        ));
+        life_rows += 1;
+    }
     let events_top = if life_rows == 0 {
         rows_top
     } else {
         rows_top + life_rows as f32 * ROW_H + space::XS
     };
-    let (events, _) = place_rows(
-        &painter,
-        timeline,
-        emphasis,
-        EventKind::Event,
-        events_top,
-        all_rows.saturating_sub(life_rows).max(1),
-        rect,
-        &x,
-    );
-    for p in lifespans.iter().chain(&events) {
+    // Events that fit in none of the rows left: counted in the axis's last row.
+    let event_rows = all_rows.saturating_sub(life_rows).max(1);
+    let mut events = place(EventKind::Event, events_top, event_rows);
+    if !events.hidden.is_empty() && event_rows > 1 {
+        events = place(EventKind::Event, events_top, event_rows - 1);
+        let y = events_top + (event_rows - 1) as f32 * ROW_H;
+        chips.extend(more_chips(&painter, timeline, &events.hidden, y, rect, &x));
+    }
+    for p in lifespans.placed.iter().chain(&events.placed) {
         let e = &timeline.entries[p.index];
         if e.is_span() {
             painter.rect_filled(p.shape, radius::S, p.fill);
@@ -555,14 +584,26 @@ fn axis(
                 egui::StrokeKind::Outside,
             );
         }
-        if let Some((at, galley, color)) = &p.label {
-            painter.galley(*at, galley.clone(), *color);
-        }
-        let mut hit = p.shape.expand2(vec2(0.0, space::XXS));
-        if let Some((at, galley, _)) = &p.label {
-            hit = hit.union(Rect::from_min_size(*at, galley.size()));
-        }
+        let (at, galley, color) = &p.label;
+        painter.galley(*at, galley.clone(), *color);
+        let hit =
+            (p.shape.expand2(vec2(0.0, space::XXS))).union(Rect::from_min_size(*at, galley.size()));
         hits.push((hit.intersect(rect), p.index));
+    }
+    for chip in &chips {
+        painter.rect(
+            chip.rect,
+            radius::PILL,
+            ch.field,
+            Stroke::new(stroke::HAIR, ch.rule),
+            egui::StrokeKind::Inside,
+        );
+        let galley = painter.layout_no_wrap(
+            more_label(chip.entries.len()),
+            FontId::proportional(text::CAPTION),
+            ch.ink,
+        );
+        painter.galley(chip.rect.center() - galley.size() / 2.0, galley, ch.ink);
     }
 
     // Each entry is a button on top of the axis, in drawing order, so the last drawn under the
@@ -587,7 +628,131 @@ fn axis(
         }
         entry.on_hover_text_at_pointer(entry_tooltip(e));
     }
+    // Each chip is a button too; its menu lists what it counts, each item opening like a
+    // click on the entry.
+    for chip in &chips {
+        let first = chip.entries[0];
+        let id = ui.make_persistent_id(("timeline-more", first));
+        let response = ui.interact(chip.rect.intersect(rect), id, Sense::click());
+        let name = more_name(timeline, &chip.entries);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+        let response = response.on_hover_text_at_pointer(more_tooltip(timeline, &chip.entries));
+        egui::Popup::menu(&response).id(id.with("menu")).show(|ui| {
+            egui::ScrollArea::vertical()
+                .max_height(size::LIST_TALL)
+                .show(ui, |ui| {
+                    for &i in &chip.entries {
+                        let e = &timeline.entries[i];
+                        if ui
+                            .button(format!("{} · {}", e.title, e.dates))
+                            .on_hover_text(entry_tooltip(e))
+                            .clicked()
+                        {
+                            let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
+                            input.entry = Some((i, new_tab));
+                        }
+                    }
+                });
+        });
+    }
     input
+}
+
+/// A chip's label: how many entries it counts.
+fn more_label(n: usize) -> String {
+    format!("+{n}")
+}
+
+/// What a chip counts, in words: "3 more Events", "1 more Lifespan".
+fn more_name(timeline: &Timeline, entries: &[usize]) -> String {
+    let lifespans = entries
+        .iter()
+        .all(|&i| timeline.entries[i].kind == EventKind::Lifespan);
+    let kind = match (lifespans, entries.len()) {
+        (true, 1) => "Lifespan",
+        (true, _) => "Lifespans",
+        (false, 1) => "Event",
+        (false, _) => "Events",
+    };
+    format!("{} more {kind}", entries.len())
+}
+
+/// Most entries a chip's tooltip names before "and N more".
+const MORE_NAMED: usize = 6;
+
+/// What hovering a chip says: what it counts, their titles and what a click does.
+fn more_tooltip(timeline: &Timeline, entries: &[usize]) -> String {
+    let mut text = format!("{} with no room here:", more_name(timeline, entries));
+    for &i in entries.iter().take(MORE_NAMED) {
+        text.push_str(&format!("\n{}", timeline.entries[i].title));
+    }
+    if entries.len() > MORE_NAMED {
+        text.push_str(&format!("\nand {} more", entries.len() - MORE_NAMED));
+    }
+    text.push_str("\nClick to list them, or zoom in");
+    text
+}
+
+/// The "+N" chips for `hidden` entries in the row at `y`: one at the start of each group of
+/// them, a group taking in every entry that starts under its chip, and no two chips touching.
+fn more_chips(
+    painter: &egui::Painter,
+    timeline: &Timeline,
+    hidden: &[usize],
+    y: f32,
+    rect: Rect,
+    x: &dyn Fn(f64) -> f32,
+) -> Vec<MoreChip> {
+    let font = FontId::proportional(text::CAPTION);
+    let width = |n: usize| {
+        painter
+            .layout_no_wrap(more_label(n), font.clone(), Color32::PLACEHOLDER)
+            .size()
+            .x
+            + 2.0 * space::S
+    };
+    let mut starts: Vec<(f32, usize)> = hidden
+        .iter()
+        .map(|&i| (x(timeline.entries[i].from).clamp(rect.min.x, rect.max.x), i))
+        .collect();
+    starts.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // (left edge, entries), left to right.
+    let mut groups: Vec<(f32, Vec<usize>)> = Vec::new();
+    for (start, i) in starts {
+        match groups.last_mut() {
+            Some((left, entries)) if start < *left + width(entries.len() + 1) + GAP => {
+                entries.push(i);
+            }
+            _ => groups.push((start, vec![i])),
+        }
+    }
+    // Inside the axis: a chip pushed left from its right end joins the chip it then reaches.
+    let mut chips: Vec<MoreChip> = Vec::new();
+    for (mut left, mut entries) in groups {
+        loop {
+            let w = width(entries.len());
+            let at = left.min(rect.max.x - w).max(rect.min.x);
+            match chips.pop() {
+                Some(mut prev) if at < prev.rect.max.x + GAP => {
+                    left = prev.rect.min.x;
+                    prev.entries.append(&mut entries);
+                    entries = prev.entries;
+                }
+                prev => {
+                    chips.extend(prev);
+                    chips.push(MoreChip {
+                        rect: Rect::from_min_size(
+                            pos2(at, y + space::XXS),
+                            vec2(w, ROW_H - 2.0 * space::XXS),
+                        ),
+                        entries,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    chips
 }
 
 /// An entry's accessible name: what it is, its title and its dates.
@@ -625,30 +790,9 @@ fn entry_tooltip(e: &TimelineEntry) -> String {
     text
 }
 
-/// `text` on one line, cut short with "…" to fit `width`.
-fn elided(
-    painter: &egui::Painter,
-    text: &str,
-    font: &FontId,
-    color: Color32,
-    width: f32,
-) -> Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::single_section(
-        text.to_string(),
-        egui::TextFormat::simple(font.clone(), color),
-    );
-    job.wrap = egui::text::TextWrapping {
-        max_width: width,
-        max_rows: 1,
-        break_anywhere: true,
-        overflow_character: Some('…'),
-    };
-    painter.layout_job(job)
-}
-
 /// Lay out the entries of `kind` in view into at most `rows` rows from `top`: emphasised ones
-/// first, so they get their labels, each in the first row where it (and its label) fits.
-/// Returns them and how many rows they took.
+/// first, so they get room, each in the first row where it and its label fit. An entry that
+/// fits in no row is not drawn (it would cover others' labels, #304) but returned as hidden.
 #[allow(clippy::too_many_arguments)]
 fn place_rows(
     painter: &egui::Painter,
@@ -659,7 +803,7 @@ fn place_rows(
     rows: usize,
     rect: Rect,
     x: &dyn Fn(f64) -> f32,
-) -> (Vec<Placed>, usize) {
+) -> Rows {
     let ch = theme::c();
     let font = FontId::proportional(text::SMALL);
     let (bar, strong_bar) = match kind {
@@ -678,6 +822,7 @@ fn place_rows(
     items.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.from.total_cmp(&b.1.from)));
     let mut taken: Vec<Vec<(f32, f32)>> = vec![Vec::new(); rows.max(1)];
     let mut out = Vec::new();
+    let mut hidden = Vec::new();
     for (index, e, strong) in items {
         let focus = emphasis.focus == Some(index);
         let (x0, x1) = (x(e.from), x(e.to));
@@ -705,7 +850,7 @@ fn place_rows(
         let before = !inside && galley.size().x > room_after && room_before > room_after;
         let room = if before { room_before } else { room_after };
         if !inside && galley.size().x > room && room > space::XXL {
-            galley = elided(painter, &e.title, &font, text_color, room);
+            galley = crate::components::elided(painter, &e.title, font.clone(), text_color, room);
         }
         let w = galley.size().x;
         let label_x = if inside {
@@ -722,20 +867,14 @@ fn place_rows(
         } else {
             (start, after + w + GAP)
         };
-        let row = taken
+        let Some(row) = taken
             .iter()
-            .position(|r| r.iter().all(|&(a, b)| wanted.1 <= a || wanted.0 >= b));
-        let (row, labelled) = match row {
-            Some(r) => (r, true),
-            // No room: in the last row, unlabelled.
-            None => (taken.len() - 1, false),
+            .position(|r| r.iter().all(|&(a, b)| wanted.1 <= a || wanted.0 >= b))
+        else {
+            hidden.push(index);
+            continue;
         };
-        let occupied = if labelled {
-            wanted
-        } else {
-            (start, end + space::XXS)
-        };
-        taken[row].push(occupied);
+        taken[row].push(wanted);
         let y = top + row as f32 * ROW_H;
         let shape = if span {
             Rect::from_min_max(
@@ -748,16 +887,14 @@ fn place_rows(
                 vec2(DIAMOND * 2.0, DIAMOND * 2.0),
             )
         };
-        let label = labelled.then(|| {
-            let ty = y + (ROW_H - galley.size().y) / 2.0;
-            if inside {
-                let on = theme::text_on(fill);
-                let g = painter.layout_no_wrap(e.title.clone(), font.clone(), on);
-                (pos2(label_x, ty), g, on)
-            } else {
-                (pos2(label_x, ty), galley, text_color)
-            }
-        });
+        let ty = y + (ROW_H - galley.size().y) / 2.0;
+        let label = if inside {
+            let on = theme::text_on(fill);
+            let g = painter.layout_no_wrap(e.title.clone(), font.clone(), on);
+            (pos2(label_x, ty), g, on)
+        } else {
+            (pos2(label_x, ty), galley, text_color)
+        };
         out.push(Placed {
             index,
             shape,
@@ -773,5 +910,9 @@ fn place_rows(
         .iter()
         .rposition(|r| !r.is_empty())
         .map_or(0, |r| r + 1);
-    (out, used)
+    Rows {
+        placed: out,
+        used,
+        hidden,
+    }
 }

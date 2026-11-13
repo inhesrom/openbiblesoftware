@@ -88,6 +88,11 @@ pub enum SettingKind {
     },
     /// The Text size, a step at a time (`view.text_smaller`, `view.text_larger`).
     TextSize,
+    /// The Scroll speed, a slider from 0.25× to 4× (`view.scroll_speed {value}`).
+    ScrollSpeed,
+    /// The Resources with their own Text size (#292), set from a Tab's ⋯ menu or Aa button
+    /// (`view.resource_text_size`), each with its Reset (`settings.reset {resource}`).
+    ResourceTextSizes,
     /// The font chosen for a slot (`view.font`); View → Fonts chooses it.
     Font(FontSlot),
     /// Each Notebook's Show in text (`notebook.show_in_text`), on by default.
@@ -175,9 +180,19 @@ pub const SETTINGS: &[Setting] = &[
         "text_size",
         S::TextAndFonts,
         "Text size",
-        "How large Resource text is drawn in every Tab; Interface size is separate",
+        "How large Resource text is drawn in every Tab, but a Resource with its own size; \
+         Interface size is separate",
         "font size bigger smaller larger points zoom",
         SettingKind::TextSize,
+    ),
+    setting(
+        "resource_text_sizes",
+        S::TextAndFonts,
+        "Resources with their own Text size",
+        "A Resource can have its own size, set from its Tab's menu or Aa button; the others \
+         follow the Text size",
+        "font size bigger smaller larger points zoom per resource own override",
+        SettingKind::ResourceTextSizes,
     ),
     font("font_latin", "Latin text font", FontSlot::Latin),
     font("font_greek", "Greek text font", FontSlot::Greek),
@@ -239,6 +254,15 @@ pub const SETTINGS: &[Setting] = &[
             default: false,
             get: |s| s.appearance.reduce_motion,
         },
+    ),
+    setting(
+        "scroll_speed",
+        S::Motion,
+        "Scroll speed",
+        "How far a mouse-wheel step, a trackpad swipe or an arrow key scrolls, everywhere in \
+         the app; Page Up and Page Down still move one page",
+        "scroll scrolling wheel mouse trackpad touchpad speed fast faster slow slower arrow keys",
+        SettingKind::ScrollSpeed,
     ),
     setting(
         "line_spacing",
@@ -417,6 +441,19 @@ pub const SETTINGS: &[Setting] = &[
             param: None,
             default: false,
             get: |s| s.toolbar.auto_hide,
+        },
+    ),
+    setting(
+        "toolbar_expanded",
+        S::Toolbar,
+        "Expanded toolbar",
+        "At the left or right, show each Launcher's label, shortcut and status beside its icon",
+        "toolbar expand expanded collapse collapsed pop out sidebar side labels wide",
+        SettingKind::Toggle {
+            command: "view.toolbar_expanded",
+            param: Some("on"),
+            default: false,
+            get: |s| s.toolbar.expanded,
         },
     ),
     setting(
@@ -634,6 +671,10 @@ impl Session {
             SettingKind::Choice { command, default } => crate::choices(self, command).1 == default,
             SettingKind::Toggle { default, get, .. } => get(self) == default,
             SettingKind::TextSize => self.text.size == obs_layout::TextSettings::default().size,
+            SettingKind::ScrollSpeed => {
+                self.appearance.scroll_speed == crate::appearance::SCROLL_SPEED_DEFAULT
+            }
+            SettingKind::ResourceTextSizes => self.resource_text_sizes.is_empty(),
             SettingKind::Font(slot) => self.fonts.get(slot).is_none(),
             SettingKind::NotebooksInText => (self.notebooks().ok()?.iter()).all(|n| n.show_in_text),
             SettingKind::HomeCards => self.home.cards == crate::home::HomeSettings::default().cards,
@@ -689,6 +730,19 @@ fn reset(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         SettingKind::TextSize => {
             s.run("view.text_reset", &Value::Null)?;
         }
+        SettingKind::ScrollSpeed => {
+            let value = f64::from(crate::appearance::SCROLL_SPEED_DEFAULT);
+            s.run("view.scroll_speed", &json!({ "value": value }))?;
+        }
+        SettingKind::ResourceTextSizes => {
+            // One Resource's Reset, or Reset all.
+            match p.str("resource") {
+                Some(id) => {
+                    s.set_resource_text_size("settings.reset", id, None)?;
+                }
+                None => s.clear_resource_text_sizes("settings.reset")?,
+            }
+        }
         SettingKind::Font(slot) => {
             s.run("view.font", &json!({ "slot": slot.id() }))?;
         }
@@ -739,12 +793,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
     id: "settings.reset",
     label: "Reset a setting",
     shortcut: None,
-    params: &[ParamSpec {
-        name: "setting",
-        kind: ParamKind::String,
-        required: true,
-        help: "The Setting's id (see the Settings Tab), e.g. `theme` or `text_size`",
-    }],
+    params: &[
+        ParamSpec {
+            name: "setting",
+            kind: ParamKind::String,
+            required: true,
+            help: "The Setting's id (see the Settings Tab), e.g. `theme` or `text_size`",
+        },
+        ParamSpec {
+            name: "resource",
+            kind: ParamKind::String,
+            required: false,
+            help: "With `resource_text_sizes`: only this Resource's own Text size (default: \
+                   every Resource's)",
+        },
+    ],
     enabled: always,
     run: reset,
 }];

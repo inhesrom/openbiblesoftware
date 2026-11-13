@@ -329,6 +329,26 @@ fn mhc_wiki_indentation_is_not_visible_text() {
     );
 }
 
+/// READING-7 (#305): Wikisource opens many italic runs with a space inside the quotes
+/// (`Thy word '' is'' a lamp`). The text keeps one space before the italic word, and the
+/// italic span starts at the word, not at a second space.
+#[test]
+fn mhc_italic_runs_that_open_with_a_space_keep_one_space_before_them() {
+    let mut i = import(ResourceType::Commentary);
+    import_mhc(&mut i, r#"<mediawiki><page><title>MHC/Volume 3/Psalms/Chapter 119</title><revision><text>==Verses 105-112==
+{{sup|105}} NUN. Thy word '' is'' a lamp unto my feet, and the truth of the {{small-caps|Lord}} '' endureth'' for ever. ''Thy word is very pure,'' I will perform '' it.''
+</text></revision></page></mediawiki>"#).unwrap();
+    let (resource, _) = i.finish().unwrap();
+    let unit = &resource.units[0];
+    assert!(!unit.text.contains("  "), "{:?}", unit.text);
+    assert!(unit.text.contains("Thy word is a lamp"), "{:?}", unit.text);
+    let italic: Vec<&str> = (unit.spans.iter())
+        .filter(|s| s.kind == SpanKind::Italic)
+        .map(|s| &unit.text[s.range()])
+        .collect();
+    assert_eq!(italic, ["is", "endureth", "Thy word is very pure,", "it."]);
+}
+
 #[test]
 fn mhc_real_fixture_preserves_micah_and_psalm_targets_without_wiki_markers() {
     let mut i = import(ResourceType::Commentary);

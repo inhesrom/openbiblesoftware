@@ -58,6 +58,7 @@ impl State {
         let Some(Key::Headword(id)) = key else {
             if hint_page(
                 ui,
+                self.guide_frame(),
                 "Type the name of a person or place in the box above (Abraham, John, Bethel), \
                  or click a name in a Passage Guide's People & places.",
                 "Show Abraham",
@@ -87,7 +88,7 @@ impl State {
             .is_some_and(|t| t.entry_history.current().is_some());
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         let mut action: Option<FactbookAction> = None;
-        crate::components::page_frame().show(ui, |ui| {
+        self.guide_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
                 ui.label(crate::components::title_text(format!("“{name}”")));
@@ -337,8 +338,14 @@ impl State {
             egui::vec2(width, super::atlas_tab::MINI_MAP_HEIGHT),
             Sense::hover(),
         );
-        let mut view =
-            super::atlas_tab::fit(&refs, rect, one_place, super::atlas_tab::MINI_MAP_SPAN);
+        // A place's several locations fill the map; one location, or a person's places, show
+        // with the land around them.
+        let span = if one_place && places.iter().any(|p| p.points.len() > 1) {
+            super::atlas_tab::LOCATIONS_SPAN
+        } else {
+            super::atlas_tab::MINI_MAP_SPAN
+        };
+        let mut view = super::atlas_tab::fit(&refs, rect, one_place, span);
         let description = format!(
             "Map: {}",
             places

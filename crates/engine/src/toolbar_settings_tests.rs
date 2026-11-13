@@ -116,6 +116,100 @@ fn vertical_positions_show_icons_only() {
     assert!(tb.shows_icons() && tb.shows_labels());
 }
 
+/// #291: Expanded or Collapsed is part of the `toolbar` preference, flipped by
+/// `view.toolbar_expanded` (or set by its `on`), kept across a restart, reached from the
+/// Command box and Settings, and drawn only at the Left and Right.
+#[test]
+fn expanded_survives_a_restart_and_only_applies_at_the_left_and_right() {
+    let t = Temp::new("expanded");
+    let mut s = launch(&t.db());
+    assert!(!s.toolbar.expanded, "Collapsed by default");
+    s.run("view.toolbar_position", &json!({ "value": "left" }))
+        .unwrap();
+    let out = s.run("view.toolbar_expanded", &json!({})).unwrap();
+    assert_eq!(out["on"], true);
+    assert!(s.toolbar.is_expanded());
+    drop(s);
+
+    let mut s = launch(&t.db());
+    assert!(
+        s.toolbar.expanded && s.toolbar.is_expanded(),
+        "after a restart"
+    );
+    let saved = s.user.as_ref().unwrap().preference(TOOLBAR_PREF).unwrap();
+    let saved: Value = serde_json::from_str(&saved.unwrap()).unwrap();
+    assert_eq!(saved["expanded"], true);
+    // Right keeps it; Top and Bottom keep the choice but draw the toolbar as before.
+    for (id, drawn) in [("right", true), ("top", false), ("bottom", false)] {
+        s.run("view.toolbar_position", &json!({ "value": id }))
+            .unwrap();
+        assert!(s.toolbar.expanded, "{id}");
+        assert_eq!(s.toolbar.is_expanded(), drawn, "{id}");
+    }
+    // `on` sets it, whatever it was.
+    s.run("view.toolbar_expanded", &json!({ "on": true }))
+        .unwrap();
+    assert!(s.toolbar.expanded);
+    s.run("view.toolbar_expanded", &json!({ "on": false }))
+        .unwrap();
+    assert!(!s.toolbar.expanded);
+    s.run("view.toolbar_expanded", &json!({})).unwrap();
+    drop(s);
+    assert!(launch(&t.db()).toolbar.expanded);
+
+    // A record from before #291 is Collapsed.
+    let old = json!({ "position": "left", "auto_hide": false, "labels": "both" });
+    assert!(!ToolbarSettings::from_json(&old).expanded);
+}
+
+#[test]
+fn loading_a_layout_never_expands_or_collapses_the_toolbar() {
+    let t = Temp::new("expanded-layout");
+    let mut s = launch(&t.db());
+    s.run("view.toolbar_position", &json!({ "value": "right" }))
+        .unwrap();
+    s.run("layout.save", &json!({ "name": "Desk" })).unwrap();
+    assert!(!s.workspace.snapshot().to_json().contains("expanded"));
+    s.run("view.toolbar_expanded", &json!({ "on": true }))
+        .unwrap();
+    s.run("layout.restore", &json!({ "name": "Desk" })).unwrap();
+    assert!(s.toolbar.is_expanded());
+    s.run("view.toolbar_expanded", &json!({ "on": false }))
+        .unwrap();
+    s.run("layout.save", &json!({ "name": "Wide" })).unwrap();
+    s.run("view.toolbar_expanded", &json!({ "on": true }))
+        .unwrap();
+    s.run("layout.restore", &json!({ "name": "Wide" })).unwrap();
+    assert!(s.toolbar.is_expanded());
+}
+
+#[test]
+fn the_command_box_and_settings_reach_expanded_toolbar() {
+    let mut s = Session::new(JobMode::Inline);
+    s.run("view.toolbar_position", &json!({ "value": "left" }))
+        .unwrap();
+    for typed in ["expanded toolbar", "> expanded"] {
+        let found = s
+            .command_box_suggestions(typed)
+            .into_iter()
+            .find(|g| g.action == CommandBoxAction::Command("view.toolbar_expanded"))
+            .unwrap_or_else(|| panic!("{typed:?} does not suggest view.toolbar_expanded"));
+        let before = s.toolbar.expanded;
+        s.run_command_box_action(&found.action, false).unwrap();
+        assert_ne!(s.toolbar.expanded, before, "{typed:?}");
+    }
+    assert_eq!(s.shortcut("view.toolbar_expanded"), Some("Ctrl+Shift+B"));
+    let setting = setting_by_id("toolbar_expanded").unwrap();
+    assert_eq!(setting.section, SettingsSection::Toolbar);
+    assert_eq!(
+        settings_matching(&s, "pop out")
+            .iter()
+            .map(|x| x.id)
+            .collect::<Vec<_>>(),
+        ["toolbar_expanded"]
+    );
+}
+
 #[test]
 fn the_toolbar_is_a_preference_not_part_of_a_layout() {
     let t = Temp::new("layout");

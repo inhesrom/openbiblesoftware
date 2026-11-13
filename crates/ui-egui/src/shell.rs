@@ -72,9 +72,12 @@ mod search_tab;
 mod search_views;
 mod settings_tab;
 mod starter_tab;
+mod text_size_controls;
 mod theme_editor_window;
 mod tile_handles;
 mod timeline_tab;
+mod title_bar;
+pub use title_bar::{SystemTitleBar, TitleBarDoubleClick, unified_title_bar};
 mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
@@ -168,8 +171,10 @@ struct TabUi {
     /// resource (#151), oldest first; Back or Forward to that place scrolls there again.
     parked: Vec<ParkedScroll>,
     /// How wide the header's right-hand controls were last frame, so the header box leaves
-    /// room for them.
+    /// room for them: the Tab's own (menu, star, Aa), and a Resource's (parallel resources,
+    /// Interlinear), which go on a second line when the box would be too short (#303).
     header_controls: f32,
+    header_resource_controls: f32,
     /// A Resource or Text Comparison Tab's Find bar, while it is open (Ctrl+F, #175).
     find: Option<crate::find::FindBar>,
     /// A Resource Tab's Contents pane: its filter, open lines and highlighted line (#176).
@@ -299,6 +304,12 @@ pub(crate) struct State {
     pub(crate) user_guide_ui: user_guide_tab::UserGuideUi,
     /// Where the First-run tour's Coach marks point (#218).
     pub(crate) tour_ui: tour_ui::TourUi,
+    /// macOS: the windows' title bars are the app's top rows, and this is the system's
+    /// setting for double-clicking them (#297). None: the system draws its own title bars.
+    title_bar: Option<Arc<dyn SystemTitleBar>>,
+    /// The traffic lights' room while a Floating window whose top tab bars are its title bar
+    /// is drawn (#297): the tab bar under them leaves it empty.
+    traffic_lights: Option<egui::Rect>,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -347,6 +358,9 @@ pub struct Shell {
     system_motion: Arc<dyn crate::SystemMotion>,
     /// The main dock's Panels settling into a new arrangement (#225).
     panel_motion: panel_motion::PanelMotion,
+    /// macOS (#297): the menu bar's controls' height last frame, which the title bar's
+    /// centring room around them is worked out from.
+    menu_row_height: f32,
     /// Tests: frames leave the inline job queue alone, so Guide sections, Word Study headers
     /// and the People & places directory stay loading (#223's loading states).
     #[cfg(test)]
@@ -412,6 +426,8 @@ impl Shell {
                 updates_ui: update_notice::UpdateUi::default(),
                 user_guide_ui: Default::default(),
                 tour_ui: Default::default(),
+                title_bar: None,
+                traffic_lights: None,
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -427,6 +443,7 @@ impl Shell {
             copy_out: None,
             system_motion: Arc::new(crate::NoSystemMotion),
             panel_motion: Default::default(),
+            menu_row_height: size::CONTROL,
             #[cfg(test)]
             hold_jobs: false,
         }
@@ -435,6 +452,13 @@ impl Shell {
     /// Where the operating system's reduce motion setting comes from (#225).
     pub fn set_system_motion(&mut self, motion: Arc<dyn crate::SystemMotion>) {
         self.system_motion = motion;
+    }
+
+    /// macOS (#297): every window's title bar is the app's own top row (the main window's
+    /// viewport is built with [`unified_title_bar`] too), and double-clicking it does what
+    /// `system` says.
+    pub fn set_unified_title_bar(&mut self, system: Arc<dyn SystemTitleBar>) {
+        self.st.title_bar = Some(system);
     }
 
     /// Whether motion is reduced: View → Reduce motion, or the operating system's setting.
@@ -948,6 +972,7 @@ impl Shell {
             ctx.set_zoom_factor(zoom);
         }
         crate::motion::set(ctx, self.motion_reduced());
+        crate::motion::set_scroll_speed(ctx, self.st.session.appearance.scroll_speed);
         let dark = theme::c().dark;
         let tone = self.st.session.appearance.page_tone.resolve(dark);
         self.st.palette = Palette::for_theme(tone, theme::c().high_contrast);
@@ -1042,6 +1067,7 @@ impl Shell {
             || self.st.zip_dialog_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
+            || self.st.session.search_preview_running()
             || self.st.session.word_study.is_busy()
             || self.st.session.reanchoring.is_busy()
             || self.st.session.factbooks.is_busy()
@@ -1064,9 +1090,12 @@ impl Shell {
         // Back at the front, the user may have changed the system's reduce motion setting.
         if ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true)))) {
             self.system_motion.refresh();
+            if let Some(t) = &self.st.title_bar {
+                t.refresh();
+            }
         }
         self.apply_appearance(ui.ctx());
-        crate::motion::instant_scrolling(ui.ctx());
+        crate::motion::scroll_input(ui.ctx());
         self.st.apply_fonts(ui.ctx());
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
@@ -1112,13 +1141,16 @@ impl Shell {
         self.st.areas = Default::default();
         self.st.toolbar.begin_frame();
         self.st.tour_ui.begin_frame();
-        let menus = egui::Panel::top("menus")
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::c().surface)
-                    .inner_margin(inset::BAND),
-            )
-            .show(ui, |ui| self.menu_bar(ui));
+        let menus = match self.st.title_bar.clone() {
+            None => egui::Panel::top("menus")
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::c().surface)
+                        .inner_margin(inset::BAND),
+                )
+                .show(ui, |ui| self.menu_bar(ui, None)),
+            Some(system) => self.title_bar_menus(ui, system.as_ref()),
+        };
         self.st.areas.menus = menus.inner.map(|id| (id, menus.response.rect));
         self.st.toolbar.menus_bottom = menus.response.rect.bottom();
         (self.st.tour_ui).target(TourTarget::Toolbar, menus.response.rect, false);
@@ -1321,13 +1353,54 @@ impl Shell {
         }
     }
 
+    /// macOS (#297): the menu bar as the main window's title bar. It starts after the traffic
+    /// lights' room and is at least as tall as the system's title bar, with its controls
+    /// centred on the traffic lights (as near as they fit); its empty space moves and zooms the
+    /// window.
+    fn title_bar_menus(
+        &mut self,
+        ui: &mut Ui,
+        system: &dyn SystemTitleBar,
+    ) -> egui::InnerResponse<Option<egui::Id>> {
+        let ctx = ui.ctx().clone();
+        let centre = size::TITLE_BAR / 2.0 / ctx.zoom_factor();
+        let pad = (centre - self.menu_row_height / 2.0).max(0.0).round() as i8;
+        let side = f32::from(inset::BAND.left);
+        let lead = title_bar::traffic_lights(&ctx).map_or(0.0, |l| (l.right() - side).max(0.0));
+        let menus = egui::Panel::top("menus")
+            .frame(egui::Frame::new().fill(theme::c().surface))
+            .show(ui, |ui| {
+                let sense = egui::UiBuilder::new().sense(title_bar::sense());
+                let bar = ui.scope_builder(sense, |ui| {
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(inset::BAND.left, pad))
+                        .show(ui, |ui| self.menu_bar(ui, Some(lead)))
+                        .inner
+                });
+                title_bar::act_as_title_bar(&ctx, &bar.response, system);
+                bar.inner
+            });
+        egui::InnerResponse::new(menus.inner, menus.response)
+    }
+
     /// The menu bar: the app's name, the menus (File · Edit · View · Go · Tools · Window · Help,
     /// #226), the Launchers (#140) when the toolbar is at the Top (#141), and the Command box
     /// on the right. Returns the first menu's id, where F6 puts the keyboard (#215).
-    fn menu_bar(&mut self, ui: &mut Ui) -> Option<egui::Id> {
+    ///
+    /// `lead` (macOS, #297): the menu bar is the title bar, and this much room is left at its
+    /// start for the traffic lights.
+    fn menu_bar(&mut self, ui: &mut Ui, lead: Option<f32>) -> Option<egui::Id> {
         let mut first = None;
-        ui.horizontal(|ui| {
-            ui.label(crate::components::title_text("Open Bible"));
+        let row = ui.horizontal(|ui| {
+            match lead {
+                None => ui.label(crate::components::title_text("Open Bible")),
+                Some(lead) => {
+                    ui.add_space(lead);
+                    // Part of the title bar: a click on it is the window's, not a selection's.
+                    let name = egui::Label::new(crate::components::title_text("Open Bible"));
+                    ui.add(name.selectable(false))
+                }
+            };
             ui.add_space(space::L);
             ui.spacing_mut().item_spacing.x = space::XS;
             ui.scope(|ui| {
@@ -1365,6 +1438,9 @@ impl Shell {
             // What the Launchers leave room for next frame: the right side and gaps.
             self.st.toolbar.reserve = right.inner + space::M + 2.0 * ui.spacing().item_spacing.x;
         });
+        if lead.is_some() {
+            self.menu_row_height = row.response.rect.height();
+        }
         first
     }
 
@@ -1541,7 +1617,7 @@ impl Shell {
                 };
                 let shown = self.st.session.reading_layout(tab);
                 for (flow, id, label) in obs_engine::TEXT_FLOWS {
-                    if ui.radio(shown.flow == flow, label).clicked() {
+                    if crate::components::radio(ui, shown.flow == flow, label).clicked() {
                         run = Some(json!({ "flow": id }));
                     }
                 }
@@ -1560,7 +1636,7 @@ impl Shell {
                     ("justified", "Justified text", shown.justified),
                 ];
                 for (param, label, mut on) in toggles {
-                    if ui.checkbox(&mut on, label).clicked() {
+                    if crate::components::toggle(ui, &mut on, label).clicked() {
                         run = Some(json!({ param: on }));
                     }
                 }
@@ -1571,7 +1647,7 @@ impl Shell {
                         .color(theme::c().muted),
                 );
                 for (column, id, label) in obs_engine::COLUMN_WIDTHS {
-                    if ui.radio(shown.column == column, label).clicked() {
+                    if crate::components::radio(ui, shown.column == column, label).clicked() {
                         run = Some(json!({ "column": id }));
                     }
                 }
@@ -1925,9 +2001,11 @@ pub(crate) fn pressed_as(
 /// Usually both, as egui matches: some keys need them on some layouts (Ctrl+Plus is
 /// Ctrl+Shift+= on a US keyboard). None when another binding in `all` is the same key with the
 /// same Ctrl (or Cmd) and other Shift or Alt, so the two are told apart exactly: Ctrl+Shift+Z
-/// is never Ctrl+Z, even when there is nothing to redo. A binding with other Ctrl is told
-/// apart by Ctrl itself (Ctrl+1 a Panel, Alt+1 a Highlight, #215). Never an extra Alt on
-/// Ctrl+digit: Ctrl+Alt is AltGr on Windows, which types { [ ] } on digits on some layouts.
+/// is never Ctrl+Z, even when there is nothing to redo; but when the others differ in Alt only,
+/// Shift may still be held, so Ctrl+Plus (Ctrl+Shift+= on a US keyboard) and Ctrl+Alt+Plus
+/// (#292) are both pressed with it. A binding with other Ctrl is told apart by Ctrl itself
+/// (Ctrl+1 a Panel, Alt+1 a Highlight, #215). Never an extra Alt on Ctrl+digit: Ctrl+Alt is
+/// AltGr on Windows, which types { [ ] } on digits on some layouts.
 pub(crate) fn extra_held(
     sc: egui::KeyboardShortcut,
     all: &[egui::KeyboardShortcut],
@@ -1940,10 +2018,17 @@ pub(crate) fn extra_held(
                 sc.modifiers.mac_cmd,
             )
     };
-    if (all.iter()).any(|o| {
+    let mut others = (all.iter()).filter(|o| {
         o.logical_key == sc.logical_key && o.modifiers != sc.modifiers && same_ctrl(o.modifiers)
-    }) {
-        return egui::Modifiers::NONE;
+    });
+    if let Some(first) = others.next() {
+        let alt_only = std::iter::once(first)
+            .chain(others)
+            .all(|o| o.modifiers.shift == sc.modifiers.shift);
+        return egui::Modifiers {
+            shift: alt_only,
+            ..egui::Modifiers::NONE
+        };
     }
     use egui::Key::{Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9};
     let digit = matches!(
@@ -2140,7 +2225,7 @@ impl State {
                 json!({}),
             ),
         };
-        if guide_tab::hint_page(ui, &message, button) {
+        if guide_tab::hint_page(ui, crate::components::page_frame(), &message, button) {
             self.run(id, &params);
         }
     }
@@ -2153,6 +2238,7 @@ impl State {
         let ui_state = TabUi {
             parked: old.parked,
             header_controls: old.header_controls,
+            header_resource_controls: old.header_resource_controls,
             ..TabUi::default()
         };
         self.load(tab, ui_state, None);
@@ -2200,6 +2286,7 @@ impl State {
         let ui_state = TabUi {
             parked,
             header_controls: old.header_controls,
+            header_resource_controls: old.header_resource_controls,
             ..TabUi::default()
         };
         self.load(tab, ui_state, width);
@@ -2272,7 +2359,8 @@ impl State {
         if let Some(TabKind::Resource(id)) = &kind {
             match self.doc(id) {
                 Ok(doc) => {
-                    let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
+                    let mut view =
+                        ReadingView::new(Arc::clone(&doc), self.session.text_settings_of(id));
                     if let Some(width) = width {
                         view.set_width(width);
                     }
@@ -2573,9 +2661,14 @@ impl State {
         let palette = self.palette;
         // The Tab's own Reading layout over the defaults (#209). A change lays the text out
         // again, keeping the Current location.
+        // At the Resource's own Text size, if it has one (#292).
+        let own = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+            Some(TabKind::Resource(id)) => self.session.text_settings_of(id),
+            _ => self.session.text,
+        };
         let mut text = obs_layout::TextSettings {
             layout: self.session.reading_layout(tab),
-            ..self.session.text
+            ..own
         };
         text.footnote_markers = self
             .session
@@ -2958,8 +3051,7 @@ impl State {
                     let mut chosen = lines.is_chosen(kind, *line);
                     // The last line picked stays.
                     let last = chosen && lines.shown(kind).len() <= 1 && lines.on;
-                    if ui
-                        .add_enabled(!last, egui::Checkbox::new(&mut chosen, line.name()))
+                    if crate::components::toggle_enabled(ui, !last, &mut chosen, line.name())
                         .clicked()
                     {
                         run = Some(json!({ "tab": tab.0, "line": line.id(), "shown": chosen }));
@@ -3044,6 +3136,7 @@ impl State {
             return;
         };
         view.set_settings(self.session.text);
+        view.set_own_sizes(self.session.resource_text_sizes());
         view.set(docs, base, comparison.differences, extent);
         if location != view.synced {
             if let Some(v) = location {
@@ -3061,6 +3154,9 @@ impl State {
             .map(crate::find::FindBar::found)
             .unwrap_or_default();
         let out = comparison_pane(ui, view, &mut self.atlas, &palette, found);
+        if let Some(bible) = &out.clicked_into {
+            self.session.workspace.clicked_into(tab, bible);
+        }
         if (out.user_moved || found_moved || out.find_moved)
             && let Some(v) = view.current_location()
             && Some(v) != view.synced
@@ -3108,7 +3204,7 @@ impl State {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = space::XS;
                     for (i, id) in bibles.iter().enumerate() {
-                        crate::components::chip_frame().show(ui, |ui| {
+                        crate::components::chip(ui, ("compare-chip", id), |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = space::XXS;
                                 let (rect, r) = ui.allocate_exact_size(
@@ -3163,12 +3259,12 @@ impl State {
                         }
                     });
                     let mut differences = comparison.differences;
-                    if ui
-                        .checkbox(
-                            &mut differences,
-                            crate::components::label_text("Differences"),
-                        )
-                        .clicked()
+                    if crate::components::toggle(
+                        ui,
+                        &mut differences,
+                        crate::components::label_text("Differences"),
+                    )
+                    .clicked()
                     {
                         run = Some(("compare.differences", json!({ "tab": tab.0 })));
                     }
@@ -3212,7 +3308,7 @@ impl State {
             .inner_margin(inset::BAR)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
+                let second_line = ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = space::XS;
                     let narrow = ui.available_width() < size::HEADER_NARROW;
                     ui.add_space(space::XS);
@@ -3239,8 +3335,21 @@ impl State {
                         self.history_buttons(ui, tab);
                     }
                     // The box leaves room for the controls on the right (measured last frame).
-                    let controls = self.tabs.get(&tab).map_or(0.0, |t| t.header_controls);
-                    let room = ui.available_width() - controls - 2.0 * ui.spacing().item_spacing.x;
+                    // A Resource's controls give way to a second line before the box is too
+                    // short for a whole reference (#303).
+                    let (controls, resource_controls) =
+                        self.tabs.get(&tab).map_or((0.0, 0.0), |t| {
+                            (t.header_controls, t.header_resource_controls)
+                        });
+                    let gap = ui.spacing().item_spacing.x;
+                    let room = ui.available_width() - controls - 2.0 * gap;
+                    let second_line = resource_controls > 0.0
+                        && room - resource_controls - gap < size::HEADER_BOX_NARROW;
+                    let room = if second_line {
+                        room
+                    } else {
+                        room - resource_controls - gap
+                    };
                     let width = room
                         .min(if narrow {
                             size::HEADER_BOX_NARROW
@@ -3251,29 +3360,32 @@ impl State {
                     self.header_box(ui, tab, header, width);
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.tab_menu(ui, tab, narrow);
+                        // Filters is in the Tab menu only when it is in neither line.
+                        self.tab_menu(ui, tab, narrow && !second_line);
                         self.favorite_star(ui, tab);
-                        if matches!(kind, TabKind::Resource(_)) {
-                            if !narrow {
-                                self.filters_menu(ui, tab);
-                            }
-                            self.interlinear_controls(ui, tab, narrow);
-                            self.parallel_resources(ui, tab, narrow);
-                        }
+                        self.text_size_button(ui, tab);
                         let measured = ui.min_rect().width();
-                        if let Some(t) = self.tabs.get_mut(&tab)
-                            && (t.header_controls - measured).abs() > 0.5
-                        {
-                            t.header_controls = measured;
-                            ui.ctx().request_repaint();
+                        self.header_widths(ui, tab, Some(measured), None);
+                        if !second_line {
+                            self.resource_controls(ui, tab, kind, narrow);
                         }
-                        if !narrow {
+                        // The Resource's name, when there is room for more than a few letters.
+                        if !narrow && ui.available_width() >= size::HEADER_TITLE_MIN {
                             ui.add(
                                 egui::Label::new(crate::components::hint_text(title)).truncate(),
                             );
                         }
                     });
+                    second_line
                 });
+                if second_line.inner {
+                    let line = vec2(ui.available_width(), ui.spacing().interact_size.y);
+                    let rtl = egui::Layout::right_to_left(egui::Align::Center);
+                    ui.allocate_ui_with_layout(line, rtl, |ui| {
+                        ui.spacing_mut().item_spacing.x = space::XS;
+                        self.resource_controls(ui, tab, kind, false);
+                    });
+                }
                 if let Some(e) = self.tabs.get(&tab).and_then(|t| t.error.clone()) {
                     ui.label(RichText::new(e).small().color(theme::c().warn));
                 }
@@ -3295,6 +3407,42 @@ impl State {
             r.bottom() - stroke::HAIR / 2.0,
             crate::components::rule_stroke(),
         );
+    }
+
+    /// A Resource Tab's own header controls, laid out right to left: Filters (in the Tab menu
+    /// when `narrow`), Interlinear and the parallel resources, compact when `narrow`. Their
+    /// width is kept for the next frame's layout (#303).
+    fn resource_controls(&mut self, ui: &mut Ui, tab: TabId, kind: &TabKind, narrow: bool) {
+        if !matches!(kind, TabKind::Resource(_)) {
+            return;
+        }
+        let r = ui.horizontal(|ui| {
+            if !narrow {
+                self.filters_menu(ui, tab);
+            }
+            self.interlinear_controls(ui, tab, narrow);
+            self.parallel_resources(ui, tab, narrow);
+        });
+        self.header_widths(ui, tab, None, Some(r.response.rect.width()));
+    }
+
+    /// Keep the widths of a header's right-hand controls measured this frame, asking for
+    /// another frame when one changed.
+    fn header_widths(&mut self, ui: &Ui, tab: TabId, own: Option<f32>, resource: Option<f32>) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        for (kept, now) in [
+            (&mut t.header_controls, own),
+            (&mut t.header_resource_controls, resource),
+        ] {
+            if let Some(now) = now
+                && (*kept - now).abs() > 0.5
+            {
+                *kept = now;
+                ui.ctx().request_repaint();
+            }
+        }
     }
 
     fn title(&self, tab: TabId, kind: &TabKind) -> String {
@@ -3587,10 +3735,15 @@ impl State {
             .is_some_and(|t| t.kind.has_find_bar());
         let find_key = key_of(&self.session, "tab.find");
         let close_key = key_of(&self.session, "tab.close");
-        crate::components::menu(
+        // The Text size row is used in place (#292), so a click inside the menu leaves it
+        // open; every item that does something closes it itself.
+        crate::components::menu_staying_open(
             ui,
             icons::image(ui.ctx(), icons::Icon::More, icons::BODY, theme::c().muted),
             |ui| {
+                if self.text_size_row(ui, tab) {
+                    ui.separator();
+                }
                 if findable
                     && ui
                         .add(crate::components::button("Find…").shortcut_text(find_key))
@@ -3918,6 +4071,11 @@ impl egui_tiles::Behavior<TabId> for State {
                 self.session.workspace.user_focused(t);
             }
             self.tab_button_drawn(t, &resp);
+            if let Some(panel) = self.session.workspace.panel_of(t)
+                && self.session.workspace.active_in(panel) == Some(t)
+            {
+                scroll_new_active_tab_into_view(panel, t, &resp);
+            }
             let linkable = self
                 .session
                 .workspace
@@ -4010,6 +4168,28 @@ impl egui_tiles::Behavior<TabId> for State {
         size::TAB_BAR
     }
 
+    /// macOS (#297): in a Floating window, the tab bar under the traffic lights starts after
+    /// them, and that room is the window's title bar (drag it to move the window,
+    /// double-click it to zoom or minimize). Nothing elsewhere.
+    fn tab_bar_left_ui(
+        &mut self,
+        _tiles: &Tiles<TabId>,
+        ui: &mut Ui,
+        _tile_id: TileId,
+        _tabs: &egui_tiles::Tabs,
+    ) {
+        let (Some(lights), Some(system)) = (self.traffic_lights, self.title_bar.clone()) else {
+            return;
+        };
+        let bar = ui.max_rect();
+        if !bar.intersects(lights) || bar.left() >= lights.right() {
+            return;
+        }
+        let room = egui::vec2(lights.right() - bar.left(), bar.height());
+        let (_, r) = ui.allocate_exact_size(room, title_bar::sense());
+        title_bar::act_as_title_bar(ui.ctx(), &r, system.as_ref());
+    }
+
     fn gap_width(&self, _style: &egui::Style) -> f32 {
         space::S
     }
@@ -4069,6 +4249,17 @@ impl egui_tiles::Behavior<TabId> for State {
             all_panes_must_have_tabs: true,
             ..Default::default()
         }
+    }
+}
+
+/// Scroll a Panel's tab bar to its active Tab when that Tab has just become active (opened,
+/// or chosen by a command), so a new Tab at the end of a full bar is not left hidden under the
+/// bar's scroll arrow (#303). Only then: scrolling the bar away from it by hand stays put.
+fn scroll_new_active_tab_into_view(panel: PanelId, tab: TabId, resp: &egui::Response) {
+    let id = egui::Id::unique(("tab-bar-active", panel));
+    if resp.ctx.data(|d| d.get_temp::<TabId>(id)) != Some(tab) {
+        resp.ctx.data_mut(|d| d.insert_temp(id, tab));
+        resp.scroll_to_me(None);
     }
 }
 

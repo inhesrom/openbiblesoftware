@@ -77,15 +77,25 @@ enum Section {
     MenusAndChoosers,
     /// Each surface's empty, loading and error states (#223).
     States,
+    /// Text as the reading pane draws it where the visual QA sweep found it drawn wrong
+    /// (#305).
+    ReadingText,
+    /// Tabs in a side Panel at its default width, with long text (#301).
+    NarrowPanels,
+    /// Headers and rows in a side Panel and at a Larger Interface size (#303).
+    PanelFit,
 }
 
 impl Section {
-    const ALL: [Section; 5] = [
+    const ALL: [Section; 8] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
         Section::MenusAndChoosers,
         Section::States,
+        Section::ReadingText,
+        Section::NarrowPanels,
+        Section::PanelFit,
     ];
 
     fn heading(self) -> &'static str {
@@ -95,6 +105,9 @@ impl Section {
             Section::DialogsAndPopovers => "Dialogs and popovers",
             Section::MenusAndChoosers => "Menus and choosers in Tabs and windows",
             Section::States => "Empty, loading and error states",
+            Section::ReadingText => "Reading text",
+            Section::NarrowPanels => "Narrow Panels",
+            Section::PanelFit => "Headers and rows in a narrow Panel",
         }
     }
 }
@@ -158,11 +171,23 @@ fn surfaces() -> Vec<Surface> {
         });
     }
     let lists = [
+        (Section::Tabs, super::library_rows::library_rows()),
+        (Section::Tabs, super::library_wording::library_wording()),
         (Section::PanesMenusAndWindows, every_overlay()),
         (Section::PanesMenusAndWindows, menus_and_toolbar()),
         (Section::DialogsAndPopovers, dialogs_and_popovers()),
         (Section::MenusAndChoosers, menus_and_choosers()),
         (Section::States, super::pane_states::pane_states()),
+        (Section::ReadingText, reading_text()),
+        // Crowded charts (#304).
+        (Section::Tabs, super::timeline::crowded_timelines()),
+        (Section::Tabs, super::atlas::factbook_maps()),
+        (
+            Section::MenusAndChoosers,
+            super::timeline::crowded_timeline_menus(),
+        ),
+        (Section::NarrowPanels, super::narrow_panels::narrow_panels()),
+        (Section::PanelFit, super::panel_fit::panel_fit()),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -509,6 +534,18 @@ fn menus_and_toolbar() -> Vec<Run> {
             },
         ),
         (
+            "Toolbar menu, left, expanded",
+            |h| {
+                h.shell
+                    .run("view.toolbar_position", &json!({ "value": "left" }));
+                h.shell.run("view.toolbar_expanded", &json!({ "on": true }));
+                h.frames(3);
+                let library = h.shell.st.toolbar.buttons[&Launcher::Library].center();
+                right_click(h, library);
+            },
+            |h| popup(h) && shows(h, "Expanded") && shows(h, "Collapse"),
+        ),
+        (
             "More launchers",
             |h| {
                 h.screen = egui::vec2(1100.0, 600.0);
@@ -570,6 +607,65 @@ fn dialogs_and_popovers() -> Vec<Run> {
                 h.frames(10);
             },
             |h| shows(h, "Gen 1:3"),
+        ),
+        (
+            // Cut at 20 Verses and at the popup's height: one notice (#308).
+            "Reference preview, shortened",
+            |h| {
+                let psalm = super::footnotes_ui::long_psalm_119();
+                let library = &mut h.shell.st.session.library;
+                let path = library.directory().unwrap().join("psalm-119.obr");
+                obs_store::write_obr(&psalm, &path).unwrap();
+                library.add_file(&path).unwrap();
+                h.shell
+                    .run("library.move", &json!({ "id": "psalm-119", "to": 0 }));
+                let tab = h
+                    .shell
+                    .run(
+                        "resource.open",
+                        &json!({ "id": "psalm-119", "split": true }),
+                    )
+                    .unwrap()["tab"]
+                    .as_u64()
+                    .unwrap();
+                h.shell
+                    .run("tab.go", &json!({ "tab": tab, "text": "Ps 119:1" }));
+                settle_all(h);
+                super::footnotes_ui::hover_note_link(
+                    h,
+                    TabId(tab),
+                    "Psalm 119:1-26",
+                    "Ps 119:1-26",
+                );
+                h.frames(10);
+            },
+            |h| shows(h, "Ps 119:1-26") && shows(h, crate::shell::references::PREVIEW_SHORTENED),
+        ),
+        (
+            // The text pipeline draws a Hebrew Lemma in reading order (#308).
+            "Command box, a Hebrew Lemma",
+            |h| {
+                h.shell.st.session.refresh_search_indexes();
+                settle_search(h);
+                key(h, Key::L, Modifiers::COMMAND);
+                type_text(h, "bara");
+                for _ in 0..200 {
+                    h.shell.st.session.jobs().pump(16);
+                    h.paced_frame();
+                    if matches!(
+                        h.shell.st.session.search_preview(),
+                        obs_engine::SearchPreview::Hits(_)
+                    ) {
+                        break;
+                    }
+                }
+                settle_all(h);
+            },
+            |h| {
+                h.shell.st.command_box.dropdown.is_some()
+                    && (h.shell.st.command_box.suggestions.iter())
+                        .any(|s| s.label == "בָּרָא · H1254A")
+            },
         ),
         (
             "Tab switcher",
@@ -636,7 +732,8 @@ fn dialogs_and_popovers() -> Vec<Run> {
                     &json!({ "passage": "Gen 1:1", "body": "Beginnings", "notebook": study }),
                 );
                 run_split(h, "tool.notes", json!({}));
-                let p = h.at("Study");
+                // In the Notebook list (a card names its Notebook too).
+                let p = leftmost(h, "Study");
                 right_click(h, p);
                 h.click_text("Delete…");
             },
@@ -759,6 +856,14 @@ fn menus_and_choosers() -> Vec<Run> {
             |h| popup(h) && command_shown(h, "tab.close") && shows(h, "Add to Favorites folder"),
         ),
         (
+            "Text size popover",
+            |h| {
+                let aa = spot(h, "Aa", in_kjv_header);
+                h.click(aa);
+            },
+            |h| popup(h) && shows(h, "Text size · KJV") && !command_shown(h, "tab.close"),
+        ),
+        (
             "Add Tab menu",
             |h| {
                 let add = spot(h, "[plus]", |r| r.right() < 930.0);
@@ -823,7 +928,7 @@ fn menus_and_choosers() -> Vec<Run> {
                 // Beside the Interlinear toggle.
                 let lines = spot(h, "[chevron-down]", |r| {
                     (r.center().y - label.center().y).abs() < 10.0
-                        && (r.center().x - label.center().x).abs() < 50.0
+                        && (r.center().x - label.center().x).abs() < 80.0
                 });
                 h.click(lines);
             },
@@ -1103,6 +1208,141 @@ fn menus_and_choosers() -> Vec<Run> {
                 h.click_text("First Bible (in your Preferred order)");
             },
             |h| popup(h),
+        ),
+    ]
+}
+
+// ---------------------------------------------------------------------------------------
+// Reading text (#305).
+
+/// The BSB's Tab beside the KJV, with Genesis 1:`verse` selected whole.
+fn bsb_verse_selected(h: &mut Harness, verse: u16) -> TabId {
+    let tab = open_bsb(h);
+    let v = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tab)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
+    let verse = obs_scripture::Verse::new(obs_scripture::Book::Genesis, 1, verse);
+    let (unit, byte) = v.doc.verse_position(verse).unwrap();
+    let range = v.doc.verse_range_at(unit, byte).unwrap();
+    v.selection = Some(crate::Selection {
+        anchor: crate::DocPos {
+            unit,
+            byte: range.start,
+        },
+        head: crate::DocPos {
+            unit,
+            byte: range.end,
+        },
+        granularity: Default::default(),
+    });
+    h.frames(2);
+    tab
+}
+
+fn annotations(h: &Harness) -> Vec<obs_engine::Annotation> {
+    h.shell.st.session.annotations(None).unwrap()
+}
+
+/// Matthew Henry on Ps 119:105 as the Starter's converter makes it from Wikisource's
+/// wikitext, whose italic runs open with a space inside the quotes (`word '' is''`).
+fn mhc_psalm_119() -> obs_model::Resource {
+    let mut manifest = obs_model::Manifest::new(
+        "mhc-ps119",
+        "Matthew Henry on Psalm 119 (test)",
+        "MHC",
+        obs_model::ResourceType::Commentary,
+        "en",
+    );
+    manifest.license = "LicenseRef-PublicDomain".into();
+    let mut import = obs_formats::StudyImport::new(manifest);
+    obs_formats::import_mhc(
+        &mut import,
+        "<mediawiki><page><title>MHC/Volume 3/Psalms/Chapter 119</title><revision><text>\
+         ==Verses 105-106==\n\
+         {{sup|105}} NUN. Thy word '' is'' a lamp unto my feet, and a light unto my path.\n\n\
+         Observe here, 1. The nature of the word of God, and the great intention of giving it \
+         to the world; it is a\n'' lamp and a light.'' It discovers to us, concerning God and \
+         ourselves, that which otherwise we could not have known. 2. The use we should make of \
+         it. It must be not only a '' light to our eyes,'' to gratify them, and fill our heads \
+         with speculations, but a '' light to our feet'' and\n'' to our path,'' to direct us \
+         in the right ordering of our conversation.\n\n\
+         {{sup|106}} I have sworn, and I will perform '' it,'' that I will keep thy righteous \
+         judgments.\n\
+         </text></revision></page></mediawiki>",
+    )
+    .unwrap();
+    import.finish().unwrap().0
+}
+
+/// The Commentary above in the Library, open beside the KJV at Ps 119:105.
+fn open_mhc_psalm_119(h: &mut Harness) {
+    let resource = mhc_psalm_119();
+    let dir = std::env::temp_dir().join(format!("obs-gallery-mhc-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("mhc-ps119.obr");
+    obs_store::write_obr(&resource, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    let tab = h
+        .shell
+        .run(
+            "resource.open",
+            &json!({ "id": "mhc-ps119", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    h.shell
+        .run("tab.go", &json!({ "tab": tab, "text": "Ps 119:105" }));
+    settle(h);
+    settle_all(h);
+}
+
+/// Each defect the visual QA sweep found in the reading pane's text, as drawn now (#305).
+fn reading_text() -> Vec<Run> {
+    vec![
+        ("Italic words in a Commentary", open_mhc_psalm_119, |h| {
+            (h.shell.st.tabs.values()).any(|t| {
+                (t.view.as_ref()).is_some_and(|v| v.doc.manifest.resource_id == "mhc-ps119")
+            })
+        }),
+        (
+            "A Highlight over several lines",
+            |h| {
+                bsb_verse_selected(h, 2);
+                key(h, Key::Num1, Modifiers::ALT);
+                settle_all(h);
+            },
+            |h| annotations(h).len() == 1,
+        ),
+        (
+            "The jump flash over several lines",
+            |h| {
+                let tab = open_bsb(h);
+                h.shell
+                    .run("tab.go", &json!({ "tab": tab.0, "text": "Gen 1:2" }));
+            },
+            |h| (h.shell.st.tabs.values()).any(|t| t.flash.is_some()),
+        ),
+        (
+            "A Note marker before the next verse number",
+            |h| {
+                bsb_verse_selected(h, 2);
+                key(h, Key::N, Modifiers::COMMAND | Modifiers::SHIFT);
+                type_text(h, "The Spirit hovering.");
+                key(h, Key::Escape, Modifiers::NONE);
+                settle_all(h);
+            },
+            |h| {
+                annotations(h)
+                    .iter()
+                    .any(|a| a.body() == "The Spirit hovering.")
+            },
         ),
     ]
 }
@@ -1477,6 +1717,21 @@ fn gallery_states() {
     gallery(Section::States);
 }
 
+#[test]
+fn gallery_reading_text() {
+    gallery(Section::ReadingText);
+}
+
+#[test]
+fn gallery_narrow_panels() {
+    gallery(Section::NarrowPanels);
+}
+
+#[test]
+fn gallery_panel_fit() {
+    gallery(Section::PanelFit);
+}
+
 // ---------------------------------------------------------------------------------------
 // The page.
 
@@ -1488,7 +1743,7 @@ fn page() -> String {
          <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); \
          do not edit. -->\n\n\
          Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each \
-         surface's empty, loading and error states, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see \
+         surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see \
          [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).\n",
     );
     for section in Section::ALL {
@@ -1588,13 +1843,14 @@ fn every_tab_kind_and_overlay_is_in_the_gallery() {
 }
 
 /// How `crates/ui-egui/src` opens a window, popover, menu or chooser.
-const OPENERS: [&str; 8] = [
+const OPENERS: [&str; 9] = [
     "egui::Window::new(",
     "egui::Area::new(",
     "egui::Popup::menu(",
     "egui::Popup::context_menu(",
     ".context_menu(|",
     "components::menu(",
+    "components::menu_staying_open(",
     "ui.menu_button(",
     "egui::ComboBox::from_id_salt(",
 ];
@@ -1625,9 +1881,13 @@ const SITES: &[(&str, &str, &[&str])] = &[
             "view-menu-notebooks-in-text",
             "interlinear-lines-menu",
             "text-comparison-add-a-bible",
-            "tab-menu-add-to-favorites-folder",
             "add-tab-menu",
         ],
+    ),
+    (
+        "shell.rs",
+        "components::menu_staying_open(",
+        &["tab-menu-add-to-favorites-folder"],
     ),
     (
         "shell.rs",
@@ -1684,6 +1944,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/favorites_tab.rs",
         ".context_menu(|",
         &["favorite-menu-move-to-folder"],
+    ),
+    (
+        "shell/text_size_controls.rs",
+        "components::menu_staying_open(",
+        &["text-size-popover"],
     ),
     (
         "shell/favorites_tab.rs",
@@ -1826,6 +2091,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         &["theme-editor"],
     ),
     (
+        "shell/timeline_tab.rs",
+        "egui::Popup::menu(",
+        &["timeline-a-chip-s-menu"],
+    ),
+    (
         "shell/toolbar.rs",
         "egui::Area::new(",
         &[
@@ -1841,7 +2111,8 @@ const SITES: &[(&str, &str, &[&str])] = &[
         &[
             "- the toolbar's menu (toolbar_menu) on its background: drawn as on a Launcher",
             "- the toolbar's menu (toolbar_menu) on its grip: drawn as on a Launcher",
-            "toolbar-menu-position",
+            "toolbar-menu-position toolbar-menu-left-expanded",
+            "- the toolbar's menu (toolbar_menu) on its pop-out control: drawn as on a Launcher",
         ],
     ),
     (

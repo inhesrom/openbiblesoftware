@@ -46,6 +46,13 @@ fn commands_of(kind: SettingKind) -> Vec<&'static str> {
         | SettingKind::Toggle { command, .. }
         | SettingKind::Action { command, .. } => vec![command],
         SettingKind::TextSize => vec!["view.text_larger", "view.text_smaller", "view.text_reset"],
+        SettingKind::ScrollSpeed => vec!["view.scroll_speed"],
+        SettingKind::ResourceTextSizes => vec![
+            "view.resource_text_larger",
+            "view.resource_text_smaller",
+            "view.resource_text_reset",
+            "view.resource_text_size",
+        ],
         SettingKind::Font(_) => vec!["view.fonts", "view.font"],
         SettingKind::NotebooksInText => vec!["notebook.show_in_text"],
         SettingKind::HomeCards => vec!["home.reset_cards"],
@@ -108,6 +115,7 @@ fn every_preference_command_is_a_setting() {
         "home.reset_cards",
         "guide.reset_arrangement",
         "toolbar.labels",
+        "view.toolbar_expanded",
         "toolbar.show_launcher",
         "toolbar.move_launcher",
         "search.word_forms",
@@ -145,6 +153,7 @@ fn every_stored_view_and_toolbar_field_has_a_setting() {
             "verse_numbers" => vec!["verse_numbers"],
             "highlights" => vec!["highlights"],
             "reduce_motion" => vec!["reduce_motion"],
+            "scroll_speed" => vec!["scroll_speed"],
             "reading_layout" => vec![
                 "text_flow",
                 "large_chapter_numbers",
@@ -155,6 +164,7 @@ fn every_stored_view_and_toolbar_field_has_a_setting() {
             "fonts" => vec!["font_latin", "font_greek", "font_hebrew", "font_interface"],
             "position" => vec!["toolbar_position"],
             "auto_hide" => vec!["toolbar_auto_hide"],
+            "expanded" => vec!["toolbar_expanded"],
             "labels" => vec!["toolbar_labels"],
             "launchers" => vec!["toolbar_launchers"],
             other => panic!("the stored field {other:?} has no Setting"),
@@ -276,6 +286,11 @@ pub(crate) fn change(s: &mut Session, id: &str) {
             None => ok(s.run(command, &json!({}))),
         },
         SettingKind::TextSize => ok(s.run("view.text_larger", &json!({}))),
+        SettingKind::ScrollSpeed => ok(s.run("view.scroll_speed", &json!({ "value": 2.5 }))),
+        SettingKind::ResourceTextSizes => ok(s.run(
+            "view.resource_text_size",
+            &json!({ "resource": "kjv", "value": 26 }),
+        )),
         SettingKind::Font(slot) => ok(s.run(
             "view.font",
             &json!({ "slot": slot.id(), "family": "Charis SIL" }),

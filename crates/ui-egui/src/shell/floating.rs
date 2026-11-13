@@ -9,9 +9,11 @@ use egui_tiles::{Tile, Tree};
 use obs_engine::floating_windows::MIN_WINDOW;
 use obs_engine::{PanelId, Placement, ScreenRect, Side, TabId, WindowId, WindowPlacement};
 
-use super::{PanelTiles, Shell, attach_beside, build_node, dock_node, insert_pane, tile_handles};
+use super::{
+    PanelTiles, Shell, attach_beside, build_node, dock_node, insert_pane, tile_handles, title_bar,
+};
 use crate::theme;
-use crate::tokens::inset;
+use crate::tokens::{inset, size};
 
 /// A new floating window's size when its Tab's Panel size is not known, in points.
 const DEFAULT_SIZE: (f32, f32) = (640.0, 720.0);
@@ -350,6 +352,10 @@ impl Shell {
             let mut builder = egui::ViewportBuilder::default()
                 .with_title(self.floating_title(id))
                 .with_min_inner_size(vec2(MIN_WINDOW.0, MIN_WINDOW.1));
+            if self.st.title_bar.is_some() {
+                // macOS (#297): its top tab bars are its title bar.
+                builder = title_bar::unified_title_bar(builder);
+            }
             let Some(d) = self.floating.iter().find(|d| d.id == id) else {
                 continue;
             };
@@ -483,15 +489,25 @@ impl Shell {
         // window has its own keyboard focus: Tab's target here is scrolled into view, and
         // ringed below, as in the main window (#182).
         if native {
-            crate::motion::instant_scrolling(&ctx);
+            crate::motion::scroll_input(&ctx);
             super::scroll_focus_into_view(&ctx);
             self.shortcuts(ui, Some(id));
+        }
+        // macOS (#297): the top tab bars are the window's title bar, at its top edge and
+        // centred on the traffic lights (as near as they fit), which the one under them leaves
+        // room for.
+        let mut margin = inset::POPOVER;
+        self.st.traffic_lights = None;
+        if native && self.st.title_bar.is_some() {
+            let bar = size::TITLE_BAR / ctx.zoom_factor();
+            margin.top = ((bar - size::TAB_BAR) / 2.0).max(0.0).round() as i8;
+            self.st.traffic_lights = title_bar::traffic_lights(&ctx);
         }
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
                     .fill(theme::c().shell)
-                    .inner_margin(inset::POPOVER),
+                    .inner_margin(margin),
             )
             .show(ui, |ui| {
                 let Some(d) = self.floating.iter().find(|d| d.id == id) else {
@@ -521,6 +537,7 @@ impl Shell {
                 std::mem::swap(&mut self.st.panels, &mut d.panels);
                 self.st.workspace_drag(ui, &panels);
             });
+        self.st.traffic_lights = None;
         // A Note being written on one of this window's Tabs is written here.
         if native
             && let Some(ed) = &self.st.note_editor

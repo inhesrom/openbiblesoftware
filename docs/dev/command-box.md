@@ -3,7 +3,18 @@
 The box at the right of the menu bar. It replaced the toolbar's Search field, which only ran
 `search.run`: typing now shows a dropdown of suggestions, best first, and Enter runs the
 highlighted one. Searching is still there for any text: the list holds at most eight
-suggestions, and when it is full Search keeps the last slot.
+suggestions, and when it is full Search keeps the last slot. Under the Search row the
+**Search preview** (#295) shows the ★ Bible's first Verses for the text as it is typed.
+
+| Light | Dark |
+|---|---|
+| ![The results panel for "love": headings with counts, the Search row, the first five Verses of the ★ Bible with "love" highlighted, Show all 6 results in Search](../previews/command-box-results-light.png) | ![The same in the Dark theme](../previews/command-box-results-dark.png) |
+| ![All commands (`>`): 99 commands, a scroll bar and "81 more" at the bottom edge](../previews/command-box-commands-light.png) | ![The same in the Dark theme](../previews/command-box-commands-dark.png) |
+| ![A right-to-left ★ Bible: its Hebrew Verses laid out from the right, the Latin "love" that begins each at the right end](../previews/command-box-results-hebrew-light.png) | ![The same in the Dark theme](../previews/command-box-results-hebrew-dark.png) |
+
+`UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui command_box_results_previews` draws these
+(`target/previews/command-box/`); `ffmpeg -i results-light.ppm results-light.png` converts
+them.
 
 ## What text suggests
 
@@ -22,6 +33,7 @@ draws the list and runs `command_box.run`. Ranks, highest first (equal ranks kee
 | 95 | `tg`, `topic`, `topic guide` + text (#148) | Topic Guide's chooser for it | `guide.topic_guide {text}` |
 | 95 | `open` + Resource | Open … | as below |
 | 95 | `search` + text | Search | `search.run` |
+| 95 | `scroll speed` + 0.25 to 4 (`scroll speed 2`, `1.5x`, `0.5×`, `150%`, #293) | Scroll speed 2× · Setting · Motion | `view.scroll_speed {value}` |
 | 92 | a Resource's abbreviation or title (any case) | Open Bible, Open Lexicon … | focuses its most recent Tab, else `resource.open` |
 | 90 | a Bible reference: `jn 3:16`, `jn 3 16`, `1 jn 4 8`, `Rom 5:8; Jn 3:16` (first Passage) | Go to · *Bible* | see below |
 | 90 | a Strong's number: `G26`, `h1254a` | Word Study | `word_study.open` |
@@ -46,6 +58,84 @@ Keys of the entry found by `lookup_key(Key::Lemma)`, and the non-alias Strong's 
 Preferred order, one suggestion per base number. On the Starter library this takes a few ms
 per keystroke (release build: `agape` 14 ms, `chesed` 25 ms, references and numbers < 1 ms);
 the UI asks only when the text changes. Without files (wasm) there are no Lemma suggestions.
+
+## The results panel (#295)
+
+The dropdown is a results panel under the box, its right edge under the box's:
+
+- **Size.** min(640 pt, half the window) wide (`size::RESULTS`, `share::RESULTS_WIDTH`), never
+  narrower than the box, and as tall as its rows up to 60% of the window
+  (`share::RESULTS_HEIGHT`). It never leaves the window, at any Toolbar position or window
+  size. It is measured in points, so it grows and shrinks with the Interface size. Its size
+  is fixed: it cannot be resized.
+- **Headings.** The suggestions sit under headings with their counts (Go to, Guides, Tools,
+  Word Study, Resources, Layouts, Favorites, Saved searches, Commands, Settings (Scroll
+  speed), Search, Recent: `CommandBoxAction::group`). A heading comes where its best suggestion ranks
+  (`suggestion_groups`), so the best suggestion of all is still first and Enter runs it.
+- **Scrolling shows.** When the rows do not all fit, a solid scroll bar shows (hovered or
+  not) and the bottom edge fades under a "N more" pill (with a chevron) counting the rows below it; with
+  every row shown there is neither.
+- **Long labels** are cut with "…" before their detail and shown whole in a tooltip on hover.
+- **Resource text in a label** (#308). The part of a label from its first to its last
+  character that is right-to-left or that the Interface font lacks (`pipeline_span`) is drawn
+  by the text pipeline (ADR 0004), at Body size in the Reading fonts and the ink of
+  `hit_palette`, as the Search preview's Verses are; the rest stays chrome text on the same
+  baseline. So `בָּרָא · H1254A` reads as written, the Lemma then its Strong's number. egui
+  has no bidi and the Interface font no Hebrew, so drawn as chrome text it came out as empty
+  boxes with the number mirrored. Until a layout worker has the Lemma (a frame or two), a
+  placeholder bar stands in. Greek and Latin labels are all chrome text. The span is laid
+  out as wide as the room left before the detail, so a long one (a Hebrew Resource title)
+  wraps there: its first line shows, ended with "…", and the rest is left out. Hovering a
+  cut label shows it whole, laid out by the text pipeline at a popover's width
+  (`paint_whole_label`), never as chrome text.
+- **Two-line rows.** A Search preview Verse shows its reference, then the first line of its
+  text with the match highlighted. The text is Resource text, so the text pipeline lays it
+  out and draws it (ADR 0004), like the Search Tool's: in the Reading fonts at Body size,
+  right to left for a right-to-left Bible (`PreviewHits::rtl`), laid out off the UI thread
+  (`SnippetCache`; a grey bar until it is) and painted from the glyph atlas. A line that is
+  cut ends with "…" (at its left in right-to-left text), and hovering the row shows the whole
+  Verse, drawn by the pipeline too. Ink and tint are the Page palette as dark (and as High
+  contrast) as the Theme (`hit_palette`), a pair that reads in the chrome beside any Page
+  tone.
+- **Screen readers** hear each row as `label · detail, 3 of 12`: its place among the rows
+  that can be picked (headings and notes cannot).
+
+## Search preview (#295)
+
+`crates/engine/src/search_preview.rs`. While the dropdown offers Search, the UI hands the
+text and its clock to `Session::update_search_preview` every frame. Once the text has not
+changed for 80 ms (`PREVIEW_DEBOUNCE`) the engine searches it in the **★ Bible** (first
+Bible in Preferred order), over its whole text, as a background job on the ready Search
+index, the same search as the Search Tool's (`bible_search::desktop::run`, Word forms as
+set), with snippets for the first rows only. The UI never waits: it asks to be drawn again
+when the debounce ends (`search_preview_due_in`) and while the job runs. The last hits stay
+until new ones arrive, so the list does not jump while the user types. A text whose search
+was cancelled by more typing is searched again if the user types back to it. When new rows
+arrive the highlight stays on the row it was on and is scrolled to where that row went; a
+highlighted Verse opens as shown, even when Enter lands in the frame that replaces it.
+
+The time to hits is gated in wall-clock time by the `search-preview` bench scenario
+(`cargo xtask bench`, [bench.md](bench.md)): each query typed a key at a time over a
+whole-Bible ★ Bible, from its last key to the frame drawing its hits, at most 150 ms (about
+120 ms measured: the 80 ms debounce, then a frame or two each for the worker's search and
+the layout of its Verses).
+
+Under the Search row it shows (`SearchPreview`):
+
+| State | Rows |
+|---|---|
+| hits | heading "Verses in KJV" with how many Verses match, the first 5 (`PREVIEW_HITS`) as reference + snippet, then **Show all N results in Search** |
+| no Verse matches | "No verses in KJV match" |
+| no Bible in the library | **Add a Bible to search as you type**, which opens Get Bibles (`library.get_bibles`) |
+| the ★ Bible's index being built | "Indexing KJV… results will appear here"; the search runs again when the index is ready |
+| a query the Search Tool refuses, or no Search index here (wasm) | nothing |
+
+The *Search "…"* row stays in every case. A click on a Verse, or Enter on it, goes there as
+Go to does (`command_box.open_hit`: the Standard Verse in the focused Bible, else the most
+recent Bible Tab, else the ★ Bible; an Unmapped verse opens in its own Bible); Alt opens a
+new Tab. A new Tab for an Unmapped verse goes there once its Verse map is loaded
+(`Effect::NavigateOpened`, as a Favorite opens), so the Link set it joins stays put. **Show all** runs the Search suggestion, as Enter on it does: the Search Tab with
+the text, over its own scope and Bibles.
 
 ## All commands (#226)
 
@@ -77,10 +167,12 @@ A command run from the box behaves as from its menu, button or key:
 
 - **Ctrl+L** (`command_box.focus`, Cmd+L on macOS) puts the keyboard in the box and selects its
   text, from anywhere, also from another text field.
-- **↑ / ↓** move the highlight; **Enter** runs it; **Alt+Enter** runs it in a new Tab
+- **↑ / ↓** move the highlight, **PgUp / PgDn** by the rows that fit, **Home / End** to the
+  first and last row (they move the highlight, not the caret, while the dropdown shows),
+  each keeping it in view; **Enter** runs it; **Alt+Enter** runs it in a new Tab
   (`new_tab: true`: a new Tab of the Bible, Guide or Tool rather than moving the open one; a new
   Tab joins the opener's Link set, which then follows it); **Esc** leaves the box.
-- A click on a suggestion runs it (Alt held: in a new Tab).
+- A click on a row runs it (Alt held: in a new Tab).
 - After running, the box empties and the keyboard goes back to the Workspace. A suggestion
   that fails (no Bible in the library, say) leaves the text and shows why.
 
@@ -98,8 +190,21 @@ moves it to the top.
   empty text gives the recent entries. `obs-cli run command_box.suggest text=agape`.
 - `command_box.run {text, choice?, new_tab?}` — run suggestion `choice` (default 0, the best)
   for `text` and remember the text.
+- `command_box.open_hit {bible, verse, standard?, new_tab?}` — open a Search preview Verse:
+  `verse` in Bible `bible`'s own numbering and its Standard Verse `standard` (OSIS ids,
+  `PreviewHit::open_params`). The Verse is named rather than counted from the preview's top,
+  so the one shown opens even when the next text's Verses replace it before the pick runs.
 
 Tests: `crates/engine/src/command_box_tests.rs` (the parser and ranking, each action, recent
-entries across a restart, on a real `.obr` library with the Starter Lexicons' excerpts) and
-`crates/ui-egui/src/command_box_tests.rs` (Ctrl+L, typing, ↑/↓, Enter, Alt+Enter, Esc, click,
-recent entries after a relaunch).
+entries across a restart, the headings, on a real `.obr` library with the Starter Lexicons'
+excerpts), `crates/engine/src/search_preview_tests.rs` (the debounced query, the ★ Bible's
+first five Verses and the count, no Bible, an index being built, opening a hit, a cancelled
+text typed again, an Unmapped hit opened from a linked Bible, a right-to-left ★ Bible) and
+`crates/ui-egui/src/command_box_tests.rs` (Ctrl+L, typing, ↑/↓, PgUp/PgDn, Home/End, Enter,
+Alt+Enter, Esc, click, recent entries after a relaunch; the panel's size at every Toolbar
+position, window size and Interface size; the scroll bar and "N more"; cut labels and their
+tooltips; "N of M" for screen readers; the Search preview's debounce and frame scheduling
+(on the harness's 60 Hz clock), its keys and clicks, the highlight kept in view as Verses
+arrive, a shown Verse opened as Verses replace it, Show all, Get Bibles and Indexing; its
+Verses drawn by the text pipeline, a right-to-left Bible's from the right, a cut one whole on
+hover; their contrast in every Theme and Page tone).

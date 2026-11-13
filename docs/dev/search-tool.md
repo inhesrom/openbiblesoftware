@@ -216,6 +216,10 @@ searches.
   shown. If a searched Bible has since been removed from the Library, or its file or tags
   cannot be read, the job fails with that message under the search box instead of making a
   table (and an export) without that Bible's hits. Rows open their Verse like a hit.
+  - **In a narrow Tab** (#303): each column gives way in proportion down to its least width
+    (`chart::ANALYSIS_COLUMNS_LEAST`), so a centre Panel shows all six. Narrower still (a side
+    Panel), the table scrolls sideways: its scroll bars always show (the bar along the Tab's
+    bottom), and the header scrolls with the rows.
   - **Sorting**: click a header to sort by it, and again to reverse. Text compares
     case-insensitively and empty cells go last either way. Reference is canonical order;
     reversed, the Verses turn round but a Verse's words and Bibles keep canonical order.

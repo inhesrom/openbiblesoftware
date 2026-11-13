@@ -22,7 +22,9 @@
 //! the commands only (#226): every one the box can run, each with its Keyboard shortcut.
 
 use obs_model::ResourceType;
-use obs_scripture::{Passage, RefStyle, Standard, StrongsNumber, format_passage, parse_reference};
+use obs_scripture::{
+    Passage, RefStyle, Standard, StrongsNumber, Verse, format_passage, parse_reference,
+};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
@@ -109,6 +111,8 @@ pub enum CommandBoxAction {
     OpenSavedSearch(String),
     /// Run a command with no parameters but the focused Tab.
     Command(&'static str),
+    /// Set the Scroll speed (#293), in hundredths: `scroll speed 1.5` is 150.
+    ScrollSpeed(u16),
     Search(String),
     /// A recent entry: run this text's best suggestion.
     Recent(String),
@@ -131,10 +135,55 @@ impl CommandBoxAction {
             Self::OpenFavorite(_) => "favorite",
             Self::OpenSavedSearch(_) => "saved_search",
             Self::Command(_) => "command",
+            Self::ScrollSpeed(_) => "scroll_speed",
             Self::Search(_) => "search",
             Self::Recent(_) => "recent",
         }
     }
+
+    /// The heading the dropdown lists it under (#295).
+    pub fn group(&self) -> &'static str {
+        match self {
+            Self::GoTo(_) => "Go to",
+            Self::PassageGuide(_) | Self::ExegeticalGuide(_) | Self::TopicGuide(_) => "Guides",
+            Self::TextComparison(_) | Self::CrossReferences(_) => "Tools",
+            Self::WordStudy(_) | Self::WordStudyWords(_) => "Word Study",
+            Self::OpenResource(_) => "Resources",
+            Self::RestoreLayout(_) => "Layouts",
+            Self::OpenFavorite(_) => "Favorites",
+            Self::OpenSavedSearch(_) => "Saved searches",
+            Self::Command(_) => "Commands",
+            Self::ScrollSpeed(_) => "Settings",
+            Self::Search(_) => "Search",
+            Self::Recent(_) => "Recent",
+        }
+    }
+}
+
+/// Suggestions under one heading of the dropdown (#295).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuggestionGroup {
+    /// The heading: [`CommandBoxAction::group`].
+    pub heading: &'static str,
+    /// The suggestions' places in the list, best first.
+    pub suggestions: Vec<usize>,
+}
+
+/// `suggestions` (best first) under their headings: each heading where its best suggestion
+/// ranks, so the best suggestion of all still comes first.
+pub fn suggestion_groups(suggestions: &[Suggestion]) -> Vec<SuggestionGroup> {
+    let mut groups: Vec<SuggestionGroup> = Vec::new();
+    for (i, s) in suggestions.iter().enumerate() {
+        let heading = s.action.group();
+        match groups.iter_mut().find(|g| g.heading == heading) {
+            Some(g) => g.suggestions.push(i),
+            None => groups.push(SuggestionGroup {
+                heading,
+                suggestions: vec![i],
+            }),
+        }
+    }
+    groups
 }
 
 /// One line of the Command box's dropdown.
@@ -165,6 +214,8 @@ impl Suggestion {
 #[derive(Debug, Default)]
 pub struct CommandBox {
     recent: Option<Vec<String>>,
+    /// The Search preview under the dropdown's Search row (#295).
+    pub(crate) preview: crate::search_preview::Preview,
 }
 
 impl CommandBox {
@@ -271,6 +322,28 @@ fn split_verb(text: &str) -> Option<(Verb, &str)> {
     })
 }
 
+/// `scroll speed 1.5`, `scroll speed 2x`, `scroll speed 150%` (any case, `×` too): the Scroll
+/// speed asked for, in hundredths, when it is one Settings allows.
+fn parse_scroll_speed(text: &str) -> Option<u16> {
+    const WORDS: &str = "scroll speed";
+    let head = text.get(..WORDS.len())?;
+    if !head.eq_ignore_ascii_case(WORDS) {
+        return None;
+    }
+    let rest = text.get(WORDS.len()..)?.trim().to_lowercase();
+    let (number, percent) = match rest.strip_suffix('%') {
+        Some(n) => (n, true),
+        None => (rest.trim_end_matches(['x', '×']), false),
+    };
+    let v: f64 = number.trim().parse().ok()?;
+    let v = if percent { v / 100.0 } else { v };
+    let speed = crate::appearance::scroll_speed_checked(v)?;
+    // 25 to 400.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let hundredths = (f64::from(speed) * 100.0).round() as u16;
+    Some(hundredths)
+}
+
 fn written(p: Passage) -> String {
     format_passage(p, &Standard, RefStyle::Long)
 }
@@ -325,6 +398,20 @@ impl Session {
         self.layout_suggestions(text, &mut ranked);
         if let Some((verb, rest)) = split_verb(text) {
             self.verb_suggestions(verb, rest, &mut ranked);
+        }
+        if let Some(hundredths) = parse_scroll_speed(text) {
+            let speed = f64::from(hundredths) / 100.0;
+            ranked.push((
+                rank::VERB,
+                Suggestion::new(
+                    CommandBoxAction::ScrollSpeed(hundredths),
+                    format!(
+                        "Scroll speed {}",
+                        crate::appearance::scroll_speed_label(speed)
+                    ),
+                    "Setting · Motion",
+                ),
+            ));
         }
         self.resource_suggestions(text, &mut ranked);
         if let Some(p) = parse_passage(text) {
@@ -783,6 +870,10 @@ impl Session {
                     .ok_or_else(|| failed(RUN, "Open a Tab first"))?;
                 self.run(id, &json!({ "tab": tab.0 }))
             }
+            CommandBoxAction::ScrollSpeed(hundredths) => self.run(
+                "view.scroll_speed",
+                &json!({ "value": f64::from(*hundredths) / 100.0 }),
+            ),
             CommandBoxAction::Search(text) => {
                 self.run("search.run", &json!({ "text": text, "split": new_tab }))
             }
@@ -971,7 +1062,87 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: run_from_box,
     },
+    CommandSpec {
+        id: OPEN_HIT,
+        label: "Open a Search preview hit",
+        shortcut: None,
+        params: &[
+            ParamSpec {
+                name: "bible",
+                kind: ParamKind::String,
+                required: true,
+                help: "The resource id of the Bible the Search preview found the Verse in",
+            },
+            ParamSpec {
+                name: "verse",
+                kind: ParamKind::String,
+                required: true,
+                help: "The Verse in that Bible's own numbering, as an OSIS id (`Ps.119.2`)",
+            },
+            ParamSpec {
+                name: "standard",
+                kind: ParamKind::String,
+                required: false,
+                help: "Its Standard Verse, as an OSIS id; without it the Verse is Unmapped and opens in its own Bible",
+            },
+            ParamSpec {
+                name: "new_tab",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "Open a new Tab instead of moving an open one (Alt held)",
+            },
+        ],
+        enabled: always,
+        run: open_preview_hit,
+    },
 ];
+
+const OPEN_HIT: &str = "command_box.open_hit";
+
+/// Open a Search preview Verse (#295), as [`crate::PreviewHit::open_params`] names it, as Go
+/// to does: its Standard Verse in the focused Bible (else the most recent Bible Tab, else the
+/// ★ Bible). An Unmapped verse, which only its own Bible has, opens there. The Verse is named,
+/// not counted from the preview's top, so the one the user picked opens even when the preview
+/// has changed under it.
+fn open_preview_hit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let osis = |name: &str| -> Result<Option<Verse>, CommandError> {
+        (p.str(name))
+            .map(|id| {
+                Verse::from_osis(id).ok_or_else(|| failed(OPEN_HIT, format!("not a Verse: “{id}”")))
+            })
+            .transpose()
+    };
+    let native = osis("verse")?.ok_or_else(|| failed(OPEN_HIT, "no Verse"))?;
+    let standard = osis("standard")?;
+    let bible = p.str("bible").unwrap_or_default().to_string();
+    let new_tab = p.bool("new_tab").unwrap_or(false);
+    if let Some(v) = standard {
+        return go_to(s, Passage::verse(v), new_tab);
+    }
+    let kind = TabKind::Resource(bible.clone());
+    let open = (!new_tab)
+        .then(|| s.workspace.most_recent(|t| t.kind == kind))
+        .flatten();
+    if let Some(tab) = open {
+        s.workspace.focus(tab);
+        s.workspace.navigate(tab, native);
+        return Ok(json!({ "tab": tab.0, "verse": native.osis() }));
+    }
+    let out = s.run("resource.open", &json!({ "id": bible, "split": new_tab }))?;
+    let tab = (out["tab"].as_u64().map(TabId)).ok_or_else(|| failed(OPEN_HIT, "no Tab opened"))?;
+    // A new Tab has no Verse map yet: its Link set, which it may have joined, would take the
+    // Unmapped verse for a Standard one. It starts there, and jumps once the UI has loaded it
+    // (as a Favorite opens), so the set stays put.
+    if let Some(t) = s.workspace.tab_mut(tab) {
+        t.visit(native, None);
+    }
+    s.workspace.push_effect(Effect::NavigateOpened {
+        tab,
+        verse: Some(native),
+        key: None,
+    });
+    Ok(json!({ "tab": tab.0, "verse": native.osis() }))
+}
 
 fn run_from_box(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let text = p.str("text").unwrap_or_default().trim().to_string();

@@ -820,8 +820,9 @@ fn every_shell_scenario_shows_its_feature_and_measures_it() {
         assert!(settle < bench::SETTLE_LIMIT, "{r:?}");
         assert!(r.sync_layout_p50_ms >= 3.0, "{r:?}");
         assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
-        // The Text size scenarios (#299) also time each press in milliseconds, for the gate.
-        let timed = r.name.starts_with("text-size");
+        // The Text size scenarios (#299, #292) also time each change in milliseconds, for the
+        // gate, and the Search preview (#295) each query until its hits show.
+        let timed = r.name.contains("text-size") || r.name == "search-preview";
         assert_eq!(r.action_ms_max.is_some(), timed, "{r:?}");
     }
 }
@@ -975,8 +976,9 @@ fn selecting_mixed_hebrew_and_ltr_text_highlights_the_right_glyphs() {
         granularity: Granularity::Grapheme,
     };
     let rects = selection_rects(&view, &sel, 600.0);
-    // Right-to-left with a left-to-right island: the highlight breaks into several pieces.
-    assert!(rects.len() >= 3, "{rects:?}");
+    // Right-to-left with a left-to-right island: the selected pieces of the three runs meet
+    // on screen, so they are one band (#305), not a band a word.
+    assert_eq!(rects.len(), 1, "{rects:?}");
     // Every cluster is highlighted exactly when its source byte is selected.
     let mut checked = 0;
     for (index, top, laid) in view.laid_in_view(600.0) {

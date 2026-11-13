@@ -91,17 +91,17 @@ impl fmt::Display for ReferenceErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ReferenceErrorKind::*;
         match self {
-            Empty => f.write_str("no reference given"),
-            UnexpectedChar(c) => write!(f, "unexpected `{c}`"),
-            UnexpectedToken => f.write_str("expected `;` or `,` between references"),
-            NumberTooLarge => f.write_str("number is too large"),
-            UnknownBook(t) => write!(f, "unknown book `{t}`"),
+            Empty => f.write_str("No reference given"),
+            UnexpectedChar(c) => write!(f, "Unexpected “{c}”"),
+            UnexpectedToken => f.write_str("Expected “;” or “,” between references"),
+            NumberTooLarge => f.write_str("Number is too large"),
+            UnknownBook(t) => write!(f, "Unknown book “{t}”"),
             AmbiguousBook { text, candidates } => {
                 let names: Vec<&str> = candidates.iter().map(|b| b.name()).collect();
-                write!(f, "`{text}` could be {}", names.join(" or "))
+                write!(f, "“{text}” could be {}", names.join(" or "))
             }
-            MissingBook => f.write_str("no book given"),
-            MissingNumber => f.write_str("expected a chapter or verse number"),
+            MissingBook => f.write_str("No book given"),
+            MissingNumber => f.write_str("Expected a chapter or verse number"),
             BookNotInVersification(b) => write!(f, "{b} is not in this Bible"),
             ChapterOutOfRange {
                 book,
@@ -121,7 +121,7 @@ impl fmt::Display for ReferenceErrorKind {
                 "{book} {chapter}:{verse} does not exist ({book} {chapter} has {last} verses)"
             ),
             NoTitle { book, chapter } => write!(f, "{book} {chapter} has no title"),
-            Reversed => f.write_str("the range ends before it starts"),
+            Reversed => f.write_str("The range ends before it starts"),
         }
     }
 }

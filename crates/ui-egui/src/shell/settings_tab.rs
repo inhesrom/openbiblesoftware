@@ -13,7 +13,7 @@ use super::State;
 use super::library_tab::section;
 use crate::icons::{self, Icon};
 use crate::theme;
-use crate::tokens::space;
+use crate::tokens::{size, space};
 
 /// A command a row asked for.
 type Run = Option<(&'static str, Value)>;
@@ -125,7 +125,9 @@ impl State {
         let mut run = None;
         let is_default = self.session.setting_is_default(setting.id);
         ui.add_space(space::M);
-        ui.horizontal(|ui| {
+        // Every row wraps within the Tab: one wider than a side Panel would widen the whole
+        // page, and cut every row after it at the Panel's edge (#303).
+        ui.horizontal_wrapped(|ui| {
             match setting.kind {
                 SettingKind::Toggle {
                     command,
@@ -150,8 +152,13 @@ impl State {
                 }
             }
             if let Some(is_default) = is_default {
-                let r = crate::components::link_enabled(ui, !is_default, "Reset")
-                    .accessible_name(format!("Reset {}", setting.label))
+                // A list of Resources' own sizes, each with its Reset: this resets them all.
+                let reset = match setting.kind {
+                    SettingKind::ResourceTextSizes => "Reset all",
+                    _ => "Reset",
+                };
+                let r = crate::components::link_enabled(ui, !is_default, reset)
+                    .accessible_name(format!("{reset} {}", setting.label))
                     .on_hover_text("Back to the default")
                     .on_disabled_hover_text("Already the default");
                 if r.clicked() {
@@ -173,8 +180,7 @@ impl State {
                 let (choices, current) = obs_engine::choices(&self.session, command);
                 ui.horizontal_wrapped(|ui| {
                     for (id, label) in choices {
-                        let r = ui
-                            .radio(id == current, label)
+                        let r = crate::components::radio(ui, id == current, label)
                             .accessible_name(format!("{}: {label}", setting.label));
                         if r.clicked() && id != current {
                             run = Some((command, json!({ "value": id })));
@@ -223,8 +229,56 @@ impl State {
                     }
                 });
             }
+            SettingKind::ScrollSpeed => {
+                use obs_engine::appearance::{SCROLL_SPEED_MAX, SCROLL_SPEED_MIN};
+                let before = self.session.appearance.scroll_speed;
+                let mut speed = before;
+                // Logarithmic, so 1× sits in the middle of 0.25× and 4×. Scrolling this Tab
+                // uses a new speed from the next frame: its own live preview.
+                ui.scope(|ui| {
+                    // egui paints the rail in the field colour, which is the Tab's own: draw
+                    // it in the rule colour so the track shows in every theme.
+                    ui.visuals_mut().widgets.inactive.bg_fill = theme::c().rule;
+                    ui.spacing_mut().slider_width = size::FIELD;
+                    ui.add(
+                        egui::Slider::new(&mut speed, SCROLL_SPEED_MIN..=SCROLL_SPEED_MAX)
+                            .logarithmic(true)
+                            .custom_formatter(|v, _| obs_engine::appearance::scroll_speed_label(v))
+                            .custom_parser(|t| {
+                                t.trim().trim_end_matches(['×', 'x']).trim().parse().ok()
+                            }),
+                    )
+                    .accessible_name(setting.label);
+                });
+                if speed != before {
+                    run = Some(("view.scroll_speed", json!({ "value": f64::from(speed) })));
+                }
+            }
+            SettingKind::ResourceTextSizes => {
+                let own: Vec<(String, f32)> = (self.session.resource_text_sizes().iter())
+                    .map(|(id, size)| (id.to_string(), size))
+                    .collect();
+                // None: the help line says the others follow the Text size.
+                for (id, size) in own {
+                    let name = self.session.text_size_name(&id);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            RichText::new(format!("{name} — {size:.0} pt")).color(theme::c().ink),
+                        );
+                        let r = crate::components::link(ui, "Reset")
+                            .accessible_name(format!("Reset the Text size of {name}"))
+                            .on_hover_text(format!("{name} follows the Text size again"));
+                        if r.clicked() {
+                            run = Some((
+                                "settings.reset",
+                                json!({ "setting": setting.id, "resource": id }),
+                            ));
+                        }
+                    });
+                }
+            }
             SettingKind::Font(slot) => {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(font_name(&self.session, slot)).color(theme::c().ink));
                     if ui
                         .button("Choose…")
@@ -268,7 +322,7 @@ impl State {
                 } else {
                     format!("Hidden: {}", hidden.join(", "))
                 };
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     muted(ui, &text);
                     if ui.button("Open Home").clicked() {
                         run = Some(("home.open", json!({})));
@@ -293,7 +347,7 @@ impl State {
                 let shown: Vec<&str> = (self.session.toolbar.shown().into_iter())
                     .map(obs_engine::Launcher::title)
                     .collect();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let text = if shown.is_empty() {
                         "None shown".to_string()
                     } else {
@@ -349,7 +403,7 @@ impl State {
         let mut run = None;
         let enabled = self.session.is_enabled(command);
         if asks && self.settings_ui.confirming == Some(setting.id) {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.colored_label(
                     theme::c().warn,
                     format!("{}? This cannot be undone.", setting.label),
@@ -375,7 +429,8 @@ impl State {
                 .map_or(setting.label, |c| c.label)
                 .to_string()
         };
-        ui.horizontal(|ui| {
+        // What it does wraps beside its button, within the Tab (#303).
+        ui.horizontal_top(|ui| {
             let r = ui
                 .add_enabled(enabled, crate::components::button(label))
                 .on_disabled_hover_text("Nothing to do now");
@@ -386,7 +441,7 @@ impl State {
                     run = Some((command, json!({})));
                 }
             }
-            muted(ui, setting.help);
+            ui.add(egui::Label::new(RichText::new(setting.help).color(theme::c().muted)).wrap());
         });
         run
     }

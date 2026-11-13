@@ -105,8 +105,8 @@ the Workspace snapshot, so loading a Layout never moves the toolbar.
 |---|---|---|---|
 | Top (default) | in the menu bar, after the app's name | icons and labels (or as customized) | under its button |
 | Bottom | a bar along the window's bottom | icons and labels (or as customized) | over its button |
-| Left | a column at the left, under the menu bar | icons only, labels in the tooltips | to its right |
-| Right | a column at the right, under the menu bar | icons only, labels in the tooltips | to its left |
+| Left | a column at the left, under the menu bar | Collapsed: icons only, labels in the tooltips; Expanded: icon, label and detail line | to its right |
+| Right | a column at the right, under the menu bar | Collapsed: icons only, labels in the tooltips; Expanded: icon, label and detail line | to its left |
 
 The menu bar keeps the app's name, View, Help, Home (#178), Today's reading and the Command box wherever the
 Launchers are, so View → Toolbar position is always reachable.
@@ -115,8 +115,8 @@ Ways to change it:
 
 - **View → Toolbar position ▸ Top / Bottom / Left / Right** (`view.toolbar_position {value}`).
   From the keyboard: Tab to View, Enter, Tab to Toolbar position, Enter, Tab to the edge, Enter.
-- **Right-click the toolbar** (a Launcher, the grip or the bar between them): Position ▸,
-  Auto-hide, Customize….
+- **Right-click the toolbar** (a Launcher, the grip, the pop-out control or the bar between
+  them): Position ▸, Expanded and Collapsed (Left and Right only), Auto-hide, Customize….
 - **Drag the grip** (the dots at the toolbar's start): the window edge nearest the pointer is
   marked while dragging; letting go moves the toolbar there. The grip is not a Tab stop.
 - **View → Auto-hide toolbar** (`view.toolbar_auto_hide`): the Launchers leave their place and
@@ -126,7 +126,8 @@ Ways to change it:
 - **View → Customize toolbar…** (`view.toolbar_customize`): a checkbox per Launcher to show or
   hide it (`toolbar.show_launcher`), Move up / Move down to order them
   (`toolbar.move_launcher`), Buttons show: Icons and labels, Icons only, Labels only
-  (`toolbar.labels`), Position, Auto-hide, and Reset (`toolbar.reset`).
+  (`toolbar.labels`), At the left or right: Collapsed or Expanded (`view.toolbar_expanded`),
+  Position, Auto-hide, and Reset (`toolbar.reset`).
 
 A hidden Launcher keeps its shortcut (Alt+L, Alt+G, Alt+T, Alt+Y) and is listed by Help → List
 commands; the Command box suggests it by name ("Guides launcher", or just "guides"). Its pane
@@ -137,11 +138,44 @@ menus and the Command box at the Top; the window's height at Left and Right) go 
 button at the toolbar's end, in toolbar order; choosing one there drops its pane down from ».
 Nothing is clipped.
 
+## Expanded and Collapsed (#291)
+
+At the Left and Right the toolbar is **Collapsed** (icons only, the labels in the tooltips,
+as above) or **Expanded**: a wider column where each Launcher's row shows its icon, its label
+and beside it, muted, a detail line: its shortcut as the platform writes it and its status
+("Library ⌥L · 2 updates" on macOS; the Collapsed column shows the count as a badge on the
+icon). The rows are as tall as the Collapsed buttons, so the pop-out control stays under the
+pointer: clicking it again at once undoes the click. Top and Bottom are unchanged and ignore
+the choice.
+
+- **The pop-out control** is the last button of a side toolbar, after the Launchers and the »
+  button: one click flips Collapsed ↔ Expanded. Its double chevron points the way the
+  toolbar's inner edge moves: » on the Left and « on the Right while Collapsed, the other way
+  (with the word "Collapse") while Expanded. It is a Tab stop: F6 puts the keyboard on the
+  first Launcher (or onto the control itself when every Launcher is hidden), Tab reaches the
+  control, and Enter or Space flips it. Its accessible name
+  states the state ("Expand toolbar (now collapsed)", "Collapse toolbar (now expanded)") and it
+  reads as a toggle that is on while Expanded.
+- **Elsewhere:** right-click the toolbar (Expanded, Collapsed), Customize toolbar… (At the left
+  or right), Settings → Toolbar → Expanded toolbar, and the Command box ("Expanded toolbar"),
+  all running `view.toolbar_expanded` (`{on: true|false}`; without `on` it flips). Its
+  Keyboard shortcut is Ctrl+Shift+B (⇧⌘B on macOS). Hovering never expands it.
+- **Width:** fixed, not resizable: as wide as the widest row (label, detail line and the
+  pop-out control's "Collapse") at the current Interface size, up to a maximum (a 180-point
+  text column, `toolbar_look::expanded_width`); longer text ends in "…".
+- **Room:** the Expanded column pushes the Workspace over, and panes open beside the wider
+  column, also when chosen from » or for a hidden Launcher (`pane_anchor` spans the column's
+  width at Left and Right). With Auto-hide it is drawn over the Workspace like the Collapsed one. A short window
+  moves the Launchers it has no room for into », as Collapsed; the pop-out control always keeps
+  its place at the end.
+- Expanded is the `expanded` field of the `toolbar` preference, kept across launches and never
+  part of a Layout.
+
 ## Restyling
 
 The look lives in one file, `crates/ui-egui/src/shell/toolbar_look.rs`: sizes, the colour
 roles (taken from the chrome theme, so Light and Dark follow), the launcher button (icons,
-labels or both), the grip, the » button, the docked bar's frame and the drop-edge mark, the four
+labels or both), the Expanded rows and the pop-out control (#291), the grip, the » button, the docked bar's frame and the drop-edge mark, the four
 icons (our own line drawings: three books on a shelf, a compass, a two-by-two grid, a tiled
 window), rows, headings, footer links, Layout cards and thumbnails, and the drag ghost and drop
 target. `toolbar.rs` only decides what is listed and what happens.
@@ -156,7 +190,11 @@ Rendered headlessly by `toolbar_tests::previews` (`UPDATE_PREVIEWS=1`), light an
 
 Positions and customization (#141), by `toolbar_position_tests` (`UPDATE_PREVIEWS=1`):
 `docs/previews/toolbar-{bottom,left,right}.png` (each with the Library pane open),
+`toolbar-{left,right}-expanded-{light,dark}.png` (Expanded, #291, the Library pane open),
 `toolbar-view-menu.png`, `toolbar-customize.png` and `toolbar-overflow.png` (a 760-point window).
 The real app (macOS, `OBS_SCRIPT` with `view.toolbar_position` then `toolbar.library`,
 `toolbar.layouts` or `toolbar.guides`): `toolbar-real-left.png`, `toolbar-real-bottom-dark.png`,
-`toolbar-real-right.png`.
+`toolbar-real-right.png`; Expanded (#291, then `view.toolbar_expanded`):
+`toolbar-real-left-expanded.png`, `toolbar-real-right-expanded-dark.png`, and
+`toolbar-real-left-expanded-restart-shortcut.png` (a relaunch keeps it Expanded; ⇧⌘B collapses
+it).

@@ -21,6 +21,9 @@ use obs_scripture::Verse;
 
 const SCROLLBAR: f32 = size::SCROLLBAR;
 
+/// How far an arrow key scrolls a reading pane at a Scroll speed of 1×, in points.
+pub(crate) const ARROW_STEP: f32 = 40.0;
+
 /// GPU memory the atlas's textures may take at once, as a frame is painted: #19's text GPU
 /// budget (`max_text_gpu_mib` in `xtask/bench.toml`).
 pub const TEXT_GPU_BUDGET: usize = 32 * 1024 * 1024;
@@ -514,6 +517,13 @@ pub fn reading_pane(
         }
     });
     view.set_width(text_rect.width());
+    // The text makes room for each Note marker at its Note's end (#305).
+    view.set_note_ends(
+        (marks.iter())
+            .filter(|m| m.kind == MarkKind::Note)
+            .map(|m| m.end)
+            .collect(),
+    );
     view.text_origin = [text_rect.left(), rect.top()];
     view.pane_rect = [rect.left(), rect.top(), rect.right(), rect.bottom()];
     view.set_clock(ui.input(|i| i.time));
@@ -537,6 +547,8 @@ pub fn reading_pane(
         let footnote_focused = footnote_widget_focused(ui.ctx());
         // A key's scroll eases to its place (#225), unless motion is reduced.
         let (shown, at) = (view.shown_position(), view.position().0);
+        // An arrow key's step follows the Scroll speed (#293); a page is a page.
+        let arrow = ARROW_STEP * crate::motion::scroll_speed(ui.ctx());
         ui.input(|i| {
             if i.key_pressed(egui::Key::PageDown)
                 || (i.key_pressed(egui::Key::Space) && !footnote_focused)
@@ -547,10 +559,10 @@ pub fn reading_pane(
                 view.scroll_by(-page);
             }
             if i.key_pressed(egui::Key::ArrowDown) {
-                view.scroll_by(40.0);
+                view.scroll_by(arrow);
             }
             if i.key_pressed(egui::Key::ArrowUp) {
-                view.scroll_by(-40.0);
+                view.scroll_by(-arrow);
             }
         });
         if view.position().0 != at && !crate::motion::reduced(ui.ctx()) {
@@ -1154,8 +1166,8 @@ fn text_band([x0, y0, x1, y1]: [f32; 4], size: f32) -> [f32; 4] {
 }
 
 /// Where a Note's marker goes, relative to the text's left edge and the viewport top: just
-/// past the end of its range (to the left of it in right-to-left text), raised like a
-/// superscript. `None` while the range's end is not laid out in view.
+/// past the end of its range (to the left of it in right-to-left text), in the room the text
+/// leaves there for it ([`ReadingView::set_note_ends`]), raised like a superscript. `None` while the range's end is not laid out in view.
 fn note_marker(
     view: &ReadingView,
     in_view: &[usize],

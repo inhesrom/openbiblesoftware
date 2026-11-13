@@ -12,7 +12,7 @@ use obs_engine::{Library, TabId};
 use super::*;
 
 /// Removes the fixture folder (after the Harness, which may hold files open, is dropped).
-struct Files(PathBuf);
+pub(super) struct Files(PathBuf);
 
 impl Drop for Files {
     fn drop(&mut self) {
@@ -21,7 +21,7 @@ impl Drop for Files {
 }
 
 /// Run queued engine jobs (Inline mode) and draw until nothing is pending.
-fn settle(h: &mut Harness) {
+pub(super) fn settle(h: &mut Harness) {
     for _ in 0..2000 {
         h.shell.st.session.jobs().pump(16);
         h.frame();
@@ -47,7 +47,7 @@ fn settle(h: &mut Harness) {
 
 /// The Harness with a library of real `.obr` files (KJV, WEB, a long Psalm and TAHOT) whose
 /// Search indexes are built.
-fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
+pub(super) fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
     harness_of(
         name,
         &[
@@ -61,7 +61,7 @@ fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
 
 /// The Harness with a library of `resources` (in this Preferred order) written as real
 /// `.obr` files, their Search indexes built.
-fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files) {
+pub(super) fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files) {
     let root = std::env::temp_dir().join(format!("obs-ui-search-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let files = Files(root.clone());
@@ -83,7 +83,7 @@ fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files)
 }
 
 /// KJV, two Commentaries (TCC ★, TC2), a Lexicon (TLX) and a Dictionary (TBD).
-fn library_harness(name: &str) -> (Harness, Files) {
+pub(super) fn library_harness(name: &str) -> (Harness, Files) {
     use obs_engine::testing::study;
     harness_of(
         name,
@@ -97,7 +97,7 @@ fn library_harness(name: &str) -> (Harness, Files) {
     )
 }
 
-fn search_tab(h: &Harness) -> TabId {
+pub(super) fn search_tab(h: &Harness) -> TabId {
     h.shell
         .st
         .session
@@ -136,7 +136,7 @@ fn rects_of(h: &Harness, color: egui::Color32) -> Vec<Rect> {
 }
 
 /// Open the Search Tool, type `query` into its box and press Enter.
-fn type_query(h: &mut Harness, query: &str) {
+pub(super) fn type_query(h: &mut Harness, query: &str) {
     type_query_in(h, obs_engine::SearchMode::Bible, query);
 }
 
@@ -155,7 +155,7 @@ fn switch_mode(h: &mut Harness, label: &str) {
 }
 
 /// [`type_query`] in a mode (switched to with the switch if the Tab is in another one).
-fn type_query_in(h: &mut Harness, mode: obs_engine::SearchMode, query: &str) {
+pub(super) fn type_query_in(h: &mut Harness, mode: obs_engine::SearchMode, query: &str) {
     if !h
         .shell
         .st
@@ -316,6 +316,53 @@ fn query_errors_show_inline_under_the_box() {
             .is_some(),
         "{:?}",
         h.texts()
+    );
+    drop(h);
+    drop(files);
+}
+
+/// The Search Tab shows the reference, query and Morphology parsers' errors in one style
+/// (#308): sentence case, what was typed in curly quotes once, no backticks.
+#[test]
+fn search_errors_under_the_box_share_one_style() {
+    let (mut h, files) = harness("error-style", 3);
+    type_query(&mut h, "@aorst");
+    h.frames(2);
+    let morph = "“aorst” is not Morphology (try verb, aorist, imperative, genitive or Qal)";
+    assert!(h.find(morph).is_some(), "{:?}", h.texts());
+    let tab = search_tab(&h);
+    for (params, message) in [
+        (
+            json!({ "tab": tab.0, "text": "love", "scope": "Foo 3" }),
+            "Unknown book “Foo”",
+        ),
+        (
+            json!({ "tab": tab.0, "text": "", "scope": "" }),
+            "Type something to search for",
+        ),
+    ] {
+        h.shell.run("search.run", &params);
+        h.frames(2);
+        assert!(h.find(message).is_some(), "{message}: {:?}", h.texts());
+    }
+    let error = obs_engine::InlineError {
+        field: obs_engine::ErrorField::Query,
+        message: morph.into(),
+        span: Some(0..6),
+    };
+    assert_eq!(
+        super::super::search_tab::inline_error_text(&error, "@aorst"),
+        morph,
+        "a message that quotes what was typed is not followed by it again"
+    );
+    let error = obs_engine::InlineError {
+        message: "Expected a chapter or verse number".into(),
+        span: Some(0..4),
+        ..error
+    };
+    assert_eq!(
+        super::super::search_tab::inline_error_text(&error, "Rom:"),
+        "Expected a chapter or verse number (“Rom:”)"
     );
     drop(h);
     drop(files);

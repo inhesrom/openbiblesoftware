@@ -195,6 +195,127 @@ pub(super) fn launcher_button(
     resp
 }
 
+/// The widest an Expanded side Toolbar's text gets; longer text ends in "…".
+const EXPANDED_TEXT_MAX: f32 = size::FIELD;
+/// Between an Expanded row's label and its detail.
+const DETAIL_GAP: f32 = space::S;
+
+/// How wide the text of an Expanded row is: its label and, beside it, its detail, at most
+/// [`EXPANDED_TEXT_MAX`].
+pub(super) fn expanded_text_width(ui: &Ui, label: &str, detail: &str) -> f32 {
+    let width = |text: &str, font: FontId| {
+        (ui.painter())
+            .layout_no_wrap(text.to_string(), font, Color32::PLACEHOLDER)
+            .size()
+            .x
+    };
+    let detail = if detail.is_empty() {
+        0.0
+    } else {
+        DETAIL_GAP + width(detail, small_font())
+    };
+    (width(label, label_font()) + detail).min(EXPANDED_TEXT_MAX)
+}
+
+/// The width of an Expanded side Toolbar's rows, for its widest `text`: the icon, the text and
+/// the padding.
+pub(super) fn expanded_width(text: f32) -> f32 {
+    BUTTON_PAD * 2.0 + ICON + ICON_GAP + text.min(EXPANDED_TEXT_MAX)
+}
+
+/// Draw a Launcher's row on an Expanded side Toolbar, `width` wide and as tall as a button, so
+/// the pop-out control stays where it was: its icon, its label and beside it, muted, its
+/// detail (shortcut and status), ending in "…" when too long.
+pub(super) fn expanded_launcher(
+    ui: &mut Ui,
+    which: Launcher,
+    open: bool,
+    width: f32,
+    detail: &str,
+) -> Response {
+    let lk = look();
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, BUTTON_HEIGHT), Sense::click());
+    let p = ui.painter();
+    if open {
+        crate::components::selected_row(p, rect, RADIUS);
+    } else if resp.hovered() {
+        p.rect_filled(rect, RADIUS, lk.hover);
+    }
+    if resp.has_focus() {
+        p.rect_stroke(
+            rect,
+            RADIUS,
+            Stroke::new(stroke::MEDIUM, lk.accent),
+            StrokeKind::Inside,
+        );
+    }
+    let x = rect.left() + BUTTON_PAD;
+    let icon = Rect::from_center_size(pos2(x + ICON / 2.0, rect.center().y), vec2(ICON, ICON));
+    paint_icon(p, which, icon, &lk);
+    let left = icon.right() + ICON_GAP;
+    let room = rect.right() - BUTTON_PAD - left;
+    let color = if open { lk.accent } else { lk.ink };
+    let label = crate::components::elided(p, which.title(), label_font(), color, room);
+    let after = left + label.size().x + DETAIL_GAP;
+    p.galley(
+        pos2(left, rect.center().y - label.size().y / 2.0),
+        label,
+        color,
+    );
+    let rest = rect.right() - BUTTON_PAD - after;
+    if !detail.is_empty() && rest > 0.0 {
+        let line = crate::components::elided(p, detail, small_font(), lk.muted, rest);
+        p.galley(
+            pos2(after, rect.center().y - line.size().y / 2.0),
+            line,
+            lk.muted,
+        );
+    }
+    resp
+}
+
+/// The pop-out control at a side Toolbar's end (#291): a double chevron pointing the way the
+/// toolbar's inner edge moves. Collapsed it is a square like the » button; Expanded it is a row
+/// `width` wide with `label` beside the chevron.
+pub(super) fn pop_out_button(ui: &mut Ui, icon: Icon, label: Option<&str>, width: f32) -> Response {
+    let lk = look();
+    let size = match label {
+        Some(_) => vec2(width, BUTTON_HEIGHT),
+        None => overflow_size(),
+    };
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(rect, RADIUS, lk.hover);
+    }
+    if resp.has_focus() {
+        p.rect_stroke(
+            rect,
+            RADIUS,
+            Stroke::new(stroke::MEDIUM, lk.accent),
+            StrokeKind::Inside,
+        );
+    }
+    let square = Rect::from_min_size(rect.min, overflow_size());
+    icons::paint(p, icon, square, icons::LARGE, lk.accent);
+    if let Some(label) = label {
+        let left = square.right() - BUTTON_PAD + ICON_GAP;
+        let text = crate::components::elided(
+            p,
+            label,
+            label_font(),
+            lk.muted,
+            rect.right() - BUTTON_PAD - left,
+        );
+        p.galley(
+            pos2(left, rect.center().y - text.size().y / 2.0),
+            text,
+            lk.muted,
+        );
+    }
+    resp
+}
+
 const BAR_MARGIN: f32 = space::S;
 
 /// How thick a toolbar is across, with its frame: a launcher button (icons only when
@@ -205,6 +326,11 @@ pub(super) fn bar_thickness(vertical: bool) -> f32 {
     } else {
         BUTTON_HEIGHT
     };
+    bar_thickness_around(button)
+}
+
+/// How thick a toolbar is across, with its frame, around buttons `button` thick.
+pub(super) fn bar_thickness_around(button: f32) -> f32 {
     button + 2.0 * BAR_MARGIN + space::XXS
 }
 /// The grip's length along the toolbar.
@@ -339,12 +465,12 @@ pub(super) fn resource_row(ui: &Ui, rect: Rect, chip: Option<&str>, title: &str,
     );
     match chip {
         Some(abbreviation) => {
-            let chip_text = elided(
+            let chip_text = crate::components::elided(
                 p,
-                abbreviation.to_string(),
+                abbreviation,
                 FontId::proportional(text::SMALL),
-                chip_w - 2.0 * BADGE_PAD,
                 lk.accent,
+                chip_w - 2.0 * BADGE_PAD,
             );
             p.galley(
                 pos2(
@@ -530,12 +656,12 @@ pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Lo
             } else {
                 title.clone()
             };
-            let galley = elided(
+            let galley = crate::components::elided(
                 p,
                 text,
                 FontId::proportional(text::CAPTION),
-                r.width() - space::S,
                 if dim { lk.muted } else { lk.ink },
+                r.width() - space::S,
             );
             let at = r.center() - galley.size() / 2.0;
             p.with_clip_rect(r.shrink(space::PX))
@@ -559,19 +685,6 @@ pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Lo
             }
         }
     }
-}
-
-/// `text` on one line at most `width` wide, ending in "…" when it does not fit.
-fn elided(
-    p: &Painter,
-    text: String,
-    font: FontId,
-    width: f32,
-    color: Color32,
-) -> std::sync::Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::simple_singleline(text, font, color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));
-    p.layout_job(job)
 }
 
 /// A small text link inside a Layout card ("Rename", "Delete").

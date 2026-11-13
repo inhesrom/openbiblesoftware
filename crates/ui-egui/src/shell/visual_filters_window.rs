@@ -227,8 +227,7 @@ fn filter_rows(
                         .on_hover_text(what);
                 });
                 let mut all = f.all_tabs;
-                if ui
-                    .checkbox(&mut all, "All Tabs")
+                if crate::components::toggle(ui, &mut all, "All Tabs")
                     .on_hover_text("On in every Tab, unless a Tab switches it off")
                     .accessible_name(format!("{} on in all Tabs", f.name))
                     .changed()
@@ -345,7 +344,7 @@ fn form_ui(
             });
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut form.all_tabs, "On in all Tabs")
+            crate::components::toggle(ui, &mut form.all_tabs, "On in all Tabs")
                 .on_hover_text("Otherwise it shows in the Tabs whose Filters menu switches it on");
             ui.end_row();
         });
@@ -408,8 +407,7 @@ impl State {
                     ui.allocate_exact_size(vec2(size::ICON_LARGE, size::ICON), Sense::hover());
                 paint_swatch(ui, rect, &f.appearance(), &palette, false);
                 let mut on = shown.contains(&f.id);
-                if ui
-                    .checkbox(&mut on, &f.name)
+                if crate::components::toggle(ui, &mut on, &f.name)
                     .on_hover_text(finds(f))
                     .changed()
                 {
@@ -417,6 +415,8 @@ impl State {
                         "tab.visual_filter",
                         json!({ "tab": tab.0, "id": f.id, "on": on }),
                     ));
+                    // Closes its menu, also in a Tab's ⋯ menu, which a click leaves open.
+                    ui.close();
                 }
             });
         }
