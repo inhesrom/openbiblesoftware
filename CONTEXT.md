@@ -150,7 +150,7 @@ A label of the user's own on a Resource, set in its About Tab (such as "older" o
 _Avoid_: Category, Keyword, Label (as the name)
 
 **Starter library**:
-The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library, which also lists each one and adds back any that are missing.
+The set of Resources bundled with the desktop installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library, which also lists each one and adds back any that are missing. The Mobile app carries only its Bundled set and downloads the rest from the same list.
 _Avoid_: Default library, Base package
 
 **Removed Starter Resource**:
@@ -633,7 +633,7 @@ An Annotation whose Text-range anchor could no longer be found after its Resourc
 _Avoid_: Broken note, Lost highlight
 
 **Needs attention**:
-The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted. It shows only when there are some.
+The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted, and of Sync conflicts. It shows only when there are some.
 _Avoid_: Broken links, Errors
 
 **Notes export**:
@@ -693,3 +693,44 @@ _Avoid_: Send feedback, Bug reporter, Crash reporter
 **Diagnostics zip**:
 One zip file for the user to attach to an email or a message: a README (app version, operating system, what the zip holds and does not hold), the Crash report being reviewed (when there is one) and the log files, with the home folder written as `~`; nothing else, so none of the user's Notes, Workspace or User database. Report a problem's Save report as zip… saves one with its Crash report; Help → Save diagnostics as zip… saves the log files only. Both list exactly what it will hold first, ask where to save it (Downloads, else Desktop, suggested), save those files as listed (lines logged meanwhile are not added) and then show it in the file manager. It is written whole before it gets its name and never replaces an existing file (a taken name gets ` (2)`); on a disk without hard links nothing is saved and the app says so. The app never sends it.
 _Avoid_: Support bundle, Diagnostics package, Log archive
+
+### Mobile
+
+**Mobile app**:
+The iOS app (Android later) for reading and lighter study: one reader at a time, the Study sheet, Annotations, Search and the lighter Guides, over the same Resources and the same kind of User database as the desktop app. It has no Workspace, Panels, Floating windows, Layouts or Link sets.
+_Avoid_: Phone app, Companion app, Lite
+
+**Study sheet**:
+What opens in the Mobile app when the user taps a word or a Verse: Word Info, the Verse's Cross-references with their text, its Notes and Highlights, and actions (Highlight, Note, Copy, Share, Passage Guide, Word Study, Search). A sheet from the bottom on a phone, a pane beside the text on a tablet.
+_Avoid_: Insights panel, Popup, Drawer, Word Info (that is one part of it)
+
+**Bundled set**:
+The Starter library Resources built into the Mobile app itself, so that it reads, searches and shows Cross-references with no download: the Berean Standard Bible, the OpenBible.info Cross-reference set and the two Strong's Lexicons. Every other Starter library Resource is downloaded.
+_Avoid_: Starter library (on mobile, that is the whole list), Built-in Bible, Base content
+
+**Study set**:
+The Starter library Resources the Mobile app offers to download together at first launch and in Library → Starter library, so that Word Info, Word Study and the Passage Guide's sections all work: the tagged Bibles (KJV with Strong's, Hebrew and Greek), the other Lexicons, the Dictionaries, a Commentary and the People & places data. Each can also be downloaded or removed on its own.
+_Avoid_: Starter pack, Bundle, Premium set
+
+**Split view**:
+The Mobile app's reader showing two Resources at once, stacked on a phone and side by side on a tablet. The second follows the first's Current location until the user navigates it on its own, and Follow joins it again.
+_Avoid_: Link set, Layout, Parallel Tabs, Dual pane
+
+### Sync
+
+**Sync folder**:
+A folder in the user's own cloud storage (iCloud Drive, Dropbox, OneDrive, Google Drive, Syncthing) that the user picks on each device to keep their study data in step. Each Synced device only adds files of its own there; the User database itself never goes in it (ADR 0022).
+_Avoid_: Cloud sync, Sync account, Vault, Shared database
+
+**Synced device**:
+One install of the app (desktop or Mobile app) that uses a Sync folder, with a name the user sees (such as "Ian's iPhone"). Restoring a Backup makes it a new Synced device.
+_Avoid_: Client, Peer, Replica
+
+**Synced data**:
+The part of the User database that Synced devices share: Notebooks, Annotations, Highlight styles and palettes, Reading plans, Favorites, Collections, Resource tags, Copy presets, Saved searches, Guide arrangements, Preferred order, Layouts and the study preferences listed as synced. History, the Last session, the Search history and display preferences stay on each device.
+_Avoid_: Cloud data, Account data
+
+**Sync conflict**:
+A Note whose text was changed on two Synced devices before either saw the other's change. Both versions are kept as two Notes on the same Anchor and listed in Needs attention until the user keeps one, combines them or keeps both.
+_Avoid_: Conflicted copy, Merge conflict, Duplicate
+
