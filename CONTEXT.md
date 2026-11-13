@@ -150,7 +150,7 @@ A label of the user's own on a Resource, set in its About Tab (such as "older" o
 _Avoid_: Category, Keyword, Label (as the name)
 
 **Starter library**:
-The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library, which also lists each one and adds back any that are missing.
+The set of Resources bundled with the desktop installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library, which also lists each one and adds back any that are missing. The Mobile app carries only its Bundled set and downloads the rest from the same list.
 _Avoid_: Default library, Base package
 
 **Removed Starter Resource**:
@@ -703,6 +703,14 @@ _Avoid_: Phone app, Companion app, Lite
 **Study sheet**:
 What opens in the Mobile app when the user taps a word or a Verse: Word Info, the Verse's Cross-references with their text, its Notes and Highlights, and actions (Highlight, Note, Copy, Share, Passage Guide, Word Study, Search). A sheet from the bottom on a phone, a pane beside the text on a tablet.
 _Avoid_: Insights panel, Popup, Drawer, Word Info (that is one part of it)
+
+**Bundled set**:
+The Starter library Resources built into the Mobile app itself, so that it reads, searches and shows Cross-references with no download: the Berean Standard Bible, the OpenBible.info Cross-reference set and the two Strong's Lexicons. Every other Starter library Resource is downloaded.
+_Avoid_: Starter library (on mobile, that is the whole list), Built-in Bible, Base content
+
+**Study set**:
+The Starter library Resources the Mobile app offers to download together at first launch and in Library → Starter library, so that Word Info, Word Study and the Passage Guide's sections all work: the tagged Bibles (KJV with Strong's, Hebrew and Greek), the other Lexicons, the Dictionaries, a Commentary and the People & places data. Each can also be downloaded or removed on its own.
+_Avoid_: Starter pack, Bundle, Premium set
 
 **Split view**:
 The Mobile app's reader showing two Resources at once, stacked on a phone and side by side on a tablet. The second follows the first's Current location until the user navigates it on its own, and Follow joins it again.
