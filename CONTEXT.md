@@ -693,3 +693,17 @@ _Avoid_: Send feedback, Bug reporter, Crash reporter
 **Diagnostics zip**:
 One zip file for the user to attach to an email or a message: a README (app version, operating system, what the zip holds and does not hold), the Crash report being reviewed (when there is one) and the log files, with the home folder written as `~`; nothing else, so none of the user's Notes, Workspace or User database. Report a problem's Save report as zip… saves one with its Crash report; Help → Save diagnostics as zip… saves the log files only. Both list exactly what it will hold first, ask where to save it (Downloads, else Desktop, suggested), save those files as listed (lines logged meanwhile are not added) and then show it in the file manager. It is written whole before it gets its name and never replaces an existing file (a taken name gets ` (2)`); on a disk without hard links nothing is saved and the app says so. The app never sends it.
 _Avoid_: Support bundle, Diagnostics package, Log archive
+
+### Mobile
+
+**Mobile app**:
+The iOS app (Android later) for reading and lighter study: one reader at a time, the Study sheet, Annotations, Search and the lighter Guides, over the same Resources and the same kind of User database as the desktop app. It has no Workspace, Panels, Floating windows, Layouts or Link sets.
+_Avoid_: Phone app, Companion app, Lite
+
+**Study sheet**:
+What opens in the Mobile app when the user taps a word or a Verse: Word Info, the Verse's Cross-references with their text, its Notes and Highlights, and actions (Highlight, Note, Copy, Share, Passage Guide, Word Study, Search). A sheet from the bottom on a phone, a pane beside the text on a tablet.
+_Avoid_: Insights panel, Popup, Drawer, Word Info (that is one part of it)
+
+**Split view**:
+The Mobile app's reader showing two Resources at once, stacked on a phone and side by side on a tablet. The second follows the first's Current location until the user navigates it on its own, and Follow joins it again.
+_Avoid_: Link set, Layout, Parallel Tabs, Dual pane
