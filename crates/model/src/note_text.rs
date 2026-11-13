@@ -330,11 +330,11 @@ impl Builder<'_> {
                     .rev()
                     .find(|&i| !self.lines[i].text.is_empty() || i == first)
                     .unwrap_or(first);
-                for i in first..=last {
-                    let from = if i == first { at } else { 0 };
-                    let to = self.lines[i].text.len();
+                for (i, line) in self.lines[first..=last].iter_mut().enumerate() {
+                    let from = if i == 0 { at } else { 0 };
+                    let to = line.text.len();
                     if from < to {
-                        self.lines[i].marks.push(NoteMark {
+                        line.marks.push(NoteMark {
                             range: from..to,
                             kind: kind.clone(),
                             source: source.clone(),

@@ -197,8 +197,8 @@ impl InterlinearSource {
         if a >= b {
             return rows;
         }
-        for u in a.unit..=b.unit.min(doc.units.len().saturating_sub(1)) {
-            let unit = &doc.units[u];
+        let last = b.unit.min(doc.units.len().saturating_sub(1));
+        for (u, unit) in doc.units.iter().enumerate().take(last + 1).skip(a.unit) {
             let start = if u == a.unit { a.byte } else { 0 };
             let end = if u == b.unit { b.byte } else { usize::MAX };
             let whole = BlockSource {

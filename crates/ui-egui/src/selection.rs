@@ -104,8 +104,8 @@ pub fn word_at(doc: &ReadingDoc, p: DocPos) -> Range<usize> {
 pub fn selected_text(doc: &ReadingDoc, sel: &Selection) -> String {
     let (a, b) = sel.range(doc);
     let mut out = String::new();
-    for u in a.unit..=b.unit {
-        let text = &doc.units[u].text;
+    for (u, unit) in doc.units.iter().enumerate().take(b.unit + 1).skip(a.unit) {
+        let text = &unit.text;
         let start = if u == a.unit { a.byte } else { 0 };
         let end = if u == b.unit { b.byte } else { text.len() };
         if let Some(s) = text.get(start.min(end)..end.min(text.len())) {
