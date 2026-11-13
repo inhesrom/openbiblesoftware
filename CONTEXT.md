@@ -633,7 +633,7 @@ An Annotation whose Text-range anchor could no longer be found after its Resourc
 _Avoid_: Broken note, Lost highlight
 
 **Needs attention**:
-The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted. It shows only when there are some.
+The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted, and of Sync conflicts. It shows only when there are some.
 _Avoid_: Broken links, Errors
 
 **Notes export**:
@@ -707,3 +707,22 @@ _Avoid_: Insights panel, Popup, Drawer, Word Info (that is one part of it)
 **Split view**:
 The Mobile app's reader showing two Resources at once, stacked on a phone and side by side on a tablet. The second follows the first's Current location until the user navigates it on its own, and Follow joins it again.
 _Avoid_: Link set, Layout, Parallel Tabs, Dual pane
+
+### Sync
+
+**Sync folder**:
+A folder in the user's own cloud storage (iCloud Drive, Dropbox, OneDrive, Google Drive, Syncthing) that the user picks on each device to keep their study data in step. Each Synced device only adds files of its own there; the User database itself never goes in it (ADR 0022).
+_Avoid_: Cloud sync, Sync account, Vault, Shared database
+
+**Synced device**:
+One install of the app (desktop or Mobile app) that uses a Sync folder, with a name the user sees (such as "Ian's iPhone"). Restoring a Backup makes it a new Synced device.
+_Avoid_: Client, Peer, Replica
+
+**Synced data**:
+The part of the User database that Synced devices share: Notebooks, Annotations, Highlight styles and palettes, Reading plans, Favorites, Collections, Resource tags, Copy presets, Saved searches, Guide arrangements, Preferred order, Layouts and the study preferences listed as synced. History, the Last session, the Search history and display preferences stay on each device.
+_Avoid_: Cloud data, Account data
+
+**Sync conflict**:
+A Note whose text was changed on two Synced devices before either saw the other's change. Both versions are kept as two Notes on the same Anchor and listed in Needs attention until the user keeps one, combines them or keeps both.
+_Avoid_: Conflicted copy, Merge conflict, Duplicate
+
