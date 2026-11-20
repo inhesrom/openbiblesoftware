@@ -173,11 +173,12 @@ impl LibraryLauncherSection {
 }
 
 /// The Resource types in the order the Library lists them.
-pub(crate) const TYPE_ORDER: [ResourceType; 6] = [
+pub(crate) const TYPE_ORDER: [ResourceType; 7] = [
     ResourceType::Bible,
     ResourceType::Commentary,
     ResourceType::Lexicon,
     ResourceType::Dictionary,
+    ResourceType::Book,
     ResourceType::CrossReferenceSet,
     ResourceType::PeopleAndPlaces,
 ];
@@ -191,6 +192,7 @@ fn type_words(ty: ResourceType) -> &'static str {
         ResourceType::Dictionary => "dictionary dictionaries",
         ResourceType::CrossReferenceSet => "cross-reference cross reference set sets",
         ResourceType::PeopleAndPlaces => "people places index",
+        ResourceType::Book => "book books",
     }
 }
 

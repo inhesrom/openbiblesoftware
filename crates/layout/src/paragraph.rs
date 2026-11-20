@@ -26,6 +26,8 @@ pub enum InlineObject {
     /// end: the reading pane draws the Note marker in it, clear of the next word or verse
     /// number (#305).
     NoteRoom,
+    /// Where a printed page of a Book begins (ADR 0023): its label, small and raised.
+    PageNumber,
 }
 
 /// Where a run's text comes from.

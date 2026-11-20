@@ -284,6 +284,54 @@ fn spans_become_styled_runs() {
     )));
 }
 
+/// A Book's printed page (ADR 0023): `[p. 23]`, small and raised, where the page begins; the
+/// unit's own text is unchanged, so the label is never searched or quoted as its words.
+#[test]
+fn a_printed_page_is_drawn_as_a_small_label_where_it_begins() {
+    let text = "The words are certain, and so they continue.".to_string();
+    let at = find(&text, "and so").start;
+    let unit = TextUnit {
+        id: UnitId::new("div.1").unwrap(),
+        kind: UnitKind::Division,
+        title: None,
+        spans: vec![
+            span(
+                0..text.len(),
+                SpanKind::Para {
+                    style: ParaStyle::Prose,
+                },
+            ),
+            span(at..at, SpanKind::Page { label: "23".into() }),
+        ],
+        text,
+    };
+    let block = &unit_blocks(&unit)[0];
+    let p = block_paragraph(&unit, block, Direction::Ltr, &TextSettings::default());
+    let page = p
+        .runs
+        .iter()
+        .position(|r| {
+            matches!(
+                r.source,
+                RunSource::Object {
+                    object: InlineObject::PageNumber,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    assert_eq!(p.runs[page].text, "[p.\u{a0}23]\u{202f}");
+    assert!(p.runs[page].style.raise > 0.0);
+    assert_eq!(
+        p.runs[page].source,
+        RunSource::Object {
+            anchor: at,
+            object: InlineObject::PageNumber
+        }
+    );
+    assert!(p.runs[page + 1].text.starts_with("and so"));
+}
+
 fn snapshot(block: &LaidBlock) -> Value {
     let lines: Vec<Value> = block
         .lines

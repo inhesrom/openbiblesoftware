@@ -12,6 +12,8 @@ publish.workspace = true
 anyhow = "1"
 encoding_rs = "0.8"
 regex = "1"
+# Markdown books (ADR 0023): the same CommonMark parser Note text uses (ADR 0010).
+pulldown-cmark.workspace = true
 quick-xml = "0.41"
 html-escape = "0.2"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

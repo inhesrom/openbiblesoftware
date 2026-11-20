@@ -34,10 +34,11 @@ use crate::session::Session;
 use crate::workspace::{TabId, TabKind, Tool};
 
 /// The Resource types Library mode searches, in result order.
-pub const LIBRARY_TYPES: [ResourceType; 3] = [
+pub const LIBRARY_TYPES: [ResourceType; 4] = [
     ResourceType::Commentary,
     ResourceType::Lexicon,
     ResourceType::Dictionary,
+    ResourceType::Book,
 ];
 
 /// How much of a paragraph a result row shows, in bytes (about three lines).
@@ -52,6 +53,7 @@ pub fn type_id(ty: ResourceType) -> &'static str {
         ResourceType::Dictionary => "dictionary",
         ResourceType::CrossReferenceSet => "cross_reference_set",
         ResourceType::PeopleAndPlaces => "people_and_places",
+        ResourceType::Book => "book",
     }
 }
 
@@ -61,6 +63,7 @@ pub fn type_from_id(id: &str) -> Option<ResourceType> {
         "commentary" | "commentaries" => Some(ResourceType::Commentary),
         "lexicon" | "lexicons" => Some(ResourceType::Lexicon),
         "dictionary" | "dictionaries" => Some(ResourceType::Dictionary),
+        "book" | "books" => Some(ResourceType::Book),
         _ => None,
     }
 }
@@ -74,6 +77,7 @@ pub fn type_plural(ty: ResourceType) -> &'static str {
         ResourceType::Dictionary => "Dictionaries",
         ResourceType::CrossReferenceSet => "Cross-reference sets",
         ResourceType::PeopleAndPlaces => "People & places indexes",
+        ResourceType::Book => "Books",
     }
 }
 
@@ -101,7 +105,7 @@ pub struct LibraryScope {
 }
 
 impl Default for LibraryScope {
-    /// Every Commentary, Lexicon and Dictionary.
+    /// Every Commentary, Lexicon, Dictionary and Book.
     fn default() -> Self {
         Self {
             types: LIBRARY_TYPES.to_vec(),
@@ -143,8 +147,8 @@ impl LibraryScope {
             .any(|c| library.in_collection(c, id))
     }
 
-    /// The library Resources searched, in result order: Commentaries, Lexicons, then
-    /// Dictionaries, each in Preferred order.
+    /// The library Resources searched, in result order: Commentaries, Lexicons, Dictionaries,
+    /// then Books, each in Preferred order.
     pub fn resources(&self, library: &Library) -> Vec<String> {
         LIBRARY_TYPES
             .iter()

@@ -758,3 +758,65 @@ fn real_starter_contents_of_kjv_mhc_and_easton() {
     assert_eq!(easton.node(found[0]).label, "Abraham");
     assert!(took < std::time::Duration::from_millis(16), "{took:?}");
 }
+
+/// A Book's Divisions (ADR 0023): one line each, in order; the filter finds them; clicking one
+/// takes the Tab to the Division's start and moves no Link set.
+#[test]
+fn a_book_lists_its_divisions_and_a_line_opens_the_division() {
+    let division = |id: &str, title: &str| TextUnit {
+        kind: UnitKind::Division,
+        ..unit(id, title)
+    };
+    let note = TextUnit {
+        kind: UnitKind::Note,
+        ..unit("note.1", "A footnote")
+    };
+    let units = [
+        division("div.1", "Front matter"),
+        division("div.2", "Chapter I. Of mortification"),
+        note,
+        division("div.3", "Chapter II"),
+    ];
+    let c = Contents::build(
+        ResourceType::Book,
+        &[],
+        &units,
+        &ResourceNavigation::new(Vec::new()),
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        outline(&c),
+        ["Front matter", "Chapter I. Of mortification", "Chapter II"]
+    );
+    let line = c.at_unit(&UnitId::new("div.2").unwrap()).unwrap();
+    assert_eq!(c.filter("mortif"), [line]);
+
+    let mut s = Session::new(JobMode::Inline);
+    let bible = open(
+        &mut s,
+        "bible",
+        ResourceType::Bible,
+        vec![KeyScheme::Passage],
+        None,
+    );
+    let book = open(&mut s, "owen", ResourceType::Book, Vec::new(), None);
+    s.workspace.take_effects();
+    let target = c.node(line).target.clone().unwrap();
+    assert_eq!(target, ContentsTarget::Unit(UnitId::new("div.2").unwrap()));
+    contents::go(&mut s.workspace, book, &target);
+    let effects = s.workspace.take_effects();
+    assert!(
+        effects.contains(&Effect::NavigateText {
+            tab: book,
+            unit: UnitId::new("div.2").unwrap(),
+            range: 0..0,
+            key: None,
+        }),
+        "{effects:?}"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::Navigate { tab, .. } if *tab == bible))
+    );
+}

@@ -8,7 +8,7 @@ An offline desktop Bible study app for the serious lay student. Users read, comp
 
 **Bible book**:
 One book of the biblical canon, such as Genesis or John.
-_Avoid_: Book (unqualified)
+_Avoid_: Book (unqualified: a Book is a Resource type)
 
 **Verse**:
 One point in Scripture, given by Bible book, chapter and verse number in a particular Versification.
@@ -86,10 +86,10 @@ _Avoid_: Built-in lexicon, Strong's dictionary
 
 **Resource**:
 One item in the user's library: a text that can be imported and licensed on its own, with its own metadata. One Resource is one edition as shipped: a multi-volume set is one Resource, and differently tagged editions of the same text (e.g. KJV with and without Strong's) are separate Resources. Datasets that only tools read (cross-references, people/places) are Resources too.
-_Avoid_: Book, Module, Work, Title
+_Avoid_: Book (for a Resource of another type), Module, Work, Title
 
 **Resource type**:
-The kind of a Resource. There are six: Bible, Commentary, Lexicon, Dictionary, Cross-reference set, and People & places index. Language is a separate attribute, so a Hebrew or Greek original text is a Bible.
+The kind of a Resource. There are seven: Bible, Commentary, Lexicon, Dictionary, Cross-reference set, People & places index, and Book. Language is a separate attribute, so a Hebrew or Greek original text is a Bible.
 _Avoid_: Category, Genre, Original-language text (as a type)
 
 **Bible**:
@@ -108,8 +108,20 @@ A Resource of entries keyed by an English headword (a topic, person, place or th
 _Avoid_: Encyclopedia, Lexicon (for headword-keyed works)
 
 **Topical index**:
-A Dictionary whose entries are Passage lists: each headword's subtopics ("Of enemies", "Instances of") with the Passages that bear on them, and "See" references to other topics. Nave's Topical Bible and Torrey's Topical Textbook are the two; the Topic Guide reads them. It is a Dictionary, not a seventh Resource type.
+A Dictionary whose entries are Passage lists: each headword's subtopics ("Of enemies", "Instances of") with the Passages that bear on them, and "See" references to other topics. Nave's Topical Bible and Torrey's Topical Textbook are the two; the Topic Guide reads them. It is a Dictionary, not a Resource type of its own (ADR 0009).
 _Avoid_: Topical Bible (as the kind), Concordance, Topic list
+
+**Book**:
+A Resource of prose that is read from its start rather than looked up: a sermon, treatise, confession, catechism, hymnal, journal or church record, such as Owen's *Mortification of Sin* or a denomination's Book of Church Order. It is organized by its own Divisions and printed pages and has no Key scheme, so no Guide or Link set opens it by a Key; its Bible references are links, and Library search finds its words. A Book is imported from Markdown (ADR 0023), such as the Christian Open Library's books.
+_Avoid_: Monograph, General book, Work, Title
+
+**Division**:
+One chapter or section of a Book, from its headings: the shallowest heading level the Book uses more than once. The Contents pane lists them. Text before the first one is the Division "Front matter".
+_Avoid_: Chapter (a Bible chapter), Section (a Commentary section), Part (a file of a split Markdown book)
+
+**Printed page**:
+Where a page of the printed edition a Book was copied from begins, with its label as printed ("23", "iv"), shown small in the text as [p. 23]. A quotation from a Book is cited by it.
+_Avoid_: Page number (for the label), Folio
 
 **Cross-reference set**:
 A Resource made of Cross-references. It may also carry Parallel passages (ADR 0014); the Starter library's BSB Parallel Passages carries only those.
@@ -162,7 +174,7 @@ The app for one platform as a plain `.tar.gz` or `.zip`, with the Starter librar
 _Avoid_: Installer, Bundle, Package (for the archive)
 
 **Import**:
-Adding a Resource to the library from a local file in an open format (USFM or SWORD in v0.1). Every Import produces an Import report.
+Adding a Resource to the library from a local file in an open format: USFM, SWORD, or a Markdown book (ADR 0023). Every Import produces an Import report.
 _Avoid_: Install, Download
 
 **Get Resources**:

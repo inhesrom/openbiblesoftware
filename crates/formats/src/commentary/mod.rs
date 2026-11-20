@@ -18,6 +18,7 @@ use crate::{ImportReport, text_buf::TextBuf};
 pub use dictionary::{DictionaryData, import_dictionary};
 pub use jfb::import_jfb_book;
 pub use mhc::import_mhc;
+pub(crate) use references::book_references;
 pub use references::{scripture_references, scripture_references_in};
 
 /// Collects edition sections before writing through the shared ResourceBuilder.

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 /// it knows (ADR 0003). Version 2 added the Cross-reference and People & places tables.
 /// Version 3 compacts span kinds and attrs without changing their logical content.
 /// Version 4 adds a Commentary's volumes (#176); a version 3 file still opens, with none.
-pub const FORMAT_VERSION: u32 = 4;
+/// Version 5 adds the `page` span kind of a Book's printed pages (ADR 0023); older files never
+/// hold it, so versions 3 and 4 still open.
+pub const FORMAT_VERSION: u32 = 5;
 
 /// The oldest format version this build still opens (ADR 0010): a newer version that only
 /// adds a table leaves older files readable, with that table read as empty.
@@ -23,6 +25,8 @@ pub enum ResourceType {
     Dictionary,
     CrossReferenceSet,
     PeopleAndPlaces,
+    /// Prose read by its own Divisions and printed pages, with no Key scheme (ADR 0023).
+    Book,
 }
 
 /// The kind of a Key: what a Resource is organized by and can be opened at.

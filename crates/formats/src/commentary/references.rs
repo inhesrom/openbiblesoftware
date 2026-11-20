@@ -156,6 +156,99 @@ pub(super) fn annotate_prose(text: &mut crate::text_buf::TextBuf, context: Optio
     }
 }
 
+/// Bible references in a Book's prose (ADR 0023): the modern forms a Note may use
+/// ([`scripture_references`]: `Rom 8:28`, `1 Cor 13:4, 7`) and the forms older books print
+/// (`Rom. 8. 28`, `Rom. viii. 28`, `Psal. 23. 1`), read in the Standard versification. An old
+/// form needs a capitalised book name, and a book name that is also an English word (`So`,
+/// `Am`) needs its period, as in Note prose. Each found reference's byte range and Passages,
+/// in text order, never overlapping.
+#[expect(
+    clippy::expect_used,
+    reason = "pattern contains only escaped built-in Bible book names"
+)]
+pub(crate) fn book_references(text: &str) -> Vec<(std::ops::Range<usize>, PassageList)> {
+    let mut found: Vec<(std::ops::Range<usize>, PassageList)> = scripture_references(text);
+    let mut candidates: Vec<(std::ops::Range<usize>, PassageList)> = Vec::new();
+    // `Rom. 8. 13`, `Psal. 23. 1-3`: chapter and verse divided by a period and a space, which
+    // the Commentary prose pattern does not read.
+    static OLD_ARABIC: OnceLock<Regex> = OnceLock::new();
+    let old = OLD_ARABIC.get_or_init(|| {
+        let mut names: Vec<String> = Book::ALL
+            .into_iter()
+            .flat_map(|b| [b.name(), b.osis(), b.abbrev()])
+            .chain(ONLINE)
+            .chain([
+                "Psal",
+                "Esa",
+                "Apoc",
+                "Canticles",
+                "Cant",
+                "Eccles",
+                "Matth",
+                "Joh",
+            ])
+            .map(regex::escape)
+            .collect();
+        names.sort_by_key(|s| std::cmp::Reverse(s.len()));
+        names.dedup();
+        Regex::new(&format!(
+            r"\b(?:[1-3]\s?)?(?:{})\.?\s+(\d{{1,3}})\.\s*(\d{{1,3}})(?:\s*[-–]\s*(\d{{1,3}}))?\b",
+            names.join("|")
+        ))
+        .expect("Bible book names are escaped")
+    });
+    for c in old.captures_iter(text) {
+        let Some(all) = c.get(0) else { continue };
+        let book_end = c.get(1).map_or(all.end(), |m| m.start());
+        let book = text[all.start()..book_end].trim().trim_end_matches('.');
+        let book = match book {
+            "Psal" => "Ps",
+            "Esa" => "Isa",
+            "Apoc" => "Rev",
+            "Cant" | "Canticles" => "Song",
+            "Eccles" => "Eccl",
+            "Matth" => "Matt",
+            other => other,
+        };
+        let range = c
+            .get(3)
+            .map_or(String::new(), |m| format!("-{}", m.as_str()));
+        let written = format!("{book} {}:{}{range}", &c[1], &c[2]);
+        if let Ok(list) = parse_reference(&written, &Standard, None)
+            && !list.is_empty()
+        {
+            candidates.push((all.range(), list));
+        }
+    }
+    let mut buf = crate::text_buf::TextBuf::new();
+    buf.text = text.to_string();
+    annotate_prose(&mut buf, None);
+    for (range, kind) in buf.spans {
+        if let obs_model::SpanKind::ScriptureRef { targets } = kind {
+            candidates.push((range, targets));
+        }
+    }
+    for (range, targets) in candidates {
+        let candidate = &text[range.clone()];
+        let capital = candidate
+            .chars()
+            .find(|c| c.is_alphabetic())
+            .is_some_and(char::is_uppercase);
+        if !capital || english_book(candidate).is_some() {
+            continue;
+        }
+        if found
+            .iter()
+            .any(|(r, _)| r.start < range.end && range.start < r.end)
+        {
+            continue;
+        }
+        found.push((range, targets));
+    }
+    found.sort_by_key(|(r, _)| (r.start, r.end));
+    found
+}
+
 /// English words that are also spellings of a Bible book (`Is` Isaiah, `So` Song of Songs,
 /// `Re` Revelation): in Note prose they name a book only when written with a period
 /// (`Is. 53:5`), since "Is 2:30 OK?" and "So 3:15 then" are times, not references.

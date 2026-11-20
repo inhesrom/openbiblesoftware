@@ -30,6 +30,7 @@ level fits u8. A Passage is its start Verse followed by its end Verse.
 | 6 | xref | Passage count, then ordered Passages |
 | 7 | scripture_ref | Passage count, then ordered Passages |
 | 8–16 | woj, added, divine_name, emphasis, italic, bold, foreign, selah, psalm_title | empty |
+| 17 | page (format 5, a Book's printed page, ADR 0023) | label string |
 
 Strings are not normalized again, morpheme parts and Passage targets are not sorted
 or deduplicated, and extended Strong's numbers retain their homograph letter. The

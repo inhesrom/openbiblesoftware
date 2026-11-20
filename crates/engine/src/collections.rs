@@ -97,6 +97,7 @@ fn type_word(ty: ResourceType) -> &'static str {
         ResourceType::Dictionary => "dictionary",
         ResourceType::CrossReferenceSet => "cross-reference-set",
         ResourceType::PeopleAndPlaces => "people-and-places",
+        ResourceType::Book => "book",
     }
 }
 
@@ -108,6 +109,7 @@ fn type_from_word(word: &str) -> Option<ResourceType> {
         "commentary" | "commentaries" => ResourceType::Commentary,
         "lexicon" | "lexicons" => ResourceType::Lexicon,
         "dictionary" | "dictionaries" => ResourceType::Dictionary,
+        "book" | "books" => ResourceType::Book,
         "cross-reference-set" | "cross-reference-sets" | "cross-references" => {
             ResourceType::CrossReferenceSet
         }

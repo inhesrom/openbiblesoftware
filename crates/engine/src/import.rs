@@ -180,8 +180,16 @@ pub fn failure_message(error: &str) -> &'static str {
     } else if e.contains("no \\id line")
         || e.contains("no bible books found")
         || e.contains("stream did not contain valid utf-8")
+        || e.contains("must be utf-8 text")
     {
-        "That is not a USFM file or folder of Bible books, nor a SWORD module's .conf file."
+        "That is not a USFM file or folder of Bible books, a Markdown book, nor a SWORD module's \
+         .conf file."
+    } else if e.contains("no text found in the markdown files") {
+        "That Markdown file has no text the app can import."
+    } else if e.contains("books; choose one book") {
+        "That folder holds several books. Choose one book's Markdown file."
+    } else if e.contains("too large to import") {
+        "That file is too large to import."
     } else if e.contains("several modules") {
         "That SWORD folder holds several modules. Choose one module's .conf file in mods.d/."
     } else if e.contains("cannot be imported") || e.contains("has no entries") {
@@ -479,19 +487,25 @@ pub enum ImportSource {
     },
     /// An Open catalogue entry, downloaded from its publisher and checked first (#134).
     Open(Box<crate::open_catalogue::OpenSource>),
+    /// A Markdown book (ADR 0023): one of its files (the main file or a Part, which bring
+    /// the book's other files beside it), or a folder holding one book's files.
+    Markdown(std::path::PathBuf),
 }
 
 // Desktop Import uses these; the browser build has no local Import.
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 impl ImportSource {
     /// Tell the source kind from the path: a `.conf` file, or a folder holding `mods.d/`, is
-    /// SWORD; anything else is USFM.
+    /// SWORD; a Markdown file, or a folder of Markdown files and no USFM, is a Markdown book;
+    /// anything else is USFM.
     pub fn detect(path: std::path::PathBuf, module: Option<String>) -> Self {
         let is_conf = path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("conf"));
         if is_conf || path.join("mods.d").is_dir() || module.is_some() {
             Self::Sword { path, module }
+        } else if is_markdown_source(&path) {
+            Self::Markdown(path)
         } else {
             Self::Usfm(path)
         }
@@ -499,9 +513,10 @@ impl ImportSource {
 
     fn path(&self) -> &Path {
         match self {
-            Self::Usfm(p) | Self::Sword { path: p, .. } | Self::Repository { sword_dir: p, .. } => {
-                p
-            }
+            Self::Usfm(p)
+            | Self::Markdown(p)
+            | Self::Sword { path: p, .. }
+            | Self::Repository { sword_dir: p, .. } => p,
             Self::Open(source) => Path::new(&source.url),
         }
     }
@@ -514,7 +529,11 @@ impl ImportSource {
             }
             | Self::Repository { module: m, .. } => m.clone(),
             Self::Open(source) => source.id.clone(),
-            Self::Sword { path, .. } if path.is_dir() => path
+            Self::Markdown(path) if path.is_file() => {
+                obs_formats::book_stem(&path.file_name().unwrap_or_default().to_string_lossy())
+                    .to_string()
+            }
+            Self::Sword { path, .. } | Self::Markdown(path) if path.is_dir() => path
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
@@ -821,6 +840,122 @@ fn parse_sword(
     Ok(import_sword(&source, &module, &options)?)
 }
 
+/// Whether a path is a Markdown book: a `.md` or `.markdown` file, or a folder with Markdown
+/// files and no USFM ones.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn is_markdown_source(path: &Path) -> bool {
+    let name = |p: &Path| {
+        p.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned()
+    };
+    if !path.is_dir() {
+        return obs_formats::is_markdown_name(&name(path));
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    let mut markdown = false;
+    for entry in entries.flatten() {
+        let n = name(&entry.path()).to_ascii_lowercase();
+        if n.ends_with(".usfm") || n.ends_with(".sfm") {
+            return false;
+        }
+        markdown |= obs_formats::is_markdown_name(&n);
+    }
+    markdown
+}
+
+/// The Markdown file names directly in `dir` (no subfolders), as the folder lists them.
+#[cfg(not(target_arch = "wasm32"))]
+fn markdown_names(dir: &Path) -> std::io::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if obs_formats::is_markdown_name(&name) {
+            names.push(name);
+        }
+    }
+    Ok(names)
+}
+
+/// Read one Markdown book (ADR 0023): the book of the chosen file (its main file and its Part
+/// files beside it), or the one book in the chosen folder.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_markdown(
+    path: &Path,
+    id: &str,
+    ctx: &JobContext,
+) -> Result<Parsed, Box<dyn std::error::Error>> {
+    use obs_formats::{BookFile, MAX_BOOK_FILE_BYTES, MarkdownBookOptions, group_book_files};
+    let (dir, chosen) = if path.is_dir() {
+        (path.to_path_buf(), None)
+    } else {
+        let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        (dir, Some(name))
+    };
+    let books = group_book_files(&markdown_names(&dir)?);
+    let book = match &chosen {
+        Some(name) => books
+            .into_iter()
+            .find(|b| b.files().any(|f| f == name))
+            .ok_or_else(|| format!("{name} is not a Markdown file"))?,
+        None => match <[_; 1]>::try_from(books) {
+            Ok([book]) => book,
+            Err(books) if books.is_empty() => return Err("no Markdown files in this folder".into()),
+            Err(books) => {
+                return Err(format!(
+                    "this folder holds {} books; choose one book's Markdown file",
+                    books.len()
+                )
+                .into());
+            }
+        },
+    };
+    let read = |name: &String| -> Result<BookFile, Box<dyn std::error::Error>> {
+        if ctx.is_cancelled() {
+            return Err(cancelled());
+        }
+        let file = dir.join(name);
+        if std::fs::metadata(&file)?.len() > MAX_BOOK_FILE_BYTES as u64 {
+            return Err(format!("{name} is too large to import").into());
+        }
+        let text = std::fs::read_to_string(&file)
+            .map_err(|e| format!("{name}: {e} (a Markdown book must be UTF-8 text)"))?;
+        Ok(BookFile {
+            name: name.clone(),
+            text,
+        })
+    };
+    let main = book.main.as_ref().map(read).transpose()?;
+    let parts = book.parts.iter().map(read).collect::<Result<Vec<_>, _>>()?;
+    let source_file = book.files().next().cloned().unwrap_or_default();
+    let options = MarkdownBookOptions {
+        resource_id: id.into(),
+        source_file,
+        tool_version: tool_version(),
+    };
+    Ok(obs_formats::import_markdown_book(
+        main.as_ref(),
+        &parts,
+        &options,
+        |done, total| {
+            ctx.progress(done as u64, total as u64);
+            !ctx.is_cancelled()
+        },
+    )?)
+}
+
 /// Files an Import made, removed again if it fails or is cancelled.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
@@ -891,6 +1026,10 @@ fn import_source(
             ImportSource::Sword { path, module } => {
                 ctx.phase("Parse");
                 parse_sword(path, module.as_deref(), id)?
+            }
+            ImportSource::Markdown(path) => {
+                ctx.phase("Parse");
+                parse_markdown(path, id, ctx)?
             }
             ImportSource::Repository {
                 repo,

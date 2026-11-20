@@ -1,6 +1,7 @@
 //! A Resource's Contents (#176): the outline its Contents pane shows beside the text. A
 //! Bible's Bible books and chapters; a Commentary's volumes, Bible books, chapters and
-//! sections; a Lexicon's or Dictionary's entries under their first letter, A–Z, with a filter.
+//! sections; a Lexicon's or Dictionary's entries under their first letter, A–Z, with a filter;
+//! a Book's Divisions (ADR 0023).
 //!
 //! Built from what the `.obr` already holds (the verse list, Keys, unit titles and a
 //! Commentary's volumes), once per Resource, on a worker; nothing here reads a file.
@@ -22,6 +23,8 @@ pub enum ContentsTarget {
     Verse(Verse),
     /// A Commentary section, or a Lexicon or Dictionary entry: its Key and unit.
     Entry(KeyEntry),
+    /// A Book's Division, which has no Key: its unit (ADR 0023).
+    Unit(UnitId),
 }
 
 /// One line of the Contents.
@@ -64,6 +67,7 @@ impl Contents {
             ResourceType::Bible => Self::bible(verses),
             ResourceType::Commentary => Self::commentary(navigation, volumes),
             ResourceType::Lexicon | ResourceType::Dictionary => Self::entries(units, navigation),
+            ResourceType::Book => Self::book(units),
             _ => Self::default(),
         }
     }
@@ -225,6 +229,30 @@ impl Contents {
         c
     }
 
+    /// A Book's Divisions in document order, each by its title (ADR 0023). The filter box
+    /// searches them.
+    pub fn book(units: &[TextUnit]) -> Self {
+        let mut c = Self::default();
+        for unit in units
+            .iter()
+            .filter(|u| u.kind == obs_model::UnitKind::Division)
+        {
+            let label = unit
+                .title
+                .clone()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| unit.id.to_string());
+            let n = c.push(
+                None,
+                label.clone(),
+                Some(ContentsTarget::Unit(unit.id.clone())),
+            );
+            c.units.insert(unit.id.clone(), n);
+            c.entries.push((n, normalize(&label)));
+        }
+        c
+    }
+
     fn push(
         &mut self,
         parent: Option<usize>,
@@ -373,6 +401,7 @@ fn section_label(p: Passage, level: Level, unit: &UnitId) -> String {
 pub fn go(ws: &mut Workspace, tab: TabId, target: &ContentsTarget) {
     match target {
         ContentsTarget::Verse(v) => ws.navigate(tab, *v),
+        ContentsTarget::Unit(unit) => ws.navigate_text(tab, unit.clone(), 0..0, None),
         ContentsTarget::Entry(entry) => {
             let reached = ws
                 .tab(tab)

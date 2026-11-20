@@ -1,17 +1,20 @@
-//! `obs-cli import`: USFM files or a directory of them, or a module in a SWORD library → `.obr`,
-//! with the Import report.
+//! `obs-cli import`: USFM files or a directory of them, a module in a SWORD library, or a
+//! Markdown book (ADR 0023) → `.obr`, with the Import report.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use obs_formats::{
-    ImportError, ImportReport, SwordOptions, SwordSource, UsfmImport, UsfmOptions, import_sword,
+    BookFile, ImportError, ImportReport, MarkdownBookOptions, SwordOptions, SwordSource,
+    UsfmImport, UsfmOptions, book_stem, group_book_files, import_markdown_book, import_sword,
+    is_markdown_name, slugify,
 };
 use obs_model::{Direction, Resource};
 use obs_store::write_obr;
 
 const USAGE: &str = "usage: obs-cli import <file.usfm|dir>... -o <out.obr> [--id ID] [--title T] [--abbrev A] [--lang L] [--rtl]
-       obs-cli import <sword-library-dir|mods.d/NAME.conf> -o <out.obr> [--module NAME] [--id ID] [--title T] [--abbrev A] [--lang L]";
+       obs-cli import <sword-library-dir|mods.d/NAME.conf> -o <out.obr> [--module NAME] [--id ID] [--title T] [--abbrev A] [--lang L]
+       obs-cli import <book.md> -o <out.obr> [--id ID]   (a Markdown book; its Part files beside it come too)";
 
 fn usfm_files(path: &Path) -> std::io::Result<Vec<PathBuf>> {
     if path.is_file() {
@@ -102,7 +105,13 @@ pub fn import(args: &[String]) -> ExitCode {
         [one] => is_sword(Path::new(one)),
         _ => false,
     };
-    let result = if sword {
+    let markdown = match r.inputs.as_slice() {
+        [one] => Path::new(one).is_file() && is_markdown_name(&file_name(Path::new(one))),
+        _ => false,
+    };
+    let result = if markdown {
+        import_markdown(&r)
+    } else if sword {
         if r.rtl {
             eprintln!(
                 "obs-cli import: `--rtl` is for USFM; a SWORD module's direction comes from its conf"
@@ -164,6 +173,42 @@ fn import_sword_module(r: &Request<'_>) -> Result<(Resource, ImportReport), Stri
         tool_version: tool_version(),
     };
     import_sword(&source, &module, &options).map_err(|e| e.to_string())
+}
+
+/// The Markdown book the file belongs to: its main file and the Part files beside it.
+fn import_markdown(r: &Request<'_>) -> Result<(Resource, ImportReport), String> {
+    let path = Path::new(r.inputs[0]);
+    let name = file_name(path);
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let names: Vec<String> = std::fs::read_dir(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let book = group_book_files(&names)
+        .into_iter()
+        .find(|b| b.files().any(|f| *f == name))
+        .ok_or_else(|| format!("{name} is not a Markdown file"))?;
+    let read = |n: &String| -> Result<BookFile, String> {
+        let text = std::fs::read_to_string(dir.join(n)).map_err(|e| format!("{n}: {e}"))?;
+        Ok(BookFile {
+            name: n.clone(),
+            text,
+        })
+    };
+    let main = book.main.as_ref().map(read).transpose()?;
+    let parts = book.parts.iter().map(read).collect::<Result<Vec<_>, _>>()?;
+    let resource_id = if r.resource_id.is_empty() {
+        slugify(book_stem(&name))
+    } else {
+        r.resource_id.clone()
+    };
+    let options = MarkdownBookOptions {
+        resource_id,
+        source_file: book.files().next().cloned().unwrap_or_default(),
+        tool_version: tool_version(),
+    };
+    import_markdown_book(main.as_ref(), &parts, &options, |_, _| true).map_err(|e| e.to_string())
 }
 
 fn import_usfm(r: &Request<'_>) -> Result<(Resource, ImportReport), String> {

@@ -632,6 +632,24 @@ fn push_objects(
                     },
                 });
             }
+            SpanKind::Page { label } if !label.is_empty() && owns_marker(unit, block, a) => {
+                // A Book's printed page (ADR 0023): `[p. 23]`, small and raised like a verse
+                // number, so a quotation can be cited by the page it is on.
+                out.runs.push(Run {
+                    text: format!("[p.\u{00A0}{label}]\u{202F}"),
+                    style: RunStyle {
+                        face: FaceId::Regular,
+                        size: body * 0.62,
+                        small_caps: false,
+                        raise: body * 0.38,
+                        role: ColorRole::VerseNumber,
+                    },
+                    source: RunSource::Object {
+                        anchor: a,
+                        object: InlineObject::PageNumber,
+                    },
+                });
+            }
             _ => {}
         }
     }

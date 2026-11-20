@@ -781,7 +781,7 @@ fn search_all_resources_from_a_commentary_widens_a_narrowed_library_search() {
     assert_eq!(
         st.library,
         obs_engine::LibraryScope::default(),
-        "every Commentary, Lexicon and Dictionary"
+        "every Commentary, Lexicon, Dictionary and Book"
     );
     assert!(st.error.is_none(), "{:?}", st.error);
     assert_eq!(bar(&h, tab).unwrap().text, "love one another");
