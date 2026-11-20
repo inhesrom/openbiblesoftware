@@ -2,7 +2,7 @@
 
 <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); do not edit. -->
 
-Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
+Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked), and the README's front page images. These are the goldens CI compares the app against; see [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).
 
 ## Tabs
 
@@ -1356,3 +1356,82 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![A new Tab at the end of a full tab bar, Light](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-light-1x.png) | ![A new Tab at the end of a full tab bar, Dark](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-dark-1x.png) | ![A new Tab at the end of a full tab bar, Sepia](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-sepia-1x.png) |
 | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-light-2x.png) | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-dark-2x.png) | [2×](gallery/a-new-tab-at-the-end-of-a-full-tab-bar-sepia-2x.png) |
+
+## Front page (README)
+
+### Front page: Bible, Commentary and Word Study
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Bible, Commentary and Word Study, Light](gallery/front-page-bible-commentary-and-word-study-light-1x.png) | ![Front page: Bible, Commentary and Word Study, Dark](gallery/front-page-bible-commentary-and-word-study-dark-1x.png) | ![Front page: Bible, Commentary and Word Study, Sepia](gallery/front-page-bible-commentary-and-word-study-sepia-1x.png) |
+| [2×](gallery/front-page-bible-commentary-and-word-study-light-2x.png) | [2×](gallery/front-page-bible-commentary-and-word-study-dark-2x.png) | [2×](gallery/front-page-bible-commentary-and-word-study-sepia-2x.png) |
+
+### Front page: Word Info
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Word Info, Light](gallery/front-page-word-info-light-1x.png) | ![Front page: Word Info, Dark](gallery/front-page-word-info-dark-1x.png) | ![Front page: Word Info, Sepia](gallery/front-page-word-info-sepia-1x.png) |
+| [2×](gallery/front-page-word-info-light-2x.png) | [2×](gallery/front-page-word-info-dark-2x.png) | [2×](gallery/front-page-word-info-sepia-2x.png) |
+
+### Front page: Text Comparison
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Text Comparison, Light](gallery/front-page-text-comparison-light-1x.png) | ![Front page: Text Comparison, Dark](gallery/front-page-text-comparison-dark-1x.png) | ![Front page: Text Comparison, Sepia](gallery/front-page-text-comparison-sepia-1x.png) |
+| [2×](gallery/front-page-text-comparison-light-2x.png) | [2×](gallery/front-page-text-comparison-dark-2x.png) | [2×](gallery/front-page-text-comparison-sepia-2x.png) |
+
+### Front page: Interlinear
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Interlinear, Light](gallery/front-page-interlinear-light-1x.png) | ![Front page: Interlinear, Dark](gallery/front-page-interlinear-dark-1x.png) | ![Front page: Interlinear, Sepia](gallery/front-page-interlinear-sepia-1x.png) |
+| [2×](gallery/front-page-interlinear-light-2x.png) | [2×](gallery/front-page-interlinear-dark-2x.png) | [2×](gallery/front-page-interlinear-sepia-2x.png) |
+
+### Front page: Exegetical Guide
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Exegetical Guide, Light](gallery/front-page-exegetical-guide-light-1x.png) | ![Front page: Exegetical Guide, Dark](gallery/front-page-exegetical-guide-dark-1x.png) | ![Front page: Exegetical Guide, Sepia](gallery/front-page-exegetical-guide-sepia-1x.png) |
+| [2×](gallery/front-page-exegetical-guide-light-2x.png) | [2×](gallery/front-page-exegetical-guide-dark-2x.png) | [2×](gallery/front-page-exegetical-guide-sepia-2x.png) |
+
+### Front page: Search
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Search, Light](gallery/front-page-search-light-1x.png) | ![Front page: Search, Dark](gallery/front-page-search-dark-1x.png) | ![Front page: Search, Sepia](gallery/front-page-search-sepia-1x.png) |
+| [2×](gallery/front-page-search-light-2x.png) | [2×](gallery/front-page-search-dark-2x.png) | [2×](gallery/front-page-search-sepia-2x.png) |
+
+### Front page: Notes and Highlights
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Notes and Highlights, Light](gallery/front-page-notes-and-highlights-light-1x.png) | ![Front page: Notes and Highlights, Dark](gallery/front-page-notes-and-highlights-dark-1x.png) | ![Front page: Notes and Highlights, Sepia](gallery/front-page-notes-and-highlights-sepia-1x.png) |
+| [2×](gallery/front-page-notes-and-highlights-light-2x.png) | [2×](gallery/front-page-notes-and-highlights-dark-2x.png) | [2×](gallery/front-page-notes-and-highlights-sepia-2x.png) |
+
+### Front page: Atlas
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Atlas, Light](gallery/front-page-atlas-light-1x.png) | ![Front page: Atlas, Dark](gallery/front-page-atlas-dark-1x.png) | ![Front page: Atlas, Sepia](gallery/front-page-atlas-sepia-1x.png) |
+| [2×](gallery/front-page-atlas-light-2x.png) | [2×](gallery/front-page-atlas-dark-2x.png) | [2×](gallery/front-page-atlas-sepia-2x.png) |
+
+### Front page: Timeline
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Timeline, Light](gallery/front-page-timeline-light-1x.png) | ![Front page: Timeline, Dark](gallery/front-page-timeline-dark-1x.png) | ![Front page: Timeline, Sepia](gallery/front-page-timeline-sepia-1x.png) |
+| [2×](gallery/front-page-timeline-light-2x.png) | [2×](gallery/front-page-timeline-dark-2x.png) | [2×](gallery/front-page-timeline-sepia-2x.png) |
+
+### Front page: Home and a Reading plan
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Home and a Reading plan, Light](gallery/front-page-home-and-a-reading-plan-light-1x.png) | ![Front page: Home and a Reading plan, Dark](gallery/front-page-home-and-a-reading-plan-dark-1x.png) | ![Front page: Home and a Reading plan, Sepia](gallery/front-page-home-and-a-reading-plan-sepia-1x.png) |
+| [2×](gallery/front-page-home-and-a-reading-plan-light-2x.png) | [2×](gallery/front-page-home-and-a-reading-plan-dark-2x.png) | [2×](gallery/front-page-home-and-a-reading-plan-sepia-2x.png) |
+
+### Front page: Layouts
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Layouts, Light](gallery/front-page-layouts-light-1x.png) | ![Front page: Layouts, Dark](gallery/front-page-layouts-dark-1x.png) | ![Front page: Layouts, Sepia](gallery/front-page-layouts-sepia-1x.png) |
+| [2×](gallery/front-page-layouts-light-2x.png) | [2×](gallery/front-page-layouts-dark-2x.png) | [2×](gallery/front-page-layouts-sepia-2x.png) |

@@ -15,7 +15,7 @@ compared with its golden image (ADR 0019). The goldens are in
 are `crates/ui-egui/src/gallery_tests.rs` (`shell::tests::gallery::`); one test per section
 (Tabs; toolbar panes, menus and windows; dialogs and popovers; menus and choosers in Tabs and
 windows; empty, loading and error states; reading text; narrow Panels; headers and rows in a
-narrow Panel) so they run in parallel.
+narrow Panel; the README's front page) so they run in parallel.
 
 The section "Headers and rows in a narrow Panel" (#303) is `panel_fit` in
 `panel_fit_tests.rs`: Search, its Analysis and Library results, Notes, a Bible's header,
@@ -88,6 +88,15 @@ About page, a Text Comparison, the Atlas and the Timeline in a side Panel at its
 with the long titles, fields and summaries that once ran past its edge. The same file's tests
 open each in the QA sweep's 1280 × 800 window and fail on any text or Resource-text glyph drawn
 past the Panel's right edge, on a summary cut short, and on an Atlas label over a marker.
+
+The Front page section (#296) is `front_page` in `front_page_tests.rs`: the README's hero image
+(a Bible, a Commentary and a Word Study side by side) and one image per feature it lists. It
+has a library of its own, `front_page::library()`: excerpts of the real sources the Starter
+library is built from (the KJV with Strong's numbers, the WEB, Matthew Henry on Genesis 1, the
+STEPBible lexicons and Hebrew text, Brown-Driver-Briggs, OpenBible.info, TIPNR and Theographic)
+under their real titles, so the README shows what a reader sees rather than test fixtures. The
+README embeds the Light and Dark goldens at 2×, so blessing a change to them updates the README
+too; a feature added to the README adds its image here.
 
 `every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
 each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo
