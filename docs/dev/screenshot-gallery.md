@@ -95,6 +95,8 @@ has a library of its own, `front_page::library()`: excerpts of the real sources 
 library is built from (the KJV with Strong's numbers, the WEB, Matthew Henry on Genesis 1, the
 STEPBible lexicons and Hebrew text, Brown-Driver-Briggs, OpenBible.info, TIPNR and Theographic)
 under their real titles, so the README shows what a reader sees rather than test fixtures. The
+hero is drawn in the gallery's usual 1400 × 900 window; the feature images in a 1000 × 625 one,
+with the feature alone or beside the Bible, so each fills its frame two to a row. The
 README embeds the Light and Dark goldens at 2×, so blessing a change to them updates the README
 too; a feature added to the README adds its image here.
 

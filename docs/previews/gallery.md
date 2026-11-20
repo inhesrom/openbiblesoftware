@@ -1366,13 +1366,6 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Front page: Bible, Commentary and Word Study, Light](gallery/front-page-bible-commentary-and-word-study-light-1x.png) | ![Front page: Bible, Commentary and Word Study, Dark](gallery/front-page-bible-commentary-and-word-study-dark-1x.png) | ![Front page: Bible, Commentary and Word Study, Sepia](gallery/front-page-bible-commentary-and-word-study-sepia-1x.png) |
 | [2×](gallery/front-page-bible-commentary-and-word-study-light-2x.png) | [2×](gallery/front-page-bible-commentary-and-word-study-dark-2x.png) | [2×](gallery/front-page-bible-commentary-and-word-study-sepia-2x.png) |
 
-### Front page: Word Info
-
-| Light | Dark | Sepia |
-|---|---|---|
-| ![Front page: Word Info, Light](gallery/front-page-word-info-light-1x.png) | ![Front page: Word Info, Dark](gallery/front-page-word-info-dark-1x.png) | ![Front page: Word Info, Sepia](gallery/front-page-word-info-sepia-1x.png) |
-| [2×](gallery/front-page-word-info-light-2x.png) | [2×](gallery/front-page-word-info-dark-2x.png) | [2×](gallery/front-page-word-info-sepia-2x.png) |
-
 ### Front page: Text Comparison
 
 | Light | Dark | Sepia |
@@ -1386,6 +1379,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Front page: Interlinear, Light](gallery/front-page-interlinear-light-1x.png) | ![Front page: Interlinear, Dark](gallery/front-page-interlinear-dark-1x.png) | ![Front page: Interlinear, Sepia](gallery/front-page-interlinear-sepia-1x.png) |
 | [2×](gallery/front-page-interlinear-light-2x.png) | [2×](gallery/front-page-interlinear-dark-2x.png) | [2×](gallery/front-page-interlinear-sepia-2x.png) |
+
+### Front page: Word Info
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Front page: Word Info, Light](gallery/front-page-word-info-light-1x.png) | ![Front page: Word Info, Dark](gallery/front-page-word-info-dark-1x.png) | ![Front page: Word Info, Sepia](gallery/front-page-word-info-sepia-1x.png) |
+| [2×](gallery/front-page-word-info-light-2x.png) | [2×](gallery/front-page-word-info-dark-2x.png) | [2×](gallery/front-page-word-info-sepia-2x.png) |
 
 ### Front page: Exegetical Guide
 

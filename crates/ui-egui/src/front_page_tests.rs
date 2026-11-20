@@ -224,11 +224,43 @@ fn bible_commentary_and_word_study(h: &mut Harness) {
     super::gallery::run_split(h, "guide.word_study", json!({ "strongs": "H1254" }));
 }
 
-/// Word Info on "created" in Genesis 1:1, the pointer resting on it.
+/// The feature images' window, smaller than the hero's: the README shows them two to a row,
+/// so each feature fills its frame instead of a corner of the full window.
+const FEATURE_WINDOW: egui::Vec2 = egui::vec2(1000.0, 625.0);
+
+/// The feature window with the Bible alone in it (the Library and Word Info Panel closed).
+fn bible_alone(h: &mut Harness) {
+    h.screen = FEATURE_WINDOW;
+    let library = h.tab_id("Library");
+    h.shell.run("panel.close", &json!({ "tab": library.0 }));
+    settle(h);
+    h.frames(2);
+}
+
+/// The feature window with only the focused Tab in it.
+fn alone(h: &mut Harness) {
+    h.screen = FEATURE_WINDOW;
+    let ws = &h.shell.session().workspace;
+    let keep = ws.focused().unwrap();
+    let others: Vec<TabId> = ws.tabs().filter(|t| t.id != keep).map(|t| t.id).collect();
+    for t in others {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    h.shell.st.session.workspace.focus(keep);
+    h.shell.apply_effects();
+    settle(h);
+    settle_all(h);
+}
+
+/// Word Info on "created" in Genesis 1:1 beside the Bible, the pointer resting on it.
 fn word_info(h: &mut Harness) {
+    h.screen = FEATURE_WINDOW;
+    let library = h.tab_id("Library");
+    h.shell.run("tab.close", &json!({ "tab": library.0 }));
     let info = h.tab_id("Word Info");
     h.shell.st.session.workspace.focus(info);
     h.shell.apply_effects();
+    settle(h);
     h.frames(2);
     let kjv = h.tab_id("KJV");
     let created = super::word_info::word_spot(h, kjv, "created");
@@ -237,91 +269,110 @@ fn word_info(h: &mut Harness) {
     settle(h);
 }
 
-/// The README's images, in its order.
+/// Genesis 1:1 highlighted and a Note on Genesis 1:3, the Notes Tool beside the Bible.
+fn notes_and_highlights(h: &mut Harness) {
+    bible_alone(h);
+    let kjv = h.tab_id("KJV");
+    select_verse(h, kjv, 1);
+    key(h, Key::Num1, Modifiers::ALT);
+    select_verse(h, kjv, 3);
+    key(h, Key::N, Modifiers::COMMAND | Modifiers::SHIFT);
+    type_text(
+        h,
+        "Light before the sun (v. 16): God himself is its source.",
+    );
+    key(h, Key::Escape, Modifiers::NONE);
+    settle_all(h);
+    super::gallery::run_split(h, "tool.notes", json!({}));
+}
+
+/// The Hebrew of Genesis 1 with its Interlinear lines.
+fn interlinear(h: &mut Harness) {
+    let tab = h
+        .shell
+        .run("resource.open", &json!({ "id": "tahot", "split": true }))
+        .unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    h.shell
+        .run("tab.go", &json!({ "tab": tab, "text": "Gen 1:1" }));
+    h.shell
+        .run("tab.interlinear", &json!({ "tab": tab, "on": true }));
+    settle(h);
+    settle_all(h);
+    alone(h);
+}
+
+/// Search for "light" in the Bibles.
+fn search(h: &mut Harness) {
+    h.shell.st.session.refresh_search_indexes();
+    super::gallery::settle_search(h);
+    super::gallery::run_split(h, "tool.search", json!({}));
+    let tab = h.shell.session().workspace.focused().unwrap();
+    h.shell
+        .run("search.run", &json!({ "tab": tab.0, "text": "light" }));
+    super::gallery::settle_search(h);
+    settle_all(h);
+    alone(h);
+}
+
+/// The whole Timeline.
+fn timeline(h: &mut Harness) {
+    super::gallery::run_split(h, "tool.timeline", json!({ "passage": "Gen 1:1" }));
+    alone(h);
+    // The whole Timeline, not only Creation.
+    let fit = h.at("Fit");
+    h.click(fit);
+    h.frames(4);
+}
+
+fn focused_is(h: &Harness, kind: TabKind) -> bool {
+    focused_kind(h) == Some(&kind)
+}
+
+/// The README's images, in its order: the hero in the full window, then one feature each.
 pub(super) fn front_page() -> Vec<Overlay> {
+    use obs_engine::{Guide, Tool};
     vec![
         (
             "Front page: Bible, Commentary and Word Study",
             bible_commentary_and_word_study,
             |h| {
-                focused_kind(h) == Some(&TabKind::Guide(obs_engine::Guide::WordStudy))
+                focused_is(h, TabKind::Guide(Guide::WordStudy))
                     && has_tab(h, &TabKind::Resource("mhc".into()))
             },
         ),
+        (
+            "Front page: Text Comparison",
+            |h| {
+                let params = json!({ "passage": "Gen 1:1-3" });
+                super::gallery::run_split(h, "tool.text_comparison", params);
+                alone(h);
+            },
+            |h| focused_is(h, TabKind::Tool(Tool::TextComparison)),
+        ),
+        ("Front page: Interlinear", interlinear, |h| {
+            focused_is(h, TabKind::Resource("tahot".into()))
+        }),
         ("Front page: Word Info", word_info, |h| {
             h.shell.st.session.word_info.shown.is_some()
         }),
         (
-            "Front page: Text Comparison",
-            |h| {
-                super::gallery::run_split(
-                    h,
-                    "tool.text_comparison",
-                    json!({ "passage": "Gen 1:1-3" }),
-                );
-            },
-            |h| focused_kind(h) == Some(&TabKind::Tool(obs_engine::Tool::TextComparison)),
-        ),
-        (
-            "Front page: Interlinear",
-            |h| {
-                let tab = h
-                    .shell
-                    .run("resource.open", &json!({ "id": "tahot", "split": true }))
-                    .unwrap()["tab"]
-                    .as_u64()
-                    .unwrap();
-                h.shell
-                    .run("tab.go", &json!({ "tab": tab, "text": "Gen 1:1" }));
-                h.shell
-                    .run("tab.interlinear", &json!({ "tab": tab, "on": true }));
-                settle(h);
-                settle_all(h);
-            },
-            |h| has_tab(h, &TabKind::Resource("tahot".into())),
-        ),
-        (
             "Front page: Exegetical Guide",
             |h| {
-                super::gallery::run_split(
-                    h,
-                    "guide.exegetical_guide",
-                    json!({ "passage": "Gen 1:1" }),
-                );
+                let params = json!({ "passage": "Gen 1:1" });
+                super::gallery::run_split(h, "guide.exegetical_guide", params);
+                alone(h);
             },
-            |h| focused_kind(h) == Some(&TabKind::Guide(obs_engine::Guide::ExegeticalGuide)),
+            |h| focused_is(h, TabKind::Guide(Guide::ExegeticalGuide)),
         ),
-        (
-            "Front page: Search",
-            |h| {
-                h.shell.st.session.refresh_search_indexes();
-                super::gallery::settle_search(h);
-                super::gallery::run_split(h, "tool.search", json!({}));
-                let tab = h.shell.session().workspace.focused().unwrap();
-                h.shell
-                    .run("search.run", &json!({ "tab": tab.0, "text": "light" }));
-                super::gallery::settle_search(h);
-                settle_all(h);
-            },
-            |h| focused_kind(h) == Some(&TabKind::Tool(obs_engine::Tool::Search)),
-        ),
+        ("Front page: Search", search, |h| {
+            focused_is(h, TabKind::Tool(Tool::Search))
+        }),
         (
             "Front page: Notes and Highlights",
-            |h| {
-                let kjv = h.tab_id("KJV");
-                select_verse(h, kjv, 1);
-                key(h, Key::Num1, Modifiers::ALT);
-                select_verse(h, kjv, 3);
-                key(h, Key::N, Modifiers::COMMAND | Modifiers::SHIFT);
-                type_text(
-                    h,
-                    "Light before the sun (v. 16): God himself is its source.",
-                );
-                key(h, Key::Escape, Modifiers::NONE);
-                settle_all(h);
-                super::gallery::run_split(h, "tool.notes", json!({}));
-            },
-            |h| focused_kind(h) == Some(&TabKind::Tool(obs_engine::Tool::Notes)),
+            notes_and_highlights,
+            |h| focused_is(h, TabKind::Tool(Tool::Notes)),
         ),
         (
             "Front page: Atlas",
@@ -330,32 +381,38 @@ pub(super) fn front_page() -> Vec<Overlay> {
                 let geo = obs_engine::testing::openbible_geo(Some(&tipnr));
                 add(h, &[tipnr, geo]);
                 super::gallery::run_split(h, "tool.atlas", json!({ "passage": "Acts 13" }));
+                alone(h);
             },
-            |h| focused_kind(h) == Some(&TabKind::Tool(obs_engine::Tool::Atlas)),
+            |h| focused_is(h, TabKind::Tool(Tool::Atlas)),
         ),
-        (
-            "Front page: Timeline",
-            |h| {
-                super::gallery::run_split(h, "tool.timeline", json!({ "passage": "Gen 1:1" }));
-                // The whole Timeline, not only Creation.
-                let fit = h.at("Fit");
-                h.click(fit);
-                h.frames(4);
-            },
-            |h| focused_kind(h) == Some(&TabKind::Tool(obs_engine::Tool::Timeline)),
-        ),
+        ("Front page: Timeline", timeline, |h| {
+            focused_is(h, TabKind::Tool(Tool::Timeline))
+        }),
         (
             "Front page: Home and a Reading plan",
             |h| {
                 h.shell
                     .run("reading_plan.create", &json!({ "template": "nt-90-days" }));
+                // The gallery's fixed day's Verse of the day (Ps 139:14) is not in the
+                // excerpts: its card goes last, below the window's edge. The plan's
+                // "Started" notice would sit over the page.
+                h.shell.run(
+                    "home.move_card",
+                    &json!({ "card": "verse_of_the_day", "to": 5 }),
+                );
                 super::gallery::run_split(h, "home.open", json!({}));
+                alone(h);
+                h.shell.st.toast = None;
+                h.frames(2);
             },
-            |h| focused_kind(h) == Some(&TabKind::Home),
+            |h| focused_is(h, TabKind::Home),
         ),
         (
             "Front page: Layouts",
-            |h| key(h, Key::Y, Modifiers::ALT),
+            |h| {
+                bible_alone(h);
+                key(h, Key::Y, Modifiers::ALT);
+            },
             |h| h.shell.st.toolbar.open == Some(obs_engine::Launcher::Layouts),
         ),
     ]
