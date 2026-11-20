@@ -258,8 +258,8 @@ source, font and library the app uses. Bundled fonts and data files are listed i
 
 ```sh
 cargo run -p openbible   # desktop app
-cargo xtask ci           # every gate CI runs: fmt, layers, assets, licenses, clippy, a11y, test, wasm
-cargo xtask help         # run a single gate
+cargo xtask ci           # every gate CI runs
+cargo xtask help         # list the gates; run one with cargo xtask <gate>
 ```
 
 Needs the toolchain from `rust-toolchain.toml` (stable, with the `wasm32-unknown-unknown` target)
