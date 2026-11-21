@@ -3634,6 +3634,8 @@ mod control_outline;
 mod floating_windows;
 #[path = "footnotes_tests.rs"]
 mod footnotes_ui;
+#[path = "front_page_tests.rs"]
+mod front_page;
 #[path = "gallery_tests.rs"]
 mod gallery;
 #[path = "high_contrast_tests.rs"]
