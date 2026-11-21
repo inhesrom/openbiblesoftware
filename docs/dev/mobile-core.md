@@ -114,8 +114,8 @@ it is under the ignored `/target`.
   - `HelloModel.paths(in:)` names the core's files under `Application Support/OpenBible`
     (`library`, `user.db`, `search`, `aliases`, `logs`, `downloads`, as the Swift smoke
     does), because plan A7 has the shell pass all six `Paths`. It is file naming, on A10's
-    list: accepted for the S03 spike surface; S13 should decide whether the designed surface
-    takes one root folder and names the rest in `obs-mobile`.
+    list: accepted for the S03 spike surface only. It moves in S13: the designed surface takes one
+    root folder and `obs-mobile` names the rest.
 - **Tests.** CI-run, over `obs_engine::testing` fixtures: `obs-render` `composite::tests`
   (a known glyph's pixels are its atlas coverage in the ink, nothing outside it; each role's
   colour; premultiplied; clipping and tiles lower down; tiles at fractional offsets stack

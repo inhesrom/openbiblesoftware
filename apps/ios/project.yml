@@ -51,6 +51,7 @@ targets:
     preBuildScripts:
       - name: Rust core and Bundled set
         basedOnDependencyAnalysis: false
+        shell: /bin/bash
         script: |
           # cargo xtask ios build (the simulator slice alone for a simulator build), then
           # check the Bundled set against apps/ios/bundled-set.lock. Xcode's build PATH has
@@ -64,9 +65,14 @@ targets:
           if [ "${PLATFORM_NAME}" = "iphonesimulator" ]; then slices=(--sim-only); fi
           cd "${SRCROOT}/../.."
           run() {
+            local pass=()
+            for v in RUSTUP_HOME CARGO_HOME RUSTUP_TOOLCHAIN HTTP_PROXY HTTPS_PROXY NO_PROXY \
+              http_proxy https_proxy no_proxy; do
+              if [ -n "${!v:-}" ]; then pass+=("$v=${!v}"); fi
+            done
             env -i HOME="$HOME" USER="${USER:-}" TMPDIR="${TMPDIR:-/tmp}" \
               PATH="$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-              DEVELOPER_DIR="${DEVELOPER_DIR}" "$cargo" "$@"
+              DEVELOPER_DIR="${DEVELOPER_DIR}" "${pass[@]+"${pass[@]}"}" "$cargo" "$@"
           }
           stamp="${DERIVED_FILE_DIR}/rust-core.stamp"
           mkdir -p "${DERIVED_FILE_DIR}"

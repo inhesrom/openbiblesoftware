@@ -19,11 +19,16 @@ final class HelloModel {
     /// How long the last `start` took to boot, for the log and the tests.
     private(set) var bootDuration: Duration?
     private var app: MobileApp?
+    /// `start()` has begun. Every scene shares this model, and a second iPad window must not boot
+    /// a second core over the same folder.
+    private var started = false
 
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "boot")
 
     /// Boot the Rust core in the app's folder over the Bundled set inside the app.
     func start() async {
+        guard !started else { return }
+        started = true
         do {
             await start(folder: try Self.appFolder(), bundle: Self.bundledSet())
         } catch {

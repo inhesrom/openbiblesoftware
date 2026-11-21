@@ -1148,6 +1148,10 @@ this in addition to its own lines):
   `tile`/`frame`; a tile pixel-size cap (S03 added 8192); Note-marker room in tiles; FFI calls
   that are infallible in the spike (`problems`, `resource_ids`, `reader_resource`) become
   fallible so a poisoned lock is visible.
+  **From the S06 review:** `Paths` comes from one root. `obs-mobile` names `library`, `user.db`,
+  `search`, `aliases` (`obs_engine::aliases::ALIAS_DIR`), `logs` and `downloads`; Swift passes only
+  `Application Support/OpenBible`, and `HelloModel.paths(in:)` goes. There is one core per process,
+  shared by every scene (an iPad can open several windows).
   Update `docs/dev/mobile-core.md`.
 - **Don't:** Swift; Study sheet/Annotations/Search (later steps add methods); leak `TabId`/`Panel`
   into the FFI; put Theme/Page tone colour math anywhere but `obs-reading`.
@@ -1803,7 +1807,9 @@ this in addition to its own lines):
   `docs/dev/credits.md`; Apple: App Store Connect accessibility labels, `xcodebuild archive`/
   `-exportArchive`, `xcrun altool --validate-app` vs ASC API (verify).
 - **Do:** `PrivacyInfo.xcprivacy` final (tracking: none; collected data: none; required-reason
-  APIs with reasons); app icon + launch screen (ADR 0012 line-icon set rasterised; `ui-review`);
+  APIs with reasons; **from the S06 review:** Disk Space (`statfs`, `fstatfs`, from SQLite's
+  locking-style probe; see `docs/dev/ios-project.md`): declare a reason that fits, or build SQLite
+  with `SQLITE_ENABLE_LOCKING_STYLE=0` and re-run `nm -u`); app icon + launch screen (ADR 0012 line-icon set rasterised; `ui-review`);
   Credits screen fed by the `obs-ffi` cargo-about listing from S02, now resolved for
   `aarch64-apple-ios` (`cargo xtask licenses --ios`; check whether the graph differs from the host
   one and record) plus font/data attributions

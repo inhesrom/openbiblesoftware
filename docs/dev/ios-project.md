@@ -70,7 +70,13 @@ a Bundled set that does not match the lock.
 - **Clean environment.** Xcode's build PATH has no `~/.cargo/bin`, and its `SDKROOT` and
   deployment settings would reach cargo's host build scripts. The phase runs
   `${CARGO:-$HOME/.cargo/bin/cargo}` under `env -i` with `HOME`, `USER`, `TMPDIR`, a PATH that
-  starts with `~/.cargo/bin`, and `DEVELOPER_DIR` (so `xcrun` finds the same Xcode).
+  starts with `~/.cargo/bin`, and `DEVELOPER_DIR` (so `xcrun` finds the same Xcode). It also
+  passes `RUSTUP_HOME`, `CARGO_HOME`, `RUSTUP_TOOLCHAIN` and the proxy variables when they are
+  set. The phase runs under `/bin/bash`, because it uses arrays and `pipefail`.
+- **Before the first device build or archive, run `cargo xtask ios build` (no `--sim-only`).** A
+  simulator build leaves only the simulator slice in the package. Xcode reads the XCFramework
+  before this phase runs, so a device build straight after a simulator build has no device
+  slice, and the phase that would add it never gets to run.
 - **One build late, so it fails instead.** Xcode copies the package's XCFramework into the
   build products (`ProcessXCFramework`) and compiles `OpenBibleCore` before any target's
   phases run, so a library this phase rebuilds would only be linked by the next build. The
