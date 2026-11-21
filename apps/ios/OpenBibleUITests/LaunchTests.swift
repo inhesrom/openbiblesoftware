@@ -1,15 +1,16 @@
 import XCTest
 
-/// Launch smoke: the app starts, shows the engine's version and the library it booted with,
-/// and leaves a screenshot in the test results. (No `performAccessibilityAudit()` yet: it
-/// flags the system List's secondary text, "Contrast nearly passed"; the accessibility bar is
-/// ADR 0023's and S14b's.)
+/// Launch smoke: the app starts on the reader, and its About sheet shows the engine's version
+/// and the library it booted with (the S06 hello screen), with a screenshot in the results.
 final class LaunchTests: XCTestCase {
     @MainActor
     func testLaunchShowsTheEngineAndTheBundledSet() throws {
         let app = XCUIApplication()
         app.launch()
 
+        XCTAssertTrue(app.staticTexts["reader.location"].waitForExistence(timeout: 30), "no reader")
+        app.buttons["reader.options"].tap()
+        app.buttons["About"].tap()
         let engine = app.staticTexts["hello.engine"]
         XCTAssertTrue(engine.waitForExistence(timeout: 10))
         XCTAssertNotNil(

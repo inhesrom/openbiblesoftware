@@ -15,6 +15,9 @@ settings:
     # Automatic signing with no team: the simulator signs to run locally. A device run needs
     # a team (docs/dev/ios-project.md).
     CODE_SIGN_STYLE: Automatic
+    # The Rust core has an arm64 simulator slice only (`cargo xtask ios build`), so a Release
+    # build for the simulator (which builds every architecture) leaves Intel out.
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
 packages:
   OpenBibleCore:
     path: Packages/OpenBibleCore
@@ -113,6 +116,10 @@ schemes:
     build:
       targets:
         OpenBible: all
+    # S07: Run builds Release, so a device run (S08) feels and measures what ships; tests
+    # stay Debug.
+    run:
+      config: Release
     test:
       config: Debug
       gatherCoverageData: false

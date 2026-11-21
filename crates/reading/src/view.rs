@@ -920,6 +920,33 @@ impl ReadingView {
             .collect()
     }
 
+    /// [`Self::visible`] for a viewport `height` tall, with the blocks reaching `above` points
+    /// over its top as well, all laid out now, in document order: a shell that keeps the
+    /// text either side of the view drawn ahead (the Mobile app's tiles, plan S07) needs
+    /// both. Laying out a block above the view can change its height, which moves
+    /// [`Self::position`] but never the text in view.
+    pub fn visible_around(&mut self, above: f32, height: f32) -> Vec<VisibleBlock> {
+        let below = self.visible(height);
+        let (mut i, into) = self.shown_anchor();
+        let mut top = -into;
+        let mut out = Vec::new();
+        while top > -above && i > 0 {
+            i -= 1;
+            let Some(laid) = self.laid(i) else {
+                break;
+            };
+            top -= laid.height;
+            out.push(VisibleBlock {
+                index: i,
+                top,
+                laid,
+            });
+        }
+        out.reverse();
+        out.extend(below);
+        out
+    }
+
     /// Follow a verse without laying out on this thread: if its block is not laid out yet,
     /// show that block (as a placeholder) and finish the jump when a worker delivers it. This
     /// is how linked followers move, settling a few frames after the origin (#19 rule 3).

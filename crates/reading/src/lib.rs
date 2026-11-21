@@ -25,6 +25,6 @@ pub use palette::{ContrastShort, StylePaint, TonePalette, contrast};
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
-pub use tile::{Tile, compose_tile, text_column};
+pub use tile::{Tile, compose_block_tile, compose_tile, text_column};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
