@@ -17,9 +17,10 @@ use crate::synced::{
 };
 use crate::user::sql;
 
-/// The clock of a tombstone written before Sync writes clocks (S28a): empty text, which
-/// sorts before any clock, as a row's `NULL` clock means "changed before this device
-/// recorded clocks" (`sync_schema.rs`). The `tombstone.clock` column cannot be `NULL`.
+/// The clock of a tombstone written before clocks (schema 13, before migration 14): empty
+/// text, which sorts before any clock, as a row's `NULL` clock means "changed before this
+/// device recorded clocks" (`sync_schema.rs`). The `tombstone.clock` column cannot be
+/// `NULL`. From schema 14 every tombstone gets its delete's clock (`hlc.rs`).
 pub(crate) const NO_CLOCK: &str = "";
 
 /// Whether the database has table `name` (one opened at an older schema, for a migration
@@ -33,12 +34,13 @@ pub(crate) fn has_table(c: &Connection, name: &str) -> Result<bool, StoreError> 
     .map_err(sql)
 }
 
-/// A delete leaves a tombstone of the row; a row made again (an undone delete) takes its
-/// tombstone away. An update changes neither.
+/// A delete leaves a tombstone of the row with the delete's `clock`; a row made again (an
+/// undone delete) takes its tombstone away. An update changes neither.
 pub(crate) fn mark_tombstone(
     c: &Connection,
     change: &Change,
     key: &RowKey,
+    clock: &str,
 ) -> Result<(), StoreError> {
     let (kind, id) = key.tombstone();
     match (&change.before, &change.after) {
@@ -46,7 +48,7 @@ pub(crate) fn mark_tombstone(
             .execute(
                 "INSERT INTO tombstone (row_table, row_id, clock) VALUES (?1, ?2, ?3)
                  ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock",
-                params![kind, id, NO_CLOCK],
+                params![kind, id, clock],
             )
             .map(drop),
         (None, Some(_)) => c

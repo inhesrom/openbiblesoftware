@@ -23,6 +23,7 @@ mod favorites_store;
 pub mod highlight_style;
 #[cfg(not(target_arch = "wasm32"))]
 mod highlight_style_store;
+pub mod hlc;
 #[cfg(not(target_arch = "wasm32"))]
 mod obr;
 #[cfg(not(target_arch = "wasm32"))]
@@ -37,6 +38,8 @@ mod sample;
 mod search_index;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod span_codec;
+#[cfg(not(target_arch = "wasm32"))]
+mod sync_clock;
 #[cfg(not(target_arch = "wasm32"))]
 mod sync_schema;
 pub mod synced;
@@ -60,6 +63,7 @@ pub use highlight_style::{
     HighlightLook, HighlightPalette, HighlightStyle, MAX_STYLE_NAME, Rgb, STANDARD_PALETTE_ID,
     STANDARD_PALETTE_NAME, StyleAppearance, built_in_styles, fallback_appearance, standard_palette,
 };
+pub use hlc::Hlc;
 #[cfg(not(target_arch = "wasm32"))]
 pub use obr::{APPLICATION_ID, ObrReader, copy_obr_as, write_obr};
 pub use reading_plans::{PlanReadingRow, ReadingPlanRow};
@@ -73,6 +77,8 @@ pub use search_index::{
     IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
     copy_search_index_as, remove_search_indexes, search_index_files, write_search_index,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use sync_clock::{OutboxOp, ReservedOpFile};
 #[cfg(not(target_arch = "wasm32"))]
 pub use sync_schema::{
     DEVICE_PREFERENCES, SYNCED_PREFERENCES, SYNCED_TABLES, is_synced_preference,
