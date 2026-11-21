@@ -40,7 +40,7 @@ to Claude Opus 5.5 later on".
 | S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | todo |
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | todo |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | todo |
-| S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | todo |
+| S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
 | S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | todo |
 | S07 | #331 UI stack prototype: hosted text view on device | AFK | y | S04, S06 | prototype build + measurements + `docs/dev/mobile-text-view.md` | todo |
 | S08 | #331 owner judgement on a real iPhone | HITL | y | S07 | go/no-go, Android-half decision | todo |
@@ -96,7 +96,8 @@ squash subject and GitHub appends `(#N)`.
 **Gates to keep green:** `cargo xtask ci` on the host (fmt, layers, assets, licenses, clippy,
 a11y, test, wasm — `xtask/src/main.rs` `GATES`). Rust-only steps: that is all. Xcode steps also run
 `cargo xtask ios build` and `xcodebuild test` (S06 defines the exact commands) and attach
-simulator screenshots. No step may make `cargo xtask ci` need macOS or Xcode.
+simulator screenshots. No step may make `cargo xtask ci` need macOS or Xcode. On the owner's Mac,
+`xcrun simctl` and `brew` are killed in agent shells; S05's Outcome lists the workarounds.
 
 **UI review (ADR 0020):** any PR that changes what a user sees (iOS screens, desktop Settings →
 Sync, Highlight colours) gets the `ui-review` label, before/after PNGs under `docs/previews/ios/`
@@ -624,6 +625,28 @@ this in addition to its own lines):
   `xcrun --sdk iphoneos --show-sdk-path`, `xcodegen --version`, `rustup target list --installed`
   all succeed; `xcrun xctrace list devices` shows the iPhone.
 - **Stop-and-ask:** n/a (owner step). Record Xcode/SDK/simulator versions in the Outcome.
+- **Outcome (2026-11-20):**
+  - **Installed:** Xcode 27.2 (build 27B52) at `/Applications/Xcode-27.2.0.app` (installed with
+    `xcodes`, so the name carries the version; S32 pins `DEVELOPER_DIR` to this path or its CI
+    equivalent); iPhoneOS and iPhoneSimulator SDK 27.2; Swift 6.4.2; iOS 27.2 Simulator runtime
+    (24B8117, plus 24B91016s for the newest devices); simulators include iPhone 17, iPhone 18 Pro,
+    iPad Pro 11-inch (M5), iPad Air 11-inch (M4). `rustup` targets `aarch64-apple-ios` and
+    `aarch64-apple-ios-sim`; `xcodegen` 2.46.0, `mas` 7.0.0, `xcodes` 2.1.0, `aria2` from Homebrew.
+  - **Checked:** `xcodebuild -version`, `-checkFirstLaunchStatus`, both SDKs; simulator boot and
+    `io … screenshot` work; `codesign --verify --strict` of the Xcode bundle passes.
+  - **Not done yet (needed only from S07/S08):** Apple ID in Xcode → Settings → Accounts
+    (Personal Team); iPhone in Developer Mode and trusting this Mac. Developer Program not
+    joined, by design (S33).
+  - **Agent-shell quirks on this Mac (executors read this):** in the agent's shell, executing some
+    files directly is killed with SIGKILL (exit 137). Known cases: `/opt/homebrew/bin/brew`,
+    `actionlint`, and Xcode 27.2's `usr/bin/simctl`, which is a bash wrapper around the real
+    binary, so `xcrun simctl` dies too. Copies of the same files run, and the owner's own Terminal
+    is not affected. Workarounds: run Homebrew as `HOMEBREW_NO_AUTO_UPDATE=1 bash /opt/homebrew/bin/brew …`;
+    call simctl as
+    `/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl`
+    (or `bash "$(xcrun -f simctl)" …`). Use the same form in `cargo xtask ios` helpers rather than
+    `xcrun simctl`, or try both. `xcodebuild` itself is unaffected. Cause not found; the macOS
+    security log shows nothing for these kills.
 
 #### S06 — iOS project scaffold
 
