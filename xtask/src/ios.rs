@@ -7,6 +7,9 @@
 //!   `[profile.ios]` and wraps them, with the bindings' header and module map, in
 //!   [`XCFRAMEWORK`]. It needs Xcode's iOS SDKs (`rusqlite` compiles SQLite with them) and
 //!   says so, without building anything, when they are missing.
+//! - `smoke` runs `bindgen`, compiles [`SMOKE_MAIN`] with the bindings against the host
+//!   library with `swiftc`, and runs it over the Bundled set: Swift boots the app, opens the
+//!   BSB at Genesis 1 and lays out a 390 × 256 pt tile at 3× (S03 of the iOS plan).
 //!
 //! None of these is a gate of `cargo xtask ci`, which never needs macOS or Xcode.
 
@@ -19,6 +22,13 @@ use anyhow::{Context, Result, bail};
 pub const BINDINGS: &str = "target/ios/bindings";
 /// Where `build` writes the XCFramework.
 pub const XCFRAMEWORK: &str = "target/ios/ObsFFI.xcframework";
+/// The Swift smoke's source, and where it is built and run.
+const SMOKE_MAIN: &str = "apps/obs-ffi/swift-smoke/main.swift";
+const SMOKE_DIR: &str = "target/ios/swift-smoke";
+/// The Bundled set `bundled-set` copies, which the smoke boots over by default.
+const BUNDLED_SET: &str = "apps/ios/Bundled/starter";
+/// The line the smoke prints for a 390 × 256 pt tile at 3×.
+const SMOKE_TILE: &str = "tile 1170x768";
 /// The bindings' header and module map, as the XCFramework's `Headers` wants them.
 const HEADERS: &str = "target/ios/headers";
 /// The UniFFI crate and its library's file stem.
@@ -52,6 +62,11 @@ const USAGE: &str = "usage: cargo xtask ios <command>
   build [--sim-only] the aarch64-apple-ios and aarch64-apple-ios-sim staticlibs ([profile.ios])
                      and target/ios/ObsFFI.xcframework; --sim-only: the simulator's alone.
                      Needs Xcode with the iOS SDKs
+  smoke [--bundle DIR]
+                     host only: bindgen, then compile apps/obs-ffi/swift-smoke/main.swift
+                     with swiftc against the host library and run it over the Bundled set
+                     (default apps/ios/Bundled/starter): it prints the engine version and
+                     `tile 1170x768`. Needs swiftc (Xcode or the Command Line Tools)
   bundled-set [--from DIR] [--out DIR] [--update-lock | --verify]
                      copy the Bundled set out of dist/starter/ into apps/ios/Bundled/starter/
                      and check it against apps/ios/bundled-set.lock (`--help`)
@@ -72,6 +87,10 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
         Some("build") => {
             let sim_only = build_options(&args[1..])?;
             build(root, sim_only, &xcrun_has_sdk)
+        }
+        Some("smoke") => {
+            let bundle = smoke_options(root, &args[1..])?;
+            smoke(root, &bundle)
         }
         Some("bundled-set") => crate::starter::bundled_set::run(root, &args[1..]),
         None | Some("-h" | "--help" | "help") => {
@@ -99,6 +118,16 @@ fn build_options(args: &[String]) -> Result<bool> {
         }
     }
     Ok(sim_only)
+}
+
+/// `smoke`'s options: the Bundled set folder to boot over.
+fn smoke_options(root: &Path, args: &[String]) -> Result<PathBuf> {
+    match args {
+        [] => Ok(root.join(BUNDLED_SET)),
+        [flag, dir] if flag == "--bundle" => Ok(root.join(dir)),
+        [flag] if flag == "--bundle" => bail!("`--bundle` needs a folder\n\n{USAGE}"),
+        [other, ..] => bail!("unknown option `{other}`\n\n{USAGE}"),
+    }
 }
 
 fn slices(sim_only: bool) -> &'static [Slice] {
@@ -194,6 +223,75 @@ fn binding_files() -> [String; 3] {
         format!("{C_MODULE}.h"),
         format!("{C_MODULE}.modulemap"),
     ]
+}
+
+/// The Swift smoke: bindgen, `swiftc` over the smoke and the bindings, linked to the host
+/// library `bindgen` built (`target/debug`, found again at run time through an rpath), then
+/// run over `bundle` with a fresh folder for the app's files.
+fn smoke(root: &Path, bundle: &Path) -> Result<()> {
+    if !bundle.join("starter-manifest.json").is_file() {
+        bail!(
+            "no Bundled set in {}: run `cargo xtask ios bundled-set` first (or pass \
+             `--bundle <a Starter library folder>`)",
+            bundle.display()
+        );
+    }
+    let bindings = bindgen(root)?;
+    let dir = root.join(SMOKE_DIR);
+    let run_dir = dir.join("run");
+    if run_dir.exists() {
+        std::fs::remove_dir_all(&run_dir)
+            .with_context(|| format!("cannot clear {}", run_dir.display()))?;
+    }
+    std::fs::create_dir_all(&run_dir)
+        .with_context(|| format!("cannot create {}", run_dir.display()))?;
+    let exe = dir.join("swift-smoke");
+    let lib_dir = root.join("target/debug");
+    // The generated module map is named for UniFFI's C module, not `module.modulemap`, so
+    // clang finds it only when named (`-I` alone does not).
+    let module_map = bindings.join(format!("{C_MODULE}.modulemap"));
+    let status = Command::new("swiftc")
+        .arg("-Xcc")
+        .arg(format!("-fmodule-map-file={}", module_map.display()))
+        .arg("-L")
+        .arg(&lib_dir)
+        .arg(format!("-l{FFI_LIB}"))
+        .args(["-Xlinker", "-rpath", "-Xlinker"])
+        .arg(&lib_dir)
+        .arg("-o")
+        .arg(&exe)
+        .arg(root.join(SMOKE_MAIN))
+        .arg(bindings.join(format!("{SWIFT_MODULE}.swift")))
+        .current_dir(root)
+        .status()
+        .context("could not run `swiftc` (install Xcode or the Command Line Tools)")?;
+    if !status.success() {
+        bail!("`swiftc` exited with {status}");
+    }
+    let out = Command::new(&exe)
+        .arg(bundle)
+        .arg(&run_dir)
+        .current_dir(root)
+        .output()
+        .with_context(|| format!("could not run {}", exe.display()))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    print!("{stdout}");
+    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+    if !out.status.success() {
+        bail!("the Swift smoke exited with {}", out.status);
+    }
+    smoke_passed(&stdout)
+}
+
+/// Whether the smoke's output has the engine version and a 3× phone tile.
+fn smoke_passed(stdout: &str) -> Result<()> {
+    let version = format!("engine {}", obs_engine::updates::APP_VERSION);
+    for line in [version.as_str(), SMOKE_TILE] {
+        if !stdout.lines().any(|l| l == line) {
+            bail!("the Swift smoke did not print `{line}`");
+        }
+    }
+    Ok(())
 }
 
 fn build(root: &Path, sim_only: bool, has_sdk: &dyn Fn(&str) -> bool) -> Result<()> {
@@ -334,6 +432,39 @@ mod tests {
         assert!(run(root, &args(&["frobnicate"])).is_err());
         assert!(run(root, &args(&["bindgen", "--sim-only"])).is_err());
         assert!(run(root, &args(&["check", "extra"])).is_err());
+    }
+
+    #[test]
+    fn smoke_boots_over_the_bundled_set_unless_told_another() {
+        let root = Path::new("/repo");
+        assert_eq!(
+            smoke_options(root, &args(&[])).unwrap(),
+            root.join("apps/ios/Bundled/starter")
+        );
+        assert_eq!(
+            smoke_options(root, &args(&["--bundle", "dist/starter"])).unwrap(),
+            root.join("dist/starter")
+        );
+        assert!(smoke_options(root, &args(&["--bundle"])).is_err());
+        assert!(smoke_options(root, &args(&["--sim-only"])).is_err());
+    }
+
+    #[test]
+    fn smoke_passes_on_the_version_and_a_3x_phone_tile() {
+        let version = obs_engine::updates::APP_VERSION;
+        let good = format!("engine {version}\nresources bsb\ntile 1170x768\n");
+        assert!(smoke_passed(&good).is_ok());
+        let small = format!("engine {version}\ntile 780x512\n");
+        assert!(smoke_passed(&small).is_err());
+        assert!(smoke_passed("tile 1170x768\n").is_err());
+    }
+
+    #[test]
+    fn smoke_without_a_bundled_set_says_how_to_make_one() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let missing = root.join("target/xtask-no-such-bundle");
+        let err = smoke(root, &missing).unwrap_err().to_string();
+        assert!(err.contains("cargo xtask ios bundled-set"), "{err}");
     }
 
     /// The bindings' file names come from `apps/obs-ffi/uniffi.toml`.
