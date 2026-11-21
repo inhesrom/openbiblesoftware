@@ -3,11 +3,24 @@ name: Starter library
 # Builds the Starter library with `cargo xtask starter`, twice, and fails unless both builds
 # are byte-identical. The outputs are uploaded as the `starter-library` workflow artifact: on
 # pull requests that touch the lock or the pipeline, so the build report can be reviewed with
-# the change, and when the `release` workflow calls this one on a pushed `v*` tag (or a dry run),
-# which packs that artifact into the Release archives and publishes it (docs/dev/releasing.md).
+# the change, on master after such a change is merged, and when the `release` workflow calls
+# this one on a pushed `v*` tag (or a dry run), which packs that artifact into the Release
+# archives and publishes it (docs/dev/releasing.md).
 
 on:
   workflow_call:
+  # On master too, so the README's Starter badge shows master's status (#296).
+  push:
+    branches: [master]
+    paths:
+      - "starter/**"
+      - "xtask/**"
+      - "crates/formats/**"
+      - "crates/model/**"
+      - "crates/scripture/**"
+      - "crates/store/**"
+      - "Cargo.lock"
+      - ".github/workflows/starter.yml"
   pull_request:
     paths:
       - "starter/**"

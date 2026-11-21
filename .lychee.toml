@@ -1,0 +1,11 @@
+# The README link check (#296): the CI job `links` runs `lychee --config .lychee.toml README.md`.
+# Locally: `lychee --config .lychee.toml README.md` (https://lychee.cli.rs).
+
+# Repository paths resolve against the README's folder; a `#fragment` must be a heading there.
+include_fragments = "anchor-only"
+
+# A slow or rate-limiting site is retried, and GitHub's 429 is not a broken link.
+max_retries = 3
+retry_wait_time = 5
+timeout = 30
+accept = ["200..=299", "429"]

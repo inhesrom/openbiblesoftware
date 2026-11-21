@@ -46,7 +46,7 @@ Before packing it checks that `starter-manifest.json` parses and that every `.ob
 | `package` | ubuntu-latest | For a pushed tag, fails unless the tag is `v` + the workspace version (the app compares release tags with its own version). Downloads `starter-library` and the three `app-*` artifacts; `cargo xtask release-archive` for each target; `xvfb-run cargo xtask release-smoke` on the Linux archive; copies the Starter assets beside the archives, writes `SHA256SUMS`, signs it when the signing secret exists, and uploads them all as the `release-assets` artifact (plus `release-smoke-screenshot`). |
 | `publish` | ubuntu-latest | Only for a pushed `refs/tags/v*` (`github.event_name == 'push'`); a `workflow_dispatch` on a tag stays a dry run. Downloads `release-assets` and creates the GitHub release (`--verify-tag`), or uploads with `--clobber` if the release already exists. The only job with `contents: write`. |
 
-The `starter` workflow no longer runs on tags or publishes anything itself: it still runs on pull requests that touch the lock or the pipeline, and the `release` workflow calls it.
+The `starter` workflow no longer runs on tags or publishes anything itself: it still runs on pull requests that touch the lock or the pipeline, on `master` after such a change is merged (so the README's Starter badge shows `master`'s status), and when the `release` workflow calls it.
 
 ### The launch check
 
