@@ -1186,22 +1186,28 @@ fn open(s: &mut Session, p: Params<'_>, kind: TabKind) -> Result<Value, CommandE
     Ok(json!({ "tab": tab.0 }))
 }
 
+/// The Key schemes a Resource Tab follows for a Resource of `manifest`: its own, none for a
+/// Book (ADR 0023); `None` keeps the Tab's (a manifest that names none and is not a Book).
+pub fn tab_key_schemes(manifest: &obs_model::Manifest) -> Option<Vec<obs_model::KeyScheme>> {
+    if manifest.resource_type == obs_model::ResourceType::Book {
+        Some(Vec::new())
+    } else {
+        (!manifest.key_schemes.is_empty()).then(|| manifest.key_schemes.clone())
+    }
+}
+
 /// Open a Tab of `kind` (a Resource Tab follows the Key schemes of its manifest).
 pub(crate) fn open_tab(s: &mut Session, kind: TabKind, req: OpenRequest) -> TabId {
     let title = title_of(s, &kind);
     let schemes = match &kind {
-        TabKind::Resource(id) => s
-            .library
-            .get(id)
-            .map(|e| e.manifest.key_schemes.clone())
-            .unwrap_or_default(),
-        _ => Vec::new(),
+        TabKind::Resource(id) => s.library.get(id).and_then(|e| tab_key_schemes(&e.manifest)),
+        _ => None,
     };
     let tab = s.workspace.open(kind, title, req);
     if let Some(t) = s.workspace.tab_mut(tab)
-        && !schemes.is_empty()
+        && let Some(schemes) = schemes
     {
-        t.key_schemes = schemes;
+        t.set_key_schemes(schemes);
     }
     tab
 }
@@ -1384,11 +1390,11 @@ impl Session {
                         let mut tab =
                             crate::workspace::Tab::from_snapshot(TabId(one.id), one.clone());
                         // A Lexicon or Dictionary is named by its Key, as its manifest says.
-                        if let Some(e) =
-                            (tab.kind.resource_id()).and_then(|id| self.library.get(id))
-                            && !e.manifest.key_schemes.is_empty()
+                        if let Some(schemes) = (tab.kind.resource_id())
+                            .and_then(|id| self.library.get(id))
+                            .and_then(|e| tab_key_schemes(&e.manifest))
                         {
-                            tab.key_schemes = e.manifest.key_schemes.clone();
+                            tab.set_key_schemes(schemes);
                         }
                         self.location_label(&tab)
                             .unwrap_or_else(|| one.title.clone())
@@ -1449,6 +1455,18 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     if t.header_box() == crate::HeaderBox::Topic {
         return crate::topic_guide::go(s, tab, text);
+    }
+    if t.header_box() == crate::HeaderBox::Page {
+        // A Book's printed page (ADR 0023).
+        let page = t
+            .navigation
+            .as_ref()
+            .and_then(|n| n.page(text))
+            .cloned()
+            .ok_or_else(|| failed(ID, format!("No page {} in this Book", text.trim())))?;
+        s.workspace
+            .navigate_text(tab, page.unit.clone(), page.byte..page.byte, None);
+        return Ok(json!({ "tab": tab.0, "page": page.label }));
     }
     if matches!(
         t.header_box(),
@@ -1553,7 +1571,7 @@ fn link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         Some(c) if set.len() == 1 && crate::link::LINK_SETS.contains(&c) => Some(c),
         Some(_) => return Err(failed(ID, format!("no Link set {set}"))),
     };
-    let has_chip = s.workspace.tab(tab).is_some_and(|t| t.kind.has_link_chip());
+    let has_chip = s.workspace.tab(tab).is_some_and(crate::Tab::has_link_chip);
     if !has_chip && link.is_some() {
         return Err(failed(ID, "this Tab cannot be linked"));
     }
@@ -1910,17 +1928,13 @@ fn resource_shown(s: &mut Session, tab: TabId) {
     };
     let title = title_of(s, &kind);
     let schemes = match &kind {
-        TabKind::Resource(id) => s
-            .library
-            .get(id)
-            .map(|e| e.manifest.key_schemes.clone())
-            .unwrap_or_default(),
+        TabKind::Resource(id) => s.library.get(id).and_then(|e| tab_key_schemes(&e.manifest)),
         _ => return,
     };
     if let Some(t) = s.workspace.tab_mut(tab) {
         t.title = title;
-        if !schemes.is_empty() {
-            t.key_schemes = schemes;
+        if let Some(schemes) = schemes {
+            t.set_key_schemes(schemes);
         }
     }
 }

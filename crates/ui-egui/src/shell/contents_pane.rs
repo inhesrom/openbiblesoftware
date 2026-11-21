@@ -244,10 +244,16 @@ impl State {
         }
         let mut go: Option<ContentsTarget> = None;
         if contents.is_filterable() {
+            // A Book's Divisions are in the Book's order, not A–Z (ADR 0023).
+            let hint = if doc.manifest.resource_type == ResourceType::Book {
+                "Filter chapters"
+            } else {
+                "Filter A–Z"
+            };
             let r = ui.add(
                 egui::TextEdit::singleline(&mut state.filter)
                     .id_salt(("contents-filter", tab))
-                    .hint_text("Filter A–Z")
+                    .hint_text(hint)
                     .desired_width(f32::INFINITY),
             );
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {

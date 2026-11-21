@@ -73,10 +73,12 @@ pub enum GuideSection {
     TopicSearch,
     /// Passage Guide (#212): other accounts of the Passage ([`crate::parallel_passages`]).
     ParallelPassages,
+    /// Passage Guide (ADR 0023): the Books that cite the Passage ([`crate::cited_in`]).
+    CitedIn,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 21] = [
+    pub const ALL: [GuideSection; 22] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
@@ -98,6 +100,7 @@ impl GuideSection {
         GuideSection::TopicPassages,
         GuideSection::TopicSearch,
         GuideSection::ParallelPassages,
+        GuideSection::CitedIn,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -124,6 +127,7 @@ impl GuideSection {
             GuideSection::TopicPassages => "topic_passages",
             GuideSection::TopicSearch => "topic_search",
             GuideSection::ParallelPassages => "parallel_passages",
+            GuideSection::CitedIn => "cited_in",
         }
     }
 
@@ -154,6 +158,7 @@ impl GuideSection {
             GuideSection::TopicPassages => "Key Passages",
             GuideSection::TopicSearch => "Search",
             GuideSection::ParallelPassages => "Parallel passages",
+            GuideSection::CitedIn => "Cited in",
         }
     }
 
@@ -161,6 +166,7 @@ impl GuideSection {
     pub fn resource_type(self) -> ResourceType {
         match self {
             GuideSection::Commentaries => ResourceType::Commentary,
+            GuideSection::CitedIn => ResourceType::Book,
             GuideSection::CrossReferences | GuideSection::ParallelPassages => {
                 ResourceType::CrossReferenceSet
             }
@@ -284,6 +290,11 @@ impl GuideSection {
             (GuideSection::CrossReferences, true) => {
                 "None in your library: no Cross-references start in this Passage."
             }
+            (GuideSection::CitedIn, false) => {
+                "None in your library. Import Books (sermons, treatises, confessions) to see \
+                 which of them cite this Passage."
+            }
+            (GuideSection::CitedIn, true) => "None in your library: no Book cites this Passage.",
             (GuideSection::ParallelPassages, false) => {
                 "None in your library. Add a set of parallel passages (the BSB Parallel Passages \
                  in the Starter library) to see the other accounts of this Passage."
@@ -436,6 +447,7 @@ impl Guide {
                 GuideSection::ParallelPassages,
                 GuideSection::KeyWords,
                 GuideSection::PeopleAndPlaces,
+                GuideSection::CitedIn,
             ],
             Guide::WordStudy => &[
                 GuideSection::LexiconEntries,
@@ -695,6 +707,8 @@ pub enum SectionData {
     TopicSearch(String),
     /// Other accounts of the Passage, grouped by the part they are parallel to (#212).
     ParallelPassages(crate::parallel_passages::ParallelPassages),
+    /// The Books that cite the Passage, earliest first (ADR 0023).
+    CitedIn(Vec<crate::cited_in::CitingBook>),
 }
 
 impl SectionData {
@@ -721,6 +735,7 @@ impl SectionData {
             SectionData::TopicPassages(p) => p.len(),
             SectionData::TopicSearch(q) => usize::from(!q.is_empty()),
             SectionData::ParallelPassages(p) => p.count(),
+            SectionData::CitedIn(books) => books.len(),
         }
     }
 
@@ -767,6 +782,8 @@ pub struct LibrarySections {
     directory: Arc<crate::factbook::DirectoryCache>,
     /// The topic directory, shared with the Session's Topic Guides (#148).
     topics: Arc<crate::topic_guide::TopicCache>,
+    /// Each Book's Bible references, for Cited in (ADR 0023).
+    citations: crate::cited_in::CitationCache,
 }
 
 impl SectionSource for LibrarySections {
@@ -775,7 +792,7 @@ impl SectionSource for LibrarySections {
         library: &Library,
         key: &Key,
         section: GuideSection,
-        _: &JobContext,
+        ctx: &JobContext,
     ) -> Result<SectionData, String> {
         if matches!(
             section,
@@ -839,6 +856,10 @@ impl SectionSource for LibrarySections {
                 crate::parallel_passages::library_parallels(library, *passage)
                     .map(SectionData::ParallelPassages)
             }
+            GuideSection::CitedIn => self
+                .citations
+                .citing_books(library, *passage, &|| ctx.is_cancelled())
+                .map(SectionData::CitedIn),
             GuideSection::KeyWords => {
                 let words = crate::key_words::library_key_words(library, *passage, &self.bibles)?;
                 if words.words.is_empty() {

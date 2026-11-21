@@ -561,10 +561,14 @@ fn a_markdown_book_imports_from_any_of_its_files_as_one_book() {
     assert_eq!(pages, ["1", "40"]);
 }
 
+/// `import.start` brings a folder of books in book by book (`books_tests`); a single Import
+/// of such a folder, as `Session::start_import` is asked, still wants one book.
 #[test]
-fn a_folder_of_several_markdown_books_asks_for_one() {
+fn a_single_import_of_a_folder_of_several_markdown_books_asks_for_one() {
     let (mut s, root) = markdown_fixture("md-several");
-    let id = start(&mut s, &root.join("books"));
+    let (id, _, _) = s
+        .start_import(ImportSource::Markdown(root.join("books")))
+        .unwrap();
     finish(&mut s);
     let record = s.imports.report(&id).unwrap();
     assert_eq!(record.phase, ImportPhase::Failed);

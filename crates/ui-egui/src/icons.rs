@@ -171,6 +171,8 @@ pub fn for_section(section: obs_engine::GuideSection) -> Icon {
     use obs_engine::GuideSection as S;
     match section {
         S::Commentaries => Icon::Commentaries,
+        // The Books on the Library's shelves that cite the Passage (ADR 0023).
+        S::CitedIn => Icon::Library,
         S::CrossReferences => Icon::CrossReferences,
         // Parallel accounts side by side, as Text Comparison shows them (#212).
         S::ParallelPassages => Icon::TextComparison,

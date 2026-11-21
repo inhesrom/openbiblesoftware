@@ -74,6 +74,15 @@ impl JobContext {
             kind: JobEventKind::Progress { done, total },
         });
     }
+
+    /// Send back one piece of a job's result before the job ends (one book of a batch, #344),
+    /// so the host can use it at once; downcast to the type the job documents.
+    pub fn emit(&self, part: JobOutput) {
+        let _ = self.events.send(JobEvent {
+            id: self.id,
+            kind: JobEventKind::Partial(part),
+        });
+    }
 }
 
 /// Something that happened to a job.
@@ -86,7 +95,12 @@ pub struct JobEvent {
 pub enum JobEventKind {
     Started,
     Phase(String),
-    Progress { done: u64, total: u64 },
+    Progress {
+        done: u64,
+        total: u64,
+    },
+    /// A piece of the result, sent before the job ends ([`JobContext::emit`]).
+    Partial(JobOutput),
     Finished(JobOutput),
     Failed(String),
     Cancelled,
@@ -98,6 +112,7 @@ impl fmt::Debug for JobEventKind {
             JobEventKind::Phase(name) => f.debug_tuple("Phase").field(name).finish(),
             JobEventKind::Started => f.write_str("Started"),
             JobEventKind::Progress { done, total } => write!(f, "Progress({done}/{total})"),
+            JobEventKind::Partial(_) => f.write_str("Partial(..)"),
             JobEventKind::Finished(_) => f.write_str("Finished(..)"),
             JobEventKind::Failed(e) => write!(f, "Failed({e:?})"),
             JobEventKind::Cancelled => f.write_str("Cancelled"),

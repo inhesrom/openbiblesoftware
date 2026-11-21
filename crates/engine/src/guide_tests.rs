@@ -482,7 +482,8 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
             ("cross_references", false, false),
             ("parallel_passages", false, false),
             ("key_words", false, false),
-            ("people_and_places", false, false)
+            ("people_and_places", false, false),
+            ("cited_in", false, false)
         ]
     );
     let g = |extra: serde_json::Value| {
@@ -505,6 +506,7 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
         ("parallel_passages", false, false),
         ("key_words", false, false),
         ("people_and_places", false, false),
+        ("cited_in", false, false),
     ];
     assert_eq!(order(&s), changed);
     // Word Study's arrangement is its own.
@@ -538,7 +540,8 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
             ("cross_references", false, false),
             ("parallel_passages", false, false),
             ("key_words", false, false),
-            ("people_and_places", false, false)
+            ("people_and_places", false, false),
+            ("cited_in", false, false)
         ]
     );
 }
@@ -561,7 +564,8 @@ fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
             ("cross_references", true),
             ("parallel_passages", false),
             ("key_words", false),
-            ("people_and_places", false)
+            ("people_and_places", false),
+            ("cited_in", false)
         ]
     );
     // An arrangement saved before #54 added Key words and People & places (and #212 Parallel
@@ -583,6 +587,7 @@ fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
             ("parallel_passages", false),
             ("key_words", false),
             ("people_and_places", false),
+            ("cited_in", false),
             ("commentaries", true)
         ]
     );
@@ -593,8 +598,8 @@ fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
     let mut a = GuideArrangement::default_for(Guide::PassageGuide);
     assert!(a.move_to(GuideSection::Commentaries, 99));
     // Clamped to the end.
-    assert_eq!(a.sections[4].section, GuideSection::Commentaries);
-    assert!(!a.move_to(GuideSection::Commentaries, 4));
+    assert_eq!(a.sections[5].section, GuideSection::Commentaries);
+    assert!(!a.move_to(GuideSection::Commentaries, 5));
     assert_eq!(
         GuideArrangement::from_json(Guide::PassageGuide, &a.to_json()),
         a

@@ -191,6 +191,8 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
             Tagging::None,
             Some("Get Dictionaries…"),
         ),
+        // Books are imported, not offered by the repositories (ADR 0023).
+        (CitedIn, ResourceType::Book, Tagging::None, None),
     ];
     assert_eq!(cases.len(), GuideSection::ALL.len());
     for (section, ty, tagging, label) in cases {

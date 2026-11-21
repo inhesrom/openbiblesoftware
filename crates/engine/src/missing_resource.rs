@@ -87,6 +87,7 @@ impl GuideSection {
                 Tagging::Morphology
             }
             GuideSection::Commentaries
+            | GuideSection::CitedIn
             | GuideSection::CrossReferences
             | GuideSection::ParallelPassages
             | GuideSection::PeopleAndPlaces

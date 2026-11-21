@@ -29,6 +29,9 @@ fn verse(out: &mut Vec<u8>, v: Verse) {
     number(out, usize::from(v.verse));
 }
 
+/// The kind id of a `scripture_ref` span.
+pub(crate) const SCRIPTURE_REF: u8 = 7;
+
 pub(crate) fn span_columns(kind: &SpanKind) -> (u8, Vec<u8>) {
     let mut out = Vec::new();
     let id = match kind {

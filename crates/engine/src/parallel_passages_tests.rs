@@ -228,6 +228,7 @@ fn the_passage_guide_section_reads_the_library_and_names_what_is_missing() {
             GuideSection::ParallelPassages,
             GuideSection::KeyWords,
             GuideSection::PeopleAndPlaces,
+            GuideSection::CitedIn,
         ]
     );
     assert_eq!(GuideSection::ParallelPassages.id(), "parallel_passages");
@@ -247,6 +248,7 @@ fn the_passage_guide_section_reads_the_library_and_names_what_is_missing() {
             GuideSection::ParallelPassages,
             GuideSection::Commentaries,
             GuideSection::PeopleAndPlaces,
+            GuideSection::CitedIn,
         ]
     );
 
