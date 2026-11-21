@@ -22,6 +22,7 @@
 //! Builds are deterministic: the same lock and code give byte-identical outputs.
 //! `--check-determinism` builds a second time and compares every file.
 
+pub mod bundled_set;
 mod checks;
 mod fetch;
 mod goldens;

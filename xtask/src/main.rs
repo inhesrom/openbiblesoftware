@@ -43,6 +43,10 @@ performance:
 starter library:
   starter  build dist/starter/*.obr from starter/sources.toml (`cargo xtask starter --help`)
 
+mobile app:
+  ios bundled-set  copy the Bundled set out of dist/starter/ into apps/ios/Bundled/starter/ and
+                   check it against apps/ios/bundled-set.lock (`--help`)
+
 releases (docs/dev/releasing.md):
   release-archive  pack the app and dist/starter/ into a Release archive (`--help`)
   release-smoke    launch an unpacked Release archive, check its Starter library got in (`--help`)
@@ -90,6 +94,13 @@ fn run() -> Result<()> {
         "starter" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             starter::run(&root, &rest)
+        }
+        "ios" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            match rest.first().map(String::as_str) {
+                Some("bundled-set") => starter::bundled_set::run(&root, &rest[1..]),
+                _ => bail!("usage: cargo xtask ios bundled-set [--help]\n\n{USAGE}"),
+            }
         }
         "release-archive" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
