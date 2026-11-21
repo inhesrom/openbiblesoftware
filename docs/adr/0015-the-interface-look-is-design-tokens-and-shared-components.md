@@ -1,5 +1,7 @@
 # The interface's look is design tokens and shared components, checked by a literal lint
 
+Amended by the mobile plan's S01 (`docs/plans/mobile-ios.md`, ADR 0021): the reading core's tokens and Page tone colours moved to `obs_reading::reading_tokens` and `obs_reading::TonePalette` (re-exported by `obs_ui_egui::tokens` and wrapped by `Palette`), and the lint (rule 3) reads `crates/reading/src` too; see `docs/dev/design-tokens.md`.
+
 About forty tickets added the interface a surface at a time, each with its own spacing, type sizes, corner radii, frames and headings. Tab pages were inset 14 × 10, 18 × 12 or 18 × 14 points, chips were drawn in five places, and section headings in six (#221). We decided:
 
 1. **One token module.** `obs_ui_egui::tokens` holds the spacing scale (`space`: 2, 4, 6, 8, 12, 16, 24 and 32 points), the type scale (`text`: 11, 12, 13, 14, 16, 20 and 24 points), corner radii (`radius`), stroke widths (`stroke`), elevations (`elevation`, the window and popover shadows), frame insets (`inset`), control and column sizes (`size`), washes (`alpha`), the reading page's marks (`mark`), chart and map geometry (`chart`), shares of the room available (`share`), multiples of the Resource text size (`scale`), and the chrome's colour roles (`Chrome`, `LIGHT`, `DARK`, the Atlas's map colours and the Highlight preset swatches). Page colours stay in `Palette`, the other colour token set. `theme` installs the tokens as egui's style.

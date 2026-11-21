@@ -294,6 +294,7 @@ images on this page included.
 | L2 | `obs-formats`, `obs-layout`, `obs-search`, `obs-store` (the only SQLite user) |
 | L3 | `obs-render` |
 | L4 | `obs-engine` |
+| L5 | `obs-reading` (the reading core without egui) |
 | L6 | `obs-ui-egui` (the only egui/eframe user) |
 | apps | `openbible` (desktop), `obs-cli` |
 

@@ -563,8 +563,8 @@ fn string_literals(src: &str) -> Vec<(usize, String)> {
     out
 }
 
-/// The interface's code, without tests: the UI crate, the desktop app and the engine, whose
-/// command labels, messages and help the interface shows. The UI crate's `bench` module is
+/// The interface's code, without tests: the UI crate, the reading core it paints, the desktop
+/// app and the engine, whose command labels, messages and help the interface shows. The UI crate's `bench` module is
 /// left out: it builds synthetic Resources (a Nave's-style index marks subtopics with `→`),
 /// which the interface never labels with.
 fn ui_sources() -> Vec<PathBuf> {
@@ -572,6 +572,7 @@ fn ui_sources() -> Vec<PathBuf> {
     let mut files = Vec::new();
     let mut dirs = vec![
         root.join("crates/ui-egui/src"),
+        root.join("crates/reading/src"),
         root.join("apps/openbible/src"),
         root.join("crates/engine/src"),
     ];

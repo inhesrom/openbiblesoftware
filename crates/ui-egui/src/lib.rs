@@ -7,28 +7,25 @@ mod a11y;
 pub mod bench;
 mod compare_view;
 mod components;
-mod doc;
 mod filters;
 mod find;
-mod heights;
 pub mod icons;
-mod interlinear;
 mod key_labels;
-mod marks;
 mod motion;
 mod note_margin;
 mod palette;
 mod pane;
 mod rich_clipboard;
 pub mod search_view;
-mod selection;
 mod shell;
 mod steps;
 mod system_fonts;
 pub mod theme;
 pub mod tokens;
-mod view;
-mod workers;
+
+// The reading core (ADR 0021): its modules keep their `crate::` paths here, so the painting
+// code reads them as it did before they moved to `obs-reading`.
+use obs_reading::{doc, heights, interlinear, marks, selection, view, workers};
 
 use std::path::PathBuf;
 

@@ -45,7 +45,7 @@ test). A base number with several senses takes the sense its English word uses (
 "In the beginning" → "beginning"), and a slash gloss the alternative used ("in/on/among" under
 "In" → "in"). See ADR 0015.
 
-The UI's `InterlinearSource` (`crates/ui-egui/src/interlinear.rs`) holds the Lexicons and
+The UI's `InterlinearSource` (`crates/reading/src/interlinear.rs`) holds the Lexicons and
 memoizes each number's lookup, so the layout workers look each Strong's number up once. Lexicons
 are loaded only when the lines need them (`needs_lexicons`): a reverse interlinear's Lemma,
 transliteration or Gloss, an original-language Bible's Lemma or Gloss. A source is rebuilt

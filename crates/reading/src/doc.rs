@@ -433,6 +433,39 @@ impl ReadingDoc {
     }
 }
 
+impl obs_engine::ComparedBible for ReadingDoc {
+    fn language(&self) -> &str {
+        &self.manifest.language
+    }
+
+    fn verse_map(&self) -> Option<&VerseMap> {
+        self.verse_map.as_deref()
+    }
+
+    fn verse_at(&self, native: Verse) -> Option<(Verse, u16)> {
+        self.bible_verse_at(native).map(|v| (v.verse, v.last))
+    }
+
+    fn verse_text(&self, native: Verse) -> Option<String> {
+        ReadingDoc::verse_text(self, native)
+            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+    }
+}
+
+impl obs_engine::CopiedBible for ReadingDoc {
+    fn manifest(&self) -> &obs_model::Manifest {
+        &self.manifest
+    }
+
+    fn versification(&self) -> &dyn obs_scripture::Versification {
+        &self.versification
+    }
+
+    fn starts_paragraph(&self, native: Verse) -> bool {
+        ReadingDoc::starts_paragraph(self, native)
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     #![allow(clippy::unwrap_used)]
