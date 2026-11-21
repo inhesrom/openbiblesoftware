@@ -35,10 +35,17 @@ impl RoleColours {
     }
 }
 
-/// The pixel size of `tile` (`[x0, y0, x1, y1]` in points) at `scale` device px per point.
+/// The pixel size of `tile` (`[x0, y0, x1, y1]` in points) at `scale` device px per point:
+/// from the device pixel its top-left edge rounds to up to the one its bottom-right edge
+/// rounds to, so tiles that meet at a fractional offset meet on one pixel edge too.
 pub fn tile_size(tile: [f32; 4], scale: f32) -> (usize, usize) {
-    let px = |a: f32, b: f32| ((b - a) * scale).round().max(0.0) as usize;
+    let px = |a: f32, b: f32| ((b * scale).round() - (a * scale).round()).max(0.0) as usize;
     (px(tile[0], tile[2]), px(tile[1], tile[3]))
+}
+
+/// The bytes of a `w × h` RGBA8 tile, or `None` when that does not fit in a `usize`.
+fn tile_bytes(w: usize, h: usize) -> Option<usize> {
+    w.checked_mul(h)?.checked_mul(4)
 }
 
 /// `x × y / 255`, rounded.
@@ -50,7 +57,7 @@ fn mul255(x: u32, y: u32) -> u32 {
 /// The pixels of `tile` (`[x0, y0, x1, y1]` in points, the space of the quads) at `scale`
 /// device px per point: [`tile_size`] wide and high, row-major RGBA8, premultiplied. The
 /// background is `colours.background`; `quads` are drawn over it as
-/// [`composite_over`] draws them.
+/// [`composite_over`] draws them. A tile whose bytes do not fit in a `usize` is empty.
 pub fn composite(
     quads: &[GlyphQuad],
     atlas: &GlyphAtlas,
@@ -59,13 +66,13 @@ pub fn composite(
     scale: f32,
 ) -> Vec<u8> {
     let (w, h) = tile_size(tile, scale);
+    let Some(len) = tile_bytes(w, h) else {
+        return Vec::new();
+    };
     let [r, g, b, a] = colours.background;
     let a32 = u32::from(a);
     let bg = [r, g, b].map(|c| mul255(u32::from(c), a32) as u8);
-    let mut pixels = Vec::with_capacity(w * h * 4);
-    for _ in 0..w * h {
-        pixels.extend_from_slice(&[bg[0], bg[1], bg[2], a]);
-    }
+    let mut pixels = [bg[0], bg[1], bg[2], a].repeat(len / 4);
     composite_over(&mut pixels, quads, atlas, colours, tile, scale);
     pixels
 }
@@ -84,7 +91,7 @@ pub fn composite_over(
     scale: f32,
 ) {
     let (w, h) = tile_size(tile, scale);
-    if pixels.len() != w * h * 4 {
+    if tile_bytes(w, h) != Some(pixels.len()) {
         return;
     }
     let side = atlas.side();
@@ -102,14 +109,16 @@ pub fn composite_over(
         let ay = (q.uv_min[1] * side as f32).round() as i64;
         let gw = ((q.uv_max[0] - q.uv_min[0]) * side as f32).round() as i64;
         let gh = ((q.uv_max[1] - q.uv_min[1]) * side as f32).round() as i64;
-        // A quad that does not sample this atlas (made before it grew or started over).
+        // A uv outside this atlas (a quad not made from it): skipped, so no index can panic.
+        // A quad made from it before it grew or started over passes and is drawn from the
+        // wrong coverage; that is the caller's precondition above.
         let side_i = side as i64;
         if ax < 0 || ay < 0 || ax + gw > side_i || ay + gh > side_i {
             continue;
         }
         let (x0, y0) = (x0 as i64, y0 as i64);
-        let cols = x0.max(0)..(x0 + gw).min(w as i64);
-        let rows = y0.max(0)..(y0 + gh).min(h as i64);
+        let cols = x0.max(0)..x0.saturating_add(gw).min(w as i64);
+        let rows = y0.max(0)..y0.saturating_add(gh).min(h as i64);
         for ty in rows {
             let src_row = (ay + ty - y0) as usize * side;
             let dst_row = ty as usize * w;
@@ -302,6 +311,64 @@ mod tests {
         let b = composite(&quads, &atlas, &colours(), lower, scale);
         assert_eq!(&a[30 * w * 4..], &b[..]);
         assert!(b.as_chunks::<4>().0.iter().copied().any(|p| p != PAGE));
+    }
+
+    #[test]
+    fn neighbouring_tiles_at_fractional_tops_tile_exactly() {
+        let mut atlas = GlyphAtlas::new();
+        let scale = 3.0;
+        let mut quads = atlas.quads(
+            &block("In the beginning", ColorRole::Ink),
+            [0.0, 0.0],
+            scale,
+        );
+        quads.extend(atlas.quads(
+            &block("was the Word", ColorRole::Accent),
+            [0.0, 20.0],
+            scale,
+        ));
+        let whole = [0.0, 0.0, 200.5, 40.0];
+        let (w, h) = tile_size(whole, scale);
+        let all = composite(&quads, &atlas, &colours(), whole, scale);
+        // Each pair of neighbours meets on one device-pixel edge: no row twice, none missed.
+        let edges = [0.0, 0.4, 0.5, 7.3, 13.85, 20.1, 26.5, 33.37, 40.0];
+        let mut stacked = Vec::new();
+        for pair in edges.windows(2) {
+            let tile = [0.0, pair[0], 200.5, pair[1]];
+            let (tw, th) = tile_size(tile, scale);
+            assert_eq!(tw, w);
+            let px = composite(&quads, &atlas, &colours(), tile, scale);
+            assert_eq!(px.len(), tw * th * 4);
+            stacked.extend(px);
+        }
+        assert_eq!(stacked.len(), w * h * 4);
+        assert!(stacked == all, "the stacked tiles differ from the whole");
+        // Side by side too, at a fractional left edge.
+        let left = composite(&quads, &atlas, &colours(), [0.0, 0.0, 66.7, 40.0], scale);
+        let right = composite(&quads, &atlas, &colours(), [66.7, 0.0, 200.5, 40.0], scale);
+        let (lw, _) = tile_size([0.0, 0.0, 66.7, 40.0], scale);
+        let (rw, _) = tile_size([66.7, 0.0, 200.5, 40.0], scale);
+        assert_eq!(lw + rw, w);
+        for y in 0..h {
+            let row = &all[y * w * 4..(y + 1) * w * 4];
+            assert_eq!(&row[..lw * 4], &left[y * lw * 4..(y + 1) * lw * 4]);
+            assert_eq!(&row[lw * 4..], &right[y * rw * 4..(y + 1) * rw * 4]);
+        }
+    }
+
+    #[test]
+    fn a_tile_too_big_to_count_in_bytes_is_empty_and_never_panics() {
+        let mut atlas = GlyphAtlas::new();
+        let quads = atlas.quads(&block("I", ColorRole::Ink), [0.0, 0.0], 1.0);
+        let huge = [0.0, 0.0, 1e20, 1e20];
+        assert_eq!(tile_size(huge, 1.0), (usize::MAX, usize::MAX));
+        assert!(composite(&quads, &atlas, &colours(), huge, 1.0).is_empty());
+        // A side that alone fits but whose bytes do not.
+        let wide = [0.0, 0.0, 1e20, 1.0];
+        assert!(composite(&quads, &atlas, &colours(), wide, 1.0).is_empty());
+        let mut px = vec![7u8; 4];
+        composite_over(&mut px, &quads, &atlas, &colours(), huge, 1.0);
+        assert_eq!(px, vec![7u8; 4]);
     }
 
     #[test]

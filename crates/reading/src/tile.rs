@@ -167,4 +167,25 @@ mod tests {
         assert_eq!(&tall.rgba[..200 * row], &upper.rgba[..]);
         assert_eq!(&tall.rgba[200 * row..], &lower.rgba[..]);
     }
+
+    #[test]
+    fn tiles_at_fractional_tops_stack_into_the_whole_with_no_seam() {
+        let mut view = john_1();
+        let mut atlas = GlyphAtlas::new();
+        let p = TonePalette::PAPER;
+        let tall = compose_tile(&mut view, &mut atlas, &p, 390.0, 0.0, 200.0, 3.0);
+        let edges = [0.0, 33.3, 66.5, 66.9, 133.45, 171.17, 200.0];
+        let mut stacked = Vec::new();
+        for pair in edges.windows(2) {
+            let (top, height) = (pair[0], pair[1] - pair[0]);
+            let t = compose_tile(&mut view, &mut atlas, &p, 390.0, top, height, 3.0);
+            assert_eq!(t.width, tall.width);
+            stacked.extend(t.rgba);
+        }
+        assert_eq!(stacked.len(), tall.rgba.len());
+        assert!(
+            stacked == tall.rgba,
+            "the stacked tiles differ from the whole"
+        );
+    }
 }

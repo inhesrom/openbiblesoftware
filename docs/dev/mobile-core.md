@@ -9,10 +9,10 @@ the "Hello engine" spike of S03. S13 replaces the spike and fills in the screens
 ## Contract
 
 - **`obs-mobile`** (`crates/mobile`, L5). The Mobile app's screen models and actions as plain
-  Rust types. It depends on `obs-engine`, `obs-reading`, `obs-render` and `obs-store`. It
-  has no FFI crate (`cargo xtask layers`), compiles for wasm32 (`cargo xtask wasm`; `boot`
-  and `open_reader` read files and are native only), keeps `unsafe_code = "forbid"`, and is
-  tested by `cargo xtask test` on every CI OS. Today it holds `Paths` (the folders the shell
+  Rust types. It depends on `obs-engine`, `obs-model`, `obs-reading`, `obs-render`,
+  `obs-scripture` and `obs-store`. It has no FFI crate (`cargo xtask layers`), compiles for
+  wasm32 (`cargo xtask wasm`; `boot` and `open_reader` read files and are native only), keeps
+  `unsafe_code = "forbid"`, and is tested by `cargo xtask test` on every CI OS. Today it holds `Paths` (the folders the shell
   picks under Application Support) and the S03 spike of `MobileApp` (below).
 - **`obs-ffi`** (`apps/obs-ffi`, an app). The one UniFFI crate Swift links, in proc-macro
   mode (`uniffi::setup_scaffolding!()`, `#[uniffi::export]`, no UDL). Its crate types are
@@ -39,7 +39,8 @@ the "Hello engine" spike of S03. S13 replaces the spike and fills in the screens
   own numbering). `layout_tile(reader, top, width, height, scale)` draws a full-width tile
   of the reader's page, `top` points below its Current location, with
   `obs_reading::compose_tile` in the Page tone of the User database (Auto as in a light
-  Theme). `obs-ffi` mirrors it as the Object `MobileApp` (a `Mutex` around
+  Theme), and refuses a tile over `MAX_TILE_PX` (8192) device pixels on a side, since a
+  failed allocation aborts the app. `obs-ffi` mirrors it as the Object `MobileApp` (a `Mutex` around
   `obs_mobile::MobileApp`; constructor `boot`, then `problems`, `resourceIds`,
   `readerResource`, `openReader`, `layoutTile`), the Records `Paths` and `Tile { width,
   height, rgba }` (Swift `Data`, premultiplied RGBA8), and the Error `MobileError.Failed {
@@ -47,7 +48,11 @@ the "Hello engine" spike of S03. S13 replaces the spike and fills in the screens
 - **Tiles (plan A4, option B).** `obs_render::composite(quads, atlas, colours, tile, scale)`
   fills a tile with `RoleColours::background` and draws glyph quads over it, each in its
   role's colour with the atlas coverage as alpha (premultiplied, source over);
-  `composite_over` draws more quads into the same pixels. `obs_reading::compose_tile` lays
+  `composite_over` draws more quads into the same pixels. A tile's pixel size
+  (`tile_size`) runs from the device pixel its top-left edge rounds to up to the one its
+  bottom-right edge rounds to, so tiles that meet at a fractional offset share no pixel row
+  and leave none out; a size whose bytes overflow a `usize` gives an empty tile.
+  `obs_reading::compose_tile` lays
   out what the tile shows, places the glyphs in the atlas (starting it over between parts
   when it fills, as the desktop pane does) and composites them in
   `TonePalette::role_colours()`. The text column is centred between `view::MARGIN`s as on
@@ -102,10 +107,12 @@ it is under the ignored `/target`.
   host test program, not app code.
 - **Tests.** CI-run, over `obs_engine::testing` fixtures: `obs-render` `composite::tests`
   (a known glyph's pixels are its atlas coverage in the ink, nothing outside it; each role's
-  colour; premultiplied; clipping and tiles lower down; a wrong-length buffer left alone),
-  `obs-reading` `tile::tests` (a 1170 × 768 phone tile is page colour in the margins with
-  ink in the column, in Paper and Dark; two half tiles are the whole), `obs-mobile` `tests`
-  (boot over a 2-Resource Bundled set and again, readers, refusals, boot with nothing) and
+  colour; premultiplied; clipping and tiles lower down; tiles at fractional offsets stack
+  into the whole; an overflowing size; a wrong-length buffer left alone), `obs-reading`
+  `tile::tests` (a 1170 × 768 phone tile is page colour in the margins with ink in the
+  column, in Paper and Dark; two half tiles are the whole, and so are tiles at fractional
+  tops), `obs-mobile` `tests` (boot over a 2-Resource Bundled set and again, readers,
+  refusals including tiles over `MAX_TILE_PX`, boot with nothing) and
   `apps/obs-ffi/tests/hello_engine.rs` (the same through the FFI types). By hand, after
   `cargo xtask ios bundled-set --from dist/starter`:
   `cargo test -p obs-ffi --test hello_engine -- --ignored --nocapture` boots over the real
