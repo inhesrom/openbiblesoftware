@@ -25,14 +25,31 @@ for id in kjv-strongs web tahot tagnt; do
   [ -f "$LIB/$id.obr" ] || { echo "missing $LIB/$id.obr (set OBS_LIBRARY)"; exit 1; }
 done
 
+# The display's refresh rate, for the missed-frame count: OBS_PROTO_HZ, else asked of
+# Hyprland, wlroots compositors (wlr-randr) or X11 (xrandr), else 60.
 if [ -z "${OBS_PROTO_HZ:-}" ]; then
-  OBS_PROTO_HZ=60
-  if [ -n "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] && command -v xrandr >/dev/null; then
+  hz=
+  if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && command -v hyprctl >/dev/null; then
+    hz=$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json, sys
+m = json.load(sys.stdin)
+m = [x for x in m if x.get("focused")] or m
+print(round(m[0]["refreshRate"]) if m else "")' 2>/dev/null)
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wlr-randr >/dev/null; then
+    hz=$(wlr-randr 2>/dev/null | awk '/current/ { for (i = 1; i <= NF; i++) if ($i == "Hz") { printf "%.0f\n", $(i-1); exit } }')
+  elif [ -n "${DISPLAY:-}" ] && command -v xrandr >/dev/null; then
     hz=$(xrandr --current 2>/dev/null | awk '/\*/ { for (i = 2; i <= NF; i++) if ($i ~ /\*/) { gsub(/[*+]/, "", $i); print $i; exit } }')
-    if [ -n "$hz" ] && awk "BEGIN { exit !($hz > 1) }"; then OBS_PROTO_HZ=$hz; fi
+  fi
+  if [ -n "$hz" ] && awk "BEGIN { exit !($hz > 1) }"; then
+    OBS_PROTO_HZ=$hz
+  else
+    OBS_PROTO_HZ=60
+    echo "warning: could not read the display's refresh rate; assuming 60 Hz (set OBS_PROTO_HZ)"
   fi
 fi
 export OBS_PROTO_HZ
+echo "Display refresh: $OBS_PROTO_HZ Hz. Keep the benchmark windows visible until it finishes:"
+echo "a hidden window (another workspace, minimized) gets no frames and stalls the run."
+
 
 GPUI_BIN=$HERE/target/release/obs-prototype-gpui-shell
 EGUI_BIN=$ROOT/target/release/openbible

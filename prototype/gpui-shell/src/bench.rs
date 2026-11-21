@@ -182,9 +182,15 @@ impl Recorder {
     }
 }
 
-fn stats(v: &mut [f64], hz: f64) -> Value {
+/// A frame interval longer than this is not the app's doing: the compositor stopped asking
+/// for frames (the window was hidden, e.g. on another workspace). Counted apart as a stall.
+const STALL_MS: f64 = 1000.0;
+
+fn stats(v: &mut Vec<f64>, hz: f64) -> Value {
+    let stalls = v.iter().filter(|x| **x > STALL_MS).count();
+    v.retain(|x| *x <= STALL_MS);
     if v.is_empty() {
-        return json!({ "count": 0 });
+        return json!({ "count": 0, "stalls_over_1s": stalls });
     }
     v.sort_by(|a, b| a.total_cmp(b));
     let q = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize];
@@ -199,6 +205,7 @@ fn stats(v: &mut [f64], hz: f64) -> Value {
         "max_ms": v[v.len() - 1],
         "missed_frames": missed,
         "missed_pct": 100.0 * missed as f64 / v.len() as f64,
+        "stalls_over_1s": stalls,
     })
 }
 
@@ -277,6 +284,24 @@ pub fn report(rec: &Recorder, hz: f64, extra: Value) -> Value {
             eframe.insert(k, stats(&mut c, hz));
         }
     }
+    // Every timed frame, so the statistics can be recomputed (another display rate, say).
+    let mut raw_phase = Vec::new();
+    let mut raw_interval = Vec::new();
+    let mut raw_work = Vec::new();
+    for k in 0..rec.starts.len() {
+        if matches!(rec.phases[k].as_str(), "setup" | "done") {
+            continue;
+        }
+        raw_phase.push(rec.phases[k].clone());
+        raw_interval.push(
+            rec.starts
+                .get(k + 1)
+                .map(|n| n.duration_since(rec.starts[k]).as_secs_f64() * 1000.0),
+        );
+        raw_work.push(
+            rec.paint_ends[k].map(|e| e.duration_since(rec.starts[k]).as_secs_f64() * 1000.0),
+        );
+    }
     let timed = by_count(rec);
     let cpu = match (rec.cpu_start, rec.cpu_end) {
         (Some((c0, t0)), Some((c1, t1))) => json!({
@@ -294,6 +319,7 @@ pub fn report(rec: &Recorder, hz: f64, extra: Value) -> Value {
         "eframe_frame_cpu": if eframe.is_empty() { json!(null) } else { Value::Object(eframe) },
         "cpu": cpu,
         "peak_rss_mb": peak_rss_mb(),
+        "raw": { "phase": raw_phase, "interval_ms": raw_interval, "work_ms": raw_work },
     });
     if let (Some(o), Some(e)) = (out.as_object_mut(), extra.as_object()) {
         for (k, v) in e {

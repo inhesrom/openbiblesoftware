@@ -62,6 +62,15 @@ def main():
         ("Process CPU per frame, all threads (ms)", ("cpu", "process_cpu_ms_per_frame")),
         ("Scenario wall time (ms)", ("cpu", "scenario_wall_ms")),
     ]
+    for app in ("gpui", "egui"):
+        sizes = {tuple(round(x) for x in r["window_actual"]) for r in runs[app] if r.get("window_actual")}
+        scales = {r.get("scale_factor") for r in runs[app] if r.get("scale_factor")}
+        stalls = sum(get(r, "frame_interval", "all", "stalls_over_1s") or 0 for r in runs[app])
+        if sizes or stalls:
+            print(f"- {app}: window {', '.join(f'{w}×{h}' for w, h in sorted(sizes)) or '?'} points "
+                  f"at scale {', '.join(str(x) for x in sorted(scales)) or '?'}; "
+                  f"stalls over 1 s (window hidden), left out of the statistics: {stalls}")
+    print()
     print("| Measure | GPUI | egui | egui/gpui |\n|---|---:|---:|---:|")
     for label, path in rows:
         g, e = med(runs["gpui"], *path), med(runs["egui"], *path)

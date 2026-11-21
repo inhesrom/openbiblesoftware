@@ -399,6 +399,11 @@ impl Shell {
                 "app": "gpui",
                 "gpui_version": "0.2.2",
                 "window": run.scenario.window,
+                "window_actual": [
+                    f32::from(window.viewport_size().width),
+                    f32::from(window.viewport_size().height),
+                ],
+                "scale_factor": window.scale_factor(),
                 "bibles": self.ids,
                 "frames": run.scenario.frames.len(),
                 "startup": {

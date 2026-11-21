@@ -121,6 +121,8 @@ impl ProtoBench {
             "app": "egui",
             "egui_version": "0.37",
             "window": self.scenario.window,
+            "window_actual": [ctx.viewport_rect().width(), ctx.viewport_rect().height()],
+            "scale_factor": ctx.pixels_per_point(),
             "bibles": self.scenario.bibles,
             "frames": self.scenario.frames.len(),
             "startup": {
