@@ -294,8 +294,9 @@ images on this page included.
 | L2 | `obs-formats`, `obs-layout`, `obs-search`, `obs-store` (the only SQLite user) |
 | L3 | `obs-render` |
 | L4 | `obs-engine` |
+| L5 | `obs-mobile` (the Mobile app's screen models; no FFI) |
 | L6 | `obs-ui-egui` (the only egui/eframe user) |
-| apps | `openbible` (desktop), `obs-cli` |
+| apps | `openbible` (desktop), `obs-cli`, `obs-ffi` (the Mobile app's UniFFI crate, the only `uniffi` user), `uniffi-bindgen` |
 
 A crate may depend only on its own or lower layers. Everything below L6 compiles for
 `wasm32-unknown-unknown`. `obs-` is a working prefix until the product is named.

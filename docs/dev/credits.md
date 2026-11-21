@@ -48,7 +48,13 @@ machine without cargo-about the gate is skipped with a warning, as `test` falls 
 nextest.
 
 `about.toml` accepts only permissive licences, so a crate licensed `MIT OR LGPL` or
-`Apache-2.0 OR GPL-2.0-only` is always taken under its permissive option.
+`Apache-2.0 OR GPL-2.0-only` is always taken under its permissive option. The one exception
+is `MPL-2.0`, listed last, which the owner accepted for UniFFI's runtime in the iOS app only
+(D21). A test fails if the desktop listing, or any crate but UniFFI's, is taken under it.
+
+The same run writes `crates/engine/data/third-party-licenses-ios.json`, the iOS app's
+listing (`apps/obs-ffi`, for the iOS targets), and the gate checks it too
+([mobile core](mobile-core.md)). The desktop Credits Tab does not show it.
 
 ## Change records
 
