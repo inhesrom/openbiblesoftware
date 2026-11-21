@@ -1918,3 +1918,69 @@ fn the_bundled_set_is_copied_locked_capped_and_accepted_by_the_app() {
     assert_eq!(added, ["bsb", "web"]);
     assert!(dir.join("app/library/CHANGES-bsb.md").is_file());
 }
+
+#[test]
+fn the_bundled_set_copy_empties_only_a_bundled_set_folder_and_ignores_finder_files() {
+    use bundled_set::{MAX_BYTES, Options, copy, verify};
+    let dir = scratch("bundled-set-folder");
+    let config = mobile_setup(&dir);
+    build(&config).unwrap();
+    let mut options = Options {
+        from: config.out.clone(),
+        out: dir.join("ios/Bundled/starter"),
+        lock: dir.join("ios/bundled-set.lock"),
+        update_lock: true,
+        verify: false,
+        max_bytes: MAX_BYTES,
+    };
+    // A missing folder is created.
+    let lock = copy(&options).unwrap();
+    options.update_lock = false;
+
+    // Finder's `.DS_Store` is left out of the lock, at the top and in `search/`.
+    std::fs::write(options.out.join(".DS_Store"), "finder").unwrap();
+    std::fs::write(options.out.join("search/.DS_Store"), "finder").unwrap();
+    assert_eq!(verify(&options).unwrap(), lock);
+
+    // Any other stray file fails `--verify`, and a re-copy removes it.
+    std::fs::write(options.out.join("stray.txt"), "stray").unwrap();
+    let err = format!("{:#}", verify(&options).unwrap_err());
+    assert!(err.contains("stray.txt: copied, not in the lock"), "{err}");
+    assert_eq!(copy(&options).unwrap(), lock);
+    assert!(!options.out.join("stray.txt").exists());
+    assert!(!options.out.join(".DS_Store").exists());
+
+    // An empty folder is copied into.
+    let empty = Options {
+        out: dir.join("empty"),
+        ..options.clone()
+    };
+    std::fs::create_dir_all(&empty.out).unwrap();
+    assert_eq!(copy(&empty).unwrap(), lock);
+
+    // A folder with files but no manifest is refused and left as it was.
+    let unrelated = Options {
+        out: dir.join("unrelated"),
+        ..options.clone()
+    };
+    std::fs::create_dir_all(&unrelated.out).unwrap();
+    std::fs::write(unrelated.out.join("notes.txt"), "keep").unwrap();
+    let err = format!("{:#}", copy(&unrelated).unwrap_err());
+    assert!(err.contains("not a Bundled set folder"), "{err}");
+    assert_eq!(
+        std::fs::read_to_string(unrelated.out.join("notes.txt")).unwrap(),
+        "keep"
+    );
+
+    // So is the Starter library being copied from.
+    let onto_from = Options {
+        out: config.out.clone(),
+        ..options.clone()
+    };
+    let err = format!("{:#}", copy(&onto_from).unwrap_err());
+    assert!(
+        err.contains("the Starter library being copied from"),
+        "{err}"
+    );
+    assert!(config.out.join("bsb.obr").is_file());
+}

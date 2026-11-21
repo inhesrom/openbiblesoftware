@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use super::fetch::sha256_hex;
 use super::ids::{MANIFEST_FORMAT, ReleaseManifest};
 use super::lock::MobileSet;
-use super::{ALIAS_DIR, MANIFEST_FILE, SEARCH_DIR, clean_outputs, mb};
+use super::{ALIAS_DIR, MANIFEST_FILE, SEARCH_DIR, mb};
 
 /// The Bundled set folder's cap. It catches a Study set Resource bundled by mistake (each is
 /// 3–26 MB); the Bundled set itself measured 43.1 MB with its Search indexes (2026-11).
@@ -27,6 +27,9 @@ pub const MAX_BYTES: u64 = 50_000_000;
 /// The committed lock, relative to the workspace root.
 pub const LOCK_FILE: &str = "apps/ios/bundled-set.lock";
 
+/// The folder metadata Finder writes; not part of the Bundled set, so the lock leaves it out.
+const FINDER_FILE: &str = ".DS_Store";
+
 const USAGE: &str =
     "usage: cargo xtask ios bundled-set [--from DIR] [--out DIR] [--update-lock | --verify]
 
@@ -34,7 +37,11 @@ const USAGE: &str =
   --out DIR      where the Bundled set goes (default apps/ios/Bundled/starter)
   --update-lock  rewrite apps/ios/bundled-set.lock from this copy instead of failing on a
                  difference (commit the result for review)
-  --verify       copy nothing: check the Bundled set already in --out against the lock";
+  --verify       copy nothing: check the Bundled set already in --out against the lock
+
+Build dist/starter with `cargo xtask starter --previous <the latest release's
+starter-manifest.json>` (as starter.yml does), or pass CI's starter-library artifact as
+--from; otherwise every revision reads r1 and the copy will not match the lock.";
 
 const LOCK_HEADER: &str = "\
 # The Mobile app's Bundled set (#333): every file `cargo xtask ios bundled-set` copies from
@@ -192,7 +199,7 @@ pub fn copy(options: &Options) -> Result<BundledSetLock> {
     }
 
     let out = &options.out;
-    clean_outputs(out)?;
+    empty_bundled_set_folder(out, from)?;
     for r in &bundled {
         let id = &r.resource_id;
         let name = format!("{id}.obr");
@@ -301,7 +308,7 @@ fn lock_of(dir: &Path, manifest: &ReleaseManifest) -> Result<BundledSetLock> {
     let mut files = Vec::new();
     for entry in walkdir::WalkDir::new(dir).sort_by_file_name() {
         let entry = entry?;
-        if !entry.file_type().is_file() {
+        if !entry.file_type().is_file() || entry.file_name() == FINDER_FILE {
             continue;
         }
         let bytes = std::fs::read(entry.path())
@@ -384,6 +391,33 @@ fn differences(committed: &BundledSetLock, fresh: &BundledSetLock) -> Vec<String
         ));
     }
     out
+}
+
+/// Empty `out` for a fresh copy, so no stray file survives it. Only a Bundled set folder (one
+/// holding a `starter-manifest.json`, or empty, or missing) is emptied; any other folder, or the
+/// Starter library being copied from, is refused, so a mistyped `--out` wipes nothing.
+fn empty_bundled_set_folder(out: &Path, from: &Path) -> Result<()> {
+    if out.exists() {
+        if std::fs::canonicalize(out)? == std::fs::canonicalize(from)? {
+            bail!(
+                "--out {} is the Starter library being copied from",
+                out.display()
+            );
+        }
+        let empty = std::fs::read_dir(out)
+            .with_context(|| format!("cannot read {}", out.display()))?
+            .next()
+            .is_none();
+        if !empty && !out.join(MANIFEST_FILE).is_file() {
+            bail!(
+                "{} is not a Bundled set folder (it has files but no {MANIFEST_FILE}); refusing \
+                 to empty it",
+                out.display()
+            );
+        }
+        std::fs::remove_dir_all(out).with_context(|| format!("cannot remove {}", out.display()))?;
+    }
+    std::fs::create_dir_all(out).with_context(|| format!("cannot create {}", out.display()))
 }
 
 fn write(path: &Path, bytes: &[u8]) -> Result<()> {

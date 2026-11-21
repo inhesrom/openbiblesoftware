@@ -1501,6 +1501,9 @@ this in addition to its own lines):
   `xcodegen generate`, `xcodebuild test` on a named simulator, upload screenshots and `xcresult` on
   failure, `DEVELOPER_DIR` pinned to the Xcode version S05 recorded (bump it together with S05's
   Outcome). Keep `ci.yml` untouched.
+- **Lock check:** the iOS job (or `starter.yml`) runs `cargo xtask ios bundled-set --out
+  target/bundled-set` after the Starter build, so a stale `apps/ios/bundled-set.lock` fails CI;
+  on Linux this also proves the lock is host-independent.
 - **Don't:** device builds, signing, uploads; any change to `ci.yml` or `cargo xtask ci`.
 - **Deliverables:** `.github/workflows/ios.yml`, `docs/dev/ios-project.md` CI section.
 - **Done when:** the job passes on the PR; a deliberate Swift test failure fails it; a deliberate
