@@ -12,12 +12,17 @@
 #
 # `url` is the pinned download. eBible regenerates its zips, so pins point at Internet Archive
 # captures (`id_` URLs serve the original bytes); `origin_url` is where the publisher serves it.
+#
+# `mobile_set` is the Resource's place in the Mobile app (#333, CONTEXT.md): `bundled` (built
+# into the app: the Bundled set, `cargo xtask ios bundled-set`), `study` (the Study set, offered
+# together at first launch) or `more` (downloaded one at a time).
 
 # Starter set plus Search index caches, in MB (10^6 bytes).
 size_budget_mb = 400
 
 [[source]]
 resource_id = "kjv-strongs"
+mobile_set = "study"
 importer = "usfm"
 url = "https://web.archive.org/web/20261101035106id_/https://ebible.org/Scriptures/eng-kjv2006_usfm.zip"
 origin_url = "https://eBible.org/Scriptures/eng-kjv2006_usfm.zip"
@@ -36,6 +41,7 @@ evidence = "evidence/kjv-strongs.md"
 
 [[source]]
 resource_id = "bsb"
+mobile_set = "bundled"
 importer = "usfm"
 url = "https://web.archive.org/web/20261014232912id_/https://bereanbible.com/bsb_usfm.zip"
 origin_url = "https://bereanbible.com/bsb_usfm.zip"
@@ -54,6 +60,7 @@ evidence = "evidence/bsb.md"
 
 [[source]]
 resource_id = "web"
+mobile_set = "more"
 importer = "usfm"
 url = "https://web.archive.org/web/20261011232837id_/https://ebible.org/Scriptures/engwebp_usfm.zip"
 origin_url = "https://eBible.org/Scriptures/engwebp_usfm.zip"
@@ -73,6 +80,7 @@ skip_books = ["FRT", "GLO"]
 
 [[source]]
 resource_id = "asv"
+mobile_set = "more"
 importer = "usfm"
 url = "https://web.archive.org/web/20261025015730id_/https://ebible.org/Scriptures/eng-asv_usfm.zip"
 origin_url = "https://eBible.org/Scriptures/eng-asv_usfm.zip"
@@ -92,6 +100,7 @@ skip_books = ["FRT", "INT"]
 
 [[source]]
 resource_id = "openbible-xrefs"
+mobile_set = "bundled"
 importer = "openbible-cross-references"
 url = "https://web.archive.org/web/20261024000104id_/https://a.openbible.info/data/cross-references.zip"
 origin_url = "https://a.openbible.info/data/cross-references.zip"
@@ -110,6 +119,7 @@ evidence = "evidence/openbible-xrefs.md"
 
 [[source]]
 resource_id = "tipnr"
+mobile_set = "study"
 importer = "tipnr"
 url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Proper%20Nouns/TIPNR%20-%20Translators%20Individualised%20Proper%20Names%20with%20all%20References%20-%20STEPBible.org%20CC%20BY.txt"
 origin_url = "https://github.com/STEPBible/STEPBible-Data/raw/master/Proper%20Nouns/TIPNR%20-%20Translators%20Individualised%20Proper%20Names%20with%20all%20References%20-%20STEPBible.org%20CC%20BY.txt"
@@ -131,6 +141,7 @@ evidence = "evidence/tipnr.md"
 
 [[source]]
 resource_id = "tbesh"
+mobile_set = "study"
 importer = "stepbible-tbes"
 url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Lexicons/TBESH%20-%20Translators%20Brief%20lexicon%20of%20Extended%20Strongs%20for%20Hebrew%20-%20STEPBible.org%20CC%20BY.txt"
 sha256 = "848eef2ac16753a43694897dbb9e8f266725e7cc9da4809f367ee5b990f05dbb"
@@ -149,6 +160,7 @@ skip_columns = ["Meaning"]
 
 [[source]]
 resource_id = "tbesg"
+mobile_set = "study"
 importer = "stepbible-tbes"
 url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Lexicons/TBESG%20-%20Translators%20Brief%20lexicon%20of%20Extended%20Strongs%20for%20Greek%20-%20STEPBible.org%20CC%20BY.txt"
 sha256 = "734a5b64a1152f67604bf09d32f15c0ba537151961752fcf168087b41b4d93ea"
@@ -166,6 +178,7 @@ evidence = "evidence/tbesg.md"
 
 [[source]]
 resource_id = "strongs-hebrew"
+mobile_set = "bundled"
 importer = "strongs-hebrew"
 url = "https://raw.githubusercontent.com/openscriptures/strongs/0acd2f251c2d35ff8db2dece4e0593979d3ac223/hebrew/StrongHebrewG.xml"
 sha256 = "1f9659ea208f4c498843a0280dacb1448627c33ca77712642d8705793ab66061"
@@ -183,6 +196,7 @@ evidence = "evidence/strongs-hebrew.md"
 
 [[source]]
 resource_id = "strongs-greek"
+mobile_set = "bundled"
 importer = "strongs-greek"
 url = "https://raw.githubusercontent.com/openscriptures/strongs/0acd2f251c2d35ff8db2dece4e0593979d3ac223/greek/StrongsGreekDictionaryXML_1.4/strongsgreek.xml"
 sha256 = "df928f01b37632f8af9f16289ce58d10b958014cb5dbd1e1ea715a8d311a0625"
@@ -200,6 +214,7 @@ evidence = "evidence/strongs-greek.md"
 
 [[source]]
 resource_id = "bdb"
+mobile_set = "study"
 importer = "oshb-bdb"
 url = "https://raw.githubusercontent.com/openscriptures/HebrewLexicon/21c9add13bc727d3a951361778e97e3ff7afd1ce/BrownDriverBriggs.xml"
 sha256 = "2b52658a4323d91674cda4090ab8b3ebddfff640f4f18143c28300e80b2c38f8"
@@ -221,6 +236,7 @@ sha256 = "8f7a605c58899d2f44430149c143c00903976e1e91232476677972a69e5bc85f"
 
 [[source]]
 resource_id = "abbott-smith"
+mobile_set = "study"
 importer = "abbott-smith"
 url = "https://raw.githubusercontent.com/translatable-exegetical-tools/Abbott-Smith/8c00cb244761aa23659421a8cbbbf7a3b27b7d59/abbott-smith.tei.xml"
 sha256 = "99821bee411626b4aa3e674040297b54b267eff86cb4f9b7ef69a8bdb18b6f90"
@@ -238,6 +254,7 @@ evidence = "evidence/abbott-smith.md"
 
 [[source]]
 resource_id = "tahot"
+mobile_set = "study"
 importer = "tahot"
 url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAHOT%20Gen-Deu%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt"
 sha256 = "7763ef367bb0e6e1c1a95fb9b652e1d611b2481827611433e82abbf229216d70"
@@ -267,6 +284,7 @@ sha256 = "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540"
 
 [[source]]
 resource_id = "tagnt"
+mobile_set = "study"
 importer = "tagnt"
 url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAGNT%20Mat-Jhn%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt"
 sha256 = "d4c0c820fdf9f2b450c9f96ce6103d6875028affd2e44094d753f1329ca1fd85"
@@ -288,6 +306,7 @@ sha256 = "122040eeeaeba50d6abbf67b39cacaff687211bda69b080e5d53927c830d9968"
 
 [[source]]
 resource_id = "mhc"
+mobile_set = "more"
 importer = "wikisource-mhc"
 url = "https://web.archive.org/web/20261103225156id_/https://en.wikisource.org/w/api.php?action=query&generator=allpages&gapprefix=Matthew+Henry%27s+Commentary+on+the+Whole+Bible&gaplimit=max&export=1&exportnowrap=1"
 origin_url = "https://en.wikisource.org/w/api.php?action=query&generator=allpages&gapprefix=Matthew+Henry%27s+Commentary+on+the+Whole+Bible&gaplimit=max&export=1&exportnowrap=1"
@@ -306,6 +325,7 @@ evidence = "evidence/mhc.md"
 
 [[source]]
 resource_id = "jfb"
+mobile_set = "study"
 importer = "jfb-html"
 url = "https://web.archive.org/web/20120504083056id_/http://thirdmill.org/files/english/texts/JFB/JFB-UPD3.zip"
 origin_url = "https://thirdmill.org/files/english/texts/JFB/JFB-UPD3.zip"
@@ -324,6 +344,7 @@ evidence = "evidence/jfb.md"
 
 [[source]]
 resource_id = "easton"
+mobile_set = "study"
 importer = "easton-zld"
 url = "https://www.crosswire.org/ftpmirror/pub/sword/packages/rawzip/Easton.zip"
 sha256 = "f6dd054554764e2e97d5d189a697eb26039054578a9ccf98ce668ab810341c6e"
@@ -341,6 +362,7 @@ evidence = "evidence/easton.md"
 
 [[source]]
 resource_id = "smith"
+mobile_set = "study"
 importer = "smith-rawld"
 url = "https://www.crosswire.org/ftpmirror/pub/sword/packages/rawzip/Smith.zip"
 sha256 = "88a2c2d11f70b2484fa39d61a8e821849dca799d51e1593e8a2839f6313a8f9a"
@@ -360,6 +382,7 @@ evidence = "evidence/smith.md"
 # read by the app's own SWORD Import, as Library → Import would read it.
 [[source]]
 resource_id = "hitchcock"
+mobile_set = "study"
 importer = "sword-zip"
 url = "https://www.crosswire.org/ftpmirror/pub/sword/packages/rawzip/Hitchcock.zip"
 sha256 = "1c22a6482246274f463a5365232de8f79b445971f2de336b670a9b4d73fc74e4"
@@ -381,6 +404,7 @@ evidence = "evidence/hitchcock.md"
 # pin as the `tipnr` entry), read only to match places.
 [[source]]
 resource_id = "openbible-geo"
+mobile_set = "study"
 importer = "openbible-geocoding"
 url = "https://raw.githubusercontent.com/openbibleinfo/Bible-Geocoding-Data/7eb18a5ee62f27b9b93bd6689ea272d76dd23b8f/data/ancient.jsonl"
 origin_url = "https://github.com/openbibleinfo/Bible-Geocoding-Data/raw/main/data/ancient.jsonl"
@@ -413,6 +437,7 @@ sha256 = "d595b9163d32a400bb0ef96b27a6de58335a63da840b82531fe9f5e1d16a318c"
 # entry) is read only to give people and places TIPNR's ids.
 [[source]]
 resource_id = "theographic"
+mobile_set = "study"
 importer = "theographic-events"
 url = "https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/3f461f2f3cf8939f2b79430ae238a36528024ed3/CSV/Events.csv"
 origin_url = "https://github.com/robertrouse/theographic-bible-metadata/raw/master/CSV/Events.csv"
@@ -446,6 +471,7 @@ sha256 = "d595b9163d32a400bb0ef96b27a6de58335a63da840b82531fe9f5e1d16a318c"
 # Samuel and Kings). Read from the same pinned zip as the `bsb` entry.
 [[source]]
 resource_id = "bsb-parallels"
+mobile_set = "study"
 importer = "usfm-parallel-passages"
 url = "https://web.archive.org/web/20261014232912id_/https://bereanbible.com/bsb_usfm.zip"
 origin_url = "https://bereanbible.com/bsb_usfm.zip"

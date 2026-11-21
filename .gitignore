@@ -6,3 +6,6 @@
 # See docs/dev/local-copyrighted-modules.md. Never commit these or their
 # converted .obr / Search index output.
 /local-modules/
+
+# The Mobile app's Bundled set, copied from dist/starter/ by `cargo xtask ios bundled-set`.
+/apps/ios/Bundled/

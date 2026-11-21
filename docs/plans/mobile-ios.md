@@ -39,7 +39,7 @@ to Claude Opus 5.5 later on".
 | S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | todo |
 | S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | todo |
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | todo |
-| S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | todo |
+| S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (PR #358) |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
 | S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | todo |
 | S07 | #331 UI stack prototype: hosted text view on device | AFK | y | S04, S06 | prototype build + measurements + `docs/dev/mobile-text-view.md` | todo |
@@ -346,7 +346,8 @@ Theme (Light/Dark/System/High contrast) and Page tone choices remain `obs_engine
   and the files disagree. The app passes `Bundle.main.resourceURL/starter` to Rust.
 - **First launch: copy (ADR 0007), not open in place.** `Session::sync_starter_library(bundle)`
   (`crates/engine/src/starter.rs:758`) already stages, verifies and renames `.obr` files into the
-  library folder and handles revisions. 31 MB copied once is cheap; opening in place would need a
+  library folder and handles revisions. 43 MB (the Bundled set with its Search indexes, measured in
+  S04) copied once is cheap; opening in place would need a
   second code path for revisions and Remove. Owner may override. **Manifest mismatch to fix (S23):**
   the engine treats the bundled and the released Starter manifest as either/or —
   `StarterLibrary::manifest()` returns the bundle's first (`starter.rs:248–251`) and `add_starter`
@@ -587,7 +588,8 @@ this in addition to its own lines):
   `mobile_set: Option<String>`. `cargo xtask ios bundled-set [--from dist/starter] [--out apps/ios/Bundled/starter]`
   copies the bundled items' `.obr`, `search/<id>*`, `aliases/*` involving them, `CHANGES-<id>.md`
   and a filtered manifest; writes/verifies `apps/ios/bundled-set.lock` (ids, revisions, sha256,
-  bytes; `--update-lock` to refresh); fails if the directory exceeds 40 MB. Record sizes in the
+  bytes; `--update-lock` to refresh); fails if the directory exceeds 50 MB (raised from 40 MB at S04;
+  see its Outcome). Record sizes in the
   starter build report. Add `exclude = ["apps/ios"]` to `[workspace]` in `Cargo.toml` (A6: the
   `apps/*` member glob otherwise fails on a directory without a manifest).
 - **Don't:** change any Resource's content or id; ship the Study set in the app; touch the release
@@ -595,14 +597,46 @@ this in addition to its own lines):
 - **Deliverables:** `sources.toml` + xtask changes, `apps/ios/bundled-set.lock`,
   `cargo xtask ios bundled-set`, a "Mobile sets" section in `docs/dev/starter-library.md`.
 - **Done when:** `cargo xtask starter --check-determinism` still passes; the lock matches a fresh
-  build; the subset dir is ≤ 40 MB and `sync_starter_library` accepts it as a bundle (an
+  build; the subset dir is ≤ 50 MB and `sync_starter_library` accepts it as a bundle (an
   `#[ignore]`d engine test against the subset, plus a CI-run test over a synthetic 2-item bundle
   built from `obs_engine::testing` fixtures); `cargo metadata` succeeds with `apps/ios/` present.
 - **Verify:** `cargo xtask starter --check-determinism`; `cargo xtask ios bundled-set`;
   `du -sh apps/ios/Bundled/starter`; `cargo test -p obs-engine starter`;
   `cargo test -p obs-engine starter -- --ignored`; `cargo metadata --format-version 1 >/dev/null`.
-- **Stop-and-ask:** the bundled subset exceeds 40 MB; a Resource in #333's lists is not in
-  `sources.toml`.
+- **Stop-and-ask:** the bundled subset exceeds 50 MB (was 40 MB; see the Outcome); a Resource in
+  #333's lists is not in `sources.toml`.
+- **Outcome (2026-11-21, branch `mobile/s04-mobile-sets`):** shipped `mobile_set` on all 22
+  `[[source]]` entries (`bundled`: `bsb`, `openbible-xrefs`, `strongs-hebrew`, `strongs-greek`;
+  `study`: the fifteen of A7, every one already in `sources.toml`; `more`: `asv`, `web`, `mhc`),
+  parsed as `lock::MobileSet` and written into `starter-manifest.json` (format 1, field omitted
+  when unset); `StarterItem.mobile_set: Option<String>`; a **Mobile sets** table in the build
+  report; `cargo xtask ios bundled-set [--from] [--out] [--update-lock | --verify]`
+  (`xtask/src/starter/bundled_set.rs`; `--verify` checks an already-copied folder without
+  `dist/starter`, as S06's run-script phase expects); `apps/ios/bundled-set.lock` (every file's
+  path, sha256 and bytes, plus each Resource's id, revision, `.obr` sha256 and bytes);
+  `exclude = ["apps/ios"]` (without it `cargo metadata` fails with "failed to load manifest for
+  workspace member `…/apps/ios`"; with it, it passes); `/apps/ios/Bundled/` in `.gitignore`; a
+  "Mobile sets" section in `docs/dev/starter-library.md`. Tests: a CI-run xtask test checks every
+  lock entry against #333's lists; another builds a 3-Resource Starter library, copies its
+  2-Resource Bundled set (lock written, matched, a changed lock, a changed file and the cap
+  refused) and adds it through `sync_starter_library`; a CI-run engine test adds a 2-Resource
+  Bundled set built from `obs_engine::testing` fixtures; an `#[ignore]`d engine test adds the real
+  subset (4 Resources in 0.12 s, prebuilt caches used, G26 from Strong's Greek). **Measured:** the
+  Bundled set is 43.1 MB (43,116,439 bytes; `du -sh` 41M): 34.46 MB of `.obr` + 8.31 MB of
+  prebuilt Search indexes + 0.34 MB manifest + 1 KB change record, no alias caches (no People &
+  places index or Dictionary in it). #333's "about 31 MB" counted `.obr` files only. **Decision
+  (parent session, at the stop-and-ask):** the cap is 50 MB (`bundled_set::MAX_BYTES`): it exists to
+  catch a Study set Resource bundled by mistake, not to squeeze the Bundled set; all four `.obr`
+  and all four prebuilt indexes ship as #333 says. Other sizes: Study set 136.6 MB of `.obr`
+  (+ 47.1 MB indexes, built on the device; #333 said about 125 MB), `more` 136.4 MB. The four
+  bundled `.obr` files are byte-identical to the latest release's (built on Linux), so their lock
+  lines hold across hosts (the Search index files were not compared across hosts). `dist/starter` (397.8 MB, 22 Resources) is left in this worktree for S03.
+  Deferred, as planned: S23's manifest merge (with only the Bundled set's manifest, the Starter
+  library rows see 4 Resources). Gates: `cargo xtask starter --check-determinism` passes (two
+  builds byte-identical, ~28 s with a warm download cache); `cargo xtask ci` passed every gate but
+  one test under four parallel lane builds: `obs-ui-egui`
+  `find_bar::text_comparison_rows_are_found_and_stepped_through` ("Enter #126: []", no hit painted
+  yet), a crate S04 does not touch, which passes on its own (24.8 s): a load flake.
 
 ### M1 — Prototypes (#331, #335)
 
@@ -1467,6 +1501,9 @@ this in addition to its own lines):
   `xcodegen generate`, `xcodebuild test` on a named simulator, upload screenshots and `xcresult` on
   failure, `DEVELOPER_DIR` pinned to the Xcode version S05 recorded (bump it together with S05's
   Outcome). Keep `ci.yml` untouched.
+- **Lock check:** the iOS job (or `starter.yml`) runs `cargo xtask ios bundled-set --out
+  target/bundled-set` after the Starter build, so a stale `apps/ios/bundled-set.lock` fails CI;
+  on Linux this also proves the lock is host-independent.
 - **Don't:** device builds, signing, uploads; any change to `ci.yml` or `cargo xtask ci`.
 - **Deliverables:** `.github/workflows/ios.yml`, `docs/dev/ios-project.md` CI section.
 - **Done when:** the job passes on the PR; a deliberate Swift test failure fails it; a deliberate
@@ -1515,7 +1552,7 @@ this in addition to its own lines):
   one and record) plus font/data attributions
   from `ATTRIBUTION.toml`; OpenBible.info credit wording per #328 ("data from OpenBible.info, CC BY
   4.0"); accessibility audit pass on every screen (XCUITest `performAccessibilityAudit`); size:
-  `.ipa` ≤ 200 MB (expect ≈ 31 MB content + Rust ≈ 20–40 MB; record); first-launch offline path
+  `.ipa` ≤ 200 MB (expect ≈ 43 MB Bundled set, measured in S04, + Rust ≈ 20–40 MB; record); first-launch offline path
   (4.2.3(ii)); review notes (what the app does without download, how Import works, no accounts);
   `xcodebuild archive` + `-exportArchive` (App Store method) with the Developer Program certificate
   (owner-provided via Xcode Accounts; agent runs the command) + local validation of the `.ipa`
