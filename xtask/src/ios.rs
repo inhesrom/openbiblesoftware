@@ -416,7 +416,10 @@ fn same_content(from: &Path, new: &[u8], old: &[u8]) -> bool {
         return false;
     }
     let lines = |b: &[u8]| {
-        let mut l: Vec<String> = String::from_utf8_lossy(b).lines().map(str::to_string).collect();
+        let mut l: Vec<String> = String::from_utf8_lossy(b)
+            .lines()
+            .map(str::to_string)
+            .collect();
         l.sort();
         l
     };
@@ -630,7 +633,11 @@ mod tests {
         std::fs::write(from.join("ios-arm64-simulator/Headers/a.h"), "h2\nh1\n").unwrap();
         mirror(&from, &to).unwrap();
         std::fs::write(from.join("ios-arm64-simulator/Headers/a.h"), "h1\nh2\n").unwrap();
-        assert_eq!(mirror(&from, &to).unwrap(), 1, "only Info.plist ignores order");
+        assert_eq!(
+            mirror(&from, &to).unwrap(),
+            1,
+            "only Info.plist ignores order"
+        );
 
         let (file, copy) = (from.join("Info.plist"), base.join("one/ObsFFI.swift"));
         assert_eq!(mirror(&file, &copy).unwrap(), 1);

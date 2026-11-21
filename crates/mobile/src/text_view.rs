@@ -1048,7 +1048,11 @@ mod tests {
         // At the very top, over the excerpt's first heading (Isaiah 40 comes before John 1),
         // the location is the first Verse below it.
         let top = app.open_reader("bsb", None).unwrap();
-        assert_eq!(app.readers[top.0 as usize].current_location(), None, "over a heading");
+        assert_eq!(
+            app.readers[top.0 as usize].current_location(),
+            None,
+            "over a heading"
+        );
         assert_eq!(frame(&mut app, top, 0.0).location, "Isaiah 40:1");
     }
 
