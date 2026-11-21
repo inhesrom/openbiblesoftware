@@ -216,7 +216,7 @@ fn every_merged_clock_is_observed_so_a_later_edit_here_wins() {
     };
     cloud.put(
         &op_file_path(&ahead, 1),
-        &encode_op_file(&[op.clone()]).unwrap(),
+        &encode_op_file(std::slice::from_ref(&op)).unwrap(),
     );
     let report = b.sync(&cloud);
     assert_eq!(report.not_observed, 0);

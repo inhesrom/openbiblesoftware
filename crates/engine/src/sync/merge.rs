@@ -95,6 +95,9 @@ pub struct MergeReport {
     pub stopped: Vec<(String, u64, OpsStop)>,
 }
 
+/// A device's op files still to merge, by number, and why the first waits (if it does).
+type Pending = (String, VecDeque<(u64, Vec<Op>)>, Option<String>);
+
 /// Merge every other device's op files in `folder` not yet merged here. Each file is merged
 /// whole or not at all; one that waits for another device's rows is tried again after the
 /// other devices' files, until no more can be merged.
@@ -107,7 +110,7 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
         .collect();
     ids.sort();
     let mut report = MergeReport::default();
-    let mut pending: Vec<(String, VecDeque<(u64, Vec<Op>)>, Option<String>)> = Vec::new();
+    let mut pending: Vec<Pending> = Vec::new();
     for id in ids {
         let ops = read_ops_after(folder, &id, user.applied_up_to(&id)?)?;
         if let Some((seq, stop)) = ops.stopped {
