@@ -52,8 +52,11 @@ const USAGE: &str = "usage: cargo xtask ios <command>
   build [--sim-only] the aarch64-apple-ios and aarch64-apple-ios-sim staticlibs ([profile.ios])
                      and target/ios/ObsFFI.xcframework; --sim-only: the simulator's alone.
                      Needs Xcode with the iOS SDKs
+  bundled-set [--from DIR] [--out DIR] [--update-lock | --verify]
+                     copy the Bundled set out of dist/starter/ into apps/ios/Bundled/starter/
+                     and check it against apps/ios/bundled-set.lock (`--help`)
 
-docs/dev/mobile-core.md";
+docs/dev/mobile-core.md, docs/dev/starter-library.md";
 
 pub fn run(root: &Path, args: &[String]) -> Result<()> {
     match args.first().map(String::as_str) {
@@ -70,6 +73,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             let sim_only = build_options(&args[1..])?;
             build(root, sim_only, &xcrun_has_sdk)
         }
+        Some("bundled-set") => crate::starter::bundled_set::run(root, &args[1..]),
         None | Some("-h" | "--help" | "help") => {
             println!("{USAGE}");
             Ok(())

@@ -1719,3 +1719,202 @@ evidence = "evidence/names.md"
         .collect();
     assert!(leftovers.is_empty());
 }
+
+/// Every Starter Resource has its place in the Mobile app, and the sets are #333's.
+#[test]
+fn the_lock_gives_every_starter_resource_its_mobile_set() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let lock = Lock::load(&root.join("starter/sources.toml")).unwrap();
+    let of = |set: MobileSet| -> Vec<&str> {
+        let mut ids: Vec<&str> = lock
+            .sources
+            .iter()
+            .filter(|s| s.mobile_set == Some(set))
+            .map(|s| s.resource_id.as_str())
+            .collect();
+        ids.sort_unstable();
+        ids
+    };
+    let missing: Vec<&str> = lock
+        .sources
+        .iter()
+        .filter(|s| s.mobile_set.is_none())
+        .map(|s| s.resource_id.as_str())
+        .collect();
+    assert!(missing.is_empty(), "no mobile_set: {missing:?}");
+    assert_eq!(
+        of(MobileSet::Bundled),
+        ["bsb", "openbible-xrefs", "strongs-greek", "strongs-hebrew"]
+    );
+    let mut study = vec![
+        "kjv-strongs",
+        "tagnt",
+        "tahot",
+        "tbesg",
+        "tbesh",
+        "bdb",
+        "abbott-smith",
+        "easton",
+        "smith",
+        "hitchcock",
+        "jfb",
+        "tipnr",
+        "theographic",
+        "openbible-geo",
+        "bsb-parallels",
+    ];
+    study.sort_unstable();
+    assert_eq!(of(MobileSet::Study), study);
+    assert_eq!(of(MobileSet::More), ["asv", "mhc", "web"]);
+}
+
+/// A lock of three Bibles from the WEB excerpts: `bsb` (CC BY, so it has a change record) and
+/// `web` in the Bundled set, `asv` in the Study set.
+fn mobile_setup(dir: &Path) -> Config {
+    let (zip, sha) = fixture_zip(dir, &[]);
+    let starter = dir.join("starter");
+    std::fs::create_dir_all(starter.join("evidence")).unwrap();
+    let mut lock = String::from("size_budget_mb = 400\n");
+    for (id, spdx, set) in [
+        ("bsb", "CC-BY-4.0", "bundled"),
+        ("web", "LicenseRef-PublicDomain", "bundled"),
+        ("asv", "LicenseRef-PublicDomain", "study"),
+    ] {
+        std::fs::write(
+            starter.join(format!("evidence/{id}.md")),
+            format!("Licence.\nsha256 {sha}\n"),
+        )
+        .unwrap();
+        lock.push_str(&format!(
+            r#"
+[[source]]
+resource_id = "{id}"
+mobile_set = "{set}"
+importer = "usfm"
+url = "file://{}"
+sha256 = "{sha}"
+title = "{id}"
+abbreviation = "{id}"
+language = "en"
+spdx = "{spdx}"
+attribution = "Credit {id}."
+changes = "Converted."
+provenance = "Licence page."
+evidence = "evidence/{id}.md"
+"#,
+            zip.display().to_string().replace('\\', "/")
+        ));
+    }
+    std::fs::write(starter.join("sources.toml"), lock).unwrap();
+    Config {
+        lock: starter.join("sources.toml"),
+        id_changes: starter.join("id-changes.toml"),
+        previous: None,
+        out: dir.join("out"),
+        cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
+    }
+}
+
+#[test]
+fn the_bundled_set_is_copied_locked_capped_and_accepted_by_the_app() {
+    use bundled_set::{BundledSetLock, MAX_BYTES, Options, copy, verify};
+    let dir = scratch("bundled-set");
+    let config = mobile_setup(&dir);
+    build(&config).unwrap();
+    // The manifest and the build report carry the sets.
+    let manifest = ReleaseManifest::load(&config.out.join(MANIFEST_FILE)).unwrap();
+    assert_eq!(
+        manifest.get("asv").unwrap().mobile_set,
+        Some(MobileSet::Study)
+    );
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(report.contains("## Mobile sets"), "{report}");
+    assert!(report.contains("| bundled | 2 |"), "{report}");
+    assert!(report.contains("| study | 1 |"), "{report}");
+
+    let mut options = Options {
+        from: config.out.clone(),
+        out: dir.join("ios/Bundled/starter"),
+        lock: dir.join("ios/bundled-set.lock"),
+        update_lock: false,
+        verify: false,
+        max_bytes: MAX_BYTES,
+    };
+    let err = format!("{:#}", copy(&options).unwrap_err());
+    assert!(err.contains("--update-lock"), "{err}");
+
+    options.update_lock = true;
+    let lock = copy(&options).unwrap();
+    let ids: Vec<&str> = lock
+        .resources
+        .iter()
+        .map(|r| r.resource_id.as_str())
+        .collect();
+    assert_eq!(ids, ["bsb", "web"]);
+    let paths: Vec<&str> = lock.files.iter().map(|f| f.path.as_str()).collect();
+    for want in [
+        "CHANGES-bsb.md",
+        "bsb.obr",
+        "starter-manifest.json",
+        "web.obr",
+    ] {
+        assert!(paths.contains(&want), "{paths:?}");
+    }
+    for id in ["bsb", "web"] {
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.starts_with(&format!("search/{id}."))),
+            "{paths:?}"
+        );
+    }
+    assert!(!paths.iter().any(|p| p.contains("asv")), "{paths:?}");
+    assert_eq!(lock.bytes, lock.files.iter().map(|f| f.bytes).sum::<u64>());
+    assert_eq!(BundledSetLock::load(&options.lock).unwrap(), lock);
+
+    // A fresh copy matches the lock; a lock that differs fails, naming what differs.
+    options.update_lock = false;
+    assert_eq!(copy(&options).unwrap(), lock);
+    let text = std::fs::read_to_string(&options.lock).unwrap();
+    std::fs::write(
+        &options.lock,
+        text.replacen("revision = 1", "revision = 2", 1),
+    )
+    .unwrap();
+    let err = format!("{:#}", copy(&options).unwrap_err());
+    assert!(err.contains("bsb: the lock has r2"), "{err}");
+    std::fs::write(&options.lock, &text).unwrap();
+
+    // `--verify` checks the copied folder alone, so a changed file fails it.
+    assert_eq!(verify(&options).unwrap(), lock);
+    let web = options.out.join("web.obr");
+    let mut bytes = std::fs::read(&web).unwrap();
+    bytes.push(0);
+    std::fs::write(&web, bytes).unwrap();
+    let err = format!("{:#}", verify(&options).unwrap_err());
+    assert!(err.contains("web.obr: sha256"), "{err}");
+    assert_eq!(copy(&options).unwrap(), lock);
+
+    // Over the cap fails, listing every file.
+    let capped = Options {
+        max_bytes: 1000,
+        ..options.clone()
+    };
+    let err = format!("{:#}", copy(&capped).unwrap_err());
+    assert!(err.contains("cap") && err.contains("bsb.obr"), "{err}");
+
+    // The app adds the copy as its Starter bundle on the first run.
+    let mut s = obs_engine::Session::new(obs_engine::JobMode::Inline);
+    s.set_search_cache_dir(dir.join("app/search"));
+    assert!(s.library.scan(&dir.join("app/library")).is_empty());
+    let (store, _) = obs_store::UserStore::open(&dir.join("app/user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    let sync = s.sync_starter_library(Some(&options.out));
+    assert!(sync.problems.is_empty(), "{:?}", sync.problems);
+    let mut added = sync.added.clone();
+    added.sort_unstable();
+    assert_eq!(added, ["bsb", "web"]);
+    assert!(dir.join("app/library/CHANGES-bsb.md").is_file());
+}

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use obs_model::is_valid_resource_id;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The parsed lock file.
 #[derive(Debug, Clone, Deserialize)]
@@ -60,6 +60,34 @@ pub struct Source {
     /// index). Each is fetched and checked like `url`, and the evidence must name its sha256.
     #[serde(rename = "extra_file", default)]
     pub extra_files: Vec<PinnedFile>,
+    /// The Resource's place in the Mobile app (#333), written into the release manifest.
+    #[serde(default)]
+    pub mobile_set: Option<MobileSet>,
+}
+
+/// Which of the Mobile app's sets a Starter Resource is in (#333, CONTEXT.md § Mobile).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MobileSet {
+    /// Built into the app (the Bundled set).
+    Bundled,
+    /// Offered as one download at first launch (the Study set).
+    Study,
+    /// Downloaded one at a time.
+    More,
+}
+
+impl MobileSet {
+    pub const ALL: [MobileSet; 3] = [MobileSet::Bundled, MobileSet::Study, MobileSet::More];
+
+    /// The name the lock and the manifest use.
+    pub fn name(self) -> &'static str {
+        match self {
+            MobileSet::Bundled => "bundled",
+            MobileSet::Study => "study",
+            MobileSet::More => "more",
+        }
+    }
 }
 
 /// A pinned download: where it is and the sha256 it must have.

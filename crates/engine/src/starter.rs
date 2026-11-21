@@ -69,6 +69,10 @@ pub struct StarterItem {
     /// SPDX licence expression.
     #[serde(default)]
     pub license: String,
+    /// The Mobile app's set this Resource is in (#333): `"bundled"`, `"study"` or `"more"`.
+    /// Absent from manifests written before it; the desktop app does not read it.
+    #[serde(default)]
+    pub mobile_set: Option<String>,
 }
 
 /// `starter-manifest.json`: every Resource one Starter library build shipped.

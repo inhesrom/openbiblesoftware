@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
+# The iOS app is an Xcode project, not a crate (docs/plans/mobile-ios.md A6).
+exclude = ["apps/ios"]
 
 [workspace.package]
 version = "0.2.0"
