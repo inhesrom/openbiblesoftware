@@ -87,7 +87,7 @@ pub struct UserStore {
     pub(crate) path: PathBuf,
     /// Every Change applied, for tests (`take_applied_changes`).
     #[cfg(feature = "test-support")]
-    pub(crate) recorded: std::cell::RefCell<Vec<crate::annotation::Change>>,
+    pub(crate) recorded: std::cell::RefCell<Vec<Change>>,
 }
 
 impl UserStore {
@@ -225,8 +225,6 @@ impl UserStore {
 
     /// Set preference `key`. A synced one (`SYNCED_PREFERENCES`) is written as [`Change`]s:
     /// item by item for a list preference (`preference_items.rs`), else whole.
-    ///
-    /// [`Change`]: crate::annotation::Change
     pub fn set_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
         if !crate::sync_schema::is_synced_preference(key) {
             return synced_store::write_preference(&self.conn, key, value);
