@@ -532,6 +532,20 @@ mod tests {
         assert_eq!(mpl(&committed(OUTPUT)), Vec::<String>::new());
         let ios = mpl(&committed(IOS_OUTPUT));
         assert!(ios.iter().any(|c| c.starts_with("uniffi ")), "{ios:?}");
-        assert!(ios.iter().all(|c| c.starts_with("uniffi")), "{ios:?}");
+        const UNIFFI_CRATES: &[&str] = &[
+            "uniffi",
+            "uniffi_core",
+            "uniffi_internal_macros",
+            "uniffi_macros",
+            "uniffi_meta",
+            "uniffi_pipeline",
+        ];
+        for crate_version in &ios {
+            let name = crate_version.split(' ').next().unwrap_or_default();
+            assert!(
+                UNIFFI_CRATES.contains(&name),
+                "{crate_version} is not UniFFI: {ios:?}"
+            );
+        }
     }
 }

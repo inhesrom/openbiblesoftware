@@ -68,7 +68,7 @@ const NET_CRATES: &[&str] = &[
 
 /// Foreign-function binding crates. Only apps may depend on them, directly or transitively, so
 /// every library stays plain Rust and compiles for wasm32.
-const FFI_CRATES: &[&str] = &["uniffi"];
+const FFI_CRATES: &[&str] = &["uniffi", "uniffi_core", "uniffi_macros"];
 
 /// Crates only `obs-store` may depend on directly.
 const SQLITE_CRATES: &[&str] = &["rusqlite", "libsqlite3-sys", "sqlite-wasm-rs"];
@@ -382,9 +382,29 @@ mod tests {
             &["uniffi_core"],
         ));
         let errors = check(&pkgs);
-        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors.len(), 2, "{errors:?}");
         assert!(
             errors[0].contains("`obs-mobile` (L5) depends directly on FFI crate `uniffi`"),
+            "{errors:?}"
+        );
+        assert!(
+            errors[1].contains("`obs-mobile` (L5) depends transitively on FFI crate `uniffi_core`"),
+            "{errors:?}"
+        );
+
+        // UniFFI's runtime traits are usable without the `uniffi` facade.
+        let mut pkgs = good();
+        pkgs.push(pkg(
+            "obs-mobile",
+            Some(Kind::Library(5)),
+            &["obs-engine"],
+            &["uniffi_core"],
+            &[],
+        ));
+        let errors = check(&pkgs);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].contains("`obs-mobile` (L5) depends directly on FFI crate `uniffi_core`"),
             "{errors:?}"
         );
 
