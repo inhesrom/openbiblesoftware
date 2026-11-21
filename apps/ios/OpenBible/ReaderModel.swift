@@ -35,9 +35,13 @@ final class ReaderModel {
     private(set) var books: [BookChapters] = []
     private(set) var metricsText = ""
     private(set) var benchResult = ""
+    /// The prototype's measurements strip (frames dropped, tile times) under the text.
+    var showMeasurements = UserDefaults.standard.bool(forKey: "OBSMeasurements")
     private(set) var coldStart: Duration?
     @ObservationIgnored private weak var view: ResourceTextView?
     @ObservationIgnored private var bench: FlingBench?
+    /// When start-up reached each step, in ms since the process started (the bench reports them).
+    @ObservationIgnored private var startupMarks: [String] = []
 
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "reader")
 
@@ -53,11 +57,14 @@ final class ReaderModel {
             paths.studySet = ProcessInfo.processInfo.environment["OBS_STUDY_SET_DIR"]
         #endif
         let bundle = HelloModel.bundledSet()?.path
+        let since = { ProcessStart.date.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1 }
+        startupMarks.append("start() at \(since()) ms")
         do {
             let core = try await Task.detached(priority: .userInitiated) { [paths] in
                 try MobileApp.boot(paths: paths, bundle: bundle)
             }.value
             self.core = core
+            startupMarks.append("booted at \(since()) ms")
             for problem in core.problems() { Self.log.error("boot: \(problem, privacy: .public)") }
             let pageTones = core.pageTones()
             tones = pageTones.choices
@@ -114,8 +121,10 @@ final class ReaderModel {
 
     private func benchDone(_ summary: String) {
         let cold = coldStart.map { "\($0.components.seconds * 1000 + $0.components.attoseconds / 1_000_000_000_000_000) ms" } ?? "?"
-        let result = "\(summary) · cold start \(cold) · footprint \(Int(Memory.footprintMB())) MB"
+        let marks = startupMarks.joined(separator: ", ")
+        let result = "\(summary) · cold start \(cold) (\(marks)) · footprint \(Int(Memory.footprintMB())) MB"
         benchResult = result
+        showMeasurements = true
         Self.log.info("bench: \(result, privacy: .public)")
         if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             try? result.write(to: docs.appendingPathComponent("s07-bench.txt"), atomically: true, encoding: .utf8)

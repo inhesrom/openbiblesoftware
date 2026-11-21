@@ -43,6 +43,7 @@ struct ReaderScreen: View {
                     Picker("Page tone", selection: Binding(get: { model.tone }, set: { model.setTone($0) })) {
                         ForEach(model.tones, id: \.id) { Text($0.label).tag($0.id) }
                     }
+                    Toggle("Show measurements", isOn: $model.showMeasurements)
                     Button("About") { showAbout = true }
                 } label: {
                     Image(systemName: "textformat.size")
@@ -69,8 +70,7 @@ struct ReaderScreen: View {
             }
             ResourceText(model: model)
                 .ignoresSafeArea(edges: .bottom)
-            #if DEBUG
-                if !model.benchResult.isEmpty || !model.metricsText.isEmpty {
+            if model.showMeasurements && (!model.benchResult.isEmpty || !model.metricsText.isEmpty) {
                     Text(model.benchResult.isEmpty ? model.metricsText : model.benchResult)
                         .font(.caption2.monospaced())
                         .foregroundStyle(.primary)
@@ -78,8 +78,7 @@ struct ReaderScreen: View {
                         .padding(4)
                         .background(.thinMaterial)
                         .accessibilityIdentifier(model.benchResult.isEmpty ? "reader.metrics" : "bench.result")
-                }
-            #endif
+            }
         }
         .sheet(item: $model.sheet) { sheet in
             StudySheetStubView(stub: sheet.stub)

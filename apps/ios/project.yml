@@ -107,6 +107,10 @@ schemes:
     build:
       targets:
         OpenBible: all
+    # S07: Run builds Release, so a device run (S08) feels and measures what ships; tests
+    # stay Debug.
+    run:
+      config: Release
     test:
       config: Debug
       gatherCoverageData: false

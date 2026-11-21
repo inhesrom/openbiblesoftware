@@ -13,6 +13,13 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
     private(set) var reader: UInt32
     let canvas: TextCanvasView
     private var tiles: [TileKey: CALayer] = [:]
+    private var placesByKey: [TileKey: TilePlace] = [:]
+    private lazy var renderer = TileRenderer(core: core) { [weak self] made in
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self?.add(made)
+        CATransaction.commit()
+    }
     private var applying = false
     private(set) var lastFrame: ReaderFrame?
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "text")
@@ -132,31 +139,34 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
         tiles.removeAll()
     }
 
-    /// Keep the tiles the frame lists, at its places; draw the missing ones that are in
-    /// view now, and up to a few milliseconds' worth of the ones drawn ahead.
+    /// Keep the tiles the frame lists, at its places. A missing tile in view is drawn now;
+    /// the ones drawn ahead are drawn on the tile queue and placed when they arrive.
     private func place(_ frame: ReaderFrame, scale: CGFloat) {
         let keep = Set(frame.tiles.map(\.key))
+        renderer.want(keep)
         for (key, layer) in tiles where !keep.contains(key) {
             layer.removeFromSuperlayer()
             tiles[key] = nil
         }
+        placesByKey = Dictionary(frame.tiles.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         let visible = CGRect(x: 0, y: contentOffset.y, width: bounds.width, height: bounds.height)
-        let started = ContinuousClock.now
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for place in frame.tiles {
-            let rect = CGRect(x: 0, y: place.y, width: Double(bounds.width), height: Double(place.height))
+            let origin = CGPoint(x: 0, y: place.y)
             if let layer = tiles[place.key] {
-                if layer.frame.origin != rect.origin { layer.frame.origin = rect.origin }
+                if layer.frame.origin != origin { layer.frame.origin = origin }
                 continue
             }
-            let needed = rect.intersects(visible)
-            if !needed && ContinuousClock.now - started > .milliseconds(4) { continue }
-            if needed && lastFrame != nil { metrics.visibleMiss() }
-            guard let layer = makeTile(place, scale: scale) else { continue }
-            layer.frame.origin = rect.origin
-            canvas.layer.addSublayer(layer)
-            tiles[place.key] = layer
+            let rect = CGRect(origin: origin, size: CGSize(width: bounds.width, height: CGFloat(place.height)))
+            if rect.intersects(visible) {
+                if lastFrame != nil { metrics.visibleMiss() }
+                if let made = TileRenderer.render(core: core, reader: reader, key: place.key, scale: scale) {
+                    add(made)
+                }
+            } else {
+                renderer.request(reader: reader, key: place.key, scale: scale)
+            }
         }
         CATransaction.commit()
         if !tiles.isEmpty, let first = onFirstText {
@@ -165,29 +175,21 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
-    private func makeTile(_ place: TilePlace, scale: CGFloat) -> CALayer? {
-        let began = ContinuousClock.now
-        guard let timed = try? core.readerTile(reader: reader, key: place.key, scale: Float(scale))
-        else { return nil }
-        let tile = timed.tile
-        guard tile.width > 0, tile.height > 0,
-            let provider = CGDataProvider(data: tile.rgba as CFData),
-            let space = CGColorSpace(name: CGColorSpace.sRGB),
-            let image = CGImage(
-                width: Int(tile.width), height: Int(tile.height), bitsPerComponent: 8,
-                bitsPerPixel: 32, bytesPerRow: Int(tile.width) * 4, space: space,
-                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                provider: provider, decode: nil, shouldInterpolate: false,
-                intent: .defaultIntent)
-        else { return nil }
+    /// Show a tile drawn here or on the tile queue, if the last frame still lists it.
+    private func add(_ made: RenderedTile) {
+        guard tiles[made.key] == nil, let place = placesByKey[made.key], let scale = window?.screen.scale
+        else { return }
         let layer = CALayer()
-        layer.contents = image
+        layer.contents = made.image
         layer.contentsScale = scale
         layer.contentsGravity = .topLeft
         layer.isOpaque = true
-        layer.frame.size = CGSize(width: CGFloat(tile.width) / scale, height: CGFloat(tile.height) / scale)
-        metrics.tile(rustMicros: timed.micros, total: ContinuousClock.now - began)
-        return layer
+        layer.frame = CGRect(
+            x: 0, y: place.y, width: CGFloat(made.image.width) / scale,
+            height: CGFloat(made.image.height) / scale)
+        canvas.layer.addSublayer(layer)
+        tiles[made.key] = layer
+        metrics.tile(rustMicros: made.rustMicros, total: made.took)
     }
 
     @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
@@ -204,6 +206,76 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
     /// Scroll to where the core put the reader (after a jump).
     func adoptPosition() {
         refresh()
+    }
+}
+
+/// A tile's image, drawn from the core's pixels.
+struct RenderedTile: @unchecked Sendable {
+    let key: TileKey
+    let image: CGImage
+    let rustMicros: UInt32
+    let took: Duration
+}
+
+/// Draws tiles off the main thread, one at a time, skipping tiles no longer wanted. The
+/// core is behind one lock, so this only overlaps the copy of the pixels across the FFI and
+/// the image's preparation with the main thread's work.
+final class TileRenderer: @unchecked Sendable {
+    private let core: MobileApp
+    private let queue = DispatchQueue(label: "io.github.inhesrom.openbible.tiles", qos: .userInitiated)
+    private let lock = NSLock()
+    private var wanted = Set<TileKey>()
+    private var pending = Set<TileKey>()
+    private let deliver: @MainActor (RenderedTile) -> Void
+
+    init(core: MobileApp, deliver: @escaping @MainActor (RenderedTile) -> Void) {
+        self.core = core
+        self.deliver = deliver
+    }
+
+    func want(_ keys: Set<TileKey>) {
+        lock.withLock {
+            wanted = keys
+            pending.formIntersection(keys)
+        }
+    }
+
+    func request(reader: UInt32, key: TileKey, scale: CGFloat) {
+        let fresh = lock.withLock { pending.insert(key).inserted }
+        guard fresh else { return }
+        queue.async { [self] in
+            let still = lock.withLock { wanted.contains(key) }
+            guard still, let made = Self.render(core: core, reader: reader, key: key, scale: scale)
+            else {
+                lock.withLock { _ = pending.remove(key) }
+                return
+            }
+            DispatchQueue.main.async { [self] in
+                lock.withLock { _ = pending.remove(key) }
+                MainActor.assumeIsolated { deliver(made) }
+            }
+        }
+    }
+
+    /// The tile's pixels from the core, as an image ready for Core Animation.
+    static func render(core: MobileApp, reader: UInt32, key: TileKey, scale: CGFloat) -> RenderedTile? {
+        let began = ContinuousClock.now
+        guard let timed = try? core.readerTile(reader: reader, key: key, scale: Float(scale)) else {
+            return nil
+        }
+        let tile = timed.tile
+        guard tile.width > 0, tile.height > 0,
+            let provider = CGDataProvider(data: tile.rgba as CFData),
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let image = CGImage(
+                width: Int(tile.width), height: Int(tile.height), bitsPerComponent: 8,
+                bitsPerPixel: 32, bytesPerRow: Int(tile.width) * 4, space: space,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: false,
+                intent: .defaultIntent)
+        else { return nil }
+        let prepared = UIImage(cgImage: image).preparingForDisplay()?.cgImage ?? image
+        return RenderedTile(key: key, image: prepared, rustMicros: timed.micros, took: ContinuousClock.now - began)
     }
 }
 
