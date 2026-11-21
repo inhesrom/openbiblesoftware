@@ -494,17 +494,22 @@ fn a_tcp_book_downloads_by_its_pin_and_imports_as_a_book() {
     assert_eq!(m.license, "CC0-1.0");
     assert_eq!(m.attribution, source.attribution);
     assert_eq!(m.source_format, obs_formats::TCP_TEI_FORMAT);
-    use obs_store::ResourceStore;
-    let reader = obs_store::ObrReader::open(&entry.path).unwrap();
-    let mut pages = Vec::new();
-    for unit in reader.unit_ids().unwrap() {
-        let unit = reader.unit(&unit).unwrap().unwrap();
-        for span in reader.spans_in(&unit.id, 0..unit.text.len()).unwrap() {
-            if let obs_model::SpanKind::Page { label } = span.kind {
-                pages.push(label);
+    // The reader is closed before the folder is removed (Windows refuses to delete an open
+    // file).
+    let pages = {
+        use obs_store::ResourceStore;
+        let reader = obs_store::ObrReader::open(&entry.path).unwrap();
+        let mut pages = Vec::new();
+        for unit in reader.unit_ids().unwrap() {
+            let unit = reader.unit(&unit).unwrap().unwrap();
+            for span in reader.spans_in(&unit.id, 0..unit.text.len()).unwrap() {
+                if let obs_model::SpanKind::Page { label } = span.kind {
+                    pages.push(label);
+                }
             }
         }
-    }
+        pages
+    };
     assert_eq!(pages.first().map(String::as_str), Some("3"));
     assert!(pages.len() >= 20);
     assert!(!record.report.as_ref().unwrap().license_missing);
