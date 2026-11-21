@@ -48,7 +48,7 @@ pub use fetch::fetch_file;
 use fetch::{fetch, sha256_hex};
 use goldens::{GoldenList, Status};
 use ids::{IdDiff, MANIFEST_FORMAT, ReleaseManifest, ReleaseResource};
-use lock::{IdChanges, Source};
+use lock::{IdChanges, MobileSet, Source};
 pub use lock::{Lock, PinnedFile};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
@@ -229,6 +229,11 @@ pub fn build(config: &Config) -> Result<String> {
             resource_type: Some(m.resource_type),
             language: m.language.clone(),
             license: m.license.clone(),
+            mobile_set: lock_file
+                .sources
+                .iter()
+                .find(|s| &s.resource_id == id)
+                .and_then(|s| s.mobile_set),
             units: b
                 .resource
                 .units
@@ -984,6 +989,37 @@ fn build_report(
             vm.map_or(0, |v| v.unmapped),
             vm.map_or(0, |v| v.absent),
             r.content_hash
+        );
+    }
+    s.push_str("\n## Mobile sets\n\n");
+    s.push_str(
+        "Each Resource's `mobile_set` in the lock (#333). The Bundled set is built into the Mobile \
+         app (`cargo xtask ios bundled-set` copies it, with its alias caches, change records and \
+         its own manifest); the Study set is offered as one download.\n\n\
+         | Mobile set | Resources | Size (MB) | Search index (MB) | Total (MB) |\n\
+         |---|---|---|---|---|\n",
+    );
+    let sets = MobileSet::ALL.map(Some).into_iter().chain([None]);
+    for set in sets {
+        let members: Vec<usize> = (0..manifest.resources.len())
+            .filter(|&i| manifest.resources[i].mobile_set == set)
+            .collect();
+        if members.is_empty() && set.is_none() {
+            continue;
+        }
+        let obr: u64 = members.iter().map(|&i| manifest.resources[i].bytes).sum();
+        let index: u64 = members
+            .iter()
+            .map(|&i| caches.search.get(i).copied().unwrap_or(0))
+            .sum();
+        let _ = writeln!(
+            s,
+            "| {} | {} | {} | {} | {} |",
+            set.map_or("(none)", MobileSet::name),
+            members.len(),
+            mb(obr),
+            mb(index),
+            mb(obr + index)
         );
     }
     s.push_str("\n## Changes since the previous release\n\n");

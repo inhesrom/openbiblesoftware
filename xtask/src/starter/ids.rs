@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use super::lock::IdChanges;
+use super::lock::{IdChanges, MobileSet};
 
 pub const MANIFEST_FORMAT: u32 = 1;
 
@@ -40,6 +40,10 @@ pub struct ReleaseResource {
     pub language: String,
     #[serde(default)]
     pub license: String,
+    /// The Mobile app's set this Resource is in (#333): `bundled`, `study` or `more`. Absent
+    /// from manifests written before it, and for a lock entry without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mobile_set: Option<MobileSet>,
     /// Live text-unit ids, in document order.
     pub units: Vec<String>,
     /// Retired unit id → its replacement (the `unit_alias` table).
@@ -237,6 +241,7 @@ mod tests {
             resource_type: None,
             language: String::new(),
             license: String::new(),
+            mobile_set: None,
             units: units.iter().map(|s| s.to_string()).collect(),
             unit_aliases: aliases
                 .iter()

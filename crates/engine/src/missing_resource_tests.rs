@@ -27,6 +27,7 @@ fn item(id: &str, ty: ResourceType, language: &str) -> StarterItem {
         resource_type: Some(ty),
         language: language.into(),
         license: String::new(),
+        mobile_set: None,
     }
 }
 
