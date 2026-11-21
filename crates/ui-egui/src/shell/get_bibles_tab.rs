@@ -341,6 +341,24 @@ fn ago(then: u64) -> String {
 
 impl State {
     pub(super) fn get_bibles_body(&mut self, ui: &mut Ui) {
+        // Books: the Christian Open Library, its own view under the same filter row (ADR 0024).
+        let books = ResourceFilter::Type(obs_model::ResourceType::Book);
+        if self.session.get_bibles.filter() == books {
+            let mut new_filter = None;
+            crate::components::page_frame().show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                new_filter = type_filter_row(ui, books);
+                ui.add_space(space::S);
+                egui::ScrollArea::vertical()
+                    .id_salt("get-resources-books")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.col_body(ui));
+            });
+            if let Some(f) = new_filter {
+                self.session.get_bibles.set_filter(f);
+            }
+            return;
+        }
         let mut action: Option<Action> = None;
         let mut new_filter: Option<ResourceFilter> = None;
         let mut new_licence: Option<LicenceFilter> = None;
@@ -392,22 +410,9 @@ impl State {
             let filter = &mut self.get_bibles_ui;
             let shown_filter = gb.filter();
             let shown_licence = gb.licence_filter();
-            ui.horizontal_wrapped(|ui| {
-                for f in ResourceFilter::CHOICES {
-                    let chip = ui.selectable_label(shown_filter == f, f.label());
-                    let chip = if f == ResourceFilter::HebrewAndGreek {
-                        chip.on_hover_text(
-                            "Bibles in Hebrew, Aramaic and Greek. Those marked Strong's and \
-                                 Morphology fill in Word Info and Word Study › Forms.",
-                        )
-                    } else {
-                        chip
-                    };
-                    if chip.clicked() && shown_filter != f {
-                        new_filter = Some(f);
-                    }
-                }
-            });
+            if let Some(f) = type_filter_row(ui, shown_filter) {
+                new_filter = Some(f);
+            }
             ui.horizontal_wrapped(|ui| {
                 ui.label(crate::components::hint_text("Licence"));
                 for l in LicenceFilter::CHOICES {
@@ -546,6 +551,31 @@ impl State {
             self.run(command, &params);
         }
     }
+}
+
+/// The type filter's chips; the one clicked, when it is not the one shown.
+fn type_filter_row(ui: &mut Ui, shown: ResourceFilter) -> Option<ResourceFilter> {
+    let mut chosen = None;
+    ui.horizontal_wrapped(|ui| {
+        for f in ResourceFilter::CHOICES {
+            let chip = ui.selectable_label(shown == f, f.label());
+            let chip = match f {
+                ResourceFilter::HebrewAndGreek => chip.on_hover_text(
+                    "Bibles in Hebrew, Aramaic and Greek. Those marked Strong's and \
+                     Morphology fill in Word Info and Word Study › Forms.",
+                ),
+                ResourceFilter::Type(obs_model::ResourceType::Book) => chip.on_hover_text(
+                    "The Christian Open Library: sermons, treatises, confessions and church \
+                     records, downloaded as Books",
+                ),
+                _ => chip,
+            };
+            if chip.clicked() && shown != f {
+                chosen = Some(f);
+            }
+        }
+    });
+    chosen
 }
 
 /// Download a row: a SWORD module from its repository, or an Open catalogue entry from its

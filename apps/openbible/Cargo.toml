@@ -18,6 +18,9 @@ obs-formats.workspace = true
 # Get Bibles (#91): the only network client. Apps alone may use one (`cargo xtask layers`);
 # the engine reaches SWORD repositories through the `Fetch` this app hands it.
 ureq = "3"
+# The Christian Open Library token (ADR 0024) lives in the OS credential store: Keychain,
+# Credential Manager, or the Secret Service through the zbus the app already links.
+keyring = "4"
 serde_json.workspace = true
 # View → Fonts (#138): installed fonts are enumerated and read here, in the app, so the
 # libraries stay WASM-clean. No memory maps: chosen files are read once into memory.
@@ -40,6 +43,10 @@ obs-store.workspace = true
 # Opens the Diagnostics zip a forced panic's Crash report is saved in (#249); the engine's
 # version and features, so no new crate.
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+# The Christian Open Library end-to-end test (#347) serves the mock repository's tarball;
+# the versions the engine reads it with.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tar = { version = "0.4", default-features = false }
 
 [lints]
 workspace = true

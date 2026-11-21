@@ -31,6 +31,10 @@ pub struct LoadedBook {
     /// The Resource id to write it as: a book already in the Library is written as its next
     /// Resource revision. `None`: a new id made from the book's name.
     pub resource_id: Option<String>,
+    /// Added to the Book's Attribution (where it was copied from, ADR 0024).
+    pub note: Option<String>,
+    /// Where a Christian Open Library book came from, kept on its Import record.
+    pub col: Option<crate::col::ColOrigin>,
 }
 
 /// A book a batch could not bring in, and why (the plain error, never a stack).
@@ -185,6 +189,8 @@ impl BookStream for FolderStream {
                 main,
                 parts,
                 resource_id: None,
+                note: None,
+                col: None,
             })
         };
         Ok(Some(read().map_err(|error| BookFailure { name, error })))
@@ -212,6 +218,7 @@ pub(crate) struct ImportedBook {
     report: obs_formats::ImportReport,
     index: ImportIndexStatus,
     updated: bool,
+    col: Option<crate::col::ColOrigin>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -264,11 +271,18 @@ impl BatchJob {
             source_file: book.name.clone(),
             tool_version: crate::import::tool_version(),
         };
-        let (resource, report) =
+        let (mut resource, report) =
             obs_formats::import_markdown_book(book.main.as_ref(), &book.parts, &options, |_, _| {
                 !ctx.is_cancelled()
             })
             .map_err(|e| e.to_string())?;
+        if let Some(note) = &book.note {
+            let a = &mut resource.manifest.attribution;
+            if !a.is_empty() {
+                a.push(' ');
+            }
+            a.push_str(note);
+        }
         let target = crate::import::Target {
             dir: &self.dir,
             id: &id,
@@ -296,6 +310,7 @@ impl BatchJob {
             report,
             index,
             updated,
+            col: book.col,
         })))
     }
 }
@@ -422,6 +437,7 @@ impl Session {
             origin: None,
             open_origin: None,
             books: Some(BookBatchSummary::default()),
+            col: None,
         };
         let job = self.jobs().submit(job);
         self.imports.batches.insert(job, id.clone());
@@ -502,6 +518,7 @@ impl Session {
                     report,
                     index,
                     updated,
+                    col,
                 } = *book;
                 let id = entry.manifest.resource_id.clone();
                 let title = entry.manifest.title.clone();
@@ -525,6 +542,7 @@ impl Session {
                         origin: None,
                         open_origin: None,
                         books: None,
+                        col,
                     },
                 );
                 self.save_import_record(&id);

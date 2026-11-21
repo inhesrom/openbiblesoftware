@@ -27,6 +27,9 @@ pub enum FetchError {
     /// The server is limiting how often this computer may ask (HTTP 429, or GitHub's 403
     /// with no requests remaining, #276).
     RateLimited,
+    /// The server refused the credentials sent (HTTP 401): a token expired or revoked
+    /// (ADR 0024).
+    Unauthorized,
     /// Anything else: no network, refused, timed out, bad status, unsupported scheme.
     Network(String),
 }
@@ -37,6 +40,7 @@ impl fmt::Display for FetchError {
             Self::NotFound => f.write_str("not found"),
             Self::Cancelled => f.write_str("cancelled"),
             Self::RateLimited => f.write_str("the server is limiting requests; try again later"),
+            Self::Unauthorized => f.write_str("the server did not accept the credentials"),
             Self::Network(m) => f.write_str(m),
         }
     }
@@ -56,6 +60,31 @@ pub trait Fetch: fmt::Debug + Send + Sync {
     fn size(&self, url: &str) -> Result<Option<u64>, FetchError> {
         let _ = url;
         Ok(None)
+    }
+
+    /// [`Fetch::get`] with request headers (`Authorization`, `Accept`) for a REST API (the
+    /// Christian Open Library's repository on GitHub, ADR 0024). The app's transport sends an
+    /// `Authorization` header only to the API it is meant for and never across a redirect;
+    /// this default, for transports with no HTTP, ignores the headers.
+    fn get_with(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        progress: Progress<'_>,
+    ) -> Result<Vec<u8>, FetchError> {
+        let _ = headers;
+        self.get(url, progress)
+    }
+
+    /// The body at `url` as it arrives, for a download too large to hold (a repository's
+    /// tarball, ADR 0024). This default reads it whole first.
+    fn open(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Box<dyn std::io::Read + Send>, FetchError> {
+        let bytes = self.get_with(url, headers, &mut |_, _| true)?;
+        Ok(Box::new(std::io::Cursor::new(bytes)))
     }
 }
 
@@ -148,9 +177,9 @@ fn to_sword(url: &str, e: FetchError) -> sword_modules::Error {
             url: url.to_string(),
             message: CANCELLED.into(),
         },
-        FetchError::RateLimited => sword_modules::Error::Network {
+        e @ (FetchError::RateLimited | FetchError::Unauthorized) => sword_modules::Error::Network {
             url: url.to_string(),
-            message: FetchError::RateLimited.to_string(),
+            message: e.to_string(),
         },
         FetchError::Network(message) => sword_modules::Error::Network {
             url: url.to_string(),

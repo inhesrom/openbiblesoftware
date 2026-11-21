@@ -3559,6 +3559,8 @@ mod word_info;
 
 #[path = "atlas_tests.rs"]
 mod atlas;
+#[path = "col_tab_tests.rs"]
+mod col_tab;
 #[path = "credits_tests.rs"]
 mod credits;
 #[path = "guide_tests.rs"]

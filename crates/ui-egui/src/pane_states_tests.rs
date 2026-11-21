@@ -197,8 +197,73 @@ fn open_contents(h: &mut Harness, id: &str) {
 
 /// Each surface's empty, loading and error states, as the Screenshot gallery draws them: a
 /// name, what brings the state about, and what shows it is on screen.
+/// Get Resources at Books (the Christian Open Library, ADR 0024) against the mock of COL's
+/// repository; nothing reaches the network.
+fn col_books(h: &mut Harness) -> Arc<obs_engine::testing::MockCol> {
+    let col = Arc::new(obs_engine::testing::MockCol::new("github_pat_GALLERY"));
+    let s = &mut h.shell.st.session;
+    s.set_fetch(col.clone());
+    s.col.set_api(obs_engine::testing::MockCol::API);
+    s.col
+        .set_secrets(Arc::new(obs_engine::col_get::SessionSecret::default()));
+    open_split(h, "library.get_resources", json!({ "type": "books" }));
+    col
+}
+
+fn settle_col(h: &mut Harness) {
+    for _ in 0..20 {
+        h.shell.st.session.jobs().pump(64);
+        h.frames(2);
+    }
+}
+
 pub(super) fn pane_states() -> Vec<Overlay> {
     vec![
+        (
+            "Get Resources: Books, not connected",
+            |h| {
+                col_books(h);
+                settle_col(h);
+            },
+            |h| shows(h, "Ask for access…") && shows(h, "Use a local copy…"),
+        ),
+        (
+            "Get Resources: Books, connected",
+            |h| {
+                col_books(h);
+                h.shell.run(
+                    "col.connect_token",
+                    &json!({ "token": "github_pat_GALLERY" }),
+                );
+                settle_col(h);
+                h.shell.run(
+                    "col.download",
+                    &json!({ "paths": "EEBO-TCP/John Owen/Owen - Mortification.md" }),
+                );
+                settle_col(h);
+                h.shell
+                    .run("library.get_resources", &json!({ "type": "books" }));
+                h.shell.run(
+                    "col.select",
+                    &json!({ "paths": "Creeds/Westminster Confession.md" }),
+                );
+                settle_col(h);
+            },
+            |h| shows(h, "In your Library") && shows(h, "Download everything…"),
+        ),
+        (
+            "Get Resources: Books, no access",
+            |h| {
+                let col = col_books(h);
+                *col.refuse.lock().unwrap() = Some(obs_engine::sword_repo::FetchError::NotFound);
+                h.shell.run(
+                    "col.connect_token",
+                    &json!({ "token": "github_pat_GALLERY" }),
+                );
+                settle_col(h);
+            },
+            |h| shows_start(h, "This GitHub account cannot see"),
+        ),
         (
             "Library: empty",
             |h| {

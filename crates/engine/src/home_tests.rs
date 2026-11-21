@@ -317,7 +317,11 @@ fn a_fresh_install_lists_quick_starts_and_the_starter_library_by_resource_type()
                 0,
                 Some(ResourceFilter::Type(ResourceType::Dictionary))
             ),
-            (ResourceType::Book, 0, None),
+            (
+                ResourceType::Book,
+                0,
+                Some(ResourceFilter::Type(ResourceType::Book))
+            ),
             (ResourceType::CrossReferenceSet, 0, None),
             (ResourceType::PeopleAndPlaces, 0, None),
         ]

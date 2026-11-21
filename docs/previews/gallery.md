@@ -577,6 +577,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Save layout as, Light](gallery/save-layout-as-light-1x.png) | ![Save layout as, Dark](gallery/save-layout-as-dark-1x.png) | ![Save layout as, Sepia](gallery/save-layout-as-sepia-1x.png) |
 | [2×](gallery/save-layout-as-light-2x.png) | [2×](gallery/save-layout-as-dark-2x.png) | [2×](gallery/save-layout-as-sepia-2x.png) |
 
+### Books: download everything
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Books: download everything, Light](gallery/books-download-everything-light-1x.png) | ![Books: download everything, Dark](gallery/books-download-everything-dark-1x.png) | ![Books: download everything, Sepia](gallery/books-download-everything-sepia-1x.png) |
+| [2×](gallery/books-download-everything-light-2x.png) | [2×](gallery/books-download-everything-dark-2x.png) | [2×](gallery/books-download-everything-sepia-2x.png) |
+
 ### Import a Resource
 
 | Light | Dark | Sepia |
@@ -590,6 +597,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Visual filters, Light](gallery/visual-filters-light-1x.png) | ![Visual filters, Dark](gallery/visual-filters-dark-1x.png) | ![Visual filters, Sepia](gallery/visual-filters-sepia-1x.png) |
 | [2×](gallery/visual-filters-light-2x.png) | [2×](gallery/visual-filters-dark-2x.png) | [2×](gallery/visual-filters-sepia-2x.png) |
+
+### Books: type chooser
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Books: type chooser, Light](gallery/books-type-chooser-light-1x.png) | ![Books: type chooser, Dark](gallery/books-type-chooser-dark-1x.png) | ![Books: type chooser, Sepia](gallery/books-type-chooser-sepia-1x.png) |
+| [2×](gallery/books-type-chooser-light-2x.png) | [2×](gallery/books-type-chooser-dark-2x.png) | [2×](gallery/books-type-chooser-sepia-2x.png) |
 
 ### Language chooser
 
@@ -874,6 +888,27 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | [2×](gallery/timeline-a-chip-s-menu-light-2x.png) | [2×](gallery/timeline-a-chip-s-menu-dark-2x.png) | [2×](gallery/timeline-a-chip-s-menu-sepia-2x.png) |
 
 ## Empty, loading and error states
+
+### Get Resources: Books, not connected
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Books, not connected, Light](gallery/get-resources-books-not-connected-light-1x.png) | ![Get Resources: Books, not connected, Dark](gallery/get-resources-books-not-connected-dark-1x.png) | ![Get Resources: Books, not connected, Sepia](gallery/get-resources-books-not-connected-sepia-1x.png) |
+| [2×](gallery/get-resources-books-not-connected-light-2x.png) | [2×](gallery/get-resources-books-not-connected-dark-2x.png) | [2×](gallery/get-resources-books-not-connected-sepia-2x.png) |
+
+### Get Resources: Books, connected
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Books, connected, Light](gallery/get-resources-books-connected-light-1x.png) | ![Get Resources: Books, connected, Dark](gallery/get-resources-books-connected-dark-1x.png) | ![Get Resources: Books, connected, Sepia](gallery/get-resources-books-connected-sepia-1x.png) |
+| [2×](gallery/get-resources-books-connected-light-2x.png) | [2×](gallery/get-resources-books-connected-dark-2x.png) | [2×](gallery/get-resources-books-connected-sepia-2x.png) |
+
+### Get Resources: Books, no access
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Books, no access, Light](gallery/get-resources-books-no-access-light-1x.png) | ![Get Resources: Books, no access, Dark](gallery/get-resources-books-no-access-dark-1x.png) | ![Get Resources: Books, no access, Sepia](gallery/get-resources-books-no-access-sepia-1x.png) |
+| [2×](gallery/get-resources-books-no-access-light-2x.png) | [2×](gallery/get-resources-books-no-access-dark-2x.png) | [2×](gallery/get-resources-books-no-access-sepia-2x.png) |
 
 ### Library: empty
 

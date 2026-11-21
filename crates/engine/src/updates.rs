@@ -522,6 +522,7 @@ impl UpdateError {
             FetchError::Cancelled => Self::Cancelled,
             FetchError::RateLimited => Self::RateLimited,
             FetchError::NotFound => Self::Failed("a release file is missing".into()),
+            FetchError::Unauthorized => Self::Failed("GitHub refused the request".into()),
             FetchError::Network(_) => Self::Offline,
         }
     }

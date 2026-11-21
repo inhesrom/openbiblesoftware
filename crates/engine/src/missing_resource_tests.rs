@@ -191,8 +191,13 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
             Tagging::None,
             Some("Get Dictionaries…"),
         ),
-        // Books are imported, not offered by the repositories (ADR 0023).
-        (CitedIn, ResourceType::Book, Tagging::None, None),
+        // Books come from the Christian Open Library under Get Resources (ADR 0024).
+        (
+            CitedIn,
+            ResourceType::Book,
+            Tagging::None,
+            Some("Get Books…"),
+        ),
     ];
     assert_eq!(cases.len(), GuideSection::ALL.len());
     for (section, ty, tagging, label) in cases {

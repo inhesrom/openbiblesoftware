@@ -81,6 +81,10 @@ pub struct ImportRecord {
     /// record's id is no Resource's ([`crate::books::BATCH_PREFIX`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub books: Option<crate::books::BookBatchSummary>,
+    /// Where a Christian Open Library Book came from: its path and files' blob SHAs, for
+    /// Check for new books (ADR 0024).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub col: Option<crate::col::ColOrigin>,
 }
 
 /// Where a Resource downloaded from the Open catalogue came from (#134).
@@ -284,6 +288,7 @@ impl Session {
         let events = self.poll_topic_guides(events);
         let events = self.poll_reanchoring(events);
         let events = self.poll_book_batches(events);
+        let events = self.poll_col(events);
         for event in events {
             let Some(id) = self.imports.active.get(&event.id).cloned() else {
                 other.push(event);
@@ -722,6 +727,7 @@ impl Session {
             origin,
             open_origin,
             books: None,
+            col: None,
         };
         let indexer = Arc::clone(&self.imports.indexer);
         let fetch = self.fetch();

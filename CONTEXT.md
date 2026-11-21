@@ -1,6 +1,6 @@
 # Open Bible Software
 
-An offline desktop Bible study app for the serious lay student. Users read, compare, annotate and search a local library of open resources. The app never phones home; its one network request of its own is the Update check (ADR 0017), which the user can turn off.
+An offline desktop Bible study app for the serious lay student. Users read, compare, annotate and search a local library of open resources. The app never phones home; its one network request of its own is the Update check (ADR 0017), which the user can turn off. Everything else it fetches (Get Resources, the Starter library download, the Christian Open Library's books, ADR 0024) it fetches only when the user clicks.
 
 ## Language
 
@@ -178,8 +178,12 @@ Adding a Resource to the library from a local file in an open format: USFM, SWOR
 _Avoid_: Install, Download
 
 **Get Resources**:
-The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories and by the Open catalogue, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles. Its licence filter shows only what is Free to share, what is Free for personal use, or All licences.
+The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories and by the Open catalogue, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles. Its licence filter shows only what is Free to share, what is Free for personal use, or All licences. Its Books filter is the Christian Open Library.
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
+
+**Christian Open Library**:
+An independent library of some 7,600 Christian books and church records, kept as Markdown in a private GitHub repository its members are invited to (COL, christianopenlibrary.org). Get Resources' Books filter connects to it with the member's own GitHub token, kept in the computer's keychain, or reads a copy the member keeps; the member chooses works (or all of them) and each comes into the Library as a Book under the same Resource id on every computer. **Check for new books** compares the Library's COL Books with the library's files and offers what is new and Update for what changed; a book no longer in COL stays in the Library. Nothing from COL is shipped with the app or shared (ADR 0024).
+_Avoid_: COL store, COL sync, Mirror
 
 **Language name**:
 What the app shows for a Resource's language tag (`bn`, `kmo`, `zh-Hant`): the English name and, where known, the name in the language itself ("Bangla — বাংলা", "Kwoma"), from the built-in Unicode CLDR names and the ISO 639-3 reference names; the tag shows on hover. A tag no table names shows as "Unknown language (xyz)". Tags of one language (`bn`, `ben`, `ben-Beng`) are one language: Get Resources' language filter lists each once, with how many Resources it has, the OS language first, and its search matches the English name, other English names ("Bengali"), the name in the language itself, or a code.

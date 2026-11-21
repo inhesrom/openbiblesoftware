@@ -113,12 +113,14 @@ pub enum ResourceFilter {
 
 impl ResourceFilter {
     /// The filter row, in order.
-    pub const CHOICES: [ResourceFilter; 6] = [
+    pub const CHOICES: [ResourceFilter; 7] = [
         ResourceFilter::Type(ResourceType::Bible),
         ResourceFilter::HebrewAndGreek,
         ResourceFilter::Type(ResourceType::Lexicon),
         ResourceFilter::Type(ResourceType::Commentary),
         ResourceFilter::Type(ResourceType::Dictionary),
+        // The Christian Open Library's books (ADR 0024).
+        ResourceFilter::Type(ResourceType::Book),
         ResourceFilter::All,
     ];
 
@@ -153,10 +155,9 @@ impl ResourceFilter {
             ResourceFilter::Type(ResourceType::Lexicon) => Some("lexicons"),
             ResourceFilter::Type(ResourceType::Commentary) => Some("commentaries"),
             ResourceFilter::Type(ResourceType::Dictionary) => Some("dictionaries"),
+            ResourceFilter::Type(ResourceType::Book) => Some("books"),
             ResourceFilter::Type(
-                ResourceType::CrossReferenceSet
-                | ResourceType::PeopleAndPlaces
-                | ResourceType::Book,
+                ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces,
             ) => None,
         }
     }
@@ -191,9 +192,10 @@ pub fn type_filter_from_id(id: &str) -> Result<ResourceFilter, String> {
         "lexicon" | "lexicons" => ty(ResourceType::Lexicon),
         "commentary" | "commentaries" => ty(ResourceType::Commentary),
         "dictionary" | "dictionaries" => ty(ResourceType::Dictionary),
+        "book" | "books" => ty(ResourceType::Book),
         other => Err(format!(
             "Unknown type {other:?}: use bibles, hebrew-greek, lexicons, commentaries, \
-             dictionaries or all"
+             dictionaries, books or all"
         )),
     }
 }

@@ -1400,8 +1400,14 @@ fn write_everything(s: &mut Session) {
 }
 
 /// Settings the trial restore does not compare: each names another record and falls back to
-/// the default when that record is gone, as at launch (see `backup_check.rs`).
-const NOT_COMPARED: &[&str] = &["highlights.palette", "annotations.last_notebook"];
+/// the default when that record is gone, as at launch (see `backup_check.rs`). The Christian
+/// Open Library's local copy names a folder on this computer, read only when Get Resources →
+/// Books is opened; a missing folder there just asks to connect again (ADR 0024).
+const NOT_COMPARED: &[&str] = &[
+    "highlights.palette",
+    "annotations.last_notebook",
+    "col/local-clone",
+];
 
 /// Everything the app itself writes is kept by the trial restore: a Backup of a Session that
 /// has used every setting it can reach here previews and restores, and every setting it wrote

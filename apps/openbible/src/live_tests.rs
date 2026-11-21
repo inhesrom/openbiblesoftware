@@ -488,3 +488,69 @@ fn live_searching_bengali_bangla_or_ben_finds_the_live_catalogs_bengali_bibles()
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// A real Christian Open Library download (#347, ADR 0024) with a member's own token:
+///
+/// ```sh
+/// OBS_COL_TOKEN=github_pat_… cargo test -p openbible --release -- --ignored --nocapture live_col
+/// ```
+///
+/// Connects to `Christian-open-library/books`, reads its list and catalogue, downloads the
+/// smallest work and checks it is a Book in the Library; then Check for new books finds it up
+/// to date. Nothing is kept.
+#[test]
+#[ignore = "needs a Christian Open Library member's GitHub token in OBS_COL_TOKEN"]
+fn live_col_download() {
+    let Ok(token) = std::env::var("OBS_COL_TOKEN") else {
+        eprintln!("OBS_COL_TOKEN is not set: skipped");
+        return;
+    };
+    let root = temp("col");
+    std::fs::create_dir_all(root.join("library")).unwrap();
+    let mut s = Session::new(JobMode::Threads(2));
+    s.library.set_directory(root.join("library"));
+    s.set_search_cache_dir(root.join("cache"));
+    s.set_fetch(Arc::new(HttpFetch::new()));
+    s.col
+        .set_secrets(Arc::new(obs_engine::col_get::SessionSecret::default()));
+    s.run("col.connect_token", &json!({ "token": token }))
+        .unwrap();
+    let wait = |s: &mut Session, what: &str, done: &dyn Fn(&Session) -> bool| {
+        let start = std::time::Instant::now();
+        while !done(s) {
+            assert!(start.elapsed().as_secs() < 600, "timed out: {what}");
+            s.poll_imports();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    };
+    wait(&mut s, "the list", &|s| !s.col.is_loading());
+    if let Some(e) = s.col.error() {
+        panic!("{}", e.message());
+    }
+    let works = s.col.catalog().unwrap().works.clone();
+    eprintln!("COL lists {} works", works.len());
+    assert!(works.len() > 1000, "{}", works.len());
+    let smallest = works.iter().min_by_key(|w| w.size).unwrap().clone();
+    eprintln!("downloading {} ({} bytes)", smallest.path, smallest.size);
+    let out = s
+        .run("col.download", &json!({ "paths": smallest.path }))
+        .unwrap();
+    let batch = out["id"].as_str().unwrap().to_string();
+    wait(&mut s, "the download", &|s| {
+        s.imports.job_of(&batch).is_none()
+    });
+    let report = s.imports.report(&batch).unwrap();
+    assert_eq!(report.phase, ImportPhase::Complete, "{:?}", report.error);
+    let books = report.books.as_ref().unwrap();
+    assert_eq!(books.imported.len(), 1, "{:?}", books.failed);
+    let entry = s.library.get(&smallest.resource_id()).unwrap();
+    assert_eq!(entry.manifest.resource_type, ResourceType::Book);
+    eprintln!(
+        "imported {:?}: {}",
+        entry.manifest.title, entry.manifest.attribution
+    );
+    s.run("col.refresh", &json!({})).unwrap();
+    wait(&mut s, "the list again", &|s| !s.col.is_loading());
+    assert_eq!(s.col.changes().unwrap().current, 1);
+    let _ = std::fs::remove_dir_all(root);
+}

@@ -333,6 +333,27 @@ fn until(h: &mut Harness, what: &str, done: impl Fn(&Harness) -> bool) {
     panic!("never saw {what}: {:?}", h.texts());
 }
 
+/// Get Resources at Books, connected to the mock of the Christian Open Library's repository
+/// (ADR 0024); nothing reaches the network.
+fn connect_col(h: &mut Harness) {
+    let col = std::sync::Arc::new(obs_engine::testing::MockCol::new("github_pat_GALLERY"));
+    let s = &mut h.shell.st.session;
+    s.set_fetch(col);
+    s.col.set_api(obs_engine::testing::MockCol::API);
+    s.col.set_secrets(std::sync::Arc::new(
+        obs_engine::col_get::SessionSecret::default(),
+    ));
+    run_split(h, "library.get_resources", json!({ "type": "books" }));
+    h.shell.run(
+        "col.connect_token",
+        &json!({ "token": "github_pat_GALLERY" }),
+    );
+    for _ in 0..20 {
+        h.shell.st.session.jobs().pump(64);
+        h.frames(2);
+    }
+}
+
 /// This is version 1.2.3, and the release source (a mock: nothing reaches the network) has
 /// published `tag`, with release notes.
 fn offer_updates(h: &mut Harness, tag: &str) {
@@ -757,6 +778,15 @@ fn dialogs_and_popovers() -> Vec<Run> {
             |h| h.shell.st.prompt.is_some(),
         ),
         (
+            "Books: download everything",
+            |h| {
+                connect_col(h);
+                h.click_text("Download everything…");
+                h.frames(3);
+            },
+            |h| shows(h, "Download everything?"),
+        ),
+        (
             "Import a Resource",
             |h| {
                 h.shell.run("library.import", &json!({}));
@@ -771,6 +801,15 @@ fn dialogs_and_popovers() -> Vec<Run> {
                 h.frames(3);
             },
             |h| h.shell.st.filters_ui.open,
+        ),
+        (
+            "Books: type chooser",
+            |h| {
+                connect_col(h);
+                h.click_text("Any type");
+                h.frames(3);
+            },
+            |h| shows(h, "confession · 1"),
         ),
         (
             "Language chooser",
@@ -1972,6 +2011,16 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/footnotes.rs",
         "egui::Area::new(",
         &["footnote-popover reference-preview"],
+    ),
+    (
+        "shell/col_tab.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["books-type-chooser"],
+    ),
+    (
+        "shell/col_tab.rs",
+        "egui::Window::new(",
+        &["books-download-everything"],
     ),
     (
         "shell/get_bibles_tab.rs",

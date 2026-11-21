@@ -46,6 +46,7 @@ mod find_bar;
 mod floating;
 mod footnotes;
 pub use floating::DesktopUnits;
+mod col_tab;
 mod fonts_window;
 mod get_bibles_tab;
 mod guide_parallels;
@@ -229,6 +230,8 @@ pub(crate) struct State {
     pick_import: bool,
     /// The Get Bibles Tab's search and language filter.
     get_bibles_ui: get_bibles_tab::GetBiblesUi,
+    /// Get Resources → Books: the Christian Open Library's own fields (ADR 0024).
+    col_ui: col_tab::ColUi,
     picker: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
     /// The Search Analysis's CSV save dialog, for its Tab (#146).
     csv_picker: Option<(TabId, std::sync::mpsc::Receiver<Option<std::path::PathBuf>>)>,
@@ -388,6 +391,7 @@ impl Shell {
                 confirm: None,
                 pick_import: false,
                 get_bibles_ui: get_bibles_tab::GetBiblesUi::default(),
+                col_ui: col_tab::ColUi::default(),
                 picker: None,
                 csv_picker: None,
                 last_save: 0.0,

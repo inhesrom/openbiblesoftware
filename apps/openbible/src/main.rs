@@ -12,10 +12,13 @@ use std::sync::Arc;
 use obs_ui_egui::bench::{BenchConfig, run, scale, synthetic_bible};
 
 mod clipboard;
+#[cfg(test)]
+mod col_tests;
 mod fetch;
 mod fonts;
 #[cfg(test)]
 mod live_tests;
+mod secrets;
 mod system_motion;
 // macOS: the menu bar is the window's title bar (#297); elsewhere only `main_viewport` is used.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -287,6 +290,7 @@ fn main() -> ExitCode {
             let app = app.with_unified_title_bar(Arc::new(title_bar::OsTitleBar::start()));
             Ok(Box::new(
                 app.with_fetch(Arc::new(fetch::HttpFetch::new()))
+                    .with_col_secrets(Arc::new(secrets::OsKeychain))
                     .with_system_language(sys_locale::get_locale())
                     .with_update_checks()
                     .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))

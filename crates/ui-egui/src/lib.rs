@@ -180,6 +180,24 @@ impl App {
 
     /// Hand the engine the app's transport for SWORD repositories (Get Bibles, #91). Without
     /// one, only local `file://` repositories answer.
+    /// Where the Christian Open Library token is kept: the OS credential store (ADR 0024).
+    /// `OBS_COL_API` names another GitHub API to read COL's repository from (a mock on this
+    /// computer, for checking the download by hand); the transport sends the token only to
+    /// GitHub's API or to this computer.
+    pub fn with_col_secrets(
+        mut self,
+        secrets: std::sync::Arc<dyn obs_engine::col_get::SecretStore>,
+    ) -> Self {
+        let col = &mut self.shell.session_mut().col;
+        col.set_secrets(secrets);
+        if let Ok(api) = std::env::var("OBS_COL_API")
+            && !api.trim().is_empty()
+        {
+            col.set_api(api.trim());
+        }
+        self
+    }
+
     pub fn with_fetch(mut self, fetch: std::sync::Arc<dyn obs_engine::sword_repo::Fetch>) -> Self {
         self.shell.session_mut().set_fetch(fetch);
         self

@@ -2972,3 +2972,221 @@ impl Fetch for MockReleases {
         Ok(bytes)
     }
 }
+
+/// A mock of the Christian Open Library's GitHub repository (ADR 0024), answering the REST
+/// calls the app makes (the repository, its default branch's commit, the recursive tree, a
+/// blob by SHA, the tarball) from files held in memory. Requests must carry `token`.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+pub struct MockCol {
+    pub token: String,
+    pub files: Mutex<std::collections::BTreeMap<String, Vec<u8>>>,
+    pub commit: Mutex<u32>,
+    /// Answer every request with this error when set.
+    pub refuse: Mutex<Option<FetchError>>,
+    /// The URLs asked for, with whether they carried the token.
+    pub seen: Mutex<Vec<(String, bool)>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl MockCol {
+    pub const API: &'static str = "https://api.github.test";
+
+    /// Five works like COL's (one split into Parts), its catalogue and authors.
+    pub fn new(token: &str) -> Self {
+        Self {
+            token: token.into(),
+            files: Mutex::new(col_sample_files()),
+            commit: Mutex::new(1),
+            refuse: Mutex::new(None),
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn sha(&self) -> String {
+        format!("{:040x}", *self.commit.lock().unwrap() + 0xc0de)
+    }
+
+    /// Change a file (or add one); the repository's commit moves on.
+    pub fn put(&self, path: &str, text: &str) {
+        self.files
+            .lock()
+            .unwrap()
+            .insert(path.into(), text.as_bytes().to_vec());
+        *self.commit.lock().unwrap() += 1;
+    }
+
+    /// Remove a file; the commit moves on.
+    pub fn remove(&self, path: &str) {
+        self.files.lock().unwrap().remove(path);
+        *self.commit.lock().unwrap() += 1;
+    }
+
+    fn answer(&self, path: &str) -> Result<Vec<u8>, FetchError> {
+        let root = "/repos/Christian-open-library/books";
+        let rest = path.strip_prefix(root).ok_or(FetchError::NotFound)?;
+        let files = self.files.lock().unwrap();
+        if rest.is_empty() {
+            return Ok(br#"{"default_branch":"main"}"#.to_vec());
+        }
+        if rest == "/commits/main" {
+            return Ok(self.sha().into_bytes());
+        }
+        if rest.starts_with("/git/trees/") {
+            let entries: Vec<String> = files
+                .iter()
+                .map(|(p, b)| {
+                    serde_json::json!({"path": p, "mode": "100644", "type": "blob",
+                        "sha": crate::col::git_blob_sha(b), "size": b.len()})
+                    .to_string()
+                })
+                .collect();
+            return Ok(format!(
+                r#"{{"sha":"{}","truncated":false,"tree":[{}]}}"#,
+                self.sha(),
+                entries.join(",")
+            )
+            .into_bytes());
+        }
+        if let Some(sha) = rest.strip_prefix("/git/blobs/") {
+            return files
+                .values()
+                .find(|b| crate::col::git_blob_sha(b) == sha)
+                .cloned()
+                .ok_or(FetchError::NotFound);
+        }
+        if rest.starts_with("/tarball/") {
+            let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            let mut tar = tar::Builder::new(gz);
+            let prefix = format!("Christian-open-library-books-{}", &self.sha()[..7]);
+            for (p, b) in files.iter() {
+                let mut h = tar::Header::new_gnu();
+                h.set_size(b.len() as u64);
+                h.set_mode(0o644);
+                tar.append_data(&mut h, format!("{prefix}/{p}"), b.as_slice())
+                    .unwrap();
+            }
+            return Ok(tar.into_inner().unwrap().finish().unwrap());
+        }
+        Err(FetchError::NotFound)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Fetch for MockCol {
+    fn get(&self, url: &str, progress: Progress<'_>) -> Result<Vec<u8>, FetchError> {
+        self.get_with(url, &[], progress)
+    }
+
+    fn get_with(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        progress: Progress<'_>,
+    ) -> Result<Vec<u8>, FetchError> {
+        let authorized = headers.iter().any(|(n, v)| {
+            n.eq_ignore_ascii_case("authorization") && *v == format!("Bearer {}", self.token)
+        });
+        self.seen
+            .lock()
+            .unwrap()
+            .push((url.to_string(), authorized));
+        if let Some(e) = self.refuse.lock().unwrap().clone() {
+            return Err(e);
+        }
+        if url == crate::col::PUBLIC_CATALOG_URL {
+            return Ok(COL_PUBLIC_CATALOG.as_bytes().to_vec());
+        }
+        let path = url
+            .strip_prefix(Self::API)
+            .ok_or_else(|| FetchError::Network(format!("{url}: not the mock")))?;
+        if !authorized {
+            return Err(FetchError::Unauthorized);
+        }
+        let path = path.split('?').next().unwrap_or(path);
+        let bytes = self.answer(path)?;
+        if !progress(bytes.len() as u64, Some(bytes.len() as u64)) {
+            return Err(FetchError::Cancelled);
+        }
+        Ok(bytes)
+    }
+}
+
+/// COL's public catalogue, as the mock serves it.
+#[cfg(not(target_arch = "wasm32"))]
+pub const COL_PUBLIC_CATALOG: &str = "Author,Title,Year,Type,Parts,Folder\n\
+John Owen,Of the Mortification of Sin,1656,book,2,EEBO-TCP/John Owen\n\
+Westminster Assembly,The Westminster Confession of Faith,1646,confession,,Creeds\n\
+Ursinus,The Heidelberg Catechism,1563,catechism,,Creeds\n\
+C. H. Spurgeon,The Lord Is My Shepherd,1896,book,,Sermons\n\
+Jonathan Edwards,Sinners in the Hands of an Angry God,1741,book,,Sermons\n";
+
+/// Five works like COL's, with its catalogue and authors files.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn col_sample_files() -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut f = std::collections::BTreeMap::new();
+    let mut put = |p: &str, t: &str| {
+        f.insert(p.to_string(), t.as_bytes().to_vec());
+    };
+    put(
+        "catalog_full.csv",
+        "File,Author,Title,Year,Type,License,Source\n\
+         EEBO-TCP/John Owen/Owen - Mortification.md,John Owen,Of the Mortification of Sin,1656,book,public domain,https://quod.lib.umich.edu/e/eebo/A53693.0001.001\n\
+         Creeds/Westminster Confession.md,Westminster Assembly,The Westminster Confession of Faith,1646,confession,public domain,\n\
+         Creeds/Heidelberg Catechism.md,Ursinus,The Heidelberg Catechism,1563,catechism,public domain,\n\
+         Sermons/Spurgeon - Psalm 23.md,C. H. Spurgeon,The Lord Is My Shepherd,1896,book,public domain,\n\
+         Sermons/Edwards - Sinners.md,Jonathan Edwards,Sinners in the Hands of an Angry God,1741,book,public domain,\n",
+    );
+    put(
+        "authors.csv",
+        "Author,Dates,Tradition,Note\nJohn Owen,1616–1683,Puritan,English Puritan\n\
+         Jonathan Edwards,1703–1758,Congregationalist,\nUrsinus,1534–1583,Reformed,\n\
+         C. H. Spurgeon,1834–1892,Baptist,\n",
+    );
+    put(
+        "EEBO-TCP/John Owen/Owen - Mortification.md",
+        "---\ntitle: Of the Mortification of Sin\nauthor: John Owen\ndate: 1656\n\
+         license: public domain\nsource: https://quod.lib.umich.edu/e/eebo/A53693.0001.001\n---\n\n\
+         # Of the Mortification of Sin\n\n- [Part 1](x)\n",
+    );
+    put(
+        "EEBO-TCP/John Owen/Owen - Mortification — Part 1.md",
+        "<!-- p. 1 -->\n\n## Chapter I\n\nIf ye through the Spirit do mortify the deeds of the \
+         body, ye shall live, Rom. 8. 13.\n",
+    );
+    put(
+        "EEBO-TCP/John Owen/Owen - Mortification — Part 2.md",
+        "## Chapter II\n\nThe second <!-- p. 2 --> chapter.\n",
+    );
+    for (p, t, author) in [
+        (
+            "Creeds/Westminster Confession.md",
+            "The Westminster Confession of Faith",
+            "Westminster Assembly",
+        ),
+        (
+            "Creeds/Heidelberg Catechism.md",
+            "The Heidelberg Catechism",
+            "Ursinus",
+        ),
+        (
+            "Sermons/Spurgeon - Psalm 23.md",
+            "The Lord Is My Shepherd",
+            "C. H. Spurgeon",
+        ),
+        (
+            "Sermons/Edwards - Sinners.md",
+            "Sinners in the Hands of an Angry God",
+            "Jonathan Edwards",
+        ),
+    ] {
+        put(
+            p,
+            &format!(
+                "---\ntitle: {t}\nauthor: {author}\nlicense: public domain\n---\n\n## One\n\n\
+                 The text of {t}, citing John 3:16.\n"
+            ),
+        );
+    }
+    f
+}

@@ -1,11 +1,14 @@
 //! The app's network transport for SWORD repositories (Get Bibles, #91), the Starter library
-//! download (#131) and the Update check (#276).
+//! download (#131), the Update check (#276) and the Christian Open Library's books (ADR 0024).
 //!
 //! The only place in the workspace that opens HTTP connections. Bytes come straight from the
 //! repository's own URL; there is no project server in the path. `ftp://` and `file://` use
 //! the SWORD crate's built-in transport, which needs no networking crate. A request to
 //! GitHub's API (the Update check) asks for its JSON format and API version, as GitHub
-//! documents; no other header names the user, and no request carries a cookie or token.
+//! documents; no other header names the user, and no request carries a cookie. Only the
+//! Christian Open Library's requests carry a token (the user's own, ADR 0024): an
+//! `Authorization` header goes to GitHub's API alone and never follows a redirect, so the
+//! tarball GitHub redirects to its download host is fetched without it.
 
 use std::io::Read;
 use std::time::Duration;
@@ -17,6 +20,20 @@ const LIMIT: u64 = 4 << 30;
 const CHUNK: usize = 64 * 1024;
 /// GitHub's REST API, whose requests ask for its JSON format.
 const GITHUB_API: &str = "https://api.github.com/";
+
+/// Whether `url` may be sent an `Authorization` header: GitHub's API over HTTPS, or this
+/// computer (the tests' mock GitHub).
+fn may_authorize(url: &str) -> bool {
+    if url.starts_with(GITHUB_API) {
+        return true;
+    }
+    let host = url
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?']).next().unwrap_or(""))
+        .unwrap_or("");
+    let host = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    matches!(host, "127.0.0.1" | "localhost" | "[::1]")
+}
 
 #[derive(Debug)]
 pub struct HttpFetch {
@@ -38,6 +55,8 @@ impl HttpFetch {
             .user_agent(format!("OpenBible/{}", obs_engine::updates::APP_VERSION))
             // Statuses are read here: a 403 from GitHub may mean "rate limited" (#276).
             .http_status_as_error(false)
+            // A token never follows a redirect (ureq's default, kept explicit: ADR 0024).
+            .redirect_auth_headers(ureq::config::RedirectAuthHeaders::Never)
             .build();
         Self {
             agent: ureq::Agent::new_with_config(config),
@@ -61,6 +80,7 @@ fn check_status<B>(url: &str, response: &ureq::http::Response<B>) -> Result<(), 
     match code {
         200..=299 => Ok(()),
         404 | 410 => Err(FetchError::NotFound),
+        401 => Err(FetchError::Unauthorized),
         429 => Err(FetchError::RateLimited),
         403 if remaining == Some("0") => Err(FetchError::RateLimited),
         _ => Err(FetchError::Network(format!("{url}: http status: {code}"))),
@@ -73,24 +93,21 @@ fn scheme(url: &str) -> String {
         .unwrap_or_default()
 }
 
-impl Fetch for HttpFetch {
-    fn get(&self, url: &str, progress: Progress<'_>) -> Result<Vec<u8>, FetchError> {
-        match scheme(url).as_str() {
-            "http" | "https" => {}
-            "ftp" | "file" => {
-                let bytes = builtin_get(url)?;
-                let n = bytes.len() as u64;
-                return if progress(n, Some(n)) {
-                    Ok(bytes)
-                } else {
-                    Err(FetchError::Cancelled)
-                };
-            }
-            other => {
-                return Err(FetchError::Network(format!(
-                    "{url}: unsupported protocol {other:?}"
-                )));
-            }
+impl HttpFetch {
+    /// Send a GET with `headers` and check its status; the response's body is still to read.
+    fn request(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<ureq::http::Response<ureq::Body>, FetchError> {
+        if headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+            && !may_authorize(url)
+        {
+            return Err(FetchError::Network(format!(
+                "{url}: credentials are not sent to this host"
+            )));
         }
         let mut request = self.agent.get(url);
         if url.starts_with(GITHUB_API) {
@@ -98,11 +115,51 @@ impl Fetch for HttpFetch {
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28");
         }
-        let mut response = match request.call() {
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = match request.call() {
             Ok(r) => r,
             Err(e) => return Err(FetchError::Network(format!("{url}: {e}"))),
         };
         check_status(url, &response)?;
+        Ok(response)
+    }
+
+    /// Fetch over `ftp://` or `file://` with the built-in transport; `None` for HTTP(S).
+    fn builtin(url: &str, progress: Progress<'_>) -> Option<Result<Vec<u8>, FetchError>> {
+        match scheme(url).as_str() {
+            "http" | "https" => None,
+            "ftp" | "file" => Some(builtin_get(url).and_then(|bytes| {
+                let n = bytes.len() as u64;
+                if progress(n, Some(n)) {
+                    Ok(bytes)
+                } else {
+                    Err(FetchError::Cancelled)
+                }
+            })),
+            other => Some(Err(FetchError::Network(format!(
+                "{url}: unsupported protocol {other:?}"
+            )))),
+        }
+    }
+}
+
+impl Fetch for HttpFetch {
+    fn get(&self, url: &str, progress: Progress<'_>) -> Result<Vec<u8>, FetchError> {
+        self.get_with(url, &[], progress)
+    }
+
+    fn get_with(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        progress: Progress<'_>,
+    ) -> Result<Vec<u8>, FetchError> {
+        if let Some(result) = Self::builtin(url, progress) {
+            return result;
+        }
+        let mut response = self.request(url, headers)?;
         let total = response.body().content_length();
         if total.is_some_and(|t| t > LIMIT) {
             return Err(FetchError::Network(format!("{url}: larger than 4 GiB")));
@@ -126,6 +183,25 @@ impl Fetch for HttpFetch {
             }
         }
         Ok(out)
+    }
+
+    fn open(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Box<dyn Read + Send>, FetchError> {
+        if let Some(result) = Self::builtin(url, &mut |_, _| true) {
+            return result.map(|b| Box::new(std::io::Cursor::new(b)) as Box<dyn Read + Send>);
+        }
+        let response = self.request(url, headers)?;
+        // A whole library is a few GB of Markdown, compressed: no limit but the stream's end.
+        Ok(Box::new(
+            response
+                .into_body()
+                .into_with_config()
+                .limit(u64::MAX)
+                .reader(),
+        ))
     }
 
     fn size(&self, url: &str) -> Result<Option<u64>, FetchError> {

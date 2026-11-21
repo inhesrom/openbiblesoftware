@@ -23,6 +23,9 @@ serde_json.workspace = true
 pulldown-cmark = { workspace = true, features = ["html"] }
 # Verifies downloaded and bundled Starter library files against their manifest (#131).
 sha2.workspace = true
+# The Christian Open Library (ADR 0024): a local copy's files are compared with the
+# repository's by git's blob ids (SHA-1). The same `digest` version as sha2, so one crate.
+sha1 = { version = "0.11", default-features = false }
 # Compares Notebook file names in Export everything as a disk that ignores normalisation does (#252).
 unicode-normalization.workspace = true
 # Parses the Featured Bibles data file (Get Bibles, #91).

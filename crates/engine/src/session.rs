@@ -45,6 +45,8 @@ pub struct Session {
     pub bible_search: crate::bible_search::BibleSearches,
     /// Get Bibles catalog (#91).
     pub get_bibles: crate::get_bibles::GetBibles,
+    /// Get Resources → Books: the Christian Open Library (ADR 0024).
+    pub col: crate::col_get::ColState,
     /// The Starter library: its bundle, the released manifest and a download (#131).
     pub starter: crate::starter::StarterLibrary,
     pub workspace: Workspace,
@@ -136,6 +138,7 @@ impl Session {
             search: crate::search::SearchIndexes::default(),
             bible_search: crate::bible_search::BibleSearches::default(),
             get_bibles: crate::get_bibles::GetBibles::default(),
+            col: crate::col_get::ColState::default(),
             starter: crate::starter::StarterLibrary::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
