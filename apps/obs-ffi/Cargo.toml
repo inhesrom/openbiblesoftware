@@ -1,0 +1,22 @@
+[package]
+name = "obs-ffi"
+description = "The Mobile app's one UniFFI crate: what Swift (and later Kotlin) links (ADR 0021)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib: the iOS XCFramework; cdylib: the host library `cargo xtask ios bindgen` reads;
+# lib: Rust tests.
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[dependencies]
+obs-mobile.workspace = true
+# Proc-macro mode, no UDL (docs/dev/mobile-core.md). Apps alone may use it (`cargo xtask layers`).
+uniffi.workspace = true
+
+[lints]
+workspace = true

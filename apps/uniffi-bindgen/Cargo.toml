@@ -1,0 +1,17 @@
+[package]
+name = "uniffi-bindgen"
+description = "UniFFI's bindings generator, run by `cargo xtask ios bindgen` (docs/dev/mobile-core.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Its own crate, so the `cli` feature and its dependencies stay out of `obs-ffi`'s graph.
+# `cargo-metadata` finds `apps/obs-ffi/uniffi.toml` in library mode.
+uniffi = { workspace = true, features = ["cli", "cargo-metadata"] }
+
+[lints]
+workspace = true

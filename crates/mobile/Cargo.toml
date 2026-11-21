@@ -1,0 +1,15 @@
+[package]
+name = "obs-mobile"
+description = "The Mobile app's screen models and actions, below the platform shells (ADR 0021). No FFI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-engine.workspace = true
+
+[lints]
+workspace = true

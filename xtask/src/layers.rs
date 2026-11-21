@@ -5,6 +5,8 @@
 //! - Only `obs-store` may depend directly on SQLite crates.
 //! - No library crate may depend, even transitively, on a networking crate; only apps may
 //!   (offline-first engine; Get Bibles, #91, injects its transport from the app).
+//! - No library crate may depend, even transitively, on an FFI crate; only apps may (the
+//!   Mobile app's one UniFFI crate is `apps/obs-ffi`, `docs/dev/mobile-core.md`).
 //! - Every workspace crate outside `apps/` and `xtask` must be listed in [`LAYERS`].
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,6 +26,7 @@ pub const LAYERS: &[(&str, u8)] = &[
     ("obs-store", 2),
     ("obs-render", 3),
     ("obs-engine", 4),
+    ("obs-mobile", 5),
     ("obs-ui-egui", 6),
 ];
 
@@ -61,6 +64,10 @@ const NET_CRATES: &[&str] = &[
     "tungstenite",
     "suppaftp",
 ];
+
+/// Foreign-function binding crates. Only apps may depend on them, directly or transitively, so
+/// every library stays plain Rust and compiles for wasm32.
+const FFI_CRATES: &[&str] = &["uniffi"];
 
 /// Crates only `obs-store` may depend on directly.
 const SQLITE_CRATES: &[&str] = &["rusqlite", "libsqlite3-sys", "sqlite-wasm-rs"];
@@ -249,6 +256,19 @@ pub fn check(pkgs: &[Package]) -> Vec<String> {
                 ));
             }
         }
+        for ffi in FFI_CRATES {
+            if pkg.transitive_deps.contains(*ffi) {
+                let how = if pkg.external_deps.contains(*ffi) {
+                    "directly"
+                } else {
+                    "transitively"
+                };
+                errors.push(format!(
+                    "`{}` (L{layer}) depends {how} on FFI crate `{ffi}`; only apps may",
+                    pkg.name
+                ));
+            }
+        }
         if pkg.name != SQLITE_OWNER {
             for db in SQLITE_CRATES {
                 if pkg.external_deps.contains(*db) {
@@ -347,6 +367,41 @@ mod tests {
         let mut pkgs = good();
         pkgs[5].external_deps.insert("ureq".into());
         pkgs[5].transitive_deps.insert("rustls".into());
+        assert_eq!(check(&pkgs), Vec::<String>::new());
+    }
+
+    #[test]
+    fn uniffi_in_a_library_fails_but_an_app_may_use_it() {
+        let mut pkgs = good();
+        pkgs.push(pkg(
+            "obs-mobile",
+            Some(Kind::Library(5)),
+            &["obs-engine"],
+            &["uniffi"],
+            &["uniffi_core"],
+        ));
+        let errors = check(&pkgs);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].contains("`obs-mobile` (L5) depends directly on FFI crate `uniffi`"),
+            "{errors:?}"
+        );
+
+        // Through another crate, and in a UI-layer crate too.
+        let mut pkgs = good();
+        pkgs[4].transitive_deps.insert("uniffi".into());
+        let errors = check(&pkgs);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("`obs-ui-egui` (L6) depends transitively"));
+
+        let mut pkgs = good();
+        pkgs.push(pkg(
+            "obs-ffi",
+            Some(Kind::App),
+            &["obs-engine"],
+            &["uniffi"],
+            &["uniffi_core"],
+        ));
         assert_eq!(check(&pkgs), Vec::<String>::new());
     }
 

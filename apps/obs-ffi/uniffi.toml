@@ -1,0 +1,4 @@
+# UniFFI's bindings settings for this crate, read by `uniffi-bindgen generate` in library mode.
+[bindings.swift]
+# The generated Swift file is `ObsFFI.swift`; its C module is UniFFI's default, `ObsFFIFFI`.
+module_name = "ObsFFI"
