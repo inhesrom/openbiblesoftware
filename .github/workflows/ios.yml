@@ -1,0 +1,262 @@
+name: iOS
+
+# The Mobile app's iOS shell (plan docs/plans/mobile-ios.md, A9 and S32;
+# docs/dev/ios-project.md, "CI"): builds the Rust core's simulator slice, generates the Xcode
+# project and runs both test targets on a simulator, with Xcode pinned to the version S05
+# recorded. It runs when the core, the app or the workflow changes: an engine, store, render
+# or layout change can break the FFI as well as an `apps/ios` one. No device builds, signing
+# or uploads (S33, S35). `ci.yml` and `cargo xtask ci` know nothing of this job.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "xtask/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "xtask/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Xcode S05 recorded (docs/plans/mobile-ios.md, S05 Outcome). Bump it together with
+  # that Outcome; any 27.2.x on the runner matches.
+  XCODE_VERSION: "27.2"
+  # The simulator S06 and S07 tested on; another iPhone on the same iOS is used, with a
+  # warning, when the image has no device of this name.
+  SIMULATOR: iPhone 17
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ios:
+    name: iOS build and tests (simulator)
+    runs-on: macos-latest
+    # S32's stop-and-ask is a job over 30 minutes; this only stops a hung simulator.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # `gh run download` of starter.yml's artifact from another run.
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        run: |
+          echo "Xcode apps on this runner:"
+          matches=""
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+              "$app/Contents/version.plist" 2>/dev/null || echo "?")
+            echo "  $app  $version"
+            case "$version" in
+              "$XCODE_VERSION" | "$XCODE_VERSION".*) matches+="$version $app"$'\n' ;;
+            esac
+          done
+          if [ -z "$matches" ]; then
+            echo "::error::this runner image has no Xcode $XCODE_VERSION (listed above). Pick a runner image that has it, or bump XCODE_VERSION in .github/workflows/ios.yml together with the S05 Outcome in docs/plans/mobile-ios.md."
+            exit 1
+          fi
+          # The newest $XCODE_VERSION.x; a second name for the same Xcode is harmless.
+          app=$(printf '%s' "$matches" | sort -V | tail -n 1 | cut -d' ' -f2-)
+          echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$app/Contents/Developer"
+          echo "Selected $app"
+          xcodebuild -version
+          echo "iOS Simulator SDK $(xcrun --sdk iphonesimulator --show-sdk-version)"
+
+      # rust-toolchain.toml pins the channel, components and wasm32 target; the simulator
+      # slice needs aarch64-apple-ios-sim (the device target is not built here).
+      - name: Install toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      # The Bundled set comes out of a built Starter library. Downloading the
+      # `starter-library` artifact of master's latest successful starter.yml run (about
+      # 160 MB) is cheaper than building it here (one `cargo xtask starter` with every
+      # source download; starter.yml's two builds take about 8 minutes on Linux). That
+      # artifact is master's, so it gives the Bundled set the lock lists only while this
+      # branch changes neither the Starter build nor the lock; otherwise (and when the
+      # artifact has expired) the next steps build the Starter library from this branch.
+      - name: Starter library from master's starter.yml
+        id: starter
+        run: |
+          source=build
+          run=$(gh run list --workflow starter.yml --branch master --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty' || true)
+          if [ -z "$run" ]; then
+            echo "::notice::no successful starter.yml run on master: building the Starter library"
+          elif ! gh run download "$run" --name starter-library --dir dist/starter; then
+            echo "::notice::starter.yml run $run has no starter-library artifact to download (expired?): building the Starter library"
+          else
+            echo "Starter library from starter.yml run $run on master"
+            if cargo xtask ios bundled-set; then
+              source=artifact
+            else
+              echo "::notice::the Bundled set in master's starter-library artifact (run $run) is not the one apps/ios/bundled-set.lock lists (this branch changes the Starter build or the lock, or master's build predates them): building the Starter library"
+            fi
+          fi
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Starter downloads
+        id: starter-cache
+        if: steps.starter.outputs.source == 'build'
+        uses: actions/cache/restore@v4
+        with:
+          path: target/starter-cache
+          key: starter-sources-macos-${{ hashFiles('starter/sources.toml') }}
+          restore-keys: starter-sources-macos-
+      # As starter.yml: revisions are numbered against the latest release's manifest, or
+      # the copy will not match the lock.
+      - name: Build the Starter library and copy the Bundled set
+        if: steps.starter.outputs.source == 'build'
+        run: |
+          tags=$(gh release list --exclude-drafts --limit 50 --json tagName -q '.[].tagName')
+          prev=$(printf '%s\n' "$tags" | head -n 1)
+          args=()
+          if [ -n "$prev" ]; then
+            echo "numbering revisions against release $prev"
+            gh release download "$prev" --pattern starter-manifest.json --dir target/previous \
+              || { echo "::error::release $prev has no starter-manifest.json"; exit 1; }
+            args=(--previous target/previous/starter-manifest.json)
+          fi
+          rm -rf dist/starter
+          cargo xtask starter "${args[@]+"${args[@]}"}"
+          cargo xtask ios bundled-set
+      - name: Save Starter downloads
+        if: steps.starter.outputs.source == 'build' && steps.starter-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target/starter-cache
+          key: starter-sources-macos-${{ hashFiles('starter/sources.toml') }}
+
+      - name: cargo xtask ios build --sim-only
+        run: cargo xtask ios build --sim-only
+
+      - name: xcodegen generate
+        working-directory: apps/ios
+        run: xcodegen generate
+
+      - name: Boot the simulator
+        id: simulator
+        run: |
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk//./-}"
+          devices=$(xcrun simctl list devices available --json)
+          # The first available device on the SDK's own runtime that the jq condition $1
+          # selects, as "<udid> <name>".
+          pick() {
+            jq -r --arg runtime "$runtime" --arg name "$SIMULATOR" \
+              '.devices[$runtime] // [] | map(select('"$1"')) | .[0] // empty
+               | "\(.udid) \(.name)"' <<<"$devices"
+          }
+          # shellcheck disable=SC2016 # $name is jq's, not the shell's
+          found=$(pick '.name == $name')
+          if [ -z "$found" ]; then
+            found=$(pick '.name | startswith("iPhone")')
+            if [ -z "$found" ]; then
+              echo "::error::no iPhone simulator on iOS $sdk ($runtime). Runtimes on this runner:"
+              xcrun simctl list runtimes
+              exit 1
+            fi
+            echo "::warning::no '$SIMULATOR' simulator on iOS $sdk: using ${found#* }"
+          fi
+          udid=${found%% *}
+          echo "Simulator ${found#* } ($udid), iOS $sdk"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl bootstatus "$udid" -b
+
+      # testATaggedWordShowsItsStrongsNumber (S07) needs the Study set, read in place from
+      # dist/starter through TEST_RUNNER_OBS_STUDY_SET_DIR; without it, that test alone is
+      # skipped and the log says so.
+      - name: xcodebuild test
+        working-directory: apps/ios
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          study="$GITHUB_WORKSPACE/dist/starter"
+          ids=$(jq -r '.resources[] | select(.mobile_set == "study") | .resource_id' \
+            "$study/starter-manifest.json" 2>/dev/null || true)
+          count=0
+          missing=""
+          for id in $ids; do
+            count=$((count + 1))
+            [ -f "$study/$id.obr" ] || missing+=" $id"
+          done
+          args=()
+          if [ -n "$ids" ] && [ -z "$missing" ]; then
+            echo "Study set: $count Resources in $study"
+            export TEST_RUNNER_OBS_STUDY_SET_DIR="$study"
+          else
+            echo "::notice::no Study set in $study${missing:+ (missing:$missing)}: skipping OpenBibleUITests/PrototypeTests/testATaggedWordShowsItsStrongsNumber only"
+            args=(-skip-testing:OpenBibleUITests/PrototypeTests/testATaggedWordShowsItsStrongsNumber)
+          fi
+          xcodebuild test -scheme OpenBible \
+            -destination "id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/OpenBible.xcresult" \
+            "${args[@]+"${args[@]}"}"
+
+      - name: Screenshots from the test results
+        if: failure()
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          out="$RUNNER_TEMP/screenshots"
+          mkdir -p "$out"
+          if [ -d "$RUNNER_TEMP/OpenBible.xcresult" ]; then
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/OpenBible.xcresult" \
+              --output-path "$out" \
+              || echo "::warning::could not export the attachments of OpenBible.xcresult"
+            # Exported as <uuid>.png; give each the name its test gave it (s07-sheet_0_<uuid>.png).
+            if [ -f "$out/manifest.json" ]; then
+              jq -r '.[].attachments[] | "\(.exportedFileName)\t\(.suggestedHumanReadableName)"' \
+                "$out/manifest.json" | while IFS=$'\t' read -r file name; do
+                  mv "$out/$file" "$out/$name" || true
+                done
+            fi
+          fi
+          if [ -n "$UDID" ]; then
+            xcrun simctl io "$UDID" screenshot "$out/simulator-at-failure.png" || true
+          fi
+          ls -l "$out"
+      - name: Upload the test results and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: |
+            ${{ runner.temp }}/OpenBible.xcresult
+            ${{ runner.temp }}/screenshots/
+          if-no-files-found: ignore
