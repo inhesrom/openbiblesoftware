@@ -705,7 +705,7 @@ impl UserStore {
         Ok(SyncColumns {
             tombstones: has_table(c, "tombstone")?,
             clocks: version >= CLOCK_SCHEMA,
-            covers: version >= COVERS_SCHEMA,
+            schema_15: version >= COVERS_SCHEMA,
         })
     }
 
@@ -790,7 +790,7 @@ impl UserStore {
         let (clock, covers) = match stamp {
             Stamp::Local { recording } if columns.clocks => {
                 let clock = self.next_clock(tx)?;
-                stamp_row(tx, &key, change, &clock)?;
+                stamp_row(tx, &key, change, &clock, columns.schema_15)?;
                 if *recording {
                     let before = before_clock.as_deref().and_then(Hlc::parse);
                     record_op(tx, &clock, change, before.as_ref())?;
@@ -799,7 +799,7 @@ impl UserStore {
             }
             Stamp::Local { .. } => (NO_CLOCK.to_string(), NO_CLOCK.to_string()),
             Stamp::Merged { clock, covers } => {
-                stamp_row(tx, &key, change, clock)?;
+                stamp_row(tx, &key, change, clock, columns.schema_15)?;
                 let covers = match covers {
                     Some(c) => c.encode()?,
                     None => NO_CLOCK.to_string(),
@@ -815,7 +815,7 @@ impl UserStore {
                 change,
                 &key,
                 &clock,
-                columns.covers.then_some(covers.as_str()),
+                columns.schema_15.then_some(covers.as_str()),
             )?;
         }
         Ok(())

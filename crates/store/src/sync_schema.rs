@@ -218,8 +218,14 @@ CREATE TABLE op_outbox (
 /// only a version from before clocks; `NULL` (every tombstone written before schema 15)
 /// covers up to its own `clock`, since the delete was made after every version its device
 /// had seen.
+///
+/// `item_clock.position`: a list item's position as its last write gave it, so a list is
+/// composed in the same order on every device from the same last writes of its items (its
+/// stored value holds only their order, which depends on the order they were merged in).
+/// `NULL` (every item written before schema 15, or a list last written whole): its index.
 pub(crate) const SCHEMA_15: &str = "
 ALTER TABLE tombstone ADD COLUMN covers TEXT;
+ALTER TABLE item_clock ADD COLUMN position INTEGER;
 ";
 
 /// Migration 12 → 13, after [`SCHEMA_13`]: this device's id.

@@ -659,7 +659,7 @@ fn the_default_notebook_is_made_through_apply_changes() {
 }
 
 #[test]
-fn a_delete_leaves_a_tombstone_and_undoing_it_takes_the_tombstone_away() {
+fn a_delete_leaves_a_tombstone_kept_for_good_and_undoing_it_brings_the_row_back() {
     let dir = Dir::new("tombstone");
     let (db, _) = UserStore::open(&dir.db()).unwrap();
     fill(&db);
@@ -681,14 +681,19 @@ fn a_delete_leaves_a_tombstone_and_undoing_it_takes_the_tombstone_away() {
     assert_eq!(clock.device_id, db.device_id().unwrap());
     db.apply_changes(&inverse(&db.take_applied_changes()))
         .unwrap();
-    assert_eq!(tombstones(&dir.db()), Vec::new());
+    // The tombstone stays (schema 15, ADR 0022 rule 3); the row made again is later than what
+    // it covers, so it is there.
+    assert_eq!(tombstones(&dir.db()), stones);
     assert_eq!(db.favorites().unwrap()[0].label, "Jn 3:16");
+    let state = db.row_state(&RowKey::Favorite(uid.clone())).unwrap();
+    assert!(state.row.is_some());
+    assert!(state.clock > state.tombstone.unwrap().covers);
 
     // A Collection deleted is an item's tombstone; replacing the Preferred order leaves none.
     db.set_preference("library.collections", "[]").unwrap();
     db.save_preferred_order(&["web".into()]).unwrap();
     let stones = tombstones(&dir.db());
-    assert_eq!(stones.len(), 1);
+    assert_eq!(stones.len(), 2);
     assert_eq!(
         (stones[0].0.as_str(), stones[0].1.as_str()),
         ("collection", "Greek")

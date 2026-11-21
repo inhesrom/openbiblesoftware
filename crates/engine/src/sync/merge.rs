@@ -88,6 +88,9 @@ pub struct MergeReport {
     pub not_observed: usize,
     /// Devices whose next op file waits, with its number and why.
     pub waiting: Vec<(String, u64, String)>,
+    /// How many times an op file waited for another device's and was merged later in the
+    /// same merge.
+    pub retried: usize,
     /// Devices whose op files could not all be read, where and why (`read_ops_after`).
     pub stopped: Vec<(String, u64, OpsStop)>,
 }
@@ -120,7 +123,9 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
                     Ok(()) => {
                         report.merged.push((device.clone(), *seq));
                         files.pop_front();
-                        *waits = None;
+                        if waits.take().is_some() {
+                            report.retried += 1;
+                        }
                         progress = true;
                     }
                     Err(MergeError::Waits(why)) => {
@@ -186,10 +191,25 @@ pub fn merge_op(tx: &mut MergeTx<'_>, op: &Op) -> Result<Outcome, MergeError> {
         ))
     })?;
     let state = tx.state(&key)?;
-    match &op.after {
-        Some(after) => merge_write(tx, op, &state, after),
-        None => merge_delete(tx, op, &key, &state),
+    let outcome = match &op.after {
+        Some(after) => merge_write(tx, op, &state, after)?,
+        None => merge_delete(tx, op, &key, &state)?,
+    };
+    tx.note_item_op(&key, &op.clock)?;
+    if std::env::var("OBS_MERGE_DEBUG").is_ok() {
+        eprintln!(
+            "{} merges {:?} {} at {}: {outcome:?}",
+            tx.device_id(),
+            key,
+            if op.after.is_some() {
+                "write"
+            } else {
+                "delete"
+            },
+            op.clock
+        );
     }
+    Ok(outcome)
 }
 
 /// A write: last writer wins, unless a delete here covers it.
@@ -265,6 +285,7 @@ fn merge_delete(
         return Ok(Outcome::DeleteNoted);
     };
     if state.clock.as_ref() > covers {
+        tx.note_delete(key, &op.clock, covers)?;
         return Ok(Outcome::EditKept);
     }
     if tx.has_children(key)? {

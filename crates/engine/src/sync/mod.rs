@@ -14,6 +14,8 @@ pub mod clock;
 pub mod folder;
 pub mod merge;
 #[cfg(all(test, not(target_arch = "wasm32")))]
+mod merge_props;
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod merge_tests;
 pub mod ops;
 #[cfg(all(test, not(target_arch = "wasm32")))]

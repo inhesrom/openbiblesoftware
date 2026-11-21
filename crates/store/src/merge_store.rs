@@ -19,6 +19,7 @@ use crate::annotation::{Change, Notebook, RowKey};
 use crate::annotation_store::read_default_notebook;
 use crate::error::StoreError;
 use crate::hlc::Hlc;
+use crate::preference_items::ListPreference;
 use crate::sync_clock::{COVERS_SCHEMA, Stamp, read_device_id, read_row_clock, records_ops};
 use crate::synced::SyncedLayout;
 use crate::synced_store::{ListItems, read_layout_by_name};
@@ -127,22 +128,17 @@ impl MergeTx<'_> {
         )
     }
 
-    /// Remember a delete (at `clock`, covering `covers`) of the row `key` names, which is not
-    /// here: its tombstone keeps the newer delete clock and the newer of what they cover.
+    /// Remember a delete (at `clock`, covering `covers`) of the row `key` names that removes
+    /// nothing here: the row is not here, or is a later version than the delete covers (edit
+    /// beats delete) and stays beside the tombstone. The tombstone keeps the newer delete
+    /// clock and the newer of what they cover, as every device's does.
     pub fn note_delete(
         &mut self,
         key: &RowKey,
         clock: &Hlc,
         covers: Option<&Hlc>,
     ) -> Result<(), StoreError> {
-        let state = self.state(key)?;
-        if state.row.is_some() {
-            return Err(StoreError::Rejected(format!(
-                "{} is here, so its delete is merged as a change",
-                key.describe()
-            )));
-        }
-        let old = state.tombstone;
+        let old = self.state(key)?.tombstone;
         let clock = old
             .as_ref()
             .and_then(|t| t.clock.clone())
@@ -164,6 +160,26 @@ impl MergeTx<'_> {
                     text(clock)?.unwrap_or_default(),
                     text(covers)?.unwrap_or_default()
                 ],
+            )
+            .map(drop)
+            .map_err(sql)
+    }
+
+    /// Note that another device's op at `clock` touched the list item `key` names (whatever
+    /// it did here): the list's `preference.clock` is the newest clock of any op on its items,
+    /// and the list has a value (empty, if no item is here) once any op on one has been
+    /// merged, so every device holds the same however its ops arrived. Nothing for a row
+    /// that is not a list item.
+    pub fn note_item_op(&mut self, key: &RowKey, clock: &Hlc) -> Result<(), StoreError> {
+        let Some(list) = ListPreference::of_row(key) else {
+            return Ok(());
+        };
+        let clock = clock.encode()?;
+        self.tx
+            .execute(
+                "INSERT INTO preference (key, value, clock) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (key) DO UPDATE SET clock = max(coalesce(clock, ''), excluded.clock)",
+                params![list.key(), list.compose(&[]), clock],
             )
             .map(drop)
             .map_err(sql)

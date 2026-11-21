@@ -33,7 +33,8 @@ pub(crate) const COVERS_SCHEMA: u32 = 15;
 pub(crate) struct SyncColumns {
     pub(crate) tombstones: bool,
     pub(crate) clocks: bool,
-    pub(crate) covers: bool,
+    /// `tombstone.covers` and `item_clock.position` (schema 15).
+    pub(crate) schema_15: bool,
 }
 
 /// How a `Change` applied gets its clock.
@@ -343,12 +344,14 @@ pub(crate) fn record_op(
 /// deleted row has none (its tombstone has it); a list preference's item has its
 /// `item_clock` row, and its preference's row the same clock; the Preferred order has its
 /// `item_clock` row (`preferred_order`, `''`), kept when the order is empty, and every
-/// `preferred_order` row the same clock.
+/// `preferred_order` row the same clock. From schema 15 (`positions`) a list item's
+/// `item_clock` row keeps its position too (`synced_store::stored_positions`).
 pub(crate) fn stamp_row(
     c: &Connection,
     key: &RowKey,
     change: &Change,
     clock: &Hlc,
+    positions: bool,
 ) -> Result<(), StoreError> {
     let clock = clock.encode()?;
     let deleted = change.after.is_none();
@@ -399,10 +402,25 @@ pub(crate) fn stamp_row(
         | RowKey::GuideSection(..)
         | RowKey::ResourceTags(_) => {
             let (kind, id) = key.tombstone();
+            let position = match &change.after {
+                Some(Row::Collection(i) | Row::CopyPreset(i) | Row::SavedSearch(i)) => {
+                    Some(i64::from(i.position))
+                }
+                Some(Row::GuideSection(s)) => Some(i64::from(s.position)),
+                _ => None,
+            };
             if deleted {
                 c.execute(
                     "DELETE FROM item_clock WHERE row_table = ?1 AND row_id = ?2",
                     params![kind, id],
+                )
+            } else if positions {
+                c.execute(
+                    "INSERT INTO item_clock (row_table, row_id, clock, position)
+                     VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock,
+                         position = excluded.position",
+                    params![kind, id, clock, position],
                 )
             } else {
                 c.execute(
@@ -412,10 +430,11 @@ pub(crate) fn stamp_row(
                 )
             }
             .map_err(sql)?;
+            // The list's clock is its newest item's: a merged item can be older than one here.
             match ListPreference::of_row(key) {
                 Some(list) => c
                     .execute(
-                        "UPDATE preference SET clock = ?1 WHERE key = ?2",
+                        "UPDATE preference SET clock = max(coalesce(clock, ''), ?1) WHERE key = ?2",
                         params![clock, list.key()],
                     )
                     .map(drop)
