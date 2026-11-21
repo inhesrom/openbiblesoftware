@@ -2735,7 +2735,10 @@ dependencies = [
 name = "obs-ffi"
 version = "0.2.0"
 dependencies = [
+ "obs-engine",
  "obs-mobile",
+ "obs-model",
+ "png",
  "uniffi",
 ]
 
@@ -2789,6 +2792,11 @@ name = "obs-mobile"
 version = "0.2.0"
 dependencies = [
  "obs-engine",
+ "obs-model",
+ "obs-reading",
+ "obs-render",
+ "obs-scripture",
+ "obs-store",
 ]
 
 [[package]]
@@ -2811,6 +2819,7 @@ dependencies = [
  "obs-fonts",
  "obs-layout",
  "obs-model",
+ "obs-render",
  "obs-scripture",
  "obs-store",
  "unicode-segmentation",

@@ -13,9 +13,13 @@ obs-engine.workspace = true
 obs-fonts.workspace = true
 obs-layout.workspace = true
 obs-model.workspace = true
+obs-render.workspace = true
 obs-scripture.workspace = true
 obs-store.workspace = true
 unicode-segmentation.workspace = true
+
+[dev-dependencies]
+obs-engine = { workspace = true, features = ["test-support"] }
 
 [features]
 # The layout workers' hold and release hooks, for tests in dependent crates.

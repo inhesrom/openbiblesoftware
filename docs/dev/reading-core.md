@@ -2,9 +2,10 @@
 
 `crates/reading` holds what a reading pane knows without egui (ADR 0021, plan
 `docs/plans/mobile-ios.md` S01), so the desktop and the Mobile app read Resources the same way.
-It depends on the engine and the text pipeline (`obs-layout`, `obs-fonts`) and never on egui,
-eframe, winit or rfd: `cargo tree -p obs-reading --edges normal | grep -c egui` is `0`, and
-`cargo xtask layers` and `cargo xtask wasm` check it like every library crate.
+It depends on the engine and the text pipeline (`obs-layout`, `obs-fonts`, and `obs-render` for
+tiles) and never on egui, eframe, winit or rfd:
+`cargo tree -p obs-reading --edges normal | grep -c egui` is `0`, and `cargo xtask layers` and
+`cargo xtask wasm` check it like every library crate.
 
 ## What lives there
 
@@ -17,7 +18,8 @@ eframe, winit or rfd: `cargo tree -p obs-reading --edges normal | grep -c egui` 
 | `marks` | `Mark`, `MarkKind`, `marks_for`, `HighlightLooks`: Annotations over document positions |
 | `interlinear` | `InterlinearSource`: what the lines under each Tagged word read |
 | `workers` | `LayoutClient`, `SnippetCache`, `lay_out`: layout off the UI thread |
-| `palette` | `TonePalette` over `Rgb`: the six Page tone constants, `derive`, `check`, `contrast`, `text_on`, `paint` (→ `StylePaint`), `color`, `overlays`, `inks` (ADR 0012) |
+| `palette` | `TonePalette` over `Rgb`: the six Page tone constants, `derive`, `check`, `contrast`, `text_on`, `paint` (→ `StylePaint`), `color`, `overlays`, `inks`, `role_colours` (the tone as `obs_render::RoleColours`) (ADR 0012) |
+| `tile` | `compose_tile`, `Tile`, `text_column`: a band of a `ReadingView`'s page drawn on the CPU into premultiplied RGBA8 (page colour, then glyphs through `obs_render::composite`), for the Mobile app (plan A4, option B; S03). Highlights, the selection and Note markers are not drawn yet |
 | `reading_tokens` | The design tokens these modules measure with: `space`, `motion`, `size::TEXT_MIN`, `mark::FOOTNOTE_BOX` (ADR 0015) |
 
 The feature `test-support` turns on the layout workers' hold and release hooks

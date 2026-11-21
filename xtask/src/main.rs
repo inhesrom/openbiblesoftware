@@ -46,6 +46,7 @@ mobile (docs/dev/mobile-core.md):
            `ios check`: host-only check of obs-ffi plus bindgen;
            `ios build [--sim-only]`: the iOS staticlibs and target/ios/ObsFFI.xcframework
            (needs Xcode; `cargo xtask ios --help`);
+           `ios smoke`: the Swift smoke over the Bundled set (needs swiftc);
            `ios bundled-set`: copy the Bundled set out of dist/starter/ into
            apps/ios/Bundled/starter/ and check it against apps/ios/bundled-set.lock
 
