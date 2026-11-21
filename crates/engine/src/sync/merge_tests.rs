@@ -235,37 +235,77 @@ fn every_merged_clock_is_observed_so_a_later_edit_here_wins() {
 fn a_clock_more_than_a_day_ahead_is_not_observed_but_its_row_merges() {
     let dir = Dir::new("skew");
     let cloud = MemSyncFolder::new();
-    let b = device(&dir, "b");
+    let (b, c) = (device(&dir, "b"), device(&dir, "c"));
+    // B's Layout "Study" is older than the far device's of that name, so B renames that one.
+    b.user.save_layout("Study", r#"{"by":"b"}"#).unwrap();
+    b.sync(&cloud);
     let ahead = new_id();
     let f = favorite("Ps 23");
+    let layout = obs_store::SyncedLayout {
+        id: new_id(),
+        name: "Study".into(),
+        snapshot: r#"{"by":"far"}"#.into(),
+        saved_at: 1,
+    };
     let now = u64::try_from(obs_store::clock::now_ms()).unwrap();
-    let far = Hlc {
+    let far = |counter| Hlc {
         wall_ms: now + 2 * obs_store::hlc::MAX_FORWARD_SKEW_MS,
-        counter: 0,
+        counter,
         device_id: ahead.clone(),
     };
-    let op = Op {
+    let op = |counter, row| Op {
         device: ahead.clone(),
-        clock: far.clone(),
+        clock: far(counter),
         before: None,
-        after: Some(Row::Favorite(f.clone())),
+        after: Some(row),
         before_clock: None,
         absent: Vec::new(),
     };
-    cloud.put(&op_file_path(&ahead, 1), &encode_op_file(&[op]).unwrap());
+    cloud.put(
+        &op_file_path(&ahead, 1),
+        &encode_op_file(&[
+            op(0, Row::Favorite(f.clone())),
+            op(1, Row::Layout(layout.clone())),
+        ])
+        .unwrap(),
+    );
     let report = b.sync(&cloud);
-    assert_eq!(report.not_observed, 1);
+    assert_eq!(report.not_observed, 2);
     let key = Row::Favorite(f.clone()).key();
     assert_eq!(
         b.row(&key),
         Some(Row::Favorite(f.clone())),
         "kept (ADR 0006)"
     );
-    assert_eq!(b.clock(&key), Some(far.clone()));
+    assert_eq!(b.clock(&key), Some(far(0)));
     // This device's own clock did not jump two days ahead.
     let nb = notebook("After");
     b.apply(&[Change::insert(Row::Notebook(nb.clone()))]);
-    assert!(b.clock(&Row::Notebook(nb).key()).unwrap().wall_ms < far.wall_ms);
+    assert!(b.clock(&Row::Notebook(nb).key()).unwrap().wall_ms < far(0).wall_ms);
+
+    // B edits the far row, and its rename of the far Layout for the clash is its own edit
+    // too: each is stamped just after the far clock it replaces (the device's clock still
+    // does not follow), so C, which merged the far ops, takes both.
+    b.apply(&[Change::update(
+        Row::Favorite(f.clone()),
+        Row::Favorite(relabel(&f, "edited on B")),
+    )]);
+    let edited = b.clock(&key).unwrap();
+    assert!(edited > far(0) && edited.device_id == b.id, "{edited}");
+    let layout_key = Row::Layout(layout.clone()).key();
+    let renamed = b.clock(&layout_key).unwrap();
+    assert!(renamed > far(1) && renamed.device_id == b.id, "{renamed}");
+    let nb = notebook("After the edit");
+    b.apply(&[Change::insert(Row::Notebook(nb.clone()))]);
+    assert!(b.clock(&Row::Notebook(nb).key()).unwrap().wall_ms < far(0).wall_ms);
+    Device::settle(&[&b, &c], &cloud);
+    for d in [&b, &c] {
+        assert_eq!(d.row(&key), Some(Row::Favorite(relabel(&f, "edited on B"))));
+        assert_eq!(d.clock(&key), Some(edited.clone()));
+        assert_eq!(d.user.layouts().unwrap(), ["Study", "Study (2)"]);
+        assert_eq!(d.clock(&layout_key), Some(renamed.clone()));
+    }
+    assert_eq!(b.user.synced_dump().unwrap(), c.user.synced_dump().unwrap());
 }
 
 #[test]

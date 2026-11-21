@@ -20,8 +20,8 @@ use crate::highlight_style_store::{
 };
 use crate::hlc::Hlc;
 use crate::sync_clock::{
-    CLOCK_SCHEMA, COVERS_SCHEMA, Stamp, SyncColumns, read_device_id, read_row_clock, record_op,
-    records_ops, stamp_row,
+    CLOCK_SCHEMA, COVERS_SCHEMA, Stamp, SyncColumns, read_device_id, read_row_clock,
+    read_tombstone_covers, record_op, records_ops, stamp_row,
 };
 use crate::sync_schema::is_synced_preference;
 use crate::synced_store::{
@@ -672,8 +672,10 @@ impl UserStore {
     /// Apply `changes` in one transaction: each row must still be its `before` (else
     /// [`StoreError::Conflict`] and nothing is written), then becomes its `after`. The default
     /// Notebook cannot be deleted or stop being the default. Every write of Synced data goes
-    /// through here (ADR 0022): a row deleted leaves a tombstone, and one made again takes
-    /// its tombstone away. Each Change gets the next clock (`sync_clock.rs`), written into
+    /// through here (ADR 0022): a row deleted leaves a tombstone (before schema 15, one made
+    /// again takes it away; from 15 it is kept for good). Each Change gets the next clock, or
+    /// the one just after the version it replaces when that is later (`sync_clock.rs`,
+    /// `UserStore::next_clock_after`), written into
     /// its row (or its tombstone, with the clock of the version it deleted), and while this
     /// device records ops it waits in the outbox for the Sync folder.
     pub fn apply_changes(&self, changes: &[Change]) -> Result<(), StoreError> {
@@ -743,6 +745,15 @@ impl UserStore {
         } else {
             None
         };
+        // What a local write must come after, so every device's merge takes it: the version
+        // it replaces, and (a row made again) what its tombstone covers.
+        let replaced = match stamp {
+            Stamp::Local { .. } if columns.schema_15 => before_clock
+                .as_deref()
+                .and_then(Hlc::parse)
+                .max(read_tombstone_covers(tx, &key)?),
+            _ => None,
+        };
         if matches!(stamp, Stamp::Kept) && (change.before.is_none() || change.after.is_none()) {
             return Err(StoreError::Rejected(format!(
                 "{} keeps its clock only when it is rewritten",
@@ -789,7 +800,7 @@ impl UserStore {
         }
         let (clock, covers) = match stamp {
             Stamp::Local { recording } if columns.clocks => {
-                let clock = self.next_clock(tx)?;
+                let clock = self.next_clock_after(tx, replaced.as_ref())?;
                 stamp_row(tx, &key, change, &clock, columns.schema_15)?;
                 if *recording {
                     let before = before_clock.as_deref().and_then(Hlc::parse);

@@ -166,6 +166,28 @@ impl UserStore {
         Ok(clock)
     }
 
+    /// The clock of a local write that replaces a version at clock `replaced` (the row's, or
+    /// what its tombstone covers): the next clock, or, when `replaced` is at or after it (a
+    /// clock merged from a device more than
+    /// [`MAX_FORWARD_SKEW_MS`](crate::hlc::MAX_FORWARD_SKEW_MS) ahead, which is not observed),
+    /// the clock just after `replaced`, so every device's merge takes the write too (last
+    /// writer wins). The device's own clock does not follow it: only this write passes it.
+    pub(crate) fn next_clock_after(
+        &self,
+        c: &Connection,
+        replaced: Option<&Hlc>,
+    ) -> Result<Hlc, StoreError> {
+        let clock = self.next_clock(c)?;
+        match replaced {
+            Some(replaced) if *replaced >= clock => Hlc::next(
+                Some(replaced.tick()),
+                crate::clock::now_ms(),
+                &clock.device_id,
+            ),
+            _ => Ok(clock),
+        }
+    }
+
     /// Take in `clock`, one merged in from another device (the HLC receive rule): every
     /// clock handed out after it passes it. A clock more than
     /// [`MAX_FORWARD_SKEW_MS`](crate::hlc::MAX_FORWARD_SKEW_MS) ahead of the wall clock is
@@ -443,6 +465,26 @@ pub(crate) fn stamp_row(
             }
         }
     }
+}
+
+/// The newest version a delete of the row `key` names covered (its tombstone's `covers`, or
+/// its own clock before schema 15 filled `covers`), if it has a tombstone with a clock.
+pub(crate) fn read_tombstone_covers(
+    c: &Connection,
+    key: &RowKey,
+) -> Result<Option<Hlc>, StoreError> {
+    let (kind, id) = key.tombstone();
+    let covers: Option<String> = c
+        .prepare_cached(
+            "SELECT coalesce(covers, clock) FROM tombstone WHERE row_table = ?1 AND row_id = ?2",
+        )
+        .and_then(|mut s| {
+            s.query_row(params![kind, id], |r| r.get::<_, Option<String>>(0))
+                .optional()
+        })
+        .map_err(sql)?
+        .flatten();
+    Ok(covers.as_deref().and_then(Hlc::parse))
 }
 
 /// The clock of the row `key` names as stored (its `clock` column, or its `item_clock` row for

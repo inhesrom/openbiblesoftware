@@ -190,7 +190,16 @@ after pass while any file merges, then at the next sync (`MergeReport::waiting`,
 No two files can wait for each other: a file only needs rows from files written before it.
 Every op's clock is observed (`observe_clock`), so an edit made here afterwards is later than
 anything merged; one more than a day ahead is not observed (`MergeReport::not_observed`) and
-its row merges as any other.
+its row merges as any other. A local edit of such a row (or a row made again whose tombstone
+covers such a clock) would then get a clock before the one it replaces, and every other
+device would keep the far version (`Superseded`) while this one kept the edit, for good. So a
+local write is stamped after what it replaces: the next clock, or, when the row's clock (or
+what its tombstone covers) is at or after that, the clock just after it
+(`UserStore::next_clock_after`). The device's own clock does not follow it: only that write
+passes the far clock, and the next write of another row gets an ordinary clock again
+(`merge_tests::a_clock_more_than_a_day_ahead_is_not_observed_but_its_row_merges`: a device
+edits the far row and renames a far Layout for a clash, and a third device holds the same
+rows and clocks).
 
 Per op, against the row's state here (`MergeTx::state`: the row, its clock, its tombstone):
 
@@ -262,8 +271,9 @@ so it can overwrite a re-save of that Layout made at the same time on another de
 (rule 3's per-row last writer wins).
 
 **Edits the merge records.** The demotion of an own default Notebook and a Layout rename are
-applied with `MergeTx::record` like any local edit: a new clock, after every clock merged, and
-into the outbox while recording, written at the next sync.
+applied with `MergeTx::record` like any local edit: a new clock, after every clock merged and
+after the version it replaces (a far-ahead one included, as above), and into the outbox while
+recording, written at the next sync.
 
 ## Evidence
 
