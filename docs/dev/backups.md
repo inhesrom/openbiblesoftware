@@ -31,6 +31,24 @@ single-instance Tab with all of it.
 - The launch backups (`backups/user-000006.db`) and the before-upgrade copy
   (`user.v8-<time>.bak`) are written the same way, so they are Backups too.
 
+### What Sync added (schema 13, ADR 0022)
+
+Migration 12 → 13 (`crates/store/src/sync_schema.rs`) adds what Sync needs; a Backup holds
+it like every other table, and an older Backup gains it as it is restored (with ids made
+then). Nothing writes the clocks, tombstones or `applied_up_to` yet.
+
+| Table or column | What |
+|---|---|
+| `clock` on every table in `SYNCED_TABLES` | The hybrid logical clock of the row's last change; `NULL` until Sync writes one. `anchors` has none (an Anchor goes with its Annotation's clock); in `preference` only the keys in `SYNCED_PREFERENCES` are Synced data, every other key (`DEVICE_PREFERENCES`, or unlisted) stays on the device. |
+| `layout.id` | Layouts are keyed by a UUIDv7; the name stays unique ignoring case, so every Layout keeps its name and is still found by it. Saving over a Layout keeps its id. |
+| `favorite.uid`, `reading_plan.uid` | A UUIDv7 each, unique, beside the numbers the app names them by (which another device also hands out). |
+| `tombstone` | A deleted synced row's table, id and clock, kept for good. |
+| `device` | One row: this Synced device's id (UUIDv7, made by the migration) and the name the user gives it. A restore copies the Backup's row like any other; giving a restored device a new id is Sync's (ADR 0022 rule 7). |
+| `applied_up_to` | For each other Synced device, the last of its op files applied here. |
+
+The restore checks treat them as any table: a Backup missing one is refused, and the trial
+restore compares only what the engine loads, so none of them changes what a restore keeps.
+
 ## Restore
 
 `UserStore::restore(path)` (`open_backup`, then `restore_from` the copy it read):
@@ -203,6 +221,11 @@ uses):
   JSON itself against the Workspace `layout.restore` gives), and that nothing panics; every `*_PREF` constant compared
   by the trial; open Notes
   searches run again after a restore and after Undo restore.
+- `crates/store/tests/sync_schema_db.rs`: a v12 database migrates to 13 with every row kept
+  and a copy taken first; every synced table has a clock; Layouts keep their names and gain
+  ids (kept when saved over or renamed); new Favorites and Reading plans get ids; a v13 Backup
+  round-trips and a v12 one gains the new tables as it is restored; every preference the
+  engine keeps is listed once as synced or staying on the device.
 - `crates/store/tests/user_db.rs` (`a_refused_database_is_not_changed`): a newer or foreign
   database is refused at launch byte for byte unchanged (its journal mode is read, not set to
   WAL, until it is accepted).

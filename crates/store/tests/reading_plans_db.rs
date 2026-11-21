@@ -108,7 +108,12 @@ fn a_v7_database_gains_empty_reading_plans() {
     let path = tmp("migrate");
     {
         let (v7, _) = UserStore::open_to(&path, 7).unwrap();
-        v7.add_favorite("", "Gen 1:1 · BSB", "{}").unwrap();
+        // A Favorite as schema 7 kept it (`add_favorite` writes today's columns).
+        v7.execute_unchecked(
+            "INSERT INTO favorite (folder, label, location, position, added_at)
+             VALUES ('', 'Gen 1:1 · BSB', '{}', 1, 0)",
+        )
+        .unwrap();
     }
     let (db, report) = UserStore::open(&path).unwrap();
     assert_eq!(report.found_version, 7);

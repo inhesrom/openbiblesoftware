@@ -66,9 +66,16 @@ impl UserStore {
         let folder = self.folder_spelling(folder)?;
         self.conn
             .execute(
-                "INSERT INTO favorite (folder, label, location, position, added_at)
-                 VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(position), 0) + 1 FROM favorite), ?4)",
-                params![folder, label, location, crate::user::now()],
+                "INSERT INTO favorite (uid, folder, label, location, position, added_at)
+                 VALUES (?1, ?2, ?3, ?4,
+                         (SELECT COALESCE(MAX(position), 0) + 1 FROM favorite), ?5)",
+                params![
+                    crate::annotation::new_id(),
+                    folder,
+                    label,
+                    location,
+                    crate::user::now()
+                ],
             )
             .map_err(sql)?;
         Ok(self.conn.last_insert_rowid())
