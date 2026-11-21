@@ -143,7 +143,8 @@ impl MobileApp {
         .flatten()
     }
 
-    /// A new reader of `resource_id` at `reference` (or its start); returns its id.
+    /// A reader of `resource_id` at `reference` (or its start); returns its id. A Resource
+    /// already open gives back its reader, where it was unless `reference` is given.
     pub fn open_reader(
         &self,
         resource_id: String,

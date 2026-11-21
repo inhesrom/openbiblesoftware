@@ -155,7 +155,7 @@ pub(crate) struct ReaderState {
     last: f64,
     /// The reader moved by itself (a jump, a new Text size) since the last frame: the next
     /// frame takes no scroll from the shell's offset, and the shell takes its position.
-    moved: bool,
+    pub(crate) moved: bool,
     /// The page width and scale of the last frame.
     page: (f32, f32),
     /// The text column's left edge on the page.
@@ -324,13 +324,17 @@ impl MobileApp {
     }
 
     /// The pixels of a tile the last frame listed, at `scale` px per point; `None` when its
-    /// epoch is over (the shell drops it). Prototype.
+    /// epoch is over (the shell drops it). Refused, as [`Self::layout_tile`] refuses, when
+    /// `scale` is not above zero or the tile is over [`crate::MAX_TILE_PX`] a side. Prototype.
     pub fn reader_tile(
         &mut self,
         reader: ReaderId,
         key: TileKey,
         scale: f32,
     ) -> Result<Option<TimedTile>, MobileError> {
+        if !(scale.is_finite() && scale > 0.0) {
+            return Err(MobileError::TileSize);
+        }
         if key.epoch != self.epoch {
             return Ok(None);
         }
@@ -569,6 +573,9 @@ impl MobileApp {
     ) -> Result<u64, MobileError> {
         let end = self.text_end(reader)?;
         let (view, state) = self.reader_parts(reader)?;
+        if view.doc.units.is_empty() {
+            return Ok(0);
+        }
         let mut pos = Self::doc_pos(view, state, offset.min(end));
         let mut at = Self::offset_of(state, pos);
         for _ in 0..by.unsigned_abs().min(1 << 20) {
@@ -1046,7 +1053,9 @@ mod tests {
         assert_eq!(t.tile.width, 1170);
         assert_eq!(t.tile.height, (first.height * 3.0).round() as u32);
         // At the very top, over the excerpt's first heading (Isaiah 40 comes before John 1),
-        // the location is the first Verse below it.
+        // the location is the first Verse below it. (A new app: `open_reader` would give
+        // back the BSB's reader, at John 1:1.)
+        let mut app = self::app("frame-top");
         let top = app.open_reader("bsb", None).unwrap();
         assert_eq!(
             app.readers[top.0 as usize].current_location(),
@@ -1120,6 +1129,61 @@ mod tests {
             "Auto follows a dark system"
         );
         assert_ne!(i.tiles[0].key.epoch, h.tiles[0].key.epoch);
+    }
+
+    #[test]
+    fn switching_back_to_an_open_resource_reuses_its_reader_where_it_was() {
+        let mut app = app("reuse");
+        let r = bsb(&mut app);
+        app.go_to(r, "John 1:14").unwrap();
+        assert_eq!(frame(&mut app, r, 0.0).location, "John 1:14");
+        let h = app.open_reader("tahot", None).unwrap();
+        let other = frame(&mut app, h, 0.0);
+        for _ in 0..3 {
+            assert_eq!(app.open_reader("bsb", None), Ok(r));
+            // The shell's offset is still the other reader's: the reader keeps its own place.
+            let back = frame(&mut app, r, other.position + 900.0);
+            assert_eq!(back.location, "John 1:14");
+            assert_eq!(app.open_reader("tahot", None), Ok(h));
+        }
+        assert_eq!((app.readers.len(), app.states.len()), (2, 2), "one each");
+        // A reference moves the open reader; a bad one leaves it where it was.
+        assert_eq!(app.open_reader("bsb", Some("John 1:3")), Ok(r));
+        let at = frame(&mut app, r, 0.0);
+        assert_eq!(at.location, "John 1:3");
+        assert!(matches!(
+            app.open_reader("bsb", Some("Gen 1")),
+            Err(MobileError::Reference { .. })
+        ));
+        assert_eq!(frame(&mut app, r, at.position).location, "John 1:3");
+    }
+
+    #[test]
+    fn a_tile_needs_a_scale_above_zero() {
+        let mut app = app("tile-scale");
+        let r = bsb(&mut app);
+        let key = frame(&mut app, r, 0.0).tiles[0].key;
+        for scale in [0.0, -3.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(app.reader_tile(r, key, scale), Err(MobileError::TileSize));
+        }
+        assert!(app.reader_tile(r, key, 3.0).unwrap().is_some());
+    }
+
+    #[test]
+    fn moving_an_offset_in_a_document_with_no_text_stays_at_zero() {
+        let mut app = app("no-units");
+        let r = bsb(&mut app);
+        let mut doc = obs_reading::ReadingDoc::from_resource(bsb_john_1());
+        doc.units.clear();
+        doc.blocks.clear();
+        doc.verses.clear();
+        let settings = *app.readers[r.0 as usize].settings();
+        let empty = ReaderId(app.readers.len() as u32);
+        app.readers.push(ReadingView::new(Arc::new(doc), settings));
+        app.states.push(ReaderState::new());
+        assert_eq!(app.text_end(empty), Ok(0));
+        assert_eq!(app.move_offset(empty, 0, 3), Ok(0));
+        assert_eq!(app.move_offset(empty, 7, -2), Ok(0));
     }
 
     #[test]

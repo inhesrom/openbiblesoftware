@@ -204,8 +204,10 @@ impl MobileApp {
         Some(view.doc.manifest.resource_id.as_str())
     }
 
-    /// A new reader of Resource `resource_id`, at `reference` (read in the Resource's own
-    /// numbering; its first Verse goes to the top) or at its start. S03 spike.
+    /// A reader of Resource `resource_id`, at `reference` (read in the Resource's own
+    /// numbering; its first Verse goes to the top). A Resource already open keeps its reader
+    /// (S07 prototype: switching Bibles back and forth opens each once), which stays where it
+    /// was without `reference`; a new reader starts at the Resource's start. S03 spike.
     #[doc(hidden)]
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_reader(
@@ -213,6 +215,18 @@ impl MobileApp {
         resource_id: &str,
         reference: Option<&str>,
     ) -> Result<ReaderId, MobileError> {
+        let open = (self.readers.iter()).position(|v| v.doc.manifest.resource_id == resource_id);
+        if let Some(i) = open {
+            let view = &mut self.readers[i];
+            if let Some(text) = reference {
+                jump_to_reference(view, resource_id, text)?;
+            }
+            // The shell's offset belongs to the reader it showed before: take this one's.
+            if let Some(state) = self.states.get_mut(i) {
+                state.moved = true;
+            }
+            return Ok(ReaderId(i as u32));
+        }
         let entry = (self.session.library.get(resource_id))
             .ok_or_else(|| MobileError::NoResource(resource_id.to_string()))?;
         let doc = obs_reading::ReadingDoc::open(&entry.path).map_err(|e| MobileError::Open {
@@ -224,18 +238,7 @@ impl MobileApp {
             self.session.text_settings_of(resource_id),
         );
         if let Some(text) = reference {
-            let refused = |error: String| MobileError::Reference {
-                reference: text.to_string(),
-                error,
-            };
-            let list = obs_scripture::parse_reference(text, &view.doc.versification, None)
-                .map_err(|e| refused(e.to_string()))?;
-            let verse = (list.passages().first())
-                .map(|p| p.start())
-                .ok_or_else(|| refused("no Passage".into()))?;
-            if !view.jump_to(verse) {
-                return Err(refused(format!("not in {resource_id}")));
-            }
+            jump_to_reference(&mut view, resource_id, text)?;
         }
         let id = ReaderId(self.readers.len() as u32);
         self.readers.push(view);
@@ -281,6 +284,28 @@ impl MobileApp {
             scale,
         ))
     }
+}
+
+/// Put the first Verse of reference `text` (read in `view`'s own numbering) at the top.
+#[cfg(not(target_arch = "wasm32"))]
+fn jump_to_reference(
+    view: &mut ReadingView,
+    resource_id: &str,
+    text: &str,
+) -> Result<(), MobileError> {
+    let refused = |error: String| MobileError::Reference {
+        reference: text.to_string(),
+        error,
+    };
+    let list = obs_scripture::parse_reference(text, &view.doc.versification, None)
+        .map_err(|e| refused(e.to_string()))?;
+    let verse = (list.passages().first())
+        .map(|p| p.start())
+        .ok_or_else(|| refused("no Passage".into()))?;
+    if !view.jump_to(verse) {
+        return Err(refused(format!("not in {resource_id}")));
+    }
+    Ok(())
 }
 
 /// Add the Study set Resources that `dir`'s `starter-manifest.json` lists to the library, read
