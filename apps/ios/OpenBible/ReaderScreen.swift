@@ -31,8 +31,11 @@ struct ReaderScreen: View {
                 }
                 .accessibilityLabel("Books and chapters")
                 .accessibilityIdentifier("reader.books")
-                TextField("Go to (Jn 3:16)", text: $reference)
+                // Vertical, so the field grows with Dynamic Type instead of clipping its text.
+                TextField("Go to (Jn 3:16)", text: $reference, axis: .vertical)
+                    .lineLimit(1...3)
                     .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                     .frame(minHeight: 44)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
                     .submitLabel(.go)
@@ -40,6 +43,12 @@ struct ReaderScreen: View {
                     .textInputAutocapitalization(.never)
                     .accessibilityIdentifier("reader.reference")
                     .onSubmit { model.goTo(reference) }
+                    // A vertical field types Return as a newline: it means Go here.
+                    .onChange(of: reference) { _, text in
+                        guard text.contains("\n") else { return }
+                        reference = text.replacingOccurrences(of: "\n", with: "")
+                        model.goTo(reference)
+                    }
                 Menu {
                     Picker("Bible", selection: Binding(get: { model.bible }, set: { model.open(bible: $0) })) {
                         ForEach(model.bibles, id: \.id) { Text($0.label).tag($0.id) }
