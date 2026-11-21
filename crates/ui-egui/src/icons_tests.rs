@@ -564,9 +564,9 @@ fn string_literals(src: &str) -> Vec<(usize, String)> {
 }
 
 /// The interface's code, without tests: the UI crate, the reading core it paints, the desktop
-/// app and the engine, whose command labels, messages and help the interface shows. The UI crate's `bench` module is
-/// left out: it builds synthetic Resources (a Nave's-style index marks subtopics with `→`),
-/// which the interface never labels with.
+/// app and the engine, whose command labels, messages and help the interface shows. The UI
+/// crate's `bench` module is left out: it builds synthetic Resources (a Nave's-style index marks
+/// subtopics with `→`), which the interface never labels with.
 fn ui_sources() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();

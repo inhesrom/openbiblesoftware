@@ -327,6 +327,7 @@ impl TonePalette {
         }
     }
 
+    #[inline]
     pub fn color(&self, role: ColorRole) -> Rgb {
         match role {
             ColorRole::Ink => self.ink,
