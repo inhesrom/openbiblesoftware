@@ -58,7 +58,7 @@ final class HelloModel {
         func at(_ name: String) -> String { folder.appendingPathComponent(name).path }
         return Paths(
             library: at("library"), userDb: at("user.db"), searchCache: at("search"),
-            aliasCache: at("aliases"), logs: at("logs"), downloads: at("downloads"))
+            aliasCache: at("aliases"), logs: at("logs"), downloads: at("downloads"), studySet: nil)
     }
 
     /// The app's own folder for the core: Application Support/OpenBible.
