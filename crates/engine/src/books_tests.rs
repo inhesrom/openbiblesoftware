@@ -386,3 +386,31 @@ fn cited_in_lists_the_books_that_cite_a_passage_earliest_first() {
         Some(&GuideSection::CitedIn)
     );
 }
+
+// ----------------------------------------------------------------------------------------
+// Acceptance checks of #344, as its ticket words them.
+
+/// "Importing a folder of 100 files gives one report, with failures listed and the others
+/// imported."
+#[test]
+fn a_folder_of_a_hundred_files_gives_one_report_with_the_failures_listed() {
+    let lab = Lab::new("hundred");
+    for n in 0..97 {
+        lab.write(
+            &format!("Sermons/Sermon {n:03}.md"),
+            format!("---\ntitle: Sermon {n}\n---\n\n## Text\n\nSermon {n} on John 3:16.\n"),
+        );
+    }
+    lab.write("Broken/Empty.md", "---\ntitle: Empty\n---\n");
+    lab.write("Broken/Latin-1.md", b"Caf\xe9\n".as_slice());
+    lab.write("Broken/Only a comment.md", "<!-- nothing -->\n");
+    let mut s = lab.session();
+    let id = start(&mut s, &lab.books());
+    finish(&mut s);
+    let reports = s.imports.records().filter(|r| r.books.is_some()).count();
+    assert_eq!(reports, 1);
+    let books = s.imports.report(&id).unwrap().books.clone().unwrap();
+    assert_eq!(books.imported.len(), 97);
+    assert_eq!(books.failed.len(), 3, "{:?}", books.failed);
+    assert_eq!(s.library.of_type(ResourceType::Book).count(), 97);
+}

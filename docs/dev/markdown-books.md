@@ -41,7 +41,7 @@ subfolders, and no `.usfm`/`.sfm` of its own) is a **book batch** (`obs_engine::
 | Deeper headings | `heading` spans |
 | Paragraphs, list items | `para` prose / list; a paragraph with hard breaks (`\` or two spaces at a line's end) is verse: one `poetry1` line each. A plain line break is a space, as CommonMark reads it, so prose wrapped in its file, or OCR text keeping the scan's lines, stays one paragraph |
 | `*…*`, `**…**` | `italic`, `bold` |
-| `<!-- p. 23 -->` | zero-width `page` span, label "23" (`{iii}`, `page 4`, `pg323` read as COL's indexer reads them); a marker before a block opens it, so a page that starts with a Division's heading opens that Division; a marker on its own line between two lines of a paragraph stays inside the paragraph (CommonMark would otherwise end the paragraph there) |
+| `<!-- p. 23 -->`, or `[p. 23]` on a line of its own (COL's church documents) | zero-width `page` span, label "23" (`{iii}`, `page 4`, `pg323` read as COL's indexer reads them); a marker before a block opens it, so a page that starts with a Division's heading opens that Division; a marker on its own line between two lines of a paragraph stays inside the paragraph (CommonMark would otherwise end the paragraph there) |
 | `[^1]` and `[^1]: …` | a `note.N` unit and a zero-width `note_ref` footnote span |
 | `Rom 8:28`, `Rom. 8. 13`, `Rom. viii. 28`, `Psal. 23. 1` | `scripture_ref` spans, Standard versification (`book_references`) |
 | Links | the link text; the target is dropped |

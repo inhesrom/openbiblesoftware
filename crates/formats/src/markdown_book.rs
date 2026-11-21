@@ -7,7 +7,7 @@
 //! | `#`…`######` headings | `heading` (level 1-6); the shallowest level used more than once splits the book into Divisions (text units) |
 //! | paragraphs, list items, block quotes | `para` prose or list; the lines of a paragraph broken with hard breaks (`\\` or two spaces) are `poetry1` lines |
 //! | `*…*`, `**…**` | `italic`, `bold` |
-//! | `<!-- p. 23 -->` | zero-width `page` with the printed page's label |
+//! | `<!-- p. 23 -->`, or `[p. 23]` on a line of its own | zero-width `page` with the printed page's label |
 //! | `[^n]` with its `[^n]: …` | note unit + zero-width `note_ref` |
 //! | Bible references (`Rom 8:28`, `Rom. 8. 28`, `Rom. viii. 28`) | `scripture_ref` |
 //!
@@ -310,6 +310,21 @@ fn page_labels(html: &str) -> Vec<String> {
         .collect()
 }
 
+#[expect(clippy::expect_used, reason = "the pattern is a source-code constant")]
+fn bracket_page_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?m)^\[p\. ([0-9]{1,5}[a-z]?|[ivxlcdm]{1,10})\][ \t]*\r?$")
+            .expect("constant regular expression")
+    })
+}
+
+/// A page marker written `[p. 23]` on a line of its own (as COL writes the pages of its
+/// church documents, and as its search shows them) is the same marker as `<!-- p. 23 -->`.
+fn bracket_pages(body: &str) -> std::borrow::Cow<'_, str> {
+    bracket_page_re().replace_all(body, "<!-- p. $1 -->")
+}
+
 /// A line of nothing but page markers between two lines of a paragraph joins the line before
 /// it: in CommonMark such a line is an HTML block that would cut the paragraph in two, where
 /// the printed page only turned (COL's indexer reads it the same way).
@@ -348,7 +363,8 @@ fn join_page_lines(body: &str) -> std::borrow::Cow<'_, str> {
 /// Read one file's body (front matter already removed) into blocks and footnotes. `dropped`
 /// counts markup with no place in the span vocabulary.
 fn parse_body(body: &str, dropped: &mut BTreeMap<String, u64>) -> Parsed {
-    let body = join_page_lines(body);
+    let body = bracket_pages(body);
+    let body = join_page_lines(&body);
     let body = body.as_ref();
     let mut out = Parsed::default();
     let options = Options::ENABLE_FOOTNOTES | Options::ENABLE_TABLES;
