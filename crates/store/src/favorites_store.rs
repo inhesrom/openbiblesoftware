@@ -8,8 +8,11 @@
 
 use rusqlite::{OptionalExtension, params};
 
+use crate::annotation::{Change, Row};
 use crate::error::StoreError;
 use crate::favorites::{FavoriteRow, HISTORY_DAYS, HISTORY_LIMIT, VisitRow};
+use crate::synced::SyncedFavorite;
+use crate::synced_store;
 use crate::user::{UserStore, sql};
 
 /// 6 → 7: Favorites and History.
@@ -63,47 +66,52 @@ impl UserStore {
         label: &str,
         location: &str,
     ) -> Result<i64, StoreError> {
-        let folder = self.folder_spelling(folder)?;
-        self.conn
-            .execute(
-                "INSERT INTO favorite (uid, folder, label, location, position, added_at)
-                 VALUES (?1, ?2, ?3, ?4,
-                         (SELECT COALESCE(MAX(position), 0) + 1 FROM favorite), ?5)",
-                params![
-                    crate::annotation::new_id(),
-                    folder,
-                    label,
-                    location,
-                    crate::user::now()
-                ],
-            )
-            .map_err(sql)?;
-        Ok(self.conn.last_insert_rowid())
+        let favorite = SyncedFavorite {
+            uid: crate::annotation::new_id(),
+            folder: self.folder_spelling(folder)?,
+            label: label.to_string(),
+            location: location.to_string(),
+            position: self.next_favorite_position()?,
+            added_at: crate::user::now(),
+        };
+        let uid = favorite.uid.clone();
+        self.apply_changes(&[Change::insert(Row::Favorite(favorite))])?;
+        synced_store::local_id(&self.conn, "favorite", &uid)
     }
 
     /// Remove a Favorite; false if there was none with that id.
     pub fn remove_favorite(&self, id: i64) -> Result<bool, StoreError> {
-        let n = self
-            .conn
-            .execute("DELETE FROM favorite WHERE id = ?1", [id])
-            .map_err(sql)?;
-        Ok(n > 0)
+        let Some(before) = synced_store::read_favorite_by_id(&self.conn, id)? else {
+            return Ok(false);
+        };
+        self.apply_changes(&[Change::delete(Row::Favorite(before))])?;
+        Ok(true)
     }
 
     /// Move a Favorite to the end of `folder` (empty: none); false if there was none with
     /// that id.
     pub fn move_favorite(&self, id: i64, folder: &str) -> Result<bool, StoreError> {
-        let folder = self.folder_spelling(folder)?;
-        let n = self
-            .conn
-            .execute(
-                "UPDATE favorite SET folder = ?2,
-                     position = (SELECT COALESCE(MAX(position), 0) + 1 FROM favorite)
-                 WHERE id = ?1",
-                params![id, folder],
+        let Some(before) = synced_store::read_favorite_by_id(&self.conn, id)? else {
+            return Ok(false);
+        };
+        let after = SyncedFavorite {
+            folder: self.folder_spelling(folder)?,
+            position: self.next_favorite_position()?,
+            ..before.clone()
+        };
+        self.apply_changes(&[Change::update(Row::Favorite(before), Row::Favorite(after))])?;
+        Ok(true)
+    }
+
+    /// The position after every Favorite's.
+    fn next_favorite_position(&self) -> Result<i64, StoreError> {
+        self.conn
+            .query_row(
+                "SELECT COALESCE(MAX(position), 0) + 1 FROM favorite",
+                [],
+                |r| r.get(0),
             )
-            .map_err(sql)?;
-        Ok(n > 0)
+            .map_err(sql)
     }
 
     /// Folder names ignore case: an existing folder keeps its spelling.

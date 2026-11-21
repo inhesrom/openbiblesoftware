@@ -37,7 +37,8 @@ of Highlights costs no index scans, whatever the number of Notes.
 ## Every edit is a list of row Changes
 
 `obs_store::Change { before, after }` describes one row (`Row::Notebook` or
-`Row::Annotation`, the latter with its Anchor). `UserStore::apply_changes` writes a list in
+`Row::Annotation`, the latter with its Anchor; every other row of Synced data has a `Row`
+too, `crates/store/src/synced.rs`). `UserStore::apply_changes` writes a list in
 one transaction: it checks each row is still `before` (else `StoreError::Conflict`, nothing
 written), writes `after`, and rewrites the row's `notes_fts` entry when the Note text
 changed. The default Notebook cannot be deleted or demoted (`StoreError::Rejected`).

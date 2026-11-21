@@ -65,7 +65,7 @@ to Claude Opus 5.5 later on".
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | todo |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
-| S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | todo |
+| S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | done (PR #361) |
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | todo |
 | S28b | Sync 2b (Rust): merge rules + property tests | AFK | n | S28a | merge module, 10k-case property tests | todo |
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | todo |
@@ -1364,6 +1364,45 @@ this in addition to its own lines):
   Preferred order is one value (ADR 0022 rule 3), so make it one `Row` holding the whole list and
   one clock. `save_preferred_order` replaces its rows, so the per-row `clock` column holds that
   one clock, and replacing the order writes no tombstones.
+- **Outcome (2026-11-21, branch `mobile/s27b-sync-rows`):** `Row` gained `Favorite`,
+  `ReadingPlan`, `Reading` (one per Reading, with its done-mark), `Layout`, `PreferredOrder` (the
+  whole list, one row), `Preference` (a synced preference's whole value), and the list items
+  `Collection`, `CopyPreset`, `SavedSearch` (by name), `GuideSection` (Guide + section id, with
+  its position) and `ResourceTags` (per Resource); payloads in `crates/store/src/synced.rs`
+  (`Synced*`, by `uid` / `id`; the local integer ids stay out of the row), SQLite side in
+  `synced_store.rs`, list parsing in `preference_items.rs`. Every store write of Synced data
+  (`save_layout`, `rename_layout`, `delete_layout`, `save_preferred_order`, `add/remove/move_favorite`,
+  `add_reading_plan`, `set_reading_read`, `move_readings`, `remove_reading_plan`, `set_preference`
+  for a synced key, and `ensure_default_notebook` at v13) plans `Change`s and calls
+  `apply_changes`; a write that changes nothing emits none; device preferences are written
+  directly, no `Change`. The `UserData` trait and every engine call site are unchanged.
+  `apply_changes` writes a tombstone per delete (`row_table` = the `Row` kind, `row_id` its key;
+  clock `''` = `synced_store::NO_CLOCK` until S28a, documented beside S27a's `NULL` in
+  `docs/dev/backups.md`), and a re-insert (undo) takes it away. The list preferences keep one
+  JSON value per key, byte for byte as the engine writes it (serde_json's `raw_value` feature,
+  no new crate, `Cargo.lock` unchanged): `set_preference` diffs old and new into item Changes;
+  a value not in its list's shape (damaged, duplicate names, a later field) is written whole as
+  `Row::Preference`, so nothing is dropped. Removing a Reading plan deletes each Reading, then
+  the plan; a bare plan delete is refused. **Owner decisions (via supervisor):** D1 Visual
+  filters stay device-only (ADR 0022 rule 4 does not list them; syncing them is its own later
+  step, see Out of scope); D2 route inside `obs-store`; D3 per-item Rows over the unchanged
+  storage, item clocks left to S28a; D4 `''` tombstone clock; D5 per-Reading rows; D6 a
+  test-support recorder (`UserStore::take_applied_changes`), not production API. **Tests:**
+  `crates/store/tests/synced_writes_db.rs` (11): the table-driven
+  `every_write_of_synced_data_emits_changes_and_they_are_the_whole_write` (22 writes covering all
+  15 `Row` variants; each write's Changes, applied inverted, restore every synced table,
+  `anchors` and `notes_fts`), no-op writes, tombstones and undo, plan removal, every fallback with
+  a damaged value per list key, an empty list, two devices' items both kept, `notes_fts` after
+  applied Changes, multi-item moves undone and redone exactly; 3 unit tests in
+  `preference_items.rs`; engine `collections_tests::the_list_preferences_the_engine_writes_are_saved_item_by_item`
+  (the engine's own JSON is read item by item). **Surprise:** a list's positions exist only as
+  its order, so read back they renumber 0, 1, 2…; Changes that move several items conflicted
+  until `apply_changes` kept the positions as written for the rest of its call
+  (`synced_store::ListItems`). Saving the Collections writes `library.tags` `{}` whole the first
+  time (an empty value has no items). Measured: `cargo xtask ci` green (12 m 14 s),
+  `cargo test -p obs-store` 136 passed, `obs-engine` lib 840 passed (22 ignored),
+  `cargo xtask gallery` unchanged (2 m 9 s, no PNG changed). Fit one
+  session; no split. S28a's entry gained an "Added by S27b" bullet.
 
 #### S28a — Sync 2a (Rust): `SyncFolder`, HLC, op files, device files
 
@@ -1376,6 +1415,17 @@ this in addition to its own lines):
   or Backup can lack it: `make_device` runs only in migration 12→13, and `check_whole` checks
   tables, not rows. Add `ensure_device()` at open, the way `ensure_default_notebook` repairs the
   default Notebook.
+- **Added by S27b:** the one stream to record is `UserStore::apply_changes` (tests read it with
+  the test-support `take_applied_changes`; the production recorder is this step's). Write the
+  HLC there into each row's `clock` and each tombstone, replacing both S27a's `NULL` and S27b's
+  `''` (`synced_store::NO_CLOCK`) consistently. The list-preference items (`Row::Collection`,
+  `CopyPreset`, `SavedSearch`, `GuideSection`, `ResourceTags`) have no clock column:
+  `preference.clock` is one per key, so per-item clocks need a side table keyed like
+  `tombstone` (`row_table`, `row_id`, `clock`), probably migration 14; it is this step's. A
+  list item's `position` is only its order in the stored value (renumbered 0… when read), so
+  merge (S28b) must place items with equal positions deterministically (the store sorts by
+  position, then name). A Favorite or Reading plan inserted from a Row gets this device's next
+  integer id.
 - **Do:** `obs_engine::sync`: `SyncFolder` trait (A8) + `FsSyncFolder` + `MemSyncFolder` (tests);
   HLC (`wall_ms`, `counter`, `device_id`); `sync.json` with a format version;
   `devices/<id>/device.json`; `ops/<seq>.jsonl` writer (temp + rename; trailing length-and-hash
@@ -1394,6 +1444,13 @@ this in addition to its own lines):
 - **Goal:** ADR 0022's merge rules, proven by property tests.
 - **Type:** AFK. **Xcode:** n. **Size:** L. **Depends on:** S28a.
 - **Read first:** ADR 0022 rule 3 (every sub-rule), ADR 0006; S28a's module.
+- **Added by the S27b review:** Collections, Copy presets and Saved searches are keyed by
+  name, so a rename is a delete plus an insert; a rename on one device racing an edit on
+  another must merge without losing either (the old name's tombstone stays). One stored value
+  has two row identities, a whole-value `Row::Preference(key)` (the fallback for a value not in
+  shape) and its item rows, and the merge must handle both arriving for one key. Layout
+  snapshots carry device-local Visual filter ids (`TabSnapshot.visual_filters`): the known D1
+  consequence, already in Out of scope.
 - **Do:** merge: LWW per row, Note-text Sync conflict → second Note + Needs attention, edit beats
   delete (incl. Notebook resurrection), field-wise "absent field untouched", Reading done-marks per
   Reading, Preferred order LWW, Layout name clash "(2)", two default Notebooks. Property tests: N
@@ -1657,6 +1714,8 @@ this in addition to its own lines):
   and Data export, Theme editor / Custom theme, Crash report UI, Update check.
 - F-Droid; accounts; any server of ours; licensed modern translations; web/WASM build (#324).
 - Folder encryption, shared Sync folders, CRDTs, line-merging Notes (ADR 0022).
+- Syncing Visual filters (S27b, D1): they stay device-only. A later step of its own would give
+  each filter a uid, remap the filter ids Layouts switch, and add them to `SYNCED_PREFERENCES`.
 - SWORD repository browsing on mobile (#333); prebuilt index downloads (#333).
 - Pixel-golden screenshot tests for iOS (D14), share extension / deep links / widgets (D6).
 

@@ -18,6 +18,10 @@ use crate::error::StoreError;
 use crate::highlight_style_store::{
     read_palette, read_style, style_exists, write_palette, write_style,
 };
+use crate::sync_schema::is_synced_preference;
+use crate::synced_store::{
+    ListItems, has_table, mark_tombstone, read_synced_row, write_synced_row,
+};
 use crate::user::{UserStore, sql};
 
 /// Migration 3 → 4.
@@ -369,12 +373,17 @@ fn read_annotation(c: &Connection, id: &str) -> Result<Option<Annotation>, Store
     .map_err(sql)
 }
 
-fn read_row(c: &Connection, key: &RowKey) -> Result<Option<Row>, StoreError> {
+fn read_row(
+    c: &Connection,
+    lists: &mut ListItems,
+    key: &RowKey,
+) -> Result<Option<Row>, StoreError> {
     Ok(match key {
         RowKey::Notebook(id) => read_notebook(c, id)?.map(Row::Notebook),
         RowKey::Annotation(id) => read_annotation(c, id)?.map(Row::Annotation),
         RowKey::HighlightStyle(id) => read_style(c, id)?.map(Row::HighlightStyle),
         RowKey::HighlightPalette(id) => read_palette(c, id)?.map(Row::HighlightPalette),
+        _ => read_synced_row(c, lists, key)?,
     })
 }
 
@@ -548,18 +557,25 @@ impl UserStore {
         if has {
             return Ok(());
         }
+        let now = crate::annotation::now_ms();
+        let id = crate::annotation::new_id_at(now);
+        if self.schema_version()? >= crate::user::USER_SCHEMA_VERSION {
+            return self.apply_changes(&[Change::insert(Row::Notebook(Notebook {
+                id,
+                name: DEFAULT_NOTEBOOK_NAME.into(),
+                is_default: true,
+                show_in_text: true,
+                created_at: now,
+                modified_at: now,
+            }))]);
+        }
         // Only the columns of schema 4, so a database opened at 4 (before a migration
         // test) gets its default Notebook too; later columns take their defaults.
-        let now = crate::annotation::now_ms();
         self.conn
             .execute(
                 "INSERT INTO notebooks (id, name, is_default, created_at, modified_at)
                  VALUES (?1, ?2, 1, ?3, ?3)",
-                params![
-                    crate::annotation::new_id_at(now),
-                    DEFAULT_NOTEBOOK_NAME,
-                    now
-                ],
+                params![id, DEFAULT_NOTEBOOK_NAME, now],
             )
             .map(drop)
             .map_err(sql)
@@ -641,22 +657,30 @@ impl UserStore {
 
     /// Apply `changes` in one transaction: each row must still be its `before` (else
     /// [`StoreError::Conflict`] and nothing is written), then becomes its `after`. The default
-    /// Notebook cannot be deleted or stop being the default.
+    /// Notebook cannot be deleted or stop being the default. Every write of Synced data goes
+    /// through here (ADR 0022): a row deleted leaves a tombstone, and one made again takes
+    /// its tombstone away.
     pub fn apply_changes(&self, changes: &[Change]) -> Result<(), StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        // A database opened at an older schema (migration tests) has no tombstones.
+        let tombstones = has_table(&tx, "tombstone")?;
+        let mut lists = ListItems::default();
         for change in changes {
             let key = change
                 .key()
                 .ok_or_else(|| StoreError::Rejected("a change must be about one row".into()))?;
-            let current = read_row(&tx, &key)?;
+            // A preference that is not Synced data stays on this device (D1: Visual filters).
+            if let RowKey::Preference(k) = &key
+                && !is_synced_preference(k)
+            {
+                return Err(StoreError::Rejected(format!(
+                    "{} is not Synced data, so no Change writes it",
+                    key.describe()
+                )));
+            }
+            let current = read_row(&tx, &mut lists, &key)?;
             if current != change.before {
-                let what = match &key {
-                    RowKey::Notebook(id) => format!("Notebook {id}"),
-                    RowKey::Annotation(id) => format!("Annotation {id}"),
-                    RowKey::HighlightStyle(id) => format!("Highlight style {id}"),
-                    RowKey::HighlightPalette(id) => format!("Highlight palette {id}"),
-                };
-                return Err(StoreError::Conflict(what));
+                return Err(StoreError::Conflict(key.describe()));
             }
             match (&key, &change.before, &change.after) {
                 (RowKey::Notebook(id), before, after) => {
@@ -694,9 +718,23 @@ impl UserStore {
                     };
                     write_palette(&tx, id, after)?;
                 }
+                (key, _, after) => write_synced_row(&tx, &mut lists, key, after.as_ref())?,
+            }
+            if tombstones {
+                mark_tombstone(&tx, change, &key)?;
             }
         }
-        tx.commit().map_err(sql)
+        tx.commit().map_err(sql)?;
+        #[cfg(feature = "test-support")]
+        self.recorded.borrow_mut().extend_from_slice(changes);
+        Ok(())
+    }
+
+    /// The Changes [`UserStore::apply_changes`] applied since this was last called, in
+    /// order: tests check every write of Synced data is one.
+    #[cfg(feature = "test-support")]
+    pub fn take_applied_changes(&self) -> Vec<Change> {
+        std::mem::take(&mut *self.recorded.borrow_mut())
     }
 
     /// Every row of `notebooks`, the Highlight styles and palettes, `annotations`, `anchors`

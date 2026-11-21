@@ -25,6 +25,8 @@ pub mod highlight_style;
 mod highlight_style_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod obr;
+#[cfg(not(target_arch = "wasm32"))]
+mod preference_items;
 mod reading_plans;
 #[cfg(not(target_arch = "wasm32"))]
 mod reading_plans_store;
@@ -37,6 +39,9 @@ mod search_index;
 mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
 mod sync_schema;
+pub mod synced;
+#[cfg(not(target_arch = "wasm32"))]
+mod synced_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod user;
 
@@ -71,6 +76,10 @@ pub use search_index::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use sync_schema::{
     DEVICE_PREFERENCES, SYNCED_PREFERENCES, SYNCED_TABLES, is_synced_preference,
+};
+pub use synced::{
+    SyncedFavorite, SyncedGuideSection, SyncedLayout, SyncedListItem, SyncedPreference,
+    SyncedPreferredOrder, SyncedReading, SyncedReadingPlan, SyncedResourceTags,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use user::{OpenReport, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

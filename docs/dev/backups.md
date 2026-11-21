@@ -35,19 +35,29 @@ single-instance Tab with all of it.
 
 Migration 12 → 13 (`crates/store/src/sync_schema.rs`) adds what Sync needs; a Backup holds
 it like every other table, and an older Backup gains it as it is restored (with ids made
-then). Nothing writes the clocks, tombstones or `applied_up_to` yet.
+then). Every write of Synced data is a `Change` through `UserStore::apply_changes` (S27b,
+`crates/store/src/synced.rs`), which writes the tombstones; nothing writes a row's clock or
+`applied_up_to` yet (S28a).
 
 | Table or column | What |
 |---|---|
 | `clock` on every table in `SYNCED_TABLES` | The hybrid logical clock of the row's last change; `NULL` until Sync writes one. `anchors` has none (an Anchor goes with its Annotation's clock); in `preference` only the keys in `SYNCED_PREFERENCES` are Synced data, every other key (`DEVICE_PREFERENCES`, or unlisted) stays on the device. |
 | `layout.id` | Layouts are keyed by a UUIDv7; the name stays unique ignoring case, so every Layout keeps its name and is still found by it. Saving over a Layout keeps its id. |
 | `favorite.uid`, `reading_plan.uid` | A UUIDv7 each, unique, beside the numbers the app names them by (which another device also hands out). |
-| `tombstone` | A deleted synced row's table, id and clock, kept for good. |
+| `tombstone` | A deleted synced row, kept for good: `row_table` is its kind (the `row` tag of a serialized `Row`: `notebook`, `annotation`, `favorite`, `layout`, `reading`, `collection`, `guide_section` …), `row_id` its id (a Reading's `<plan uid>/<position>`, a Guide section's `<guide>/<section>`, a list item's name), `clock` its delete's clock. Until Sync writes clocks the clock is empty text (`synced_store::NO_CLOCK`), which, like a row's `NULL` clock, means "before this device recorded clocks" and sorts before any clock; S28a replaces both. A row made again (an undone delete) takes its tombstone away; replacing the Preferred order leaves none. |
 | `device` | One row: this Synced device's id (UUIDv7, made by the migration) and the name the user gives it. A restore copies the Backup's row like any other; giving a restored device a new id is Sync's (ADR 0022 rule 7). |
 | `applied_up_to` | For each other Synced device, the last of its op files applied here. |
 
 The restore checks treat them as any table: a Backup missing one is refused, and the trial
 restore compares only what the engine loads, so none of them changes what a restore keeps.
+
+S27b changed no table: the synced preferences that hold a list (`library.collections`,
+`library.tags`, `copy.presets`, `search.saved`, `guide-arrangement/<guide>`) are still one
+JSON value per key, written byte for byte as before. Their `Change`s are item by item
+(`Row::Collection`, `Row::ResourceTags`, `Row::CopyPreset`, `Row::SavedSearch`,
+`Row::GuideSection`; `preference_items.rs`), and a value not in its list's shape is written
+whole (`Row::Preference`), so nothing in it is lost. Per-item clocks have no column yet:
+`preference.clock` is one per key (S28a).
 
 ## Restore
 

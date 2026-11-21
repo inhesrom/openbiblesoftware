@@ -803,3 +803,68 @@ fn a_search_brought_back_with_a_deleted_or_renamed_collection_can_stop_searching
     );
     cleanup(s, root);
 }
+
+/// The kinds of row the User database's last writes were about (ADR 0022, S27b).
+fn written_rows(s: &Session) -> Vec<&'static str> {
+    let store = s.user_data().unwrap().user_store().unwrap();
+    let mut kinds: Vec<&'static str> = store
+        .take_applied_changes()
+        .iter()
+        .filter_map(|c| c.after.as_ref().or(c.before.as_ref()))
+        .map(|row| match row {
+            obs_store::Row::Collection(_) => "collection",
+            obs_store::Row::ResourceTags(_) => "resource_tags",
+            obs_store::Row::CopyPreset(_) => "copy_preset",
+            obs_store::Row::SavedSearch(_) => "saved_search",
+            obs_store::Row::GuideSection(_) => "guide_section",
+            obs_store::Row::Preference(_) => "preference (whole)",
+            _ => "other",
+        })
+        .collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    kinds
+}
+
+#[test]
+fn the_list_preferences_the_engine_writes_are_saved_item_by_item() {
+    // Two devices adding a Collection (or a Copy preset, a Saved search, a Resource's tags, a
+    // Guide section's place) each must keep both: the engine's values are read item by item,
+    // not written whole (which would mean they are not in the shape the store reads).
+    let (mut s, root) = fixture("item-by-item");
+    written_rows(&s);
+    s.run("collection.save", &json!({ "name": "Study set" }))
+        .unwrap();
+    // Saving the Collections saves the Resource tags too: an empty `{}` where there was
+    // none has no item to write, so it is written whole, once.
+    assert_eq!(written_rows(&s), ["collection", "preference (whole)"]);
+    s.run(
+        "collection.toggle",
+        &json!({ "name": "Study set", "id": "tbd" }),
+    )
+    .unwrap();
+    assert_eq!(written_rows(&s), ["collection"]);
+    s.run(
+        "resource.tags",
+        &json!({ "id": "tc2", "tags": "older, mine" }),
+    )
+    .unwrap();
+    assert_eq!(written_rows(&s), ["resource_tags"]);
+    s.run("copy.preset_save", &json!({ "name": "Handout" }))
+        .unwrap();
+    assert_eq!(written_rows(&s), ["copy_preset"]);
+    s.run(
+        "guide.move_section",
+        &json!({ "guide": "passage_guide", "section": "cross_references", "to": 0 }),
+    )
+    .unwrap();
+    assert_eq!(written_rows(&s), ["guide_section"]);
+    let out = s.run("search.run", &json!({ "text": "love" })).unwrap();
+    settle(&mut s);
+    let tab = out["tab"].as_u64().unwrap();
+    written_rows(&s);
+    s.run("search.save", &json!({ "tab": tab, "name": "Love" }))
+        .unwrap();
+    assert_eq!(written_rows(&s), ["saved_search"]);
+    cleanup(s, root);
+}
