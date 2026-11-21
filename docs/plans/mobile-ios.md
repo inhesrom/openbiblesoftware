@@ -1564,7 +1564,7 @@ under the half they belong to.
   both ends and on a third device each way, the F1 four-device Layout sequence, the F2
   out-of-order arrival, refusals); `sync::merge_props` (1,000 cases in CI, 2.6 s; 10,000
   `#[ignore]`d, 24.7 s for both; seeds reproduce the generator's choices, ids and clocks come
-  from the real clock). A 10k run reached: ops written 320,795, superseded 12,405, covered 309,
+  from the real clock, fixed by the review below). A 10k run reached: ops written 320,795, superseded 12,405, covered 309,
   edit kept 1,454, delete noted 1,392; files retried after waiting 383; Layouts renamed for a
   clash 1,793; default Notebooks demoted 14,971. Store `sync_clock_db.rs` (+2: migration 15
   columns round-trip through a Backup; a v14 Backup restores with positions at their index and
@@ -1575,6 +1575,32 @@ under the half they belong to.
   conflicts (here the later edit wins), deleted parents, list items of one name, a list's whole
   value; the generator never deletes a Notebook or plan that can hold rows. S28c's entry gained
   an "Added by S28b-1" bullet and now depends on S28b-2.
+  **Review fixes (`/tmp/obs-ios-plan/review-s28b1.md`):** P1, a local edit of a row merged
+  from a device more than a day ahead got a clock below the one it replaced, so every other
+  device kept the far version for good: a local write (`Stamp::Local`, so `MergeTx::record`'s
+  Layout renames and default demotions too) is now stamped just after the row's clock, or what
+  its tombstone covers for a row made again, when that is at or after the next clock
+  (`UserStore::next_clock_after`); the device's own clock does not follow
+  (`docs/dev/sync.md` "Merging"). The skew test now has B edit the far row and rename a far
+  Layout, and a third device holds the same rows and clocks. The property tests now run each
+  case under the test-support fixed clock (`obs_store::clock::fix`), stepped by the seed, each
+  device offset from it by its own amount, sometimes more than `MAX_FORWARD_SKEW_MS` ahead,
+  with test-support seeded ids (`obs_store::annotation::seed_ids`), so a seed is the same case
+  on every run (`a_seed_makes_the_same_case_on_every_run` compares two runs' `synced_dump`);
+  they move Collection items (a whole-list write in a new order) and undo a device's last
+  change (`inverse`, a deleted row back with its old id); and they check that no live row
+  lacks an op or template row (test-support `UserStore::synced_keys`), every tombstone is the
+  op stream's newest delete clock and covers, and each device has one default, the oldest
+  (`created_at`, id). Both halves of the P1 fix (the row's clock, the tombstone's covers) are
+  each found by the widened generator when removed. The run must reach every outcome but
+  `ChildrenKept`, a retried file, a renamed Layout, a demoted default, a moved item, an undo
+  and a clock not observed. New unit test: a Collection renamed ("Greek" → "Greek NT") on one
+  device and edited on another keeps both, in one order, with one `preference.clock`. A 10k
+  run now reaches: written 313,931, superseded 10,859, covered 462, edit kept 1,666, delete
+  noted 1,227; files retried 306; Layouts renamed 1,497; defaults demoted 14,973; items moved
+  351; undos 19,075; clocks not observed 45,283 (three more 10k runs from other seeds green).
+  Measured after the fixes: see the S28b-1 fix report (`/tmp/obs-ios-plan/fix-s28b1-report.md`).
+  The stalled-stream finding and the `skip_serializing_if` note went to S28b-2's entry.
 
 #### S28b-2 — Sync 2b-2 (Rust): Sync conflicts, deleted parents, list items of one name, whole values
 
@@ -1614,6 +1640,19 @@ under the half they belong to.
   exactly when not covered) and adding "every losing Note text is a `conflict_of` Note".
   Tombstones are kept for good beside live rows (schema 15), so D3's restored parents live
   beside theirs.
+- **Added by the S28b-1 review (must do):** an op this build rejects must not stall its
+  device's stream. Today `merge_folder` turns a `StoreError::Rejected` or `Conflict` from an op
+  into a wait for good, so that op file and every later one of that device never merge here;
+  one such op is a synced preference key added by a newer app, which `apply_one` refuses as
+  "not Synced data". Such an op goes to `sync_held` (D7's table) instead, the rest of its file
+  merges, and it is listed with the other held ops; a unit test has an op file with an unknown
+  synced preference key between two good ops.
+- **Added by the S28b-1 review (note):** absent-field detection (`ops.rs` `decode_op_line`,
+  `Op::absent`) only lists the fields serializing `after` emits, so a top-level `Row` field
+  skipped when `None` (`skip_serializing_if`, as D2 plans `conflict_of`) looks the same
+  whether an older app's line omitted it or the value is `None`, and the merge would write
+  `None` over it here. Keep new top-level `Row` fields always serialized, or record which
+  fields each op format knows.
 - **Don't:** schedule or trim; UI.
 - **Deliverables:** merge and store changes, migration 16, tests, `docs/dev/sync.md`.
 - **Done when:** one unit test per decision above; the widened property tests pass 10k cases;

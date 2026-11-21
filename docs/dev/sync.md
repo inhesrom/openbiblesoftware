@@ -301,21 +301,33 @@ recording, written at the next sync.
   (`a_delete_leaves_a_tombstone_kept_for_good_and_undoing_it_brings_the_row_back`).
 - `crates/engine/src/sync/merge_tests.rs` (one per rule): last writer wins and keeps the op's
   clock; every merged clock observed, so a later local edit wins; one two days ahead not
-  observed, its row kept; edit beats delete in every arrival order (both ends and a third
-  device each way); a delete that saw the newest edit deletes it in every order; a delete's
-  tombstone and op carry what it covers; fields an op does not carry kept; Reading done-marks
-  per Reading; the Preferred order whole; two default Notebooks (named after the device, or
-  "My Notebook (2)"); two Layouts of one name; the four-device Layout sequence above; a file
-  needing another device's Notebook waits and merges after it; a parent delete meeting live
-  children is skipped; an own op file or one out of order is refused, and a failed merge
-  notes nothing.
+  observed, its row kept, and a local edit of that row (and a Layout rename for a clash with
+  it) stamped just after its clock, so a third device holds the same rows and clocks; edit
+  beats delete in every arrival order (both ends and a third device each way); a delete that
+  saw the newest edit deletes it in every order; a delete's tombstone and op carry what it
+  covers; fields an op does not carry kept; Reading done-marks per Reading; a Collection
+  renamed on one device and edited on another keeps both, in one order and with one clock;
+  the Preferred order whole; two default Notebooks (named after the device, or "My Notebook
+  (2)"); two Layouts of one name; the four-device Layout sequence above; a file needing
+  another device's Notebook waits and merges after it; a parent delete meeting live children
+  is skipped; an own op file or one out of order is refused, and a failed merge notes
+  nothing.
 - `crates/engine/src/sync/merge_props.rs`: two or three in-memory devices make random edits
   (Notebooks, Notes, Highlights, Favorites, Layouts with clashing names, the Preferred order,
-  Reading done-marks, a synced preference, Collections) and deletes, and sync at random; once
-  settled, every device holds the same `synced_dump` (rows, clocks, tombstones, item clocks,
-  lists in order), and every row is there exactly when its newest op write is later than what
-  its deletes cover, holding that write. 1,000 cases in CI (about 2.5 s), 10,000 under
-  `--include-ignored` (about 22 s); the run prints how often each rule was reached.
+  Reading done-marks, a synced preference, Collections changed, added, removed and moved)
+  and deletes, undo their own last change (a deleted row back with its old id), and sync at
+  random. Each case runs under a fixed clock that moves on by random steps, each device's
+  offset from it by its own amount, sometimes more than a day ahead (`MAX_FORWARD_SKEW_MS`),
+  and with seeded ids, so a seed makes the same case on every run
+  (`a_seed_makes_the_same_case_on_every_run` compares two runs' `synced_dump`). Once settled:
+  every device holds the same `synced_dump` (rows, clocks, tombstones, item clocks, lists in
+  order); every row is there exactly when its newest op write is later than what its deletes
+  cover, holding that write; no row is there that no op wrote (or the devices began with);
+  every tombstone holds the op stream's newest delete clock and newest version covered; each
+  device has one default Notebook, the oldest (`created_at`, id) the devices began with. The
+  run must reach every outcome but `ChildrenKept`, a file retried, a Layout renamed, a default
+  demoted, a moved item, an undo and a clock not observed. 1,000 cases in CI (about 2.5 s),
+  10,000 under `--include-ignored` (about 25 s); the run prints how often each was reached.
 - `crates/engine/src/sync/tests.rs`: ops round-trip byte for byte through `FsSyncFolder`;
   a truncated op file is skipped and read whole next time; a damaged one fails its length or
   hash; a newer one is left alone and asks for an update; temporary and other names are
@@ -337,6 +349,10 @@ recording, written at the next sync.
   one name (D6); a list's whole value against its items (D7, `sync_held`). A whole-value
   `Row::Preference` of a list key leaves that list's `item_clock` clocks as they were and
   clears their positions.
+  An op this build rejects (a synced preference key a newer app added) waits for good today
+  and so stalls its device's stream: it must go to `sync_held` instead. A new top-level `Row`
+  field skipped when `None` would be wiped by an older app's op (`Op::absent` cannot see it):
+  keep new fields always serialized, or record which fields each format knows.
 - **S28c:** join = write the snapshot, then `start_recording_ops`; a restore gives the device a
   new id (rule 7), and the outbox rows written under the old id must be re-homed or cleared;
   `applied_up_to`'s own row is the copied-database check: op files under this id above

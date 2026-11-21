@@ -793,7 +793,7 @@ fn random_edits_on_several_devices_converge_and_lose_no_row() {
 }
 
 #[test]
-#[ignore = "10k cases, about 30 s: cargo test -p obs-engine sync -- --include-ignored"]
+#[ignore = "10k cases, about 25 s: cargo test -p obs-engine sync -- --include-ignored"]
 fn random_edits_on_several_devices_converge_and_lose_no_row_10k_cases() {
     run(FULL_CASES, "props-10k");
 }
