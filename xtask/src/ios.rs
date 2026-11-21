@@ -403,16 +403,17 @@ fn build(root: &Path, sim_only: bool, has_sdk: &dyn Fn(&str) -> bool) -> Result<
     Ok(())
 }
 
-/// Whether a file `from` with `new` bytes holds what `old` does. An XCFramework's
-/// `Info.plist` counts as unchanged when only its order of lines differs:
+/// Whether `new` bytes hold what `old` does. With `unordered` (the root `Info.plist` of the
+/// XCFramework, nothing else) they count as the same when only their order of lines differs:
 /// `xcodebuild -create-xcframework` lists the slices in no fixed order, and rewriting the
 /// file for that alone failed every other device build from Xcode with "the Rust core changed
-/// after Xcode had read it" (S07).
-fn same_content(from: &Path, new: &[u8], old: &[u8]) -> bool {
+/// after Xcode had read it" (S07). A plist deeper in the tree (a future `.framework` slice's)
+/// needs exact bytes, since sorted lines lose which dict a line is in.
+fn same_content(new: &[u8], old: &[u8], unordered: bool) -> bool {
     if new == old {
         return true;
     }
-    if from.file_name().is_none_or(|n| n != "Info.plist") {
+    if !unordered {
         return false;
     }
     let lines = |b: &[u8]| {
@@ -426,26 +427,31 @@ fn same_content(from: &Path, new: &[u8], old: &[u8]) -> bool {
     lines(new) == lines(old)
 }
 
+/// Make file `to` hold what file `from` holds unless it already does ([`same_content`]).
+/// Returns how many files it wrote.
+fn mirror_file(from: &Path, to: &Path, unordered: bool) -> Result<usize> {
+    let read = |p: &Path| std::fs::read(p).with_context(|| format!("cannot read {}", p.display()));
+    let bytes = read(from)?;
+    if to.is_file() && same_content(&bytes, &read(to)?, unordered) {
+        return Ok(0);
+    }
+    if to.is_dir() {
+        std::fs::remove_dir_all(to).with_context(|| format!("cannot clear {}", to.display()))?;
+    }
+    if let Some(dir) = to.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
+    std::fs::write(to, bytes).with_context(|| format!("cannot write {}", to.display()))?;
+    Ok(1)
+}
+
 /// Make `to` (a file or a folder) hold exactly what `from` holds, writing only the files whose
 /// bytes differ and removing what `from` lacks, so an unchanged library leaves Xcode nothing
-/// to redo. Returns how many files it wrote.
+/// to redo. A folder's own `Info.plist` (the XCFramework's) may differ in line order only.
+/// Returns how many files it wrote.
 fn mirror(from: &Path, to: &Path) -> Result<usize> {
-    let read = |p: &Path| std::fs::read(p).with_context(|| format!("cannot read {}", p.display()));
     if from.is_file() {
-        let bytes = read(from)?;
-        if to.is_file() && same_content(from, &bytes, &read(to)?) {
-            return Ok(0);
-        }
-        if to.is_dir() {
-            std::fs::remove_dir_all(to)
-                .with_context(|| format!("cannot clear {}", to.display()))?;
-        }
-        if let Some(dir) = to.parent() {
-            std::fs::create_dir_all(dir)
-                .with_context(|| format!("cannot create {}", dir.display()))?;
-        }
-        std::fs::write(to, bytes).with_context(|| format!("cannot write {}", to.display()))?;
-        return Ok(1);
+        return mirror_file(from, to, false);
     }
     if to.is_file() {
         std::fs::remove_file(to).with_context(|| format!("cannot remove {}", to.display()))?;
@@ -457,7 +463,8 @@ fn mirror(from: &Path, to: &Path) -> Result<usize> {
         let entry = entry.with_context(|| format!("cannot list {}", from.display()))?;
         let rel = entry.path().strip_prefix(from)?.to_path_buf();
         if entry.file_type().is_file() {
-            written += mirror(entry.path(), &to.join(&rel))?;
+            let unordered = rel == Path::new("Info.plist");
+            written += mirror_file(entry.path(), &to.join(&rel), unordered)?;
         } else if entry.file_type().is_dir() {
             std::fs::create_dir_all(to.join(&rel))
                 .with_context(|| format!("cannot create {}", to.join(&rel).display()))?;
@@ -637,6 +644,20 @@ mod tests {
             mirror(&from, &to).unwrap(),
             1,
             "only Info.plist ignores order"
+        );
+        // Only the root Info.plist: a reordered plist deeper in a slice is still a change.
+        let nested = from.join("ios-arm64-simulator/Info.plist");
+        std::fs::write(&nested, "<a>\n<b>\n").unwrap();
+        assert_eq!(mirror(&from, &to).unwrap(), 1);
+        std::fs::write(&nested, "<b>\n<a>\n").unwrap();
+        assert_eq!(
+            mirror(&from, &to).unwrap(),
+            1,
+            "a nested Info.plist needs exact bytes"
+        );
+        assert_eq!(
+            std::fs::read_to_string(to.join("ios-arm64-simulator/Info.plist")).unwrap(),
+            "<b>\n<a>\n"
         );
 
         let (file, copy) = (from.join("Info.plist"), base.join("one/ObsFFI.swift"));

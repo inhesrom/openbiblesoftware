@@ -85,7 +85,8 @@ a Bundled set that does not match the lock.
   `cargo xtask ios build` before `xcodebuild` (as above) never meets it.
 - **Unchanged means untouched.** `ios build` copies into the package only the files whose bytes
   differ (`mirror` in `xtask/src/ios.rs`), so an unchanged core costs Xcode nothing. The
-  XCFramework's `Info.plist` counts as unchanged when only the order of its lines differs:
+  XCFramework's root `Info.plist` (no other file) counts as unchanged when only the order of
+  its lines differs:
   `xcodebuild -create-xcframework` lists the two slices in no fixed order, which made every
   other device build fail "build again" until S07. The phase
   takes about 3–4 s when nothing changed (bindgen, `cargo rustc` with nothing to do,
