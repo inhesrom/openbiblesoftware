@@ -37,7 +37,7 @@ to Claude Opus 5.5 later on".
 | ID | Step | AFK/HITL | Xcode | Depends on | Key deliverable | Status |
 |---|---|---|---|---|---|---|
 | S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | todo |
-| S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | todo |
+| S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | done (PR #357) |
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | todo |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | todo |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
@@ -533,6 +533,50 @@ this in addition to its own lines):
   crate-local lint table; `uniffi`
   does not build on edition 2024 / rust 1.95 (`rust-version`); `Session` is `!Send` for a reason
   other than `UserData`.
+- **Outcome (2026-11-21):**
+  - **Shipped:** `crates/mobile` (`obs-mobile`, L5, on `obs-engine` only until S01 merges:
+    `Paths`, `MobileApp` placeholder); `apps/obs-ffi` (UniFFI **0.32.2**, proc-macro mode,
+    `staticlib`/`cdylib`/`lib`, `engine_version()`, `uniffi.toml` names the Swift module
+    `ObsFFI`); `apps/uniffi-bindgen`; `[profile.ios]` (D20); `UserData: Send` plus
+    `session::tests::session_is_send` (nothing else made `Session` `!Send`); `FFI_CRATES` with
+    tests; `cargo xtask ios bindgen | check | build [--sim-only]`; the second licence listing
+    `crates/engine/data/third-party-licenses-ios.json` (cargo-about `--target aarch64-apple-ios
+    --target aarch64-apple-ios-sim`, not the host target: it reads metadata only, so any host
+    works); `MPL-2.0` last in `about.toml` `accepted`, with a test that only `uniffi*` crates,
+    and nothing in the desktop listing, are taken under it; `docs/dev/mobile-core.md`.
+  - **D21 confirmed:** every `uniffi*` crate's `Cargo.toml` says `license = "MPL-2.0"`.
+    **No lint exception:** `obs-ffi` builds and passes clippy under `[lints] workspace = true`
+    (`forbid`). `rust-version` stays 1.95, but that floor is unverified for UniFFI: 0.32.2
+    declares no `rust-version` and was built with stable rustc 1.99.1 only.
+  - **Changed circumstance (Xcode 27.2 installed in S05):** the Verify line's "needs Xcode" is
+    no longer what `cargo xtask ios build` does on this Mac. It **builds both staticlibs with
+    `[profile.ios]` and assembles `target/ios/ObsFFI.xcframework`** (headers dir with
+    `ObsFFIFFI.h` and `module.modulemap`). The SDK check stays, takes the probe as a parameter
+    and is unit-tested. A real run with `DEVELOPER_DIR=/Library/Developer/CommandLineTools`
+    printed the "needs Xcode" message and exited 1. Proof the framework works: a one-line
+    Swift `main` compiled with `ObsFFI.swift` against the simulator slice
+    (`xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios17.0-simulator …`) printed
+    `engine 0.2.0` under `simctl spawn` on an iPhone 17e (iOS 27.2).
+  - **Measurements:** first `ios build` about 66 s for the device slice and 35 s for the
+    simulator slice (warm host build), then about 9 s; `libobs_ffi.a` 7.5 MB per slice
+    (fat LTO over a one-function surface). iOS listing: 119 crates, `uniffi_bindgen` and
+    `clap` not among them.
+  - **Surprises:** `target/ios/` is also cargo's host-artifact folder for `--profile ios`
+    cross builds; our outputs (`bindings/`, `headers/`, `ObsFFI.xcframework/`) sit beside it
+    under names cargo does not use. The stock `uniffi-bindgen` writes the module map as
+    `ObsFFIFFI.modulemap`, and `ios build` renames it `module.modulemap` for the XCFramework,
+    so `uniffi-bindgen-swift` was not needed. For S03's `swiftc` smoke against
+    `target/ios/bindings`, clang finds that file only through
+    `-Xcc -fmodule-map-file=target/ios/bindings/ObsFFIFFI.modulemap` (or use
+    `target/ios/headers` after `ios build`). `ios bindgen` passes `--no-format` so every host
+    writes the same bytes.
+  - **Known limit:** the `ios` commands assume cargo's output is in `target/` and ignore
+    `CARGO_TARGET_DIR` and `build.target-dir`, as `update_e2e.rs` does; with either set,
+    `ios bindgen` and `ios build` fail on a missing file.
+  - **Deferred:** `IPHONEOS_DEPLOYMENT_TARGET` is not set (rustc's default minimum applies);
+    S06 sets it to the app's minimum if Xcode warns. A debug simulator variant for S06's
+    edit-run loop is not built: `--sim-only` uses `[profile.ios]` too. **Later steps
+    edited:** S06 (`ios build` already builds and assembles the XCFramework).
 
 #### S03 — "Hello engine" through the FFI on the macOS host
 
@@ -658,8 +702,9 @@ this in addition to its own lines):
 - **Read first:** A2, A6; S03 outcome; XcodeGen `ProjectSpec.md`; UniFFI Swift/Xcode integration
   page; `docs/research/mobile-store-policy-and-builds.md` (required-reason APIs,
   `PrivacyInfo.xcprivacy`).
-- **Do:** `cargo xtask ios build [--sim-only]` now really builds `aarch64-apple-ios(-sim)` staticlibs
-  with `[profile.ios]` (debug variant for the simulator) and creates the XCFramework.
+- **Do:** `cargo xtask ios build [--sim-only]` already builds `aarch64-apple-ios(-sim)` staticlibs
+  with `[profile.ios]` and creates `target/ios/ObsFFI.xcframework` (S02 Outcome); S06 adds a
+  debug variant for the simulator if the edit-run loop needs one, and wires the framework in.
   `apps/ios/project.yml`: app target `OpenBible` (dev bundle id `io.github.inhesrom.openbible.dev`
   per A6, iOS 17, iPhone + iPad,
   portrait + landscape), `OpenBibleTests`, `OpenBibleUITests`, local package `OpenBibleCore`, a

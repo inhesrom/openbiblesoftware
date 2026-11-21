@@ -263,7 +263,9 @@ impl WorkspaceSnapshot {
 }
 
 /// Where the Workspace and preferences are kept: the User database on the desktop.
-pub trait UserData: std::fmt::Debug {
+/// `Send` so a [`Session`](crate::Session) can move to the thread that owns it (the Mobile
+/// app's FFI holds it behind a `Mutex`, `docs/dev/mobile-core.md`).
+pub trait UserData: std::fmt::Debug + Send {
     fn preference(&self, key: &str) -> Result<Option<String>, String>;
     fn set_preference(&self, key: &str, value: &str) -> Result<(), String>;
     fn last_session(&self) -> Result<Option<String>, String>;
