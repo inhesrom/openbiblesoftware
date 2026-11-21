@@ -13,7 +13,9 @@ final class LaunchTests: XCTestCase {
         app.buttons["About"].tap()
         let engine = app.staticTexts["hello.engine"]
         XCTAssertTrue(engine.waitForExistence(timeout: 10))
-        XCTAssertTrue(engine.label.hasPrefix("Engine, "), engine.label)
+        XCTAssertNotNil(
+            engine.label.range(of: #"^Engine, \d+\.\d+\.\d+"#, options: .regularExpression),
+            engine.label)
         let count = app.staticTexts["hello.resourceCount"]
         XCTAssertTrue(count.waitForExistence(timeout: 30), "the core did not boot")
         // The first launch's library is the Bundled set: four Resources.

@@ -41,7 +41,7 @@ to Claude Opus 5.5 later on".
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | done (PR #360) |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (PR #358) |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
-| S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | done (branch mobile/s06-ios-project, PR pending) |
+| S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | done (PR #364) |
 | S07 | #331 UI stack prototype: hosted text view on device | AFK | y | S04, S06 | prototype build + measurements + `docs/dev/mobile-text-view.md` | todo |
 | S08 | #331 owner judgement on a real iPhone | HITL | y | S07 | go/no-go, Android-half decision | todo |
 | S09 | ADR 0023 (UI stack, hosting option, performance targets, accessibility bar) + #331 close + map line | AFK + HITL | n | S08 | `docs/adr/0023-*.md`, #324 Decisions line, #331 resolution | todo |
@@ -1148,6 +1148,10 @@ this in addition to its own lines):
   `tile`/`frame`; a tile pixel-size cap (S03 added 8192); Note-marker room in tiles; FFI calls
   that are infallible in the spike (`problems`, `resource_ids`, `reader_resource`) become
   fallible so a poisoned lock is visible.
+  **From the S06 review:** `Paths` comes from one root. `obs-mobile` names `library`, `user.db`,
+  `search`, `aliases` (`obs_engine::aliases::ALIAS_DIR`), `logs` and `downloads`; Swift passes only
+  `Application Support/OpenBible`, and `HelloModel.paths(in:)` goes. There is one core per process,
+  shared by every scene (an iPad can open several windows).
   Update `docs/dev/mobile-core.md`.
 - **Don't:** Swift; Study sheet/Annotations/Search (later steps add methods); leak `TabId`/`Panel`
   into the FFI; put Theme/Page tone colour math anywhere but `obs-reading`.
@@ -1803,7 +1807,9 @@ this in addition to its own lines):
   `docs/dev/credits.md`; Apple: App Store Connect accessibility labels, `xcodebuild archive`/
   `-exportArchive`, `xcrun altool --validate-app` vs ASC API (verify).
 - **Do:** `PrivacyInfo.xcprivacy` final (tracking: none; collected data: none; required-reason
-  APIs with reasons); app icon + launch screen (ADR 0012 line-icon set rasterised; `ui-review`);
+  APIs with reasons; **from the S06 review:** Disk Space (`statfs`, `fstatfs`, from SQLite's
+  locking-style probe; see `docs/dev/ios-project.md`): declare a reason that fits, or build SQLite
+  with `SQLITE_ENABLE_LOCKING_STYLE=0` and re-run `nm -u`); app icon + launch screen (ADR 0012 line-icon set rasterised; `ui-review`);
   Credits screen fed by the `obs-ffi` cargo-about listing from S02, now resolved for
   `aarch64-apple-ios` (`cargo xtask licenses --ios`; check whether the graph differs from the host
   one and record) plus font/data attributions
