@@ -13,6 +13,8 @@
 
 pub mod clock;
 pub mod folder;
+// The merge writes the User database, which is SQLite: not on wasm (`obs-store`).
+#[cfg(not(target_arch = "wasm32"))]
 pub mod merge;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod merge_props;
