@@ -403,6 +403,26 @@ fn build(root: &Path, sim_only: bool, has_sdk: &dyn Fn(&str) -> bool) -> Result<
     Ok(())
 }
 
+/// Whether a file `from` with `new` bytes holds what `old` does. An XCFramework's
+/// `Info.plist` counts as unchanged when only its order of lines differs:
+/// `xcodebuild -create-xcframework` lists the slices in no fixed order, and rewriting the
+/// file for that alone failed every other device build from Xcode with "the Rust core changed
+/// after Xcode had read it" (S07).
+fn same_content(from: &Path, new: &[u8], old: &[u8]) -> bool {
+    if new == old {
+        return true;
+    }
+    if from.file_name().is_none_or(|n| n != "Info.plist") {
+        return false;
+    }
+    let lines = |b: &[u8]| {
+        let mut l: Vec<String> = String::from_utf8_lossy(b).lines().map(str::to_string).collect();
+        l.sort();
+        l
+    };
+    lines(new) == lines(old)
+}
+
 /// Make `to` (a file or a folder) hold exactly what `from` holds, writing only the files whose
 /// bytes differ and removing what `from` lacks, so an unchanged library leaves Xcode nothing
 /// to redo. Returns how many files it wrote.
@@ -410,7 +430,7 @@ fn mirror(from: &Path, to: &Path) -> Result<usize> {
     let read = |p: &Path| std::fs::read(p).with_context(|| format!("cannot read {}", p.display()));
     if from.is_file() {
         let bytes = read(from)?;
-        if to.is_file() && read(to)? == bytes {
+        if to.is_file() && same_content(from, &bytes, &read(to)?) {
             return Ok(0);
         }
         if to.is_dir() {
@@ -599,6 +619,18 @@ mod tests {
         );
         // Unchanged: nothing written.
         assert_eq!(mirror(&from, &to).unwrap(), 0);
+
+        // The same Info.plist with its slices listed in another order is unchanged.
+        std::fs::write(from.join("Info.plist"), "<a>\n<b>\n").unwrap();
+        assert_eq!(mirror(&from, &to).unwrap(), 1);
+        std::fs::write(from.join("Info.plist"), "<b>\n<a>\n").unwrap();
+        assert_eq!(mirror(&from, &to).unwrap(), 0);
+        std::fs::write(from.join("Info.plist"), "<b>\n<c>\n").unwrap();
+        assert_eq!(mirror(&from, &to).unwrap(), 1);
+        std::fs::write(from.join("ios-arm64-simulator/Headers/a.h"), "h2\nh1\n").unwrap();
+        mirror(&from, &to).unwrap();
+        std::fs::write(from.join("ios-arm64-simulator/Headers/a.h"), "h1\nh2\n").unwrap();
+        assert_eq!(mirror(&from, &to).unwrap(), 1, "only Info.plist ignores order");
 
         let (file, copy) = (from.join("Info.plist"), base.join("one/ObsFFI.swift"));
         assert_eq!(mirror(&file, &copy).unwrap(), 1);
