@@ -875,6 +875,9 @@ pub enum Effect {
     ShowFonts,
     /// Show a folder in the system file manager (Help → Open log folder, #219).
     OpenFolder(std::path::PathBuf),
+    /// Open a web page in the system browser (Search Christian Open Library, #343). The app
+    /// itself sends nothing.
+    OpenUrl(String),
     /// Open the Report a problem window on the newest Crash report, or a problem report made
     /// now (Help → Report a problem…, #219).
     ReportProblem,

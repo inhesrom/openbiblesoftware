@@ -294,6 +294,11 @@ fn with_no_commentaries_in_the_library_the_section_shows_its_hint() {
 fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts() {
     let db = temp_db("guide-arrangement");
     let mut h = Harness::launch(Some(&db));
+    // The website link under Cited in (#343) would push the hidden sections' Show buttons
+    // below the fold; this test is about the arrangement.
+    h.shell
+        .run("col.search_link", &json!({ "on": false }))
+        .unwrap();
     // Cited in (ADR 0023) is below the fold until Commentaries collapses: the headers are
     // the ones that show.
     let first = open_guide(&mut h);
@@ -1577,4 +1582,42 @@ fn an_unlinked_guides_reference_moves_the_most_recent_bible_tab() {
         .reference_navigate(guide, Passage::verse(john(3, 16)), true);
     h.frames(2);
     assert_eq!(bibles(&h), 2, "Ctrl/Cmd-click opens a new Bible Tab");
+}
+
+/// #343: under Cited in, the Passage Guide offers COL's website for the Passage.
+#[test]
+fn cited_in_offers_the_christian_open_library_website_for_the_passage() {
+    let mut h = Harness::new();
+    let guide = open_guide(&mut h);
+    h.shell
+        .run("tab.go", &json!({ "tab": guide.0, "text": "Rom 8:28" }))
+        .unwrap();
+    // Collapse the sections above, so Cited in is in view.
+    for section in [
+        "commentaries",
+        "cross_references",
+        "parallel_passages",
+        "key_words",
+        "people_and_places",
+    ] {
+        h.shell
+            .run(
+                "guide.collapse_section",
+                &json!({ "guide": "passage_guide", "section": section, "collapsed": true }),
+            )
+            .unwrap();
+    }
+    let link = "Search the Christian Open Library for Romans 8:28";
+    until(&mut h, "the link", |h| find_in(h, guide, link).is_some());
+    let p = find_in(&h, guide, link).unwrap().center();
+    h.click(p);
+    assert_eq!(
+        h.opened,
+        ["https://christianopenlibrary.org/#q=Romans%208%3A28"]
+    );
+    h.shell
+        .run("col.search_link", &json!({ "on": false }))
+        .unwrap();
+    h.frames(3);
+    assert!(find_in(&h, guide, link).is_none());
 }

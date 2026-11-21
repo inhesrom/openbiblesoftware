@@ -925,3 +925,38 @@ fn a_scripture_reference_still_being_translated_fills_in_the_open_menu() {
     );
     drop(h);
 }
+
+/// #343: Search Christian Open Library opens COL's website, searching for the Verse or the
+/// selected word, in the system browser; the app fetches nothing. The Setting hides it.
+#[test]
+fn search_christian_open_library_opens_the_website_for_a_verse_or_a_selection() {
+    let mut h = Harness::new();
+    let _files = setup(&mut h, "col-link");
+    let kjv = open_at_john_3_16(&mut h, "kjv");
+    let loved = super::word_info::word_spot(&h, kjv, "loved");
+    // The Verse.
+    right_click(&mut h, loved);
+    hover(&mut h, "John 3:16");
+    h.click_text("Search Christian Open Library");
+    assert_eq!(
+        h.opened,
+        ["https://christianopenlibrary.org/#q=John%203%3A16"]
+    );
+    // The selected word.
+    right_click(&mut h, loved);
+    hover(&mut h, "“loved”");
+    h.click_text("Search Christian Open Library");
+    assert_eq!(
+        h.opened.last().map(String::as_str),
+        Some("https://christianopenlibrary.org/#q=loved")
+    );
+    // Settings → Search turns it off: no menu offers it.
+    h.shell
+        .run("col.search_link", &json!({ "on": false }))
+        .unwrap();
+    right_click(&mut h, loved);
+    hover(&mut h, "John 3:16");
+    assert!(h.find("Passage Guide").is_some(), "{:?}", h.texts());
+    assert!(h.find("Search Christian Open Library").is_none());
+    drop(h);
+}
