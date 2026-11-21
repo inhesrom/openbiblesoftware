@@ -55,6 +55,20 @@ A Starter `.obr` with the same `resource_id` and a higher `revision` replaces th
 
 A Starter library Tab restored with the Last session (or a Layout) has no manifest yet. Each frame, once the app's transport is attached, `Session::load_starter_manifest_for_open_tab` fetches the released one if the Tab is open, none is being fetched, and the last attempt did not fail (that failure shows with **Retry** instead).
 
+## Mobile sets
+
+The Mobile app (CONTEXT.md § Mobile, #333) splits the Starter library in three. Each `[[source]]` in `starter/sources.toml` names its set in `mobile_set`, and `cargo xtask starter` writes it into `starter-manifest.json` (format stays 1: the field is additive, and `StarterItem::mobile_set` is `None` for a manifest written before it; the desktop app does not read it). The build report's **Mobile sets** table gives each set's size.
+
+| `mobile_set` | Set | Resources | Size with Search indexes (2026-11 build) |
+|---|---|---|---|
+| `bundled` | **Bundled set**: built into the app | `bsb`, `openbible-xrefs`, `strongs-hebrew`, `strongs-greek` | 34.5 MB `.obr` + 8.3 MB indexes; the folder is 43.1 MB with its manifest |
+| `study` | **Study set**: offered as one download at first launch | `kjv-strongs`, `tagnt`, `tahot`, `tbesg`, `tbesh`, `bdb`, `abbott-smith`, `easton`, `smith`, `hitchcock`, `jfb`, `tipnr`, `theographic`, `openbible-geo`, `bsb-parallels` | 136.6 MB `.obr` (+ 47.1 MB indexes, built on the device) |
+| `more` | downloaded one at a time | `asv`, `web`, `mhc` | 136.4 MB `.obr` |
+
+`cargo xtask ios bundled-set [--from dist/starter] [--out apps/ios/Bundled/starter] [--update-lock]` copies the Bundled set out of a built Starter library, laid out as a bundle (see [Finding the bundle](#finding-the-bundle)): each `<id>.obr` (checked against the manifest's `file_sha256`), its prebuilt Search index caches in `search/`, the alias caches in `aliases/` that involve it (none today: the Bundled set has no People & places index or Dictionary), its `CHANGES-<id>.md`, and a `starter-manifest.json` listing only those Resources. It then checks every file's sha256 and size against the committed `apps/ios/bundled-set.lock` and fails on a difference, naming it; `--update-lock` rewrites the lock instead, for review, and `--verify` copies nothing and checks the folder already there (for the app's build, which has no `dist/starter/`). It also fails if the folder is over 50 MB (`bundled_set::MAX_BYTES`), which catches a Study set Resource bundled by mistake. `apps/ios/Bundled/` is not committed.
+
+The app hands the folder to `Session::sync_starter_library` as its bundle, so the first launch copies it into the library as the desktop app does. With only the Bundled set's manifest, the Starter library rows and the download path see 4 Resources; S23 of [the iOS plan](../plans/mobile-ios.md) merges the released manifest in.
+
 ## Trying it by hand
 
 ```sh
@@ -69,5 +83,6 @@ OBS_STARTER_DIR=/nonexistent OBS_STARTER_URL=file:///path/to/dist/starter/ \
 
 - `crates/engine/src/starter_tests.rs`: first run (Preferred order, caches, records, Word Study G26 Lexicon entries), removals and Add back, files deleted outside the app, Resources new to a bundle, revisions with Annotations, the download (success, sha256 mismatch, cancel, retry, released revision), and old manifests.
 - The real `dist/starter/`, by hand after `cargo xtask starter`: `cargo test -p obs-engine --release -- --ignored --nocapture built_starter_library` (first run into an empty folder, every prebuilt cache used, Word Study G26 Lexicon entries from TBESG, Abbott-Smith and Strong's).
+- Mobile sets: `xtask/src/starter/tests.rs` checks every lock entry's `mobile_set` against #333's lists, and builds a small Starter library, copies its Bundled set (lock written, matched, a differing lock and the cap refused) and adds the copy to an empty Library. `starter_tests.rs` adds a 2-Resource Bundled set from fixtures; by hand after `cargo xtask ios bundled-set`: `cargo test -p obs-engine -- --ignored built_bundled_set`.
 - `crates/engine/src/starter_tests.rs` also covers a rename failure while putting files in place (fresh and over an earlier revision), unsafe or repeated ids, Retry after a failed or cancelled Add back, and removing a Resource while its revision downloads.
 - `crates/ui-egui/src/starter_library_tests.rs`: the Tab's rows, Add back, the one-click download, the mismatch error with Retry, Retry after a failed Add back, the Tab restored on relaunch, and a revision downloaded under an open Tab with a Highlight (and after close and reopen). `UPDATE_PREVIEWS=1` writes screenshots to `target/previews/`.
