@@ -189,9 +189,9 @@ see S13), `clippy` (automatic), `test` (automatic), `licenses` (today reads
 listing over the `obs-ffi` graph so a licence problem surfaces at S02, not S34 — see D21),
 `assets` (any new `assets/` dir needs `ATTRIBUTION.toml`). **Licence check (D21):** UniFFI is
 MPL-2.0 (weak copyleft; executor confirms in the `uniffi` crate's `Cargo.toml`), and `about.toml`
-`accepted` holds only permissive licences by design. Before S02 adds the dependency, the owner
-accepts MPL-2.0 for the iOS binary (Credits text + source link satisfy it) or picks another
-binding approach. The design-token lint (ADR 0015 rule 3) is extended in S01 to scan
+`accepted` holds only permissive licences by design. The owner accepted MPL-2.0 for the iOS
+binary on 2026-11-20 (Credits text + source link satisfy it); S02 adds it to `accepted` with a
+comment. The design-token lint (ADR 0015 rule 3) is extended in S01 to scan
 `crates/reading/src` and later `crates/mobile/src`.
 
 ### A2. UniFFI usage
@@ -499,8 +499,9 @@ this in addition to its own lines):
   `xtask/src/main.rs` (`GATES`, `USAGE`), `xtask/src/licenses.rs`, `about.toml`; `crates/engine/src/persist.rs:266`;
   UniFFI manual for the version chosen (proc-macro mode, Swift bindings, library-mode bindgen,
   `uniffi_bindgen_main`) and the `uniffi` crate's `Cargo.toml` `license` field; `.gitignore`.
-- **Do:** **first, D21:** confirm UniFFI's licence (expected MPL-2.0) and get the owner's answer
-  (accept MPL-2.0 for the iOS binary, or another binding approach) before adding the dependency.
+- **Do:** **first, D21 (decided 2026-11-20: MPL-2.0 accepted):** confirm UniFFI's licence field
+  really is MPL-2.0. If it is, add `MPL-2.0` to `about.toml` `accepted` with a comment that it is
+  accepted for the UniFFI runtime in the iOS binary only. If it is anything else, stop and ask.
   `crates/mobile` (`obs-mobile`, L5, depends on `obs-engine`, `obs-reading` once S01 merges —
   until then on `obs-engine` only) with a `MobileApp` placeholder and `Paths`. `apps/obs-ffi` with
   `uniffi` (proc-macro), `crate-type = ["staticlib", "cdylib", "lib"]`, one
@@ -514,7 +515,7 @@ this in addition to its own lines):
   `cargo check -p obs-ffi` + bindgen). `cargo xtask licenses` gains a second listing over
   `apps/obs-ffi/Cargo.toml` (host target is enough to resolve the graph; written to
   `crates/engine/data/third-party-licenses-ios.json`, checked by the `licenses` gate like the
-  desktop file); `about.toml` `accepted` gains `MPL-2.0` only if D21 says so, with a comment.
+  desktop file); `about.toml` `accepted` gains `MPL-2.0` (D21), with a comment.
   Document in `docs/dev/mobile-core.md` (Contract / Data /
   Evidence) and `xtask` `USAGE`.
 - **Don't:** add screen logic; add Swift files; change `cargo xtask ci`'s gate list or make any gate
@@ -528,7 +529,7 @@ this in addition to its own lines):
   `cargo xtask layers` test fails on a fake L5 crate depending on `uniffi`.
 - **Verify:** `cargo xtask ci`; `cargo xtask ios bindgen && ls target/ios/bindings`;
   `cargo xtask ios build` (expected: clean "needs Xcode" message, exit non-zero).
-- **Stop-and-ask:** D21 (before adding `uniffi`); `forbid` fails and the fix needs more than a
+- **Stop-and-ask:** UniFFI's licence is not MPL-2.0 (D21 covers MPL-2.0 only); `forbid` fails and the fix needs more than a
   crate-local lint table; `uniffi`
   does not build on edition 2024 / rust 1.95 (`rust-version`); `Session` is `!Send` for a reason
   other than `UserData`.
@@ -1573,7 +1574,7 @@ this in addition to its own lines):
 | D18 | Privacy policy URL + website | GitHub Pages page in this repo | S33 |
 | D19 | Release cadence + CI/signing shape | Independent `ios-v*` tags; TestFlight per milestone; first upload manual (S35), then archives/uploads on tags with ASC API key | S33, S34, S35 |
 | D20 | Release profile | `[profile.ios]`: fat LTO, `opt-level = "s"`, keep `panic = "unwind"` | S02 |
-| D21 | UniFFI licence (MPL-2.0, weak copyleft; `about.toml` accepts only permissive licences today) | Accept MPL-2.0 for the iOS binary (Credits text + source link) and add it to `accepted` with a comment; else choose another binding approach before S02 | S02 |
+| D21 | UniFFI licence (MPL-2.0, weak copyleft; `about.toml` accepts only permissive licences today) | **Decided 2026-11-20: accept MPL-2.0** for the iOS binary (Credits text + source link), added to `accepted` with a comment. Any other licence goes back to the owner | S02 |
 
 ## Risks, early warnings, fallbacks
 
@@ -1593,7 +1594,7 @@ this in addition to its own lines):
 | Trademark (#337) blocks the name | Lawyer's opinion negative | Fallback shortlist from #337; rename before the first upload (S33) |
 | Personal Team limits (7-day profiles, 3 apps/week) slow S08/S11 | Install failures on device | Re-run from Xcode weekly; bring the #336 decision forward (S33 item 3), then enrol — never before it |
 | Personal Team App ID registration blocks the final id for the paid team | Apple docs say App IDs are team-scoped-but-global | Dev builds already use the `.dev` id (A6); final id first registered by the Developer Program team in S33/S35 |
-| UniFFI's MPL-2.0 is not acceptable to the owner | D21 answered "no" | Other binding approach (hand C ABI via `cbindgen`, or `swift-bridge`) decided before S02 writes code |
+| UniFFI's licence turns out not to be MPL-2.0 (D21 accepted MPL-2.0 only) | S02 licence check | Back to the owner; alternatives are a hand-written C ABI via `cbindgen` or `swift-bridge`, decided before S02 writes code |
 | iCloud placeholders / stale bookmarks | S31 reads fail after idle | `startDownloadingUbiquitousItem`, re-pick flow from Rust state (S30) |
 | Sync data loss | Property test failure; owner loses a Note in S31 | ADR 0006 invariant tests block the merge; conflicts never auto-merge |
 | App size > 200 MB | S34 archive size | Strip debuginfo, `opt-level = "s"`, drop unused features; move `openbible-xrefs` to the Study set (owner decision) |
