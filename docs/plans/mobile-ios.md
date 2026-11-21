@@ -41,7 +41,7 @@ to Claude Opus 5.5 later on".
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | done (PR #360) |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (PR #358) |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
-| S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | todo |
+| S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | done (PR #364) |
 | S07 | #331 UI stack prototype: hosted text view on device | AFK | y | S04, S06 | prototype build + measurements + `docs/dev/mobile-text-view.md` | todo |
 | S08 | #331 owner judgement on a real iPhone | HITL | y | S07 | go/no-go, Android-half decision | todo |
 | S09 | ADR 0023 (UI stack, hosting option, performance targets, accessibility bar) + #331 close + map line | AFK + HITL | n | S08 | `docs/adr/0023-*.md`, #324 Decisions line, #331 resolution | todo |
@@ -882,6 +882,50 @@ this in addition to its own lines):
   (adjust name to `simctl list`); `xcrun simctl io booted screenshot docs/previews/ios/s06-hello.png`.
 - **Stop-and-ask:** `rusqlite` bundled SQLite fails to cross-compile; linking needs a framework or
   flag not documented; the Bundled set copy at first launch takes > 3 s in the simulator.
+- **Outcome (2026-11-21, branch `mobile/s06-ios-project`):**
+  - **Shipped:** `apps/ios/project.yml` (XcodeGen 2.46: app `OpenBible`, dev bundle id
+    `io.github.inhesrom.openbible.dev` as the overridable setting `OBS_BUNDLE_ID`, iOS 17,
+    iPhone + iPad, portrait + landscape, Info.plist keys as build settings, display name "Open
+    Bible", Swift 6; `OpenBibleTests` hosted XCTest; `OpenBibleUITests` XCUITest; local package
+    `OpenBibleCore`; the run-script phase "Rust core and Bundled set"; `Bundled/starter` as a
+    folder reference, bundled as `starter`); `apps/ios/Packages/OpenBibleCore/Package.swift`
+    (binary target `ObsFFI` + Swift target `OpenBibleCore` over the generated `ObsFFI.swift`);
+    `PrivacyInfo.xcprivacy` (no tracking, nothing collected, FileTimestamp `C617.1`); a SwiftUI
+    hello screen (`HelloModel`, `HelloView`) that boots the S03 spike off the main thread under
+    `Application Support/OpenBible` and lists the library: engine 0.2.0, Resources 4 (`bsb`,
+    `openbible-xrefs`, `strongs-hebrew`, `strongs-greek`); `docs/dev/ios-project.md`;
+    `docs/previews/ios/s06-hello.png` (**UI change: the PR needs `ui-review`**). xtask:
+    `ios build` builds the staticlibs with `IPHONEOS_DEPLOYMENT_TARGET=17.0` and copies the
+    XCFramework and `ObsFFI.swift` into the package, writing only changed files (S02's
+    deferred deployment target, done); tests for that copy and for `project.yml` /
+    `Package.swift` naming the same minimum iOS. The Shell audit is in the PR body;
+    `docs/dev/mobile-core.md` lists the accepted presentation-only decisions.
+  - **Run-script phase:** runs `cargo xtask ios build [--sim-only]` and `ios bundled-set
+    --verify` under `env -i` (Xcode's PATH lacks `~/.cargo/bin`; `${CARGO:-$HOME/.cargo/bin/cargo}`
+    works). **Surprise:** Xcode copies the package's XCFramework (`ProcessXCFramework`) and
+    compiles `OpenBibleCore` before any target's phases, so a library the phase rebuilds
+    would be linked one build late; the phase fails with "the Rust core changed after Xcode
+    had read it; build again" when it changed the package, and the command-line order
+    (`ios build` first) never meets it. No debug simulator variant: not needed yet.
+  - **Checks:** `xcodegen generate`, `xcodebuild build` and `xcodebuild test` (2 unit tests:
+    boot over the Bundled set with 4 Resources and again, a failed boot's message; 1 UI test:
+    launch, version, `Resources, 4`, screenshot attachment) pass on an iPhone 17 simulator
+    (iOS 27.2). No stop-and-ask fired: SQLite cross-compiles, linking needs no extra flag or
+    framework, and boot over the Bundled set takes 1.8–1.9 s in the simulator (a second boot
+    1.6–1.8 s, so mostly opening the BSB, not the copy).
+  - **Measurements:** `libobs_ffi.a` (simulator) 27.2 MB (S02: 7.5 MB before S03's surface);
+    first `ios build --sim-only` 2 min, an Xcode build with no Rust change about 4 s.
+  - **Not verified:** whether a Personal Team registration of an App ID blocks a later
+    paid-team registration (Apple's site unreachable from the session); recorded as
+    unverified in `docs/dev/ios-project.md`, so the `.dev` id is treated as required. Nothing
+    was signed for a device and no Apple ID was added.
+  - **Found for later steps (none edited):** `performAccessibilityAudit()` (A6) fails on the
+    system List's secondary text ("Contrast nearly passed"), so the UI test does not run it
+    yet (S14b / ADR 0023's bar). `nm` on the core shows `statfs`/`fstatfs` (disk-space
+    required-reason category, from SQLite) besides the timestamp calls, for S34's privacy
+    audit. The app's `MARKETING_VERSION` is `0.0.0` until S34 sets a scheme. Agent shells
+    sometimes SIGKILL Xcode's generated run-script file and once failed to load the SwiftUI
+    macro plug-ins; both workarounds are in `docs/dev/ios-project.md`.
 
 #### S07 — #331 UI stack prototype: the hosted text view
 
@@ -1104,6 +1148,10 @@ this in addition to its own lines):
   `tile`/`frame`; a tile pixel-size cap (S03 added 8192); Note-marker room in tiles; FFI calls
   that are infallible in the spike (`problems`, `resource_ids`, `reader_resource`) become
   fallible so a poisoned lock is visible.
+  **From the S06 review:** `Paths` comes from one root. `obs-mobile` names `library`, `user.db`,
+  `search`, `aliases` (`obs_engine::aliases::ALIAS_DIR`), `logs` and `downloads`; Swift passes only
+  `Application Support/OpenBible`, and `HelloModel.paths(in:)` goes. There is one core per process,
+  shared by every scene (an iPad can open several windows).
   Update `docs/dev/mobile-core.md`.
 - **Don't:** Swift; Study sheet/Annotations/Search (later steps add methods); leak `TabId`/`Panel`
   into the FFI; put Theme/Page tone colour math anywhere but `obs-reading`.
@@ -1759,7 +1807,9 @@ this in addition to its own lines):
   `docs/dev/credits.md`; Apple: App Store Connect accessibility labels, `xcodebuild archive`/
   `-exportArchive`, `xcrun altool --validate-app` vs ASC API (verify).
 - **Do:** `PrivacyInfo.xcprivacy` final (tracking: none; collected data: none; required-reason
-  APIs with reasons); app icon + launch screen (ADR 0012 line-icon set rasterised; `ui-review`);
+  APIs with reasons; **from the S06 review:** Disk Space (`statfs`, `fstatfs`, from SQLite's
+  locking-style probe; see `docs/dev/ios-project.md`): declare a reason that fits, or build SQLite
+  with `SQLITE_ENABLE_LOCKING_STYLE=0` and re-run `nm -u`); app icon + launch screen (ADR 0012 line-icon set rasterised; `ui-review`);
   Credits screen fed by the `obs-ffi` cargo-about listing from S02, now resolved for
   `aarch64-apple-ios` (`cargo xtask licenses --ios`; check whether the graph differs from the host
   one and record) plus font/data attributions

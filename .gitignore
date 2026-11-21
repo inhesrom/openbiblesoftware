@@ -9,3 +9,12 @@
 
 # The Mobile app's Bundled set, copied from dist/starter/ by `cargo xtask ios bundled-set`.
 /apps/ios/Bundled/
+
+# The iOS app's build artefacts (docs/dev/ios-project.md): `xcodegen generate` writes the
+# project from apps/ios/project.yml; `cargo xtask ios build` writes the XCFramework and the
+# generated Swift into the local package.
+/apps/ios/*.xcodeproj
+/apps/ios/Packages/OpenBibleCore/ObsFFI.xcframework/
+/apps/ios/Packages/OpenBibleCore/Sources/Generated/
+/apps/ios/Packages/OpenBibleCore/.build/
+/apps/ios/Packages/OpenBibleCore/.swiftpm/

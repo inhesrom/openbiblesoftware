@@ -1,0 +1,121 @@
+# The iOS app's Xcode project, for XcodeGen (docs/dev/ios-project.md). `xcodegen generate` in
+# this folder writes OpenBible.xcodeproj, which is gitignored: this file is the project.
+name: OpenBible
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+settings:
+  base:
+    # The dev bundle id (plan A6): not the final id, which S33 applies. Override it on the
+    # command line (`xcodebuild … OBS_BUNDLE_ID=…`) or here.
+    OBS_BUNDLE_ID: io.github.inhesrom.openbible.dev
+    SWIFT_VERSION: "6.0"
+    # Automatic signing with no team: the simulator signs to run locally. A device run needs
+    # a team (docs/dev/ios-project.md).
+    CODE_SIGN_STYLE: Automatic
+packages:
+  OpenBibleCore:
+    path: Packages/OpenBibleCore
+targets:
+  OpenBible:
+    type: application
+    platform: iOS
+    sources:
+      - path: OpenBible
+      # The Bundled set, copied whole into the app as the folder `starter`.
+      - path: Bundled/starter
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: OpenBibleCore
+    settings:
+      base:
+        PRODUCT_NAME: OpenBible
+        PRODUCT_BUNDLE_IDENTIFIER: $(OBS_BUNDLE_ID)
+        # Working name (#324) until #334 and #337 decide.
+        INFOPLIST_KEY_CFBundleDisplayName: Open Bible
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        # The app's own version scheme is S34's; the screen shows the engine's version.
+        MARKETING_VERSION: "0.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # The run-script phase writes under target/ and apps/ios/Packages, outside any
+        # declared output, which the script sandbox would refuse.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    preBuildScripts:
+      - name: Rust core and Bundled set
+        basedOnDependencyAnalysis: false
+        shell: /bin/bash
+        script: |
+          # cargo xtask ios build (the simulator slice alone for a simulator build), then
+          # check the Bundled set against apps/ios/bundled-set.lock. Xcode's build PATH has
+          # no ~/.cargo/bin, and its SDKROOT and deployment settings would reach cargo's host
+          # build scripts, so cargo runs in a clean environment. Xcode copies the package's
+          # XCFramework before any target builds, so a library this phase changes would be
+          # linked one build late: the phase fails instead, and the next build has it.
+          set -euo pipefail
+          cargo="${CARGO:-$HOME/.cargo/bin/cargo}"
+          slices=()
+          if [ "${PLATFORM_NAME}" = "iphonesimulator" ]; then slices=(--sim-only); fi
+          cd "${SRCROOT}/../.."
+          run() {
+            local pass=()
+            for v in RUSTUP_HOME CARGO_HOME RUSTUP_TOOLCHAIN HTTP_PROXY HTTPS_PROXY NO_PROXY \
+              http_proxy https_proxy no_proxy; do
+              if [ -n "${!v:-}" ]; then pass+=("$v=${!v}"); fi
+            done
+            env -i HOME="$HOME" USER="${USER:-}" TMPDIR="${TMPDIR:-/tmp}" \
+              PATH="$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+              DEVELOPER_DIR="${DEVELOPER_DIR}" "${pass[@]+"${pass[@]}"}" "$cargo" "$@"
+          }
+          stamp="${DERIVED_FILE_DIR}/rust-core.stamp"
+          mkdir -p "${DERIVED_FILE_DIR}"
+          touch "$stamp"
+          run xtask ios build "${slices[@]+"${slices[@]}"}"
+          changed=$(find apps/ios/Packages/OpenBibleCore/ObsFFI.xcframework \
+            apps/ios/Packages/OpenBibleCore/Sources/Generated -type f -newer "$stamp")
+          if [ -n "$changed" ]; then
+            echo "error: the Rust core changed after Xcode had read it; build again:" $changed
+            exit 1
+          fi
+          run xtask ios bundled-set --verify
+  OpenBibleTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OpenBibleTests
+    dependencies:
+      - target: OpenBible
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(OBS_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: YES
+  OpenBibleUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: OpenBibleUITests
+    dependencies:
+      - target: OpenBible
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(OBS_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: OpenBible
+schemes:
+  OpenBible:
+    build:
+      targets:
+        OpenBible: all
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - OpenBibleTests
+        - OpenBibleUITests

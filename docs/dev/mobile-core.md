@@ -72,7 +72,7 @@ never needs macOS or Xcode.
 | `ios bindgen` | a host toolchain | `cargo build -p obs-ffi --lib` (host cdylib), then `cargo run -p uniffi-bindgen -- generate <lib> --language swift --no-format --out-dir target/ios/bindings` (library mode). It clears the folder first and fails if any of the three files is missing. |
 | `ios check` | a host toolchain (Linux too) | `cargo check -p obs-ffi`, then `ios bindgen`. |
 | `ios smoke [--bundle DIR]` | `swiftc` (Xcode or the Command Line Tools) and a Bundled set | Fails, saying to run `ios bundled-set`, unless `DIR` (default `apps/ios/Bundled/starter`) has a `starter-manifest.json`. Runs `ios bindgen`, then `swiftc -Xcc -fmodule-map-file=target/ios/bindings/ObsFFIFFI.modulemap -L target/debug -lobs_ffi -Xlinker -rpath -Xlinker target/debug` over `apps/obs-ffi/swift-smoke/main.swift` and `ObsFFI.swift` into `target/ios/swift-smoke/swift-smoke`, and runs it with `DIR` and a fresh `target/ios/swift-smoke/run/`. The smoke boots, opens the BSB at Genesis 1 and lays out a 390 × 256 pt tile at 3×; the command fails unless it prints `engine <version>` and `tile 1170x768`. |
-| `ios build [--sim-only]` | Xcode with the iOS SDKs | Probes `xcrun --sdk iphoneos --show-sdk-path` (and `iphonesimulator`). If one fails, it stops with "`cargo xtask ios build` needs Xcode: …", builds nothing and exits non-zero. Otherwise it runs `ios bindgen`, then for each slice `cargo rustc -p obs-ffi --lib --profile ios --target <t> --crate-type staticlib`, puts the header and module map (renamed `module.modulemap`) in `target/ios/headers`, and runs `xcodebuild -create-xcframework` into `target/ios/ObsFFI.xcframework`. The slices are `aarch64-apple-ios` and `aarch64-apple-ios-sim`, or the simulator's alone with `--sim-only`. |
+| `ios build [--sim-only]` | Xcode with the iOS SDKs | Probes `xcrun --sdk iphoneos --show-sdk-path` (and `iphonesimulator`). If one fails, it stops with "`cargo xtask ios build` needs Xcode: …", builds nothing and exits non-zero. Otherwise it runs `ios bindgen`, then for each slice `cargo rustc -p obs-ffi --lib --profile ios --target <t> --crate-type staticlib` with `IPHONEOS_DEPLOYMENT_TARGET=17.0` (the app's minimum), puts the header and module map (renamed `module.modulemap`) in `target/ios/headers`, and runs `xcodebuild -create-xcframework` into `target/ios/ObsFFI.xcframework`. Then it copies the XCFramework and `ObsFFI.swift` into the app's package `apps/ios/Packages/OpenBibleCore` (only the files that changed; `docs/dev/ios-project.md`). The slices are `aarch64-apple-ios` and `aarch64-apple-ios-sim`, or the simulator's alone with `--sim-only`. |
 
 The staticlibs are built with `--crate-type staticlib`, so no iOS cdylib is linked.
 `rusqlite`'s bundled SQLite is C code that `cc` compiles with the iOS SDK. That is why
@@ -103,8 +103,19 @@ it is under the ignored `/target`.
   three clippy denies still apply. UniFFI 0.32's proc-macro scaffolding compiles under
   `forbid` (edition 2024, rust-version 1.95), so **no exception is needed**. Hand-written
   `unsafe` in `obs-ffi` needs the owner's approval first.
-- **Presentation-only decisions accepted in Swift** (A10): none yet. The Swift smoke is a
-  host test program, not app code.
+- **Presentation-only decisions accepted in Swift** (A10). The Swift smoke is a host test
+  program, not app code. In the app (`apps/ios`, `docs/dev/ios-project.md`), from S06:
+  - `HelloModel.State` (starting, ready, failed) and the hello screen's `switch` over it:
+    which section the screen shows while the core boots, once it has, or when it failed.
+  - The hello screen shows the count of `resourceIds()` and the ids in the order the core
+    returns them, a Problems section only when `problems()` has any, and a failed boot's
+    error text as the core worded it.
+  - `boot` runs off the main thread (`Task.detached`), so the screen keeps drawing.
+  - `HelloModel.paths(in:)` names the core's files under `Application Support/OpenBible`
+    (`library`, `user.db`, `search`, `aliases`, `logs`, `downloads`, as the Swift smoke
+    does), because plan A7 has the shell pass all six `Paths`. It is file naming, on A10's
+    list: accepted for the S03 spike surface only. It moves in S13: the designed surface takes one
+    root folder and `obs-mobile` names the rest.
 - **Tests.** CI-run, over `obs_engine::testing` fixtures: `obs-render` `composite::tests`
   (a known glyph's pixels are its atlas coverage in the ink, nothing outside it; each role's
   colour; premultiplied; clipping and tiles lower down; tiles at fractional offsets stack

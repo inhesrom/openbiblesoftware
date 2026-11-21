@@ -4,9 +4,11 @@
 //!   library mode, writing the Swift bindings to [`BINDINGS`].
 //! - `check` is the host-only check: `cargo check -p obs-ffi`, then `bindgen`.
 //! - `build` builds the `aarch64-apple-ios` and `aarch64-apple-ios-sim` staticlibs with
-//!   `[profile.ios]` and wraps them, with the bindings' header and module map, in
-//!   [`XCFRAMEWORK`]. It needs Xcode's iOS SDKs (`rusqlite` compiles SQLite with them) and
-//!   says so, without building anything, when they are missing.
+//!   `[profile.ios]` for iOS [`IOS_DEPLOYMENT_TARGET`] and wraps them, with the bindings'
+//!   header and module map, in [`XCFRAMEWORK`], then puts that and the generated Swift in the
+//!   app's local Swift package [`PACKAGE`] (`docs/dev/ios-project.md`). It needs Xcode's iOS
+//!   SDKs (`rusqlite` compiles SQLite with them) and says so, without building anything, when
+//!   they are missing.
 //! - `smoke` runs `bindgen`, compiles [`SMOKE_MAIN`] with the bindings against the host
 //!   library with `swiftc`, and runs it over the Bundled set: Swift boots the app, opens the
 //!   BSB at Genesis 1 and lays out a 390 × 256 pt tile at 3× (S03 of the iOS plan).
@@ -22,6 +24,14 @@ use anyhow::{Context, Result, bail};
 pub const BINDINGS: &str = "target/ios/bindings";
 /// Where `build` writes the XCFramework.
 pub const XCFRAMEWORK: &str = "target/ios/ObsFFI.xcframework";
+/// The local Swift package `apps/ios/project.yml` links: `build` copies [`XCFRAMEWORK`] to
+/// its `ObsFFI.xcframework` and the generated Swift to its `Sources/Generated` (both
+/// gitignored).
+pub const PACKAGE: &str = "apps/ios/Packages/OpenBibleCore";
+/// The app's minimum iOS, as `apps/ios/project.yml` has it. The staticlibs are built for it
+/// (`IPHONEOS_DEPLOYMENT_TARGET`), so the linker sees one minimum, and a build from a shell and
+/// one from Xcode's run-script phase share cargo's cache.
+pub const IOS_DEPLOYMENT_TARGET: &str = "17.0";
 /// The Swift smoke's source, and where it is built and run.
 const SMOKE_MAIN: &str = "apps/obs-ffi/swift-smoke/main.swift";
 const SMOKE_DIR: &str = "target/ios/swift-smoke";
@@ -59,8 +69,9 @@ const USAGE: &str = "usage: cargo xtask ios <command>
   bindgen            build obs-ffi for the host and write its Swift bindings
                      (ObsFFI.swift, ObsFFIFFI.h, ObsFFIFFI.modulemap) to target/ios/bindings
   check              host only: cargo check -p obs-ffi, then bindgen
-  build [--sim-only] the aarch64-apple-ios and aarch64-apple-ios-sim staticlibs ([profile.ios])
-                     and target/ios/ObsFFI.xcframework; --sim-only: the simulator's alone.
+  build [--sim-only] the aarch64-apple-ios and aarch64-apple-ios-sim staticlibs ([profile.ios],
+                     iOS 17) and target/ios/ObsFFI.xcframework, copied with ObsFFI.swift into
+                     apps/ios/Packages/OpenBibleCore; --sim-only: the simulator's alone.
                      Needs Xcode with the iOS SDKs
   smoke [--bundle DIR]
                      host only: bindgen, then compile apps/obs-ffi/swift-smoke/main.swift
@@ -71,7 +82,7 @@ const USAGE: &str = "usage: cargo xtask ios <command>
                      copy the Bundled set out of dist/starter/ into apps/ios/Bundled/starter/
                      and check it against apps/ios/bundled-set.lock (`--help`)
 
-docs/dev/mobile-core.md, docs/dev/starter-library.md";
+docs/dev/mobile-core.md, docs/dev/ios-project.md, docs/dev/starter-library.md";
 
 pub fn run(root: &Path, args: &[String]) -> Result<()> {
     match args.first().map(String::as_str) {
@@ -300,23 +311,31 @@ fn build(root: &Path, sim_only: bool, has_sdk: &dyn Fn(&str) -> bool) -> Result<
     let bindings = bindgen(root)?;
 
     let mut libs = Vec::new();
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     for slice in slices {
-        crate::cargo(
-            root,
-            &[
-                "rustc",
-                "--locked",
-                "-p",
-                FFI_PACKAGE,
-                "--lib",
-                "--profile",
-                "ios",
-                "--target",
-                slice.target,
-                "--crate-type",
-                "staticlib",
-            ],
-        )?;
+        let args = [
+            "rustc",
+            "--locked",
+            "-p",
+            FFI_PACKAGE,
+            "--lib",
+            "--profile",
+            "ios",
+            "--target",
+            slice.target,
+            "--crate-type",
+            "staticlib",
+        ];
+        // rustc and `cc` (SQLite) both read the minimum iOS from this variable.
+        let status = Command::new(&cargo)
+            .args(args)
+            .env("IPHONEOS_DEPLOYMENT_TARGET", IOS_DEPLOYMENT_TARGET)
+            .current_dir(root)
+            .status()
+            .with_context(|| format!("could not run `{cargo}`"))?;
+        if !status.success() {
+            bail!("`cargo {}` exited with {status}", args.join(" "));
+        }
         let lib = root
             .join("target")
             .join(slice.target)
@@ -369,7 +388,77 @@ fn build(root: &Path, sim_only: bool, has_sdk: &dyn Fn(&str) -> bool) -> Result<
         eprintln!("ios: {} ({:.1} MB)", lib.display(), bytes as f64 / 1e6);
     }
     eprintln!("ios: wrote {XCFRAMEWORK}");
+
+    let package = root.join(PACKAGE);
+    let mut written = mirror(&xcframework, &package.join("ObsFFI.xcframework"))?;
+    written += mirror(
+        &bindings.join(format!("{SWIFT_MODULE}.swift")),
+        &package
+            .join("Sources/Generated")
+            .join(format!("{SWIFT_MODULE}.swift")),
+    )?;
+    eprintln!(
+        "ios: {PACKAGE} has the XCFramework and {SWIFT_MODULE}.swift ({written} file(s) changed)"
+    );
     Ok(())
+}
+
+/// Make `to` (a file or a folder) hold exactly what `from` holds, writing only the files whose
+/// bytes differ and removing what `from` lacks, so an unchanged library leaves Xcode nothing
+/// to redo. Returns how many files it wrote.
+fn mirror(from: &Path, to: &Path) -> Result<usize> {
+    let read = |p: &Path| std::fs::read(p).with_context(|| format!("cannot read {}", p.display()));
+    if from.is_file() {
+        let bytes = read(from)?;
+        if to.is_file() && read(to)? == bytes {
+            return Ok(0);
+        }
+        if to.is_dir() {
+            std::fs::remove_dir_all(to)
+                .with_context(|| format!("cannot clear {}", to.display()))?;
+        }
+        if let Some(dir) = to.parent() {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("cannot create {}", dir.display()))?;
+        }
+        std::fs::write(to, bytes).with_context(|| format!("cannot write {}", to.display()))?;
+        return Ok(1);
+    }
+    if to.is_file() {
+        std::fs::remove_file(to).with_context(|| format!("cannot remove {}", to.display()))?;
+    }
+    std::fs::create_dir_all(to).with_context(|| format!("cannot create {}", to.display()))?;
+    let mut written = 0;
+    let mut wanted = std::collections::BTreeSet::new();
+    for entry in walkdir::WalkDir::new(from).min_depth(1) {
+        let entry = entry.with_context(|| format!("cannot list {}", from.display()))?;
+        let rel = entry.path().strip_prefix(from)?.to_path_buf();
+        if entry.file_type().is_file() {
+            written += mirror(entry.path(), &to.join(&rel))?;
+        } else if entry.file_type().is_dir() {
+            std::fs::create_dir_all(to.join(&rel))
+                .with_context(|| format!("cannot create {}", to.join(&rel).display()))?;
+        }
+        wanted.insert(rel);
+    }
+    // Deepest first, so a removed folder's contents go before it.
+    let stale: Vec<PathBuf> = walkdir::WalkDir::new(to)
+        .min_depth(1)
+        .contents_first(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .map(|e| e.into_path())
+        .filter(|p| p.strip_prefix(to).is_ok_and(|rel| !wanted.contains(rel)))
+        .collect();
+    for path in stale {
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        removed.with_context(|| format!("cannot remove {}", path.display()))?;
+    }
+    Ok(written)
 }
 
 #[cfg(test)]
@@ -478,6 +567,58 @@ mod tests {
             Some(SWIFT_MODULE)
         );
         assert_eq!(C_MODULE, format!("{SWIFT_MODULE}FFI"), "UniFFI's default");
+    }
+
+    #[test]
+    fn mirror_writes_only_what_changed_and_removes_what_is_gone() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join(format!(
+                "target/xtask-tests/ios-mirror-{}",
+                std::process::id()
+            ));
+        let _ = std::fs::remove_dir_all(&base);
+        let (from, to) = (base.join("from"), base.join("to"));
+        std::fs::create_dir_all(from.join("ios-arm64-simulator/Headers")).unwrap();
+        std::fs::write(from.join("Info.plist"), "plist").unwrap();
+        std::fs::write(from.join("ios-arm64-simulator/Headers/a.h"), "header").unwrap();
+        std::fs::create_dir_all(to.join("ios-arm64/Headers")).unwrap();
+        std::fs::write(to.join("ios-arm64/Headers/a.h"), "old slice").unwrap();
+        std::fs::write(to.join("Info.plist"), "old plist").unwrap();
+
+        assert_eq!(mirror(&from, &to).unwrap(), 2);
+        assert_eq!(
+            std::fs::read_to_string(to.join("Info.plist")).unwrap(),
+            "plist"
+        );
+        assert!(to.join("ios-arm64-simulator/Headers/a.h").is_file());
+        assert!(
+            !to.join("ios-arm64").exists(),
+            "a slice no longer built is removed"
+        );
+        // Unchanged: nothing written.
+        assert_eq!(mirror(&from, &to).unwrap(), 0);
+
+        let (file, copy) = (from.join("Info.plist"), base.join("one/ObsFFI.swift"));
+        assert_eq!(mirror(&file, &copy).unwrap(), 1);
+        assert_eq!(mirror(&file, &copy).unwrap(), 0);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// The staticlibs are built for the minimum iOS the app's project names.
+    #[test]
+    fn the_libraries_are_built_for_the_apps_minimum_ios() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let spec = std::fs::read_to_string(root.join("apps/ios/project.yml")).unwrap();
+        let line = format!("iOS: \"{IOS_DEPLOYMENT_TARGET}\"");
+        assert!(
+            spec.lines().any(|l| l.trim() == line),
+            "no `{line}` in project.yml"
+        );
+        let package = std::fs::read_to_string(root.join(PACKAGE).join("Package.swift")).unwrap();
+        let major = IOS_DEPLOYMENT_TARGET.split('.').next().unwrap();
+        assert!(package.contains(&format!(".iOS(.v{major})")), "{package}");
     }
 
     /// `[profile.ios]` keeps unwinding: the job queue catches a panicking job, which
