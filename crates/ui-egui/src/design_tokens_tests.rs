@@ -1,7 +1,8 @@
 //! #221 acceptance: no hard-coded spacing, size or colour literal remains in the interface
 //! outside the design tokens ([`crate::tokens`]; page colours in [`crate::Palette`]).
 //!
-//! The scanner reads every non-test source file of the crate with comments, strings and
+//! The scanner reads every non-test source file of the crate, and of the reading core it paints
+//! (`crates/reading/src`, its files named `reading/…`), with comments, strings and
 //! `#[cfg(test)]` items blanked out, and flags:
 //!
 //! - any numeric literal in a call that takes a spacing, a size, a radius, a stroke width, a
@@ -21,8 +22,9 @@
 
 use std::path::{Path, PathBuf};
 
-/// Files that are the tokens themselves.
-const TOKEN_FILES: &[&str] = &["tokens.rs", "palette.rs"];
+/// Files that are the tokens themselves: this crate's and the reading core's
+/// (`reading_tokens.rs`, its `palette.rs`).
+const TOKEN_FILES: &[&str] = &["tokens.rs", "palette.rs", "reading_tokens.rs"];
 
 /// Lines allowed to keep a literal, each exactly: (file, the whole line, the literal, why it
 /// is not a measurement of the look).
@@ -262,7 +264,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "the scroll range is never zero, so the thumb's fraction is defined",
     ),
     (
-        "selection.rs",
+        "reading/selection.rs",
         "&& ((r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5) =>",
         "0.5",
         "a tolerance: selection rects that touch join",
@@ -736,43 +738,43 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "seconds a toast shows",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "const PREFETCH: f32 = 1.5;",
         "1.5",
         "how far ahead text is laid out, in viewport heights",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "view.set_width(600.0);",
         "600.0",
         "a reading view's width before its pane first measures it",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "if (width - self.width).abs() < 0.5 && !self.heights.is_empty() {",
         "0.5",
         "a tolerance: a width change smaller than this is not a resize",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "for (index, top, laid) in self.laid_in_view(y + 1.0) {",
         "1.0",
         "a hit test: the blocks laid out round the point",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "for (block, top, laid) in self.laid_in_view(y + 1.0) {",
         "1.0",
         "a hit test: the blocks laid out round the point",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "while top < height * (1.0 + PREFETCH) && below < n {",
         "1.0",
         "how far ahead text is laid out: the viewport and the prefetch",
     ),
     (
-        "view.rs",
+        "reading/view.rs",
         "if let Some(line) = laid.lines.iter().find(|l| l.bottom > offset + 0.5) {",
         "0.5",
         "a tolerance: the first line not scrolled past",
@@ -1236,9 +1238,11 @@ fn unitless(v: f64, operator: bool, fraction: bool) -> bool {
 }
 
 fn ui_sources() -> Vec<PathBuf> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
-    let mut dirs = vec![root];
+    let mut dirs = source_roots()
+        .into_iter()
+        .map(|(root, _)| root)
+        .collect::<Vec<_>>();
     while let Some(d) = dirs.pop() {
         for e in std::fs::read_dir(&d).unwrap() {
             let p = e.unwrap().path();
@@ -1263,12 +1267,23 @@ fn ui_sources() -> Vec<PathBuf> {
     files
 }
 
+/// The source folders the lint reads, each with the prefix its files are named by in
+/// [`ALLOWED`]: this crate's (none) and the reading core's (`reading/`, ADR 0021).
+fn source_roots() -> [(PathBuf, &'static str); 2] {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    [
+        (manifest.join("src"), ""),
+        (manifest.join("../reading/src"), "reading/"),
+    ]
+}
+
 fn relative(p: &Path) -> String {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    p.strip_prefix(&root)
-        .unwrap_or(p)
-        .to_string_lossy()
-        .replace('\\', "/")
+    let (root, prefix) = source_roots()
+        .into_iter()
+        .find(|(root, _)| p.starts_with(root))
+        .unwrap_or_else(|| (PathBuf::new(), ""));
+    let path = p.strip_prefix(&root).unwrap_or(p).to_string_lossy();
+    format!("{prefix}{}", path.replace('\\', "/"))
 }
 
 /// The [`ALLOWED`] entry for `literal` on the line `text` of `file`, if any.

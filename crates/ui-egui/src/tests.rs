@@ -1063,6 +1063,42 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
     assert!((contrast(Palette::DARK.ink, Palette::DARK.ink) - 1.0).abs() < 1e-6);
 }
 
+/// `Palette` is the reading core's `TonePalette` in egui's colours (plan A5): each tone
+/// constant and every derived colour is the same one, converted.
+#[test]
+fn palette_is_the_tone_palette_in_egui_colours() {
+    use crate::palette::{to_color, to_rgb};
+    use obs_reading::TonePalette;
+    let tones = [
+        (Palette::PAPER, TonePalette::PAPER),
+        (Palette::SEPIA, TonePalette::SEPIA),
+        (Palette::DARK, TonePalette::DARK),
+        (
+            Palette::PAPER_HIGH_CONTRAST,
+            TonePalette::PAPER_HIGH_CONTRAST,
+        ),
+        (
+            Palette::SEPIA_HIGH_CONTRAST,
+            TonePalette::SEPIA_HIGH_CONTRAST,
+        ),
+        (Palette::DARK_HIGH_CONTRAST, TonePalette::DARK_HIGH_CONTRAST),
+    ];
+    for (p, t) in tones {
+        assert_eq!(TonePalette::from(p), t);
+        assert_eq!(Palette::from(t), p);
+        for style in obs_store::built_in_styles() {
+            let (paint, tone_paint) = (p.paint(&style.appearance), t.paint(&style.appearance));
+            assert_eq!(paint.color, to_color(tone_paint.color), "{}", style.name);
+            assert_eq!(paint.mark, to_color(tone_paint.mark), "{}", style.name);
+            let base = to_color(style.appearance.color);
+            assert_eq!(
+                p.check(style.appearance.look, base),
+                t.check(style.appearance.look, to_rgb(base))
+            );
+        }
+    }
+}
+
 /// Genesis 30–31 with every word a Tagged word (Strong's H1000 + word number) and a Scripture
 /// reference at the end of each chapter.
 pub(crate) fn tagged_bible() -> Arc<ReadingDoc> {
