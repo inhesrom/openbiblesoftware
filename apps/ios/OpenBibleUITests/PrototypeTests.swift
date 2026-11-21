@@ -72,6 +72,28 @@ final class PrototypeTests: XCTestCase {
         shot(app, "s07-sheet")
     }
 
+    /// With the debug Study set override (`TEST_RUNNER_OBS_STUDY_SET_DIR=<repo>/dist/starter`
+    /// on the `xcodebuild test` line), a tap on a word of the KJV with Strong's opens the
+    /// sheet with the word's Strong's number.
+    @MainActor
+    func testATaggedWordShowsItsStrongsNumber() throws {
+        guard let studySet = ProcessInfo.processInfo.environment["OBS_STUDY_SET_DIR"] else {
+            throw XCTSkip("no Study set: set TEST_RUNNER_OBS_STUDY_SET_DIR")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["OBS_STUDY_SET_DIR"] = studySet
+        app.launchArguments += ["-OBSResource", "kjv-strongs", "-OBSGoTo", "Jn 3:16"]
+        app.launch()
+        let verse = app.staticTexts["John.3.16"]
+        XCTAssertTrue(verse.waitForExistence(timeout: 30), "did not open the KJV at John 3:16")
+        verse.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+        let strongs = app.staticTexts["sheet.strongs"]
+        XCTAssertTrue(strongs.waitForExistence(timeout: 5), "no Strong's number in the sheet")
+        XCTAssertNotNil(strongs.label.range(of: #"[GH]\d+"#, options: .regularExpression), strongs.label)
+        XCTAssertTrue(app.navigationBars["John 3:16 (KJV)"].exists)
+        shot(app, "s07-sheet-strongs")
+    }
+
     @MainActor
     func testAccessibilityAudit() throws {
         let app = XCUIApplication()
