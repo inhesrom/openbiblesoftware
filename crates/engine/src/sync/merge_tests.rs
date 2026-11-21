@@ -2,9 +2,10 @@
 //! that matter: last writer wins and keeps the op's clock; every clock merged is observed (one
 //! a day ahead is not, its row merged all the same); edit beats delete in every order, and a
 //! delete covering the newest edit deletes it; fields an op does not carry are left as they
-//! are; Reading done-marks merge per Reading; the Preferred order is one value; two default
-//! Notebooks keep the older; two Layouts of one name both stay; a file needing another
-//! device's row waits for it; a parent delete meeting live children is skipped.
+//! are; Reading done-marks merge per Reading; a Collection renamed on one device and edited on
+//! another keeps both; the Preferred order is one value; two default Notebooks keep the older;
+//! two Layouts of one name both stay; a file needing another device's row waits for it; a
+//! parent delete meeting live children is skipped.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -538,6 +539,47 @@ fn reading_done_marks_merge_per_reading() {
             .map(|r| r.read_at.is_some())
             .collect();
         assert_eq!(read, [true, false, true]);
+    }
+    assert_eq!(a.user.synced_dump().unwrap(), b.user.synced_dump().unwrap());
+}
+
+#[test]
+fn a_collection_renamed_on_one_device_and_edited_on_another_keeps_both() {
+    let dir = Dir::new("collection-rename");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let key = "library.collections";
+    a.user
+        .set_preference(
+            key,
+            r#"[{"name":"Greek","ids":["sblgnt"]},{"name":"Study","ids":[]}]"#,
+        )
+        .unwrap();
+    a.sync(&cloud);
+    b.sync(&cloud);
+    // A renames "Greek" (a delete of the old name and an insert of the new); B, not having
+    // seen that, edits "Greek".
+    a.user
+        .set_preference(
+            key,
+            r#"[{"name":"Greek NT","ids":["sblgnt"]},{"name":"Study","ids":[]}]"#,
+        )
+        .unwrap();
+    b.user
+        .set_preference(
+            key,
+            r#"[{"name":"Greek","ids":["sblgnt","lxx"]},{"name":"Study","ids":[]}]"#,
+        )
+        .unwrap();
+    Device::settle(&[&a, &b], &cloud);
+    // Edit beats delete: B's "Greek" stays beside A's "Greek NT", in the same order on both
+    // (by position, then name), with the same clock.
+    let both = r#"[{"name":"Greek","ids":["sblgnt","lxx"]},{"name":"Greek NT","ids":["sblgnt"]},{"name":"Study","ids":[]}]"#;
+    let clock = a.clock(&RowKey::Preference(key.into()));
+    assert!(clock.is_some());
+    for d in [&a, &b] {
+        assert_eq!(d.user.preference(key).unwrap().as_deref(), Some(both));
+        assert_eq!(d.clock(&RowKey::Preference(key.into())), clock);
     }
     assert_eq!(a.user.synced_dump().unwrap(), b.user.synced_dump().unwrap());
 }
