@@ -79,8 +79,9 @@ it is under the ignored `/target`.
 Measured on 2026-11-21 on the owner's Mac (Apple M6, macOS 27.0.1, rustc 1.99.1, Xcode 27.2):
 
 - UniFFI **0.32.2**. Every `uniffi*` crate's `Cargo.toml` says `license = "MPL-2.0"`, and its
-  parser dependency `weedle2` is MIT. Cargo resolved it for `rust-version = "1.95"` with no
-  change to `rust-version`.
+  parser dependency `weedle2` is MIT. UniFFI 0.32.2 declares no `rust-version`, so cargo's
+  resolver had nothing to check; it was built with stable rustc 1.99.1 only. Whether it
+  builds on the workspace's `rust-version = "1.95"` floor is unverified.
 - `cargo xtask ios bindgen` writes `ObsFFI.swift` (19.8 kB), `ObsFFIFFI.h` and
   `ObsFFIFFI.modulemap`.
 - `cargo xtask ios build`, the first time: about 66 s for the device slice and 35 s for the

@@ -546,7 +546,8 @@ this in addition to its own lines):
     and nothing in the desktop listing, are taken under it; `docs/dev/mobile-core.md`.
   - **D21 confirmed:** every `uniffi*` crate's `Cargo.toml` says `license = "MPL-2.0"`.
     **No lint exception:** `obs-ffi` builds and passes clippy under `[lints] workspace = true`
-    (`forbid`). `rust-version` stays 1.95 (cargo resolved UniFFI 0.32.2 for it).
+    (`forbid`). `rust-version` stays 1.95, but that floor is unverified for UniFFI: 0.32.2
+    declares no `rust-version` and was built with stable rustc 1.99.1 only.
   - **Changed circumstance (Xcode 27.2 installed in S05):** the Verify line's "needs Xcode" is
     no longer what `cargo xtask ios build` does on this Mac. It **builds both staticlibs with
     `[profile.ios]` and assembles `target/ios/ObsFFI.xcframework`** (headers dir with
@@ -569,6 +570,9 @@ this in addition to its own lines):
     `-Xcc -fmodule-map-file=target/ios/bindings/ObsFFIFFI.modulemap` (or use
     `target/ios/headers` after `ios build`). `ios bindgen` passes `--no-format` so every host
     writes the same bytes.
+  - **Known limit:** the `ios` commands assume cargo's output is in `target/` and ignore
+    `CARGO_TARGET_DIR` and `build.target-dir`, as `update_e2e.rs` does; with either set,
+    `ios bindgen` and `ios build` fail on a missing file.
   - **Deferred:** `IPHONEOS_DEPLOYMENT_TARGET` is not set (rustc's default minimum applies);
     S06 sets it to the app's minimum if Xcode warns. A debug simulator variant for S06's
     edit-run loop is not built: `--sim-only` uses `[profile.ios]` too. **Later steps

@@ -133,7 +133,7 @@ fn require_sdks(slices: &[Slice], has_sdk: &dyn Fn(&str) -> bool) -> Result<()> 
     bail!(
         "`cargo xtask ios build` needs Xcode: {} failed, so the iOS SDK is missing. Install \
          Xcode with the iOS platform and select it (`sudo xcode-select -s \
-         /Applications/Xcode.app`). `cargo xtask ios check` works without it.",
+         <path to Xcode.app>`). `cargo xtask ios check` works without it.",
         probes.join(" and ")
     )
 }

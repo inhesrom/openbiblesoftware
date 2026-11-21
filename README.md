@@ -296,7 +296,7 @@ images on this page included.
 | L4 | `obs-engine` |
 | L5 | `obs-mobile` (the Mobile app's screen models; no FFI) |
 | L6 | `obs-ui-egui` (the only egui/eframe user) |
-| apps | `openbible` (desktop), `obs-cli`, `obs-ffi` (the Mobile app's UniFFI crate, the only `uniffi` user), `uniffi-bindgen` |
+| apps | `openbible` (desktop), `obs-cli`, `obs-ffi` (the Mobile app's UniFFI crate, the one UniFFI crate Swift links), `uniffi-bindgen` |
 
 A crate may depend only on its own or lower layers. Everything below L6 compiles for
 `wasm32-unknown-unknown`. `obs-` is a working prefix until the product is named.
