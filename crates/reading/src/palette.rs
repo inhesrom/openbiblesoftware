@@ -367,6 +367,26 @@ impl TonePalette {
         ]
         .map(|r| (r, self.color(r)))
     }
+
+    /// This tone as a tile is painted in ([`obs_render::composite`]): the page, and each
+    /// role's ink as [`Self::color`] gives it, all opaque.
+    pub fn role_colours(&self) -> obs_render::RoleColours {
+        let opaque = |c: Rgb| {
+            let [r, g, b] = c.0;
+            [r, g, b, u8::MAX]
+        };
+        let role = |r: ColorRole| opaque(self.color(r));
+        obs_render::RoleColours {
+            background: opaque(self.page),
+            ink: role(ColorRole::Ink),
+            verse_number: role(ColorRole::VerseNumber),
+            link: role(ColorRole::Link),
+            note_marker: role(ColorRole::NoteMarker),
+            accent: role(ColorRole::Accent),
+            words_of_jesus: role(ColorRole::WordsOfJesus),
+            interlinear: role(ColorRole::Interlinear),
+        }
+    }
 }
 
 /// WCAG 2 contrast ratio of two opaque colours (1–21).

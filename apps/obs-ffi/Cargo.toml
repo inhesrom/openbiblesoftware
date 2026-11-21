@@ -18,5 +18,11 @@ obs-mobile.workspace = true
 # Proc-macro mode, no UDL (docs/dev/mobile-core.md). Apps alone may use it (`cargo xtask layers`).
 uniffi.workspace = true
 
+[dev-dependencies]
+obs-engine = { workspace = true, features = ["test-support"] }
+obs-model.workspace = true
+# Writes `target/ios/gen1.png` in the ignored `hello_engine` test.
+png = "0.18"
+
 [lints]
 workspace = true
