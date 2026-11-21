@@ -38,7 +38,7 @@ to Claude Opus 5.5 later on".
 |---|---|---|---|---|---|---|
 | S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | done (PR #359) |
 | S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | done (PR #357) |
-| S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | done (branch mobile/s03-hello-engine, PR pending) |
+| S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | done (PR #360) |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (PR #358) |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
 | S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | todo |
