@@ -36,9 +36,11 @@ impl Drop for Dir {
     }
 }
 
-/// A v12 User database holding a row in every table the user fills, the rows schema 12 had
-/// written as schema 12 wrote them (today's `save_layout`, `add_favorite` and
-/// `add_reading_plan` write columns it did not have).
+/// A v12 User database holding a row in the tables the migration rebuilds or gives ids
+/// (`layout`, `favorite`, `reading_plan`) and in most others the user fills; Annotations, Anchors
+/// and Highlight styles only gain a `clock` column, so they are left out. The rows are written
+/// as schema 12 wrote them (today's `save_layout`, `add_favorite` and `add_reading_plan` write
+/// columns it did not have).
 fn v12_fixture(path: &Path) {
     let (v12, report) = UserStore::open_to(path, 12).unwrap();
     assert_eq!(report.found_version, 0);
@@ -201,9 +203,8 @@ fn migration_13_keeps_every_row_of_a_v12_database_and_copies_it_first() {
             !uids.is_empty() && uids.iter().all(|u| uuid_v7(u)),
             "{uids:?}"
         );
-        let mut distinct = uids.clone();
-        distinct.dedup();
-        assert_eq!(distinct, uids, "{table}");
+        let distinct: std::collections::BTreeSet<&String> = uids.iter().collect();
+        assert_eq!(distinct.len(), uids.len(), "{table}: {uids:?}");
     }
     // A second launch migrates nothing and copies nothing.
     drop(c);

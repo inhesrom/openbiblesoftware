@@ -1360,7 +1360,10 @@ this in addition to its own lines):
   each into per-item rows or give it a per-item merge. **Open question, decide here:** Visual
   filters (`reading.visual_filters`, `_next_id`) are user-made but stay device-only for now,
   because their numeric per-device ids would collide (Layouts switch filters by id); they need
-  ids that are the same on every device before they can sync.
+  ids that are the same on every device before they can sync. **Also from the S27a review:**
+  Preferred order is one value (ADR 0022 rule 3), so make it one `Row` holding the whole list and
+  one clock. `save_preferred_order` replaces its rows, so the per-row `clock` column holds that
+  one clock, and replacing the order writes no tombstones.
 
 #### S28a — Sync 2a (Rust): `SyncFolder`, HLC, op files, device files
 
@@ -1369,6 +1372,10 @@ this in addition to its own lines):
 - **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S27b.
 - **Read first:** ADR 0022 rules 1–2, 5–6; #326 resolution; `docs/research/mobile-folder-sync.md`
   §2 "Platform mechanics" and §4 "Candidate designs"; A8.
+- **Added by the S27a review:** the HLC needs this device's `device` row, but a v13 database
+  or Backup can lack it: `make_device` runs only in migration 12→13, and `check_whole` checks
+  tables, not rows. Add `ensure_device()` at open, the way `ensure_default_notebook` repairs the
+  default Notebook.
 - **Do:** `obs_engine::sync`: `SyncFolder` trait (A8) + `FsSyncFolder` + `MemSyncFolder` (tests);
   HLC (`wall_ms`, `counter`, `device_id`); `sync.json` with a format version;
   `devices/<id>/device.json`; `ops/<seq>.jsonl` writer (temp + rename; trailing length-and-hash
@@ -1408,6 +1415,11 @@ this in addition to its own lines):
 - **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S28b.
 - **Read first:** ADR 0022 rules 5–8 and Consequences ("catch up or replace"); ADR 0013;
   `crates/engine/src/backups.rs` (`restore_preview`, `RestorePreview`, the restore path).
+- **Added by S27a (ADR 0022 rule 7, first clause):** `restore_from` copies a v13 Backup's
+  `device` row as is, so a restored device keeps the Backup's `device_id`. Restoring must give
+  the device a new id. Decide what happens to the restored `applied_up_to` rows (keep them as
+  the restored state's view of the other devices, or clear them so everything replays), and
+  test restoring the device's own older Backup.
 - **Do:** snapshots in Backup format with covered clocks; 90-day trimming of own ops; newer-format
   files left alone + "update the app" state; copied-database detection → new device id; **after a
   Backup restore on a syncing device:** `restore_choice(CatchUp | Replace)` — catch up (default)
