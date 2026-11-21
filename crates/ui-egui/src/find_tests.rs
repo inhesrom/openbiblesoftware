@@ -592,6 +592,14 @@ fn text_comparison_rows_are_found_and_stepped_through() {
     for k in 1..=expected {
         key(&mut h, Key::Enter, Modifiers::NONE);
         assert_eq!(current(&h, cmp), Some(k % expected));
+        // The row stepped to is laid out on the layout workers; a slow machine may draw it
+        // a few frames later (#351's macOS CI).
+        for _ in 0..60 {
+            if filled(&h, h.shell.st.palette.search_hit).len() == 1 {
+                break;
+            }
+            h.paced_frame();
+        }
         let hit = filled(&h, h.shell.st.palette.search_hit);
         let viewport = h.shell.st.tabs[&cmp]
             .comparison
