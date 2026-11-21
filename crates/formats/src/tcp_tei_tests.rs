@@ -221,10 +221,13 @@ fn edwards_sinners_in_the_hands_of_an_angry_god_reads_whole() {
             .availability
             .contains("Creative Commons 0 1.0 Universal")
     );
+    assert_eq!(header.language, "en");
+    assert_eq!(read_tei_header(&xml).unwrap(), header);
+    assert!(read_tei_header("<TEI><text>").is_err());
     let (r, report) = import(&xml);
     assert_eq!(
         r.manifest.title,
-        "Sinners in the hands of an angry God. A sermon preached at Enfield, July 8th 1741. At a time of great awakenings"
+        "Sinners in the hands of an angry God. A sermon"
     );
     let text: String = r
         .units
@@ -282,6 +285,37 @@ fn the_westminster_confession_of_1646_reads_by_chapter() {
     assert_eq!(report.scripture_refs, 0);
     let pages: usize = r.units.iter().map(|u| pages(u).len()).sum();
     assert!(pages >= 50, "{pages}");
+}
+
+/// Several works printed together: `<text><group><text>…</text><text>…</text></group></text>`,
+/// and a group inside a `<front>`; each work's Divisions in turn.
+#[test]
+fn works_printed_together_read_in_turn() {
+    let xml = r#"<TEI><text><front><div type="title_page"><p>Two treatises</p></div>
+        <group><text><body><div type="preface"><p>Inside the front.</p></div></body></text></group>
+        </front><group>
+        <text><body><div type="treatise"><head>The first treatise.</head><p>One.</p></div></body></text>
+        <text><front><div type="title_page"><p>The second</p></div></front>
+          <body><div type="treatise"><head>The second treatise.</head><p>Two.</p></div></body></text>
+        </group></text></TEI>"#;
+    let (r, report) = import(xml);
+    let titles: Vec<&str> = r
+        .units
+        .iter()
+        .filter(|u| u.kind == UnitKind::Division)
+        .map(|u| u.title.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            "Title page",
+            "Preface",
+            "The first treatise.",
+            "Title page",
+            "The second treatise."
+        ]
+    );
+    assert_eq!(report.entries, 5);
 }
 
 #[test]
@@ -344,6 +378,44 @@ fn a_combining_mark_in_its_own_element_composes_with_its_letter() {
     // The italic run ended between the letter and its mark: it takes the composed letter.
     assert_eq!(spans_of(u, |k| *k == SpanKind::Italic), ["wh\u{113}"]);
     assert_eq!(pages(u), [(u.text.len() - 1, "2".to_string())]);
+}
+
+/// TCP titles are whole title pages: cut at the subtitle or the statement of responsibility.
+#[test]
+fn short_titles_cut_where_the_title_page_goes_on() {
+    for (full, short) in [
+        (
+            "The bruised reede, and smoaking flax Some sermons contracted out of the 12. of \
+             Matth. 20. At the desire, and for the good of weaker Christians. By R. Sibbes",
+            "The bruised reede, and smoaking flax Some sermons contracted out of the 12. of \
+             Matth. 20. At the…",
+        ),
+        (
+            "The Churches deliuerance contayning meditations and short notes vppon the booke \
+             of Hester",
+            "The Churches deliuerance",
+        ),
+        (
+            "A treatise of faith and repentance by Francis Fuller",
+            "A treatise of faith and repentance",
+        ),
+        ("Bonifacius. An essay upon the good", "Bonifacius"),
+        (
+            "Joshua redivivus, or, Mr. Rutherfoord's letters",
+            "Joshua redivivus, or, Mr. Rutherfoord's letters",
+        ),
+        (
+            "A letter written by Mr. Cotton",
+            "A letter written by Mr. Cotton",
+        ),
+        (
+            "The mischief of sinne it brings a person low / published by Thomas Watson",
+            "The mischief of sinne it brings a person low",
+        ),
+        ("Grace", "Grace"),
+    ] {
+        assert_eq!(short_title(full), short, "{full:?}");
+    }
 }
 
 #[test]

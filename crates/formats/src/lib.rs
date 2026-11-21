@@ -52,8 +52,8 @@ pub use stepbible::{StepbibleImport, StepbibleOptions, StepbibleText};
 pub use sword::repo as sword_repo;
 pub use sword::{SwordModuleInfo, SwordOptions, SwordSource, import_sword, sword_import_type};
 pub use tcp_tei::{
-    MAX_TEI_BYTES, TCP_TEI_FORMAT, TeiBookOptions, TeiHeader, import_tcp_tei, short_title,
-    tei_header,
+    MAX_TEI_BYTES, TCP_TEI_FORMAT, TeiBookOptions, TeiHeader, import_tcp_tei, read_tei_header,
+    short_title, tei_header,
 };
 pub use theographic::{ERAS, EraBound, EraRule, THEOGRAPHIC_FORMAT, import_theographic_events};
 pub use tipnr::{TIPNR_FORMAT, import_tipnr, tipnr_description_texts};

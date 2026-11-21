@@ -291,6 +291,17 @@ pub struct ResourceListing {
     /// A SWORD module has none: its class comes from its `DistributionLicense`.
     #[serde(default)]
     pub declared_licence_class: Option<LicenceClass>,
+    /// A Book's author ("John Owen"), shown and searched (#345).
+    #[serde(default)]
+    pub author: Option<String>,
+    /// A Book's date as printed ("1668").
+    #[serde(default)]
+    pub date: Option<String>,
+    /// From a generated collection of the Open catalogue (#345: the Text Creation
+    /// Partnership's texts): listed in All, not in the Open catalogue section, which keeps
+    /// the hand-written entries.
+    #[serde(default)]
+    pub collection: bool,
 }
 
 impl ResourceListing {
@@ -340,6 +351,9 @@ impl ResourceListing {
             source: ListingSource::Sword,
             evidence_url: None,
             declared_licence_class: None,
+            author: None,
+            date: None,
+            collection: false,
         })
     }
 
@@ -402,12 +416,14 @@ impl ResourceListing {
         format!("from {}", self.repo)
     }
 
-    /// Whether the listing matches a search box entry (title, abbreviation or module).
+    /// Whether the listing matches a search box entry (title, abbreviation, module, or a
+    /// Book's author).
     pub fn matches(&self, query: &str) -> bool {
         let q = query.trim().to_lowercase();
         q.is_empty()
             || [&self.title, &self.abbreviation, &self.module]
-                .iter()
+                .into_iter()
+                .chain(self.author.as_ref())
                 .any(|f| f.to_lowercase().contains(&q))
     }
 }
@@ -756,7 +772,8 @@ struct AllCache {
 #[derive(Debug)]
 struct IndexedRow {
     row: AllRow,
-    lower: [String; 3],
+    /// Title, abbreviation, module and a Book's author, lowercased, for the search.
+    lower: [String; 4],
     licence: LicenceClass,
     /// The row's [`LanguageName::key`], for the language filter.
     language: String,
@@ -854,9 +871,11 @@ impl GetBibles {
         if filter == ResourceFilter::All {
             out.retain(|(_, rows)| !rows.is_empty());
         }
+        // A generated collection's thousands of rows are in All, where the search finds them.
         let open: Vec<&ResourceListing> = self
             .open_listings()
             .iter()
+            .filter(|b| !b.collection)
             .filter(|b| filter.accepts(b) && licence.accepts(b.licence_class()))
             .collect();
         if !open.is_empty() {
@@ -950,7 +969,13 @@ impl GetBibles {
         rows.into_iter()
             .map(|(row, b)| IndexedRow {
                 row,
-                lower: [&b.title, &b.abbreviation, &b.module].map(|f| f.to_lowercase()),
+                lower: [
+                    b.title.as_str(),
+                    &b.abbreviation,
+                    &b.module,
+                    b.author.as_deref().unwrap_or_default(),
+                ]
+                .map(str::to_lowercase),
                 licence: b.licence_class(),
                 language: language_key(&b.language),
             })
@@ -1807,7 +1832,8 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
                "language": b.language, "language_name": language(&b.language).label(),
                "size": b.size, "licence": b.licence,
                "licence_class": b.licence_class(), "source": source,
-               "evidence_url": b.evidence_url,
+               "evidence_url": b.evidence_url, "author": b.author, "date": b.date,
+               "collection": b.collection,
                "version": b.version, "tags": b.tags(), "used_by": b.used_by(),
                "refused": b.refused, "update": update})
     };

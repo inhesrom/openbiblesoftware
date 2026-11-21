@@ -203,12 +203,16 @@ fn the_open_catalogue_is_its_own_section_and_lists_offline() {
     assert!(s.get_bibles.catalog().is_none());
     let out = s.run("getbibles.list", &json!({})).unwrap();
     let open = modules(&out["open"]);
-    assert_eq!(open.len(), crate::open_catalogue::open_sources().len());
+    // The section has the hand-written entries; All has a source collection's too (ADR 0024).
+    let sources = crate::open_catalogue::open_sources();
+    let hand_written = sources.iter().filter(|o| !o.collection).count();
+    assert_eq!(open.len(), hand_written);
     assert!(open.contains(&"ylt".to_string()));
     assert_eq!(out["open"][0]["source"], "open");
     assert_eq!(out["open"][0]["licence_class"], "free-to-share");
     assert!(out["open"][0]["evidence_url"].as_str().is_some());
-    assert_eq!(modules(&out["all"]).len(), open.len());
+    assert_eq!(modules(&out["all"]).len(), sources.len());
+    assert!(hand_written < sources.len(), "the TCP collection");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -517,4 +521,68 @@ fn a_tcp_book_downloads_by_its_pin_and_imports_as_a_book() {
     assert!(s.library.get(&id).is_none());
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// #345, ADR 0024: the TCP collection's thousands of Books are in All Books, where a search by
+/// author or title finds them; the Open catalogue section keeps the ten hand-written ones.
+/// Each row shows its author and date.
+#[test]
+fn the_tcp_collection_is_searched_in_all_books_by_author_or_title() {
+    let s = Session::new(JobMode::Inline);
+    let books = ResourceFilter::Type(ResourceType::Book);
+    let gb = &s.get_bibles;
+    let sections = gb.sections(books, LicenceFilter::FreeToShare);
+    let (title, rows) = sections.last().unwrap();
+    assert_eq!(title, "Open catalogue");
+    assert_eq!(rows.len(), 10);
+    assert!(rows.iter().all(|r| !r.collection && r.author.is_some()));
+
+    let all = gb.all_listings("", None, books, LicenceFilter::FreeToShare);
+    assert!(all.len() > 2000, "{}", all.len());
+    assert!(all.iter().all(|r| r.kind == ResourceType::Book));
+
+    // By author, as the heading is shown ("Manton, Thomas, 1620-1677." → "Thomas Manton").
+    let manton = gb.all_listings("thomas manton", None, books, LicenceFilter::FreeToShare);
+    assert!(!manton.is_empty());
+    let by_manton: Vec<_> = manton
+        .iter()
+        .filter(|r| r.author.as_deref() == Some("Thomas Manton"))
+        .collect();
+    // Found by the author alone: titles that do not name him.
+    assert!(
+        by_manton
+            .iter()
+            .any(|r| !r.title.to_lowercase().contains("manton")),
+        "{by_manton:?}"
+    );
+    for r in &manton {
+        assert!(r.collection);
+        let author = r.author.as_deref().unwrap_or_default();
+        assert!(
+            format!("{author} {}", r.title)
+                .to_lowercase()
+                .contains("thomas manton"),
+            "{r:?}"
+        );
+        assert!(
+            r.date.as_deref().is_some_and(|d| d.len() >= 4),
+            "{:?}",
+            r.date
+        );
+        assert_eq!(r.licence_class(), LicenceClass::FreeToShare);
+    }
+    // By title.
+    let doom = gb.all_listings("the day of doom", None, books, LicenceFilter::All);
+    assert!(
+        doom.iter().any(|r| r.title == "The day of doom"),
+        "{doom:?}"
+    );
+    // The collection is offered under Bibles nowhere.
+    let bibles = gb.all_listings(
+        "thomas manton",
+        None,
+        ResourceFilter::Type(ResourceType::Bible),
+        LicenceFilter::All,
+    );
+    assert!(bibles.is_empty());
 }

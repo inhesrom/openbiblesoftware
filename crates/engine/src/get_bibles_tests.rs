@@ -50,6 +50,9 @@ fn listing(module: &str, repo: &str) -> ResourceListing {
         source: ListingSource::Sword,
         evidence_url: None,
         declared_licence_class: None,
+        author: None,
+        date: None,
+        collection: false,
     }
 }
 

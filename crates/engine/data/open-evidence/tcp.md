@@ -1,5 +1,9 @@
 # Evidence: Text Creation Partnership texts (`tcp-*`)
 
+This file is the licence evidence for every Text Creation Partnership (TCP) text in the Open
+catalogue: the ten hand-written entries of `open-catalogue.toml` (table below) and every row of
+the TCP source collection, `data/collections/tcp-books.tsv` (ADR 0024).
+
 - **Editions offered:** ten TEI texts keyboarded and encoded by the Text Creation Partnership
   (TCP) from early printed books: nine from EEBO-TCP (Early English Books Online), one from
   Evans-TCP (Evans Early American Imprints). The table below lists them.
@@ -30,12 +34,14 @@ on 1 August 2020. Each of those two files carries the Phase II waiver below.
 
 ## Licence
 
-Each file states its own licence in its TEI header (`<availability>`). The Phase I texts and the
-Evans text say:
+Each file states its own licence in its TEI header (`<availability>`). Each statement has a
+code, which `tcp-books.tsv` records for each text (`obs_engine::open_catalogue::TCP_CC0_STATEMENTS`
+holds them, whitespace collapsed as the check reads them). The Phase I texts and the
+Evans texts say (`cc0-phase1`):
 
 > This keyboarded and encoded edition of the work described above is co-owned by the institutions providing financial support to the Early English Books Online Text Creation Partnership. This Phase I text is available for reuse, according to the terms of Creative Commons 0 1.0 Universal . The text can be copied, modified, distributed and performed, even for commercial purposes, all without asking permission.
 
-The Phase II texts say:
+The Phase II texts say (`cc0-waiver`):
 
 > To the extent possible under law, the Text Creation Partnership has waived all copyright and related or neighboring rights to this keyboarded and encoded edition of the work described above, according to the terms of the CC0 1.0 Public Domain Dedication (http://creativecommons.org/publicdomain/zero/1.0/). This waiver does not extend to any page images or other supplementary files associated with this work, which may be protected by copyright or other license restrictions. Please go to https://www.textcreationpartnership.org/ for more information about the project.
 
@@ -45,7 +51,22 @@ The waiver covers TCP's keyboarded and encoded edition; the works themselves wer
 between 1630 and 1741 and are in the public domain. The page images, which are not TCP's, are
 not used.
 
-## Texts
+## The TCP collection (`tcp-books.tsv`)
+
+`cargo xtask tcp-books` writes one row per text: its TCP id, the commit of its repository
+(`https://github.com/textcreationpartnership/<id>`), the sha256 and size of `<id>.xml` at that
+commit, and what its header says (language, date, author, title), with the code of its
+statement. A text is added only when its `<availability>` is, whitespace aside, exactly one of
+the two statements above, and it imports as a Book. Any other statement, or none, leaves it out.
+Each row becomes an entry downloading
+`https://raw.githubusercontent.com/textcreationpartnership/<id>/<commit>/<id>.xml`, refused
+unless its sha256 matches. The rows are the per-text record; this file is the evidence for all
+of them, and its archived FAQ capture is every row's `evidence_url`.
+
+TCP's catalogue status ("Free" or "Restricted") is not read: "Restricted" marks the Phase II
+texts withheld until 1 August 2020, and every one of them now carries the waiver.
+
+## Hand-written entries
 
 | Entry | Title | TCP id | Download | Bytes | sha256 | Licence in the file |
 |---|---|---|---|---|---|---|

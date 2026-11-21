@@ -648,6 +648,9 @@ pub(crate) fn catalog(fetched_at: u64) -> ResourceCatalog {
                 source: ListingSource::Sword,
                 evidence_url: None,
                 declared_licence_class: None,
+                author: None,
+                date: None,
+                collection: false,
             }
         })
         .collect();

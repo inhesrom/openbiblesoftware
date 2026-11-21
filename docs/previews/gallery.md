@@ -230,6 +230,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Get Resources: Books, Light](gallery/get-resources-books-light-1x.png) | ![Get Resources: Books, Dark](gallery/get-resources-books-dark-1x.png) | ![Get Resources: Books, Sepia](gallery/get-resources-books-sepia-1x.png) |
 | [2×](gallery/get-resources-books-light-2x.png) | [2×](gallery/get-resources-books-dark-2x.png) | [2×](gallery/get-resources-books-sepia-2x.png) |
 
+### Get Resources: Books by an author
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Books by an author, Light](gallery/get-resources-books-by-an-author-light-1x.png) | ![Get Resources: Books by an author, Dark](gallery/get-resources-books-by-an-author-dark-1x.png) | ![Get Resources: Books by an author, Sepia](gallery/get-resources-books-by-an-author-sepia-1x.png) |
+| [2×](gallery/get-resources-books-by-an-author-light-2x.png) | [2×](gallery/get-resources-books-by-an-author-dark-2x.png) | [2×](gallery/get-resources-books-by-an-author-sepia-2x.png) |
+
 ### Get Resources: rows beside the scroll bar
 
 | Light | Dark | Sepia |

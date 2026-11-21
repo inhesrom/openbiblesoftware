@@ -402,9 +402,10 @@ impl State {
                         )
                     } else if f == ResourceFilter::Type(obs_model::ResourceType::Book) {
                         chip.on_hover_text(
-                            "Sermons, treatises and confessions of the 1600s and 1700s, as \
+                            "Sermons, treatises and confessions of the 1500s to 1700s, as \
                                  the Text Creation Partnership keyed them from the first \
-                                 printings, in their own spelling. Free to share.",
+                                 printings, in their own spelling. Search by title or author. \
+                                 Free to share.",
                         )
                     } else {
                         chip
@@ -434,10 +435,10 @@ impl State {
             ui.horizontal_wrapped(|ui| {
                 ui.add(crate::components::search_field(
                     &mut filter.query,
-                    "Search by name or abbreviation",
+                    "Search by name, author or abbreviation",
                     search_width,
                 ))
-                .accessible_name("Search by name or abbreviation");
+                .accessible_name("Search by name, author or abbreviation");
                 language_filter(ui, filter, &|| gb.languages(shown_filter, shown_licence));
                 if !gb.is_refreshing()
                     && ui
@@ -451,11 +452,14 @@ impl State {
             ui.add_space(space::S);
 
             // The filter's Featured sections (with All, empty ones are left out), then the
-            // Open catalogue.
+            // Open catalogue. While a search is typed they step aside, so what it finds is
+            // first (#345: thousands of Books are found only by the search).
             let mut items: Vec<Item> = Vec::new();
-            for (title, rows) in gb.sections(shown_filter, shown_licence) {
-                items.push(Item::Header(title, rows.len()));
-                items.extend(rows.into_iter().map(Item::Listing));
+            if filter.query.trim().is_empty() {
+                for (title, rows) in gb.sections(shown_filter, shown_licence) {
+                    items.push(Item::Header(title, rows.len()));
+                    items.extend(rows.into_iter().map(Item::Listing));
+                }
             }
             let all = gb.all_listings(
                 &filter.query,
@@ -720,13 +724,18 @@ fn listing_row(
                     ui.label(RichText::new(tag).small().strong().color(theme::c().lapis))
                         .on_hover_text(tag_hover(tag));
                 }
-                // Type, abbreviation, language (its code on hover), size, repository.
+                // Type, abbreviation (a Book: its author and date), language (its code on
+                // hover), size, repository.
                 let fact = |t: String| crate::components::hint_text(t);
                 let mut before = Vec::new();
                 if show_type {
                     before.push(type_singular(b.kind).to_string());
                 }
-                before.push(b.abbreviation.clone());
+                if b.author.is_some() || b.date.is_some() {
+                    before.extend(b.author.iter().chain(&b.date).cloned());
+                } else {
+                    before.push(b.abbreviation.clone());
+                }
                 let mut after = Vec::new();
                 if let Some(size) = b.size {
                     after.push(megabytes(size));

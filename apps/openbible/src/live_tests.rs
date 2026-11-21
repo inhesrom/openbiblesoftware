@@ -364,7 +364,28 @@ fn live_every_featured_hebrew_and_greek_bible_downloads_and_imports_with_its_tag
 fn live_every_open_catalogue_entry_downloads_checks_and_imports() {
     let root = temp("open-catalogue");
     let mut s = session(&root);
-    let sources = s.get_bibles.open_sources().to_vec();
+    // Every hand-written entry, and every 100th row of a source collection (ADR 0024; all of
+    // them with OBS_LIVE_ALL_COLLECTIONS=1).
+    let every = if std::env::var_os("OBS_LIVE_ALL_COLLECTIONS").is_some() {
+        1
+    } else {
+        100
+    };
+    let sources: Vec<_> = s
+        .get_bibles
+        .open_sources()
+        .iter()
+        .filter(|o| !o.collection)
+        .cloned()
+        .chain(
+            s.get_bibles
+                .open_sources()
+                .iter()
+                .filter(|o| o.collection)
+                .step_by(every)
+                .cloned(),
+        )
+        .collect();
     assert!(!sources.is_empty());
     let mut failed = Vec::new();
     for source in &sources {
