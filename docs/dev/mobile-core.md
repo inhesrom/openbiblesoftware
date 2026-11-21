@@ -9,7 +9,7 @@ the "Hello engine" spike of S03. S13 replaces the spike and fills in the screens
 ## Contract
 
 - **`obs-mobile`** (`crates/mobile`, L5). The Mobile app's screen models and actions as plain
-  Rust types. It depends on `obs-engine`, `obs-model`, `obs-reading`, `obs-render`,
+  Rust types. It depends on `obs-engine`, `obs-layout`, `obs-model`, `obs-reading`, `obs-render`,
   `obs-scripture` and `obs-store`. It has no FFI crate (`cargo xtask layers`), compiles for
   wasm32 (`cargo xtask wasm`; `boot` and `open_reader` read files and are native only), keeps
   `unsafe_code = "forbid"`, and is tested by `cargo xtask test` on every CI OS. Today it holds `Paths` (the folders the shell
@@ -116,6 +116,21 @@ it is under the ignored `/target`.
     does), because plan A7 has the shell pass all six `Paths`. It is file naming, on A10's
     list: accepted for the S03 spike surface only. It moves in S13: the designed surface takes one
     root folder and `obs-mobile` names the rest.
+  - From S07 (the text view prototype, `docs/dev/mobile-text-view.md`): the scroll view
+    clamps its offset to the page before sending it (rubber-banding stays UIKit's) and moves
+    to the position the core reports; a missing tile in view is drawn at once and the others
+    on a serial queue; tiles are shown 1:1 (`contentsGravity .topLeft`, pixel size ÷ scale);
+    the page colour, Page tone and Bible choices, labels, location, sheet text and counts are
+    the core's; `UITextGranularity` is renamed 1:1 to the core's `TextUnitKind` (the core
+    decides a word is a word and a sentence, line or paragraph a Verse); left and up mean a
+    negative offset in `position(from:in:offset:)` (UIKit's protocol); a tap clears a
+    selection before asking the core what it opens; `.header` when the core marks a heading;
+    the system's dark appearance and content size category are passed to the core, which
+    resolves Auto and the Text size; Return in the reference field means Go; 44 pt hit areas
+    and HIG spacing; and, as a test harness only, debug launch arguments, the
+    `OBS_STUDY_SET_DIR` variable (Debug builds), the fling bench stopping when the core's
+    location label starts with the book it was given, and frame-drop counting from
+    `CADisplayLink`.
 - **Tests.** CI-run, over `obs_engine::testing` fixtures: `obs-render` `composite::tests`
   (a known glyph's pixels are its atlas coverage in the ink, nothing outside it; each role's
   colour; premultiplied; clipping and tiles lower down; tiles at fractional offsets stack

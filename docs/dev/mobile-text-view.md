@@ -107,4 +107,118 @@ container.
 
 ## Evidence
 
-See the measurements table below; filled in from the runs listed there.
+Measured on 2026-11-21 on the owner's Mac (Apple M6, 16 GB, macOS 27.0.1, Xcode 27.2), iPhone 17
+simulator (iOS 27.2, 3×, 60 Hz display link), the BSB from the Bundled set. Simulator numbers
+are indicative only; S08 judges on the device.
+
+| Go criterion (plan S07) | Simulator result | Met |
+|---|---|---|
+| Fling through Genesis–Exodus with ≤ 1 % dropped frames | 0 % at 8000 pt/s (2828 frames, 47 s) and at 16000 pt/s (1414 frames, 23 s), Release; 0 % at 8000 pt/s in Debug | yes |
+| A tile composites in ≤ 4 ms at 3× | Rust's time per tile (one band, up to 1170 × 768 px): p50 0.17–0.3 ms, p95 0.45–1.1 ms, max 0.65–5.4 ms over about 2780 tiles a run | yes (p95) |
+| Cold start to first text ≤ 1.5 s | Release 1.53–1.95 s over 8 launches (1.53, 1.60, 1.61, 1.64, 1.66, 1.67, 1.75, 1.95); Debug about 3.0 s | **no** |
+| Selection handles, loupe and the system edit menu on long-press | the long-press selects the word with both handles and the edit menu's Copy (`testPrototypeSmoke`, `s07-selection.png`); the loupe shows only while a handle is dragged, which XCUITest cannot hold, so S08 checks it | yes (loupe: S08) |
+| One accessibility element per Verse, labelled with its reference and text, in reading order; `performAccessibilityAudit()` passes | `testPrototypeSmoke` (Genesis 1:1… in order, one each) and `testAccessibilityAudit` pass | yes |
+| Typed "Jn 3:16" navigates | `testPrototypeSmoke` | yes |
+| A tap on a word opens the stub sheet with the Verse reference and its cross-reference count; with the Study set override, a Strong's number | "John 3:16 (BSB)", "23 cross-references" (`s07-sheet.png`); KJV with Strong's: "loved", G25, ἀγαπάω (`testATaggedWordShowsItsStrongsNumber`, `s07-sheet-strongs.png`) | yes |
+| RTL Hebrew paragraph renders right-aligned | the TAHOT, Genesis 1 (`s07-hebrew.png`) | yes |
+
+More measurements:
+
+- **The faster fling.** At 30000 pt/s (500 pt a frame, beyond what a finger gives) 33 % of
+  frames drop: the tile queue falls behind and tiles in view are drawn on the main thread.
+- **Swift's side of a tile:** 3.6–5 ms p50, 8–12 ms p95 (FFI call, image, preparation for
+  display), the same in Debug and Release. Most of it is UniFFI 0.32 lowering `Vec<u8>` one
+  byte at a time (`uniffi_core` `Lower for Vec<T>` writes each item), about 3.5 MB a tile.
+  Before the tile queue took the tiles drawn ahead off the main thread, 8000 pt/s dropped
+  3.0 % (Release) and 4.2 % (Debug) of frames.
+- **A frame:** `reader_frame` 26–65 µs p50, under 0.2 ms p95, on the main thread.
+- **Cold start, in parts (Release):** process start → SwiftUI's `start()` 0.22–0.48 s; `boot`
+  about 1.25–1.4 s; first tiles 60–90 ms later. On the host (release), `boot` is 0.73 s: opening
+  the whole BSB (`ReadingDoc::open`) about 0.45 s and the reading view's height estimate of
+  every block (`ReadingView::new`) about 0.28 s; the rest under 60 ms.
+- **Memory footprint:** 72–76 MB after launch, 99–109 MB after the Genesis–Exodus fling.
+- **Size:** `libobs_ffi.a` 27.4 MB (simulator) and 27.4 MB (device), against the 40 MB stop
+  line. The Release device app (`OpenBible.app`, unsigned) is 59 MB, of which 43.1 MB is the
+  Bundled set and 18.9 MB the executable.
+- **Cost:** about 1,000 lines of Swift for the prototype (`ResourceTextView.swift` 381,
+  `TextCanvasView.swift` 283, `ReaderModel.swift` 253, `ReaderScreen.swift` 171; the S06 hello
+  screen is the rest), 107 lines of UI tests; 1,275 lines of Rust in `text_view.rs` (half of
+  it tests) and the FFI mirror.
+- **Option A (Metal in Swift)** was not built: B met the frame budget.
+
+The bench in Release, from the repository root, after `cargo xtask ios build --sim-only` and
+`xcodegen generate` in `apps/ios`:
+
+```sh
+cd apps/ios && xcodebuild build -scheme OpenBible -configuration Release \
+  -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath ../../target/ios/xcode
+SIMCTL=/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl
+$SIMCTL boot 'iPhone 17'
+$SIMCTL install booted ../../target/ios/xcode/Build/Products/Release-iphonesimulator/OpenBible.app
+$SIMCTL launch booted io.github.inhesrom.openbible.dev -OBSBenchUntil Leviticus -OBSBenchSpeed 16000
+# about a minute later:
+cat "$($SIMCTL get_app_container booted io.github.inhesrom.openbible.dev data)/Documents/s07-bench.txt"
+$SIMCTL shutdown all
+```
+
+The UI tests (`OBS_STUDY_SET_DIR` makes the Strong's test run instead of skipping):
+
+```sh
+cd apps/ios && TEST_RUNNER_OBS_STUDY_SET_DIR="$PWD/../../dist/starter" xcodebuild test \
+  -scheme OpenBible -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -derivedDataPath ../../target/ios/xcode
+```
+
+Previews (`docs/previews/ios/`): `s07-light.png` (Paper, Genesis 1), `s07-dark.png` (the
+simulator in dark appearance, Auto → Dark), `s07-sepia.png` (`-OBSPageTone sepia`),
+`s07-hebrew.png` (the TAHOT through the Study set override), `s07-selection.png`,
+`s07-sheet.png`, `s07-sheet-strongs.png`.
+
+## Known rough edges (prototype)
+
+- A selection handle at the very top of the text view sits under the header and is cut off.
+- Opening another Bible reads the whole Resource on the main thread (about a second for a
+  Bible), so the screen stops meanwhile.
+- After blocks above the view are laid out at a new height, the selection's rectangles are a
+  few points off until the selection changes; the selection is not redrawn on scroll
+  corrections.
+- No rotor "Verses" yet, and no accessibility scroll; VoiceOver moves through the Verses laid
+  out around the view.
+- The Page tone is kept for the run only.
+
+## S08: the owner's test on a real iPhone
+
+Before: S05's leftovers (an Apple ID in Xcode → Settings → Accounts, the iPhone in Developer
+Mode and trusting this Mac). Then, from the repository root:
+
+1. `cargo xtask ios bundled-set` (once) and `cargo xtask ios build` (both slices; about 2 min
+   the first time), then `cd apps/ios && xcodegen generate && open OpenBible.xcodeproj`.
+2. In Xcode: the `OpenBible` target → Signing & Capabilities → Team: your Personal Team. Keep
+   the bundle id `io.github.inhesrom.openbible.dev`. Choose the iPhone as the run destination
+   and press Run (the scheme runs **Release**, so this is the build that is measured). If the
+   build stops with "the Rust core changed after Xcode had read it; build again", press Run
+   again. On the phone, trust the developer (Settings → General → VPN & Device Management)
+   and launch again.
+3. **Feel.** Fling through Genesis into Exodus, fast and slow; flick to stop; rubber-band at
+   the top. Note any blank band, hitch or jump of the text. In the Aa menu (Reading options), turn on
+   **Show measurements**: after a fling the strip shows frames dropped and tile times.
+4. **Input.** Long-press a word: it is selected, with handles; drag a handle (the loupe);
+   Copy and paste the result into Notes (it ends with the reference, "John 3:16 (BSB)"). Tap
+   the text to clear the selection. Type `Jn 3:16` in the field and press Go; try `Ps 23`,
+   `Rev 22:21`, a typo. Open the grid button, pick a book and chapter.
+5. **Study sheet stub.** Tap a word: the sheet names the Verse and its cross-reference count.
+   (No Strong's number on the phone: the Study set is not on it until S24's downloads; the
+   simulator showed it through the Debug-only override.)
+6. **Accessibility.** Turn on VoiceOver: swipe through Genesis 1; each Verse is read as its
+   reference then its text, headings as headings. Settings → Accessibility → Display & Text
+   Size → Larger Text at the largest accessibility size: the text grows (40 pt) and stays on
+   the same Verse. Dark Mode: the page goes dark. Menu → Page tone: Paper, Sepia, Dark.
+7. **Performance.** Read for ten minutes, scrolling now and then: is the phone warm?
+8. **Fling bench (optional).** In Xcode, Product → Scheme → Edit Scheme → Run → Arguments,
+   add `-OBSBenchUntil Leviticus` and `-OBSBenchSpeed 8000`, Run: the app scrolls Genesis and
+   Exodus on its own and shows the result at the bottom; read it off the screen. Remove the
+   arguments afterwards.
+9. **Cost.** Read the Evidence above (the measurements, the Swift line count).
+
+Write the verdict (go or no-go, B or A, the Android half of #331, and performance notes) as a
+comment on the S07 PR or a note the S09 executor can quote.
