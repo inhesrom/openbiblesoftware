@@ -523,6 +523,13 @@ impl Shell {
         self.st.rich_clipboard = Some(clipboard);
     }
 
+    /// PROTOTYPE (GPUI comparison bench, `crate::proto_bench`): a Tab's reading pane as last
+    /// drawn, `[left, top, right, bottom]`; None before its view exists.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn proto_view_rect(&self, tab: TabId) -> Option<[f32; 4]> {
+        self.st.tabs.get(&tab)?.view.as_ref().map(|v| v.pane_rect)
+    }
+
     /// Run a command and apply what it changed. Failures become a toast.
     pub fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
         let out = self.st.run(id, params);

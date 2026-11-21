@@ -1,0 +1,30 @@
+# PROTOTYPE — throwaway GPUI shell to compare with the egui app. Not a workspace member;
+# lives only on the `prototype-gpui-instead-of-egui` branch. Wipe me.
+[package]
+name = "obs-prototype-gpui-shell"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Empty table: keep this crate out of the repository's Cargo workspace (own Cargo.lock).
+[workspace]
+
+[dependencies]
+gpui = "0.2.2"
+env_logger = "0.11"
+# The app's own crates (egui-free), read-only access to the library.
+obs-store = { path = "../../crates/store" }
+obs-model = { path = "../../crates/model" }
+obs-scripture = { path = "../../crates/scripture" }
+obs-layout = { path = "../../crates/layout" }
+obs-fonts = { path = "../../crates/fonts" }
+# egui's default interface font (Ubuntu Light), so the chrome looks like the egui app's.
+epaint_default_fonts = "0.37"
+serde_json = "1"
+# Xvfb wake-up (see `x11_poke`); the version gpui already uses.
+x11rb = "0.13"
+
+# PROTOTYPE hack: xattr 0.2.3 (via gpui's http client) uses libc::ENOATTR, which current libc
+# dropped on Linux. Same value as ENODATA.
+[patch.crates-io]
+xattr = { path = "patches/xattr-0.2.3" }

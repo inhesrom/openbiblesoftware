@@ -253,6 +253,41 @@ fn start_diagnostics() {
     }
 }
 
+/// PROTOTYPE: run `obs_ui_egui::proto_bench` in a window the scenario's size.
+fn proto_bench(started: std::time::Instant, path: &str) -> ExitCode {
+    use obs_ui_egui::proto_bench::{ProtoBench, load_scenario};
+    let scenario = match load_scenario(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("bench: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let out = std::env::var("OBS_PROTO_BENCH_OUT").unwrap_or_else(|_| "egui-bench.json".into());
+    let hz = std::env::var("OBS_PROTO_HZ")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60.0);
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_title(obs_ui_egui::APP_TITLE)
+            .with_inner_size(scenario.window)
+            .with_position([0.0, 0.0]),
+        ..Default::default()
+    };
+    match eframe::run_native(
+        obs_ui_egui::APP_TITLE,
+        options,
+        Box::new(move |_cc| Ok(Box::new(ProtoBench::new(started, scenario, out, hz)))),
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("openbible: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn main() -> ExitCode {
     // Cold start is measured from here (the scale scenario, #227).
     let started = std::time::Instant::now();
@@ -271,6 +306,11 @@ fn main() -> ExitCode {
         // The folders come from the environment; the folder argument checks it.
         let root = args.get(1).map(String::as_str).unwrap_or_default();
         return bench_scale_child(started, mode, root, args.get(2..).unwrap_or_default());
+    }
+    // PROTOTYPE (GPUI comparison, throwaway branch): the windowed scenario of
+    // prototype/gpui-shell, run here; inert unless OBS_PROTO_BENCH is set.
+    if let Ok(path) = std::env::var("OBS_PROTO_BENCH") {
+        return proto_bench(started, &path);
     }
     start_diagnostics();
     let options = eframe::NativeOptions {

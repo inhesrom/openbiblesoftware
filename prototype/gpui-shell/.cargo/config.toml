@@ -1,0 +1,3 @@
+# PROTOTYPE: lets gpui build on a Linux box with only runtime libs (no -dev packages).
+[env]
+RUST_FONTCONFIG_DLOPEN = "1"

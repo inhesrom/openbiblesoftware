@@ -19,6 +19,9 @@ mod motion;
 mod note_margin;
 mod palette;
 mod pane;
+/// PROTOTYPE: the GPUI comparison bench (`OBS_PROTO_BENCH`); throwaway branch only.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod proto_bench;
 mod rich_clipboard;
 pub mod search_view;
 mod selection;
