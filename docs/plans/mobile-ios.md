@@ -1569,8 +1569,9 @@ under the half they belong to.
   clash 1,793; default Notebooks demoted 14,971. Store `sync_clock_db.rs` (+2: migration 15
   columns round-trip through a Backup; a v14 Backup restores with positions at their index and
   tombstones covering their own clock); `synced_writes_db.rs` (tombstone kept for good).
-  Measured: `cargo test -p obs-store` 155 passed; `cargo test -p obs-engine sync` 32 passed,
-  1 ignored; with `--include-ignored` 33 passed. **Not done (S28b-2):** Note-text Sync
+  Measured: `cargo xtask ci` green (11 m 32 s, 2,384 tests passed, 43 ignored);
+  `cargo test -p obs-store` 155 passed; `cargo test -p obs-engine sync` 32 passed, 1 ignored;
+  with `--include-ignored` 33 passed. **Not done (S28b-2):** Note-text Sync
   conflicts (here the later edit wins), deleted parents, list items of one name, a list's whole
   value; the generator never deletes a Notebook or plan that can hold rows. S28c's entry gained
   an "Added by S28b-1" bullet and now depends on S28b-2.
