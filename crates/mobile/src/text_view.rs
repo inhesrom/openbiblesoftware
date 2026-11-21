@@ -1038,9 +1038,6 @@ mod tests {
         assert!(first.y <= f.position, "tiles start at or above the view");
         assert!(last.y + f64::from(last.height) >= f.position + 1400.0);
         assert!(f.tiles.iter().all(|t| t.height > 0.0 && t.height <= BAND));
-        // At the very top, over the book's first heading, the location is its first Verse.
-        let top = app.open_reader("bsb", None).unwrap();
-        assert_eq!(frame(&mut app, top, 0.0).location, "John 1:1");
         for pair in f.tiles.windows(2) {
             assert!(pair[0].y <= pair[1].y, "top first");
         }
@@ -1048,6 +1045,11 @@ mod tests {
         let t = app.reader_tile(r, first.key, 3.0).unwrap().unwrap();
         assert_eq!(t.tile.width, 1170);
         assert_eq!(t.tile.height, (first.height * 3.0).round() as u32);
+        // At the very top, over the excerpt's first heading (Isaiah 40 comes before John 1),
+        // the location is the first Verse below it.
+        let top = app.open_reader("bsb", None).unwrap();
+        assert_eq!(app.readers[top.0 as usize].current_location(), None, "over a heading");
+        assert_eq!(frame(&mut app, top, 0.0).location, "Isaiah 40:1");
     }
 
     #[test]
