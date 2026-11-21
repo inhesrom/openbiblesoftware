@@ -38,7 +38,7 @@ to Claude Opus 5.5 later on".
 |---|---|---|---|---|---|---|
 | S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | done (PR #359) |
 | S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | done (PR #357) |
-| S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | todo |
+| S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | done (branch mobile/s03-hello-engine, PR pending) |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (PR #358) |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
 | S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | todo |
@@ -665,6 +665,64 @@ this in addition to its own lines):
   `cargo test -p obs-ffi --test hello_engine -- --ignored`; `cargo xtask ios smoke`.
 - **Stop-and-ask:** compositing a full-width 3× tile takes > 8 ms on the host (then B is in doubt;
   note it for S07 and continue); `swiftc` from the CLT cannot import the generated module.
+- **Outcome (2026-11-21, branch `mobile/s03-hello-engine`):**
+  - **Shipped:** `obs_render::{composite, composite_over, tile_size, RoleColours}`
+    (`crates/render/src/composite.rs`: RGBA8 premultiplied, background fill then each quad
+    in its role's colour with atlas coverage as alpha, source over; quads that do not sample
+    the atlas are skipped, so no index can panic); `obs_reading::tile` (`compose_tile`,
+    `Tile`, `text_column`: lays out the band a tile shows, places glyphs with `quads_from`
+    and starts the atlas over between parts as the desktop pane does, text column centred
+    between `view::MARGIN`s with no scrollbar) and `TonePalette::role_colours`; `obs-mobile`
+    now depends on `obs-reading`, `obs-render`, `obs-store` (and `obs-model`,
+    `obs-scripture`) and has `MobileApp::boot(paths, bundle)` (folders, `Session` with
+    `JobMode::default_for_host()`, scan, Search index/alias/log folders, `user.db`,
+    `sync_starter_library`, first Bible in Preferred order as reader 0; native only),
+    `open_reader(resource_id, reference)`, `layout_tile(reader, top, width, height, scale)`,
+    `problems`, `resource_ids`, `reader_resource`, `MobileError`, `ReaderId`; `obs-ffi`
+    mirrors them (Object `MobileApp` over a `Mutex`, Records `Paths`/`Tile`, Error
+    `MobileError.Failed { message }`). Every spike item is `#[doc(hidden)]` and marked
+    `S03 spike`. `apps/obs-ffi/swift-smoke/main.swift` and `cargo xtask ios smoke
+    [--bundle DIR]`; Contract, Commands and Evidence in `docs/dev/mobile-core.md`; `tile` row
+    in `docs/dev/reading-core.md`.
+  - **Tests:** CI-run over `obs_engine::testing` fixtures (`bsb_john_1`, `tahot`): 6 in
+    `obs-render` (a known glyph's pixels equal its atlas coverage in the ink and nothing
+    outside it; role colours; premultiplied; clipping; a wrong-length buffer), 3 in
+    `obs-reading` (a 1170 × 768 tile: margins page-coloured, ink in the column, Paper and
+    Dark; two half tiles equal the whole), 4 in `obs-mobile` (boot over a fixture Bundled set
+    and again; readers; refusals; boot with nothing), 1 in `apps/obs-ffi/tests/hello_engine.rs`
+    (the same through the FFI), 3 in xtask (`smoke` options, its pass check, the missing
+    Bundled set message). `#[ignore]`d: `hello_engine::genesis_1_in_the_bsb_at_3x_from_the_real_bundled_set`
+    (`apps/ios/Bundled/starter`, else `dist/starter`) writes `target/ios/gen1.png`.
+  - **The PNG** (1170 × 2304, 390 × 768 pt at 3×, Paper) reads as Genesis 1 in the BSB:
+    the large accent-blue chapter numeral 1, verses 1–2, the "The First Day" heading, verses
+    3–5 with gold verse numbers and green Footnote callers a and b, "The Second Day" and the
+    start of verse 6, sharp Gentium Plus.
+  - **Measurements** (load average ~14 from other lanes): release, a warm full-width 3×
+    tile (1170 × 768; laid out and rastered already, so fill, quads and composite) 0.42–0.48
+    ms median, 0.75 ms max (20 tiles × 3 runs); the first 1170 × 2304 tile including layout
+    and raster 2.5–2.9 ms. Test profile (`opt-level = 1`): 2.5–3.4 ms median, 7.9 ms max.
+    **Far under the 8 ms stop line: option B stands for S07.** `boot` into an empty folder
+    over the Bundled set (copying 43.1 MB) 0.55–1.4 s; `open_reader` of the whole BSB
+    (`ReadingDoc::open`) 0.50–1.2 s, worth watching on a phone in S07/S13.
+    `cargo xtask ios smoke` prints `engine 0.2.0` and `tile 1170x768` (swiftc ~1.5 s, run
+    ~1.3 s). The iOS licence listing did not change (119 crates).
+  - **Flags verified:** `-I target/ios/bindings` alone does not import the module
+    ("cannot find 'uniffi_obs_ffi_fn_func_engine_version' in scope"); the smoke passes
+    `-Xcc -fmodule-map-file=target/ios/bindings/ObsFFIFFI.modulemap` (no `-I` needed).
+    `-L target/debug -lobs_ffi` links the host cdylib (`libobs_ffi.dylib` beats the `.a`),
+    so an rpath to `target/debug` is added. The Command Line Tools' own `swiftc` (Swift 6.4,
+    `DEVELOPER_DIR=/Library/Developer/CommandLineTools`) builds and runs it too, so neither
+    stop-and-ask fired.
+  - **Deferred:** restoring a reader at boot (the Mobile Last session is S13's own JSON;
+    restoring the desktop Workspace snapshot would be the wrong format), so boot always
+    opens the first Bible at its start; Highlights, other Marks, selection and Note-marker
+    room in tiles (S13/S17); "Follow system" dark (the spike resolves Auto as a light Theme;
+    S13/S14b take the system appearance); the pump thread and `Changed` events (S13); a
+    ceiling on tile size (a huge tile allocates what it asks for). `cargo xtask ios build`
+    was not run (the step's "don't build for iOS targets"); `obs-ffi` now also pulls
+    `obs-reading`/`obs-render`, pure Rust already in its graph, so S06's first `ios build`
+    is the check. No later step's assumption proved wrong; none edited. S13's Swift smoke
+    check means updating `main.swift` to the designed surface.
 
 #### S04 — Bundled set and Study set in the Starter build
 

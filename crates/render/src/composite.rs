@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(tile_size(tile, 3.0), (1170, 768));
         let px = composite(&[], &atlas, &colours(), tile, 3.0);
         assert_eq!(px.len(), 1170 * 768 * 4);
-        assert!(px.chunks_exact(4).all(|p| p == PAGE));
+        assert!(px.as_chunks::<4>().0.iter().copied().all(|p| p == PAGE));
     }
 
     #[test]
@@ -260,7 +260,7 @@ mod tests {
         let tile = [0.0, 0.0, 80.0, 30.0];
         let px = composite(&quads, &atlas, &half_ink, tile, scale);
         let mut drawn = 0;
-        for p in px.chunks_exact(4) {
+        for p in px.as_chunks::<4>().0.iter().copied() {
             assert!(p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3], "{p:?}");
             if p[3] > 0 {
                 drawn += 1;
@@ -271,7 +271,11 @@ mod tests {
         assert!(drawn > 0);
         // Full coverage of a half-opaque ink is the ink at half strength.
         assert!(
-            px.chunks_exact(4).any(|p| p == [100, 50, 25, 128]),
+            px.as_chunks::<4>()
+                .0
+                .iter()
+                .copied()
+                .any(|p| p == [100, 50, 25, 128]),
             "a fully covered pixel"
         );
     }
@@ -288,7 +292,7 @@ mod tests {
         // A tile below the text: nothing drawn.
         let below = [0.0, 100.0, 200.0, 140.0];
         let px = composite(&quads, &atlas, &colours(), below, scale);
-        assert!(px.chunks_exact(4).all(|p| p == PAGE));
+        assert!(px.as_chunks::<4>().0.iter().copied().all(|p| p == PAGE));
         // A tile over the lower half of the line shows part of the glyphs, at the same
         // device pixels as the whole tile does, shifted by its top.
         let whole = [0.0, 0.0, 200.0, 40.0];
@@ -297,7 +301,7 @@ mod tests {
         let a = composite(&quads, &atlas, &colours(), whole, scale);
         let b = composite(&quads, &atlas, &colours(), lower, scale);
         assert_eq!(&a[30 * w * 4..], &b[..]);
-        assert!(b.chunks_exact(4).any(|p| p != PAGE));
+        assert!(b.as_chunks::<4>().0.iter().copied().any(|p| p != PAGE));
     }
 
     #[test]

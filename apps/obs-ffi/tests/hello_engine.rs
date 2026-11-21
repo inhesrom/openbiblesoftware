@@ -6,6 +6,8 @@
 //! `cargo xtask ios bundled-set --from dist/starter`, then
 //! `cargo test -p obs-ffi --test hello_engine -- --ignored --nocapture`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -30,9 +32,12 @@ fn paths(name: &str) -> (PathBuf, Paths) {
 
 /// Pixels that are neither the page colour (the top-left pixel) nor transparent.
 fn inked(tile: &Tile) -> usize {
-    let page = &tile.rgba[..4];
+    let page: [u8; 4] = tile.rgba[..4].try_into().unwrap();
     tile.rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
         .filter(|p| *p != page && p[3] > 0)
         .count()
 }
@@ -80,7 +85,14 @@ fn write_png(path: &Path, tile: &Tile) {
     png.set_color(png::ColorType::Rgba);
     png.set_depth(png::BitDepth::Eight);
     // Every pixel is opaque, so premultiplied and straight alpha are the same bytes.
-    assert!(tile.rgba.chunks_exact(4).all(|p| p[3] == 255));
+    assert!(
+        tile.rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .copied()
+            .all(|p| p[3] == 255)
+    );
     png.write_header()
         .unwrap()
         .write_image_data(&tile.rgba)

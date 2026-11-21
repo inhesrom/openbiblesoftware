@@ -118,11 +118,22 @@ mod tests {
         let [r, g, b] = p.ink.0;
         let ink = tile
             .rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .copied()
             .filter(|c| *c == [r, g, b, 255])
             .count();
         assert!(ink > 5_000, "{ink} pixels of full ink");
-        assert!(tile.rgba.chunks_exact(4).all(|c| c[3] == 255), "opaque");
+        assert!(
+            tile.rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .copied()
+                .all(|c| c[3] == 255),
+            "opaque"
+        );
     }
 
     #[test]
@@ -134,7 +145,14 @@ mod tests {
         assert_eq!((tile.width, tile.height), (780, 256));
         assert_eq!(px(&tile, 0, 0), page(&p));
         let [r, g, b] = p.ink.0;
-        assert!(tile.rgba.chunks_exact(4).any(|c| c == [r, g, b, 255]));
+        assert!(
+            tile.rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .copied()
+                .any(|c| c == [r, g, b, 255])
+        );
     }
 
     #[test]

@@ -243,7 +243,7 @@ impl MobileApp {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use std::path::Path;
 
@@ -315,7 +315,7 @@ mod tests {
         let tile = app.layout_tile(reader, 0.0, 390.0, 256.0, 3.0).unwrap();
         assert_eq!((tile.width, tile.height), (1170, 768));
         let [r, g, b] = TonePalette::PAPER.ink.0;
-        let ink = (tile.rgba.chunks_exact(4))
+        let ink = (tile.rgba.as_chunks::<4>().0.iter().copied())
             .filter(|p| *p == [r, g, b, 255])
             .count();
         assert!(ink > 5_000, "{ink} pixels of ink");
@@ -323,7 +323,14 @@ mod tests {
         let hebrew = app.open_reader("tahot", None).unwrap();
         let tile = app.layout_tile(hebrew, 0.0, 390.0, 256.0, 2.0).unwrap();
         assert_eq!((tile.width, tile.height), (780, 512));
-        assert!(tile.rgba.chunks_exact(4).any(|p| p == [r, g, b, 255]));
+        assert!(
+            tile.rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .copied()
+                .any(|p| p == [r, g, b, 255])
+        );
     }
 
     #[test]
