@@ -2,7 +2,8 @@
 //! user makes: preferences, the Last session, named Layouts, the Preferred order, the
 //! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61),
 //! Favorites and History (#155), Reading plans (#147), and Highlight styles and palettes
-//! (#181). Backups the user makes and restores are `backup_store.rs` (#217).
+//! (#181), and the clocks, tombstones and device id Sync needs (ADR 0022, `sync_schema.rs`).
+//! Backups the user makes and restores are `backup_store.rs` (#217).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -18,7 +19,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 12;
+pub const USER_SCHEMA_VERSION: u32 = 13;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -52,6 +53,9 @@ const MIGRATIONS: &[&str] = &[
     crate::annotation_store::SCHEMA_11,
     // 11 → 12: the revision an Orphaned annotation's range was last looked for in (#259).
     crate::annotation_store::SCHEMA_12,
+    // 12 → 13: what Sync needs (ADR 0022): clocks, tombstones, the device id, how far other
+    // devices' ops are applied, and ids for Layouts, Favorites and Reading plans.
+    crate::sync_schema::SCHEMA_13,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
@@ -262,14 +266,15 @@ impl UserStore {
             .map_err(sql)
     }
 
-    /// Save a Layout, replacing one of the same name (names ignore case).
+    /// Save a Layout, replacing one of the same name (names ignore case). A new Layout gets
+    /// an id; one replaced keeps its own.
     pub fn save_layout(&self, name: &str, snapshot: &str) -> Result<(), StoreError> {
         self.conn
             .execute(
-                "INSERT INTO layout (name, snapshot, saved_at) VALUES (?1, ?2, ?3)
+                "INSERT INTO layout (id, name, snapshot, saved_at) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (name) DO UPDATE SET name = excluded.name,
                      snapshot = excluded.snapshot, saved_at = excluded.saved_at",
-                params![name, snapshot, now()],
+                params![crate::annotation::new_id(), name, snapshot, now()],
             )
             .map(drop)
             .map_err(sql)
@@ -383,7 +388,13 @@ pub(crate) fn migrate(conn: &mut Connection, from: u32, to: u32) -> Result<(), S
         if v == 10 {
             crate::annotation_store::escape_plain_notes(&tx)?;
         }
+        if v == 12 {
+            crate::sync_schema::give_rows_ids(&tx)?;
+        }
         tx.execute_batch(step).map_err(sql)?;
+        if v == 12 {
+            crate::sync_schema::make_device(&tx)?;
+        }
     }
     tx.pragma_update(None, "application_id", USER_APPLICATION_ID)
         .map_err(sql)?;
