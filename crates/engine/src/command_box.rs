@@ -356,6 +356,7 @@ pub(crate) fn type_name(t: ResourceType) -> &'static str {
         ResourceType::Dictionary => "Dictionary",
         ResourceType::CrossReferenceSet => "Cross-reference set",
         ResourceType::PeopleAndPlaces => "People & places index",
+        ResourceType::Book => "Book",
     }
 }
 

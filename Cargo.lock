@@ -2593,6 +2593,7 @@ dependencies = [
  "html-escape",
  "obs-model",
  "obs-scripture",
+ "pulldown-cmark",
  "quick-xml",
  "regex",
  "roxmltree 0.21.2",

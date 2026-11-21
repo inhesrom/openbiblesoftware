@@ -186,6 +186,11 @@ pub enum SpanKind {
     Foreign,
     Selah,
     PsalmTitle,
+    /// Zero-width marker where a printed page of a Book begins, with its label as printed
+    /// ("23", "iv", "14a") (ADR 0023, format 5).
+    Page {
+        label: String,
+    },
 }
 
 impl SpanKind {
@@ -209,6 +214,7 @@ impl SpanKind {
             SpanKind::Foreign => "foreign",
             SpanKind::Selah => "selah",
             SpanKind::PsalmTitle => "psalm_title",
+            SpanKind::Page { .. } => "page",
         }
     }
 
@@ -232,6 +238,7 @@ impl SpanKind {
             SpanKind::Bold => 14,
             SpanKind::Foreign => 15,
             SpanKind::Selah => 16,
+            SpanKind::Page { .. } => 17,
         }
     }
 }

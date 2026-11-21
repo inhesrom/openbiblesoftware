@@ -101,6 +101,10 @@ pub(crate) fn span_columns(kind: &SpanKind) -> (u8, Vec<u8>) {
         SpanKind::Foreign => 14,
         SpanKind::Selah => 15,
         SpanKind::PsalmTitle => 16,
+        SpanKind::Page { label } => {
+            text(&mut out, label);
+            17
+        }
     };
     (id, out)
 }
@@ -232,6 +236,9 @@ pub(crate) fn span_from(id: i64, attrs: &[u8]) -> Result<SpanKind, StoreError> {
         14 => SpanKind::Foreign,
         15 => SpanKind::Selah,
         16 => SpanKind::PsalmTitle,
+        17 => SpanKind::Page {
+            label: input.text()?,
+        },
         _ => return Err(StoreError::Corrupt(format!("unknown span kind {id}"))),
     };
     if !input.0.is_empty() {
@@ -293,6 +300,12 @@ mod tests {
             SpanKind::Foreign,
             SpanKind::Selah,
             SpanKind::PsalmTitle,
+            SpanKind::Page {
+                label: "xiv".into(),
+            },
+            SpanKind::Page {
+                label: String::new(),
+            },
         ];
         for style in [
             ParaStyle::Prose,

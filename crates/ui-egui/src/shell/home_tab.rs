@@ -377,6 +377,16 @@ impl State {
                                     ));
                                 }
                             }
+                            // No Book comes with the app or Get Resources yet: they are imported
+                            // (ADR 0023).
+                            None if c.resource_type == obs_model::ResourceType::Book => {
+                                if crate::components::link(ui, "Import…")
+                                    .on_hover_text("Import a book kept as Markdown")
+                                    .clicked()
+                                {
+                                    *run = Some(("library.import", json!({})));
+                                }
+                            }
                             None => {
                                 if crate::components::link(ui, "Starter library")
                                     .on_hover_text("These come with the Starter library")

@@ -79,7 +79,9 @@ pub fn featured(ty: ResourceType) -> Vec<FeaturedModule> {
         ResourceType::Lexicon => file.lexicon,
         ResourceType::Commentary => file.commentary,
         ResourceType::Dictionary => file.dictionary,
-        ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces => Vec::new(),
+        ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces | ResourceType::Book => {
+            Vec::new()
+        }
     }
 }
 
@@ -152,7 +154,9 @@ impl ResourceFilter {
             ResourceFilter::Type(ResourceType::Commentary) => Some("commentaries"),
             ResourceFilter::Type(ResourceType::Dictionary) => Some("dictionaries"),
             ResourceFilter::Type(
-                ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces,
+                ResourceType::CrossReferenceSet
+                | ResourceType::PeopleAndPlaces
+                | ResourceType::Book,
             ) => None,
         }
     }

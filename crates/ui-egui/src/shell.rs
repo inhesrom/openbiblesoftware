@@ -3901,11 +3901,12 @@ impl State {
     }
 }
 
-const RESOURCE_TYPES: [ResourceType; 6] = [
+const RESOURCE_TYPES: [ResourceType; 7] = [
     ResourceType::Bible,
     ResourceType::Commentary,
     ResourceType::Lexicon,
     ResourceType::Dictionary,
+    ResourceType::Book,
     ResourceType::CrossReferenceSet,
     ResourceType::PeopleAndPlaces,
 ];
@@ -3918,6 +3919,7 @@ fn type_name(t: ResourceType) -> &'static str {
         ResourceType::Dictionary => "Dictionaries",
         ResourceType::CrossReferenceSet => "Cross-references",
         ResourceType::PeopleAndPlaces => "People and places",
+        ResourceType::Book => "Books",
     }
 }
 

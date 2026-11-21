@@ -1,4 +1,4 @@
-//! Importers and dataset converters writing into `ResourceBuilder`: USFM, Lexicons,
+//! Importers and dataset converters writing into `ResourceBuilder`: USFM, Markdown books, Lexicons,
 //! OpenBible.info Cross-references, a USFM Bible's parallel passages, STEPBible TAHOT/TAGNT and TIPNR, Starter Commentaries and
 //! Dictionaries, and the TVTMS Verse-map builder.
 //!
@@ -10,6 +10,7 @@ mod error;
 #[cfg(test)]
 mod hostile_input;
 mod lexicon;
+mod markdown_book;
 mod openbible;
 mod openbible_geo;
 mod parallels;
@@ -33,6 +34,11 @@ pub use error::ImportError;
 pub use lexicon::{
     LexiconError, LexiconOptions, import_abbott_smith, import_bdb, import_strongs_greek,
     import_strongs_hebrew, import_tbes,
+};
+pub use markdown_book::{
+    BookFile, BookFiles, MARKDOWN_BOOK_FORMAT, MAX_BOOK_FILE_BYTES, MarkdownBookOptions,
+    book_license_spdx, book_stem, group_book_files, import_markdown_book, is_markdown_name,
+    split_front_matter,
 };
 pub use openbible::{DROPPED_NOT_STANDARD, OPENBIBLE_FORMAT, import_openbible_cross_references};
 pub use openbible_geo::{OPENBIBLE_GEO_FORMAT, import_openbible_geocoding};

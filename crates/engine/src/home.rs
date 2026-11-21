@@ -351,7 +351,7 @@ pub const QUICK_STARTS: [QuickStart; 4] = [
     QuickStart {
         label: "Import",
         command: "library.import",
-        help: "Add a USFM or SWORD file from this computer",
+        help: "Add a USFM, SWORD or Markdown book file from this computer",
     },
 ];
 

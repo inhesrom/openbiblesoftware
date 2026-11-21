@@ -129,6 +129,14 @@ fn content_hash_is_stable_and_ignores_insertion_order() {
     // come with a FORMAT_VERSION bump. The format version is hashed too.
     assert_eq!(
         a.manifest.content_hash,
+        "sha256:e8cef9626101d821bb2a155cf42c125d6f077c3851ba33bca4c871d8ec5fc377"
+    );
+    // Format 5 added only the `page` span kind, which this content does not use: the same
+    // content hashed as format 4 is the format 4 golden value.
+    let mut format_4 = a.clone();
+    format_4.manifest.format_version = 4;
+    assert_eq!(
+        format_4.content_hash(),
         "sha256:5918284af8a90d761b3ea97fc677852dc918d22d516dde2bbfe15cf83583b195"
     );
     // Format 4 added only the volumes table, outside the hash: the same content hashed as
