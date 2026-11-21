@@ -22,6 +22,8 @@ The **Books** filter is the [Christian Open Library](https://christianopenlibrar
 
 **Check for new books** reads the library again: books that changed show **Changed in COL**, and **Update** replaces them, keeping your Notes and Highlights on their text. A book COL no longer has stays in your Library. Nothing is asked of GitHub until you click. **Browse the catalogue** lists every work before you have access.
 
+Without downloading anything, right-click a verse or selected text and choose **Search Christian Open Library** to search the library's website in your browser; the Passage Guide's Cited in section offers the same for its Passage. Settings → Search turns it off.
+
 ## Updates
 
 When a repository offers a newer edition of a Resource you downloaded, Get Resources marks it **Update available**, and **Update all** brings every one up to date. Nothing downloads until you click.

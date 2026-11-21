@@ -758,6 +758,8 @@ pub struct ColState {
     batch: Option<String>,
     /// Tried the credential store for a saved token this run.
     restored: bool,
+    /// Settings → Search → Search Christian Open Library (#343), once read.
+    search_link: Option<bool>,
 }
 
 impl Default for ColState {
@@ -776,6 +778,7 @@ impl Default for ColState {
             changes: None,
             batch: None,
             restored: false,
+            search_link: None,
         }
     }
 }
@@ -799,6 +802,19 @@ impl ColState {
     /// The API to read (tests name a mock).
     pub fn set_api(&mut self, api: impl Into<String>) {
         self.repo.api = api.into();
+    }
+
+    /// Read the preferences again when next asked (a restore replaced the User database). A
+    /// token stays in the keychain; a local copy is named by the database, so it is forgotten.
+    pub(crate) fn forget_preferences(&mut self) {
+        self.search_link = None;
+        self.restored = false;
+        if matches!(self.access, Some(ColAccess::Local { .. })) {
+            self.access = None;
+            self.catalog = None;
+            self.changes = None;
+            self.selected.clear();
+        }
     }
 
     pub fn access(&self) -> Option<&ColAccess> {
@@ -1121,6 +1137,51 @@ impl ErrorCode {
 
 /// The User database preference naming a local clone (the path only; never a token).
 const LOCAL_PREF: &str = "col/local-clone";
+/// Settings → Search → Search Christian Open Library (#343): `off` hides it.
+pub(crate) const SEARCH_LINK_PREF: &str = "col/search-link";
+
+impl Session {
+    /// Whether menus and the Passage Guide offer Search Christian Open Library (#343); on
+    /// unless the user turned it off.
+    pub fn col_search_link(&mut self) -> bool {
+        if let Some(on) = self.col.search_link {
+            return on;
+        }
+        let on = self
+            .user
+            .as_ref()
+            .and_then(|u| u.preference(SEARCH_LINK_PREF).ok().flatten())
+            .is_none_or(|v| v != "off");
+        self.col.search_link = Some(on);
+        on
+    }
+}
+
+/// `col.search_website {text}`: open COL's website searching for `text` (#343).
+fn search_website(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let url = crate::col::website_search_url(p.str("text").unwrap_or_default())
+        .ok_or_else(|| failed("col.search_website", "Nothing to search for"))?;
+    s.workspace.push_effect(crate::Effect::OpenUrl(url.clone()));
+    Ok(json!({ "url": url }))
+}
+
+/// `col.search_link {on}`: show or hide Search Christian Open Library (#343).
+fn search_link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let on = p.bool("on").unwrap_or(!s.col_search_link());
+    s.col.search_link = Some(on);
+    if let Some(user) = &s.user {
+        user.set_preference(SEARCH_LINK_PREF, if on { "on" } else { "off" })
+            .map_err(|e| failed("col.search_link", format!("saving: {e}")))?;
+    }
+    Ok(json!({ "on": on }))
+}
+
+const TEXT: ParamSpec = ParamSpec {
+    name: "text",
+    kind: ParamKind::String,
+    required: true,
+    help: "A Bible reference or words to search COL's website for",
+};
 
 // --------------------------------------------------------------------------------- commands
 
@@ -1415,6 +1476,22 @@ fn update(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 }
 
 pub(crate) const COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        id: "col.search_website",
+        label: "Search Christian Open Library",
+        shortcut: None,
+        params: &[TEXT],
+        enabled: always,
+        run: search_website,
+    },
+    CommandSpec {
+        id: "col.search_link",
+        label: "Offer Search Christian Open Library",
+        shortcut: None,
+        params: &[ON],
+        enabled: always,
+        run: search_link,
+    },
     CommandSpec {
         id: "col.connect_token",
         label: "Connect to the Christian Open Library with a token",

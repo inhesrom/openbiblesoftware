@@ -87,3 +87,14 @@ by `OBS_SCRIPT` and `OBS_STEPS`: `docs/previews/347-app-books-not-connected.png`
 `347-app-books-connected.png`, `347-app-one-book-downloaded.png` (the batch's Import report and
 Home's Books 1) and `347-app-book-open.png` (the Book with its Contents, printed pages and
 reference links).
+
+## Search Christian Open Library (#343)
+
+A link out, no download: `col.search_website {text}` opens `https://christianopenlibrary.org/#q=…`
+(`col::website_search_url`: whitespace collapsed, cut at a word to 500 characters,
+percent-encoded) in the system browser through `Effect::OpenUrl`. The search is after the `#`,
+which the browser keeps to itself; COL's page reads it and its server never receives it. The
+app's transport is not used. The right-click menu offers it for a Selection (the text) and a
+Verse (its Standard reference); the Passage Guide's Cited in section ends with "Search the
+Christian Open Library for <Passage>". Settings → Search → Search Christian Open Library
+(`col.search_link {on}`, preference `col/search-link`, on by default) hides every entry point.

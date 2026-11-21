@@ -294,6 +294,9 @@ impl Session {
         self.guides.forget_arrangements();
         self.copy_verses = crate::copy_verses::CopyVerses::default();
         self.imports.reports.clear();
+        // The Christian Open Library's preferences are read again when next asked (ADR 0024,
+        // #343); a connection made with the replaced database's local copy is dropped.
+        self.col.forget_preferences();
     }
 
     /// Save the library's Preferred order.

@@ -283,3 +283,38 @@ fn sizes_read_in_words() {
     assert_eq!(size_text(4_472_092), "4.5 MB");
     assert_eq!(size_text(2_900_000_000), "2.9 GB");
 }
+
+#[test]
+fn the_website_search_url_keeps_the_query_after_the_hash_encoded_and_bounded() {
+    assert_eq!(
+        website_search_url("Romans 8:28").as_deref(),
+        Some("https://christianopenlibrary.org/#q=Romans%208%3A28")
+    );
+    assert_eq!(
+        website_search_url("  the   Spirit\n helps ").as_deref(),
+        Some("https://christianopenlibrary.org/#q=the%20Spirit%20helps")
+    );
+    assert_eq!(
+        website_search_url("ἀγάπη & “love”").as_deref(),
+        Some(
+            "https://christianopenlibrary.org/#q=%E1%BC%80%CE%B3%CE%AC%CF%80%CE%B7%20%26%20%E2%80%9Clove%E2%80%9D"
+        )
+    );
+    assert_eq!(website_search_url("   "), None);
+    // Cut at a word, never past 500 characters.
+    let long = "covenant ".repeat(100);
+    let url = website_search_url(&long).unwrap();
+    let q = url.split_once("#q=").unwrap().1.replace("%20", " ");
+    assert!(q.chars().count() <= WEBSITE_QUERY_CHARS);
+    assert!(q.ends_with("covenant"), "{q}");
+    let one = "x".repeat(600);
+    assert_eq!(
+        website_search_url(&one)
+            .unwrap()
+            .split_once("#q=")
+            .unwrap()
+            .1
+            .len(),
+        WEBSITE_QUERY_CHARS
+    );
+}

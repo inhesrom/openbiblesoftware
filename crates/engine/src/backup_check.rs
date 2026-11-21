@@ -319,6 +319,11 @@ impl Session {
                 Some(json!({ "shown": self.tour().shown() }).to_string()),
             ),
             held(
+                crate::col_get::SEARCH_LINK_PREF,
+                "Search Christian Open Library",
+                Some(if self.col_search_link() { "on" } else { "off" }.to_string()),
+            ),
+            held(
                 crate::resource_text_size::RESOURCE_TEXT_SIZES_PREF,
                 "Resources' own Text sizes",
                 Some(self.resource_text_sizes.to_json().to_string()),

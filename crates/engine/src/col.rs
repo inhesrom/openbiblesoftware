@@ -32,6 +32,45 @@ const MAX_PATH: usize = 400;
 /// A file larger than this is never downloaded (the importer refuses it anyway).
 pub const MAX_FILE_BYTES: u64 = obs_formats::MAX_BOOK_FILE_BYTES as u64;
 
+// ----------------------------------------------------------------------------------- website
+
+/// The longest search COL's website takes, in characters.
+pub const WEBSITE_QUERY_CHARS: usize = 500;
+
+/// COL's website searching for `query` (#343): `https://christianopenlibrary.org/#q=…`, the
+/// query's whitespace collapsed and cut to [`WEBSITE_QUERY_CHARS`] at a word, percent-encoded.
+/// The search is after the `#`, which the browser keeps to itself: COL's page reads it, and its
+/// server never receives it. The app sends nothing. `None` for an empty query.
+pub fn website_search_url(query: &str) -> Option<String> {
+    let words: Vec<&str> = query.split_whitespace().collect();
+    let mut q = String::new();
+    for w in words {
+        let more = usize::from(!q.is_empty()) + w.chars().count();
+        if q.chars().count() + more > WEBSITE_QUERY_CHARS {
+            if q.is_empty() {
+                q = w.chars().take(WEBSITE_QUERY_CHARS).collect();
+            }
+            break;
+        }
+        if !q.is_empty() {
+            q.push(' ');
+        }
+        q.push_str(w);
+    }
+    if q.is_empty() {
+        return None;
+    }
+    let mut encoded = String::with_capacity(q.len() * 3);
+    for b in q.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(b));
+        } else {
+            encoded.push_str(&format!("%{b:02X}"));
+        }
+    }
+    Some(format!("{COL_WEBSITE}/#q={encoded}"))
+}
+
 // ------------------------------------------------------------------------------------- paths
 
 /// Whether a repository path may be read: relative, `/`-separated, no empty, `.` or `..`

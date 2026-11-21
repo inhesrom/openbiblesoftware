@@ -222,3 +222,37 @@ fn a_local_copy_needs_no_sign_in_and_no_network() {
     settle(&mut s);
     assert!(matches!(s.col.error(), Some(ColError::NotAClone(_))));
 }
+#[test]
+fn search_christian_open_library_opens_the_website_and_sends_nothing() {
+    let (mut s, col, _lab) = session("website");
+    assert!(s.col_search_link(), "on by default");
+    let out = s
+        .run("col.search_website", &json!({ "text": "Romans 8:28" }))
+        .unwrap();
+    let url = "https://christianopenlibrary.org/#q=Romans%208%3A28";
+    assert_eq!(out["url"], url);
+    assert!(
+        s.workspace
+            .take_effects()
+            .contains(&Effect::OpenUrl(url.into()))
+    );
+    assert!(
+        col.seen.lock().unwrap().is_empty(),
+        "the app fetched nothing"
+    );
+    assert!(
+        s.run("col.search_website", &json!({ "text": "  " }))
+            .is_err()
+    );
+    // The Setting hides it, and is kept.
+    s.run("col.search_link", &json!({ "on": false })).unwrap();
+    assert!(!s.col_search_link());
+    let setting = crate::settings::SETTINGS
+        .iter()
+        .find(|st| st.id == "col_search_link")
+        .unwrap();
+    assert_eq!(setting.section, crate::settings::SettingsSection::Search);
+    assert_eq!(s.setting_is_default("col_search_link"), Some(false));
+    s.col = Default::default();
+    assert!(!s.col_search_link(), "read back from the User database");
+}
