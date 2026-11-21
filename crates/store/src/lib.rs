@@ -36,6 +36,8 @@ mod search_index;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
+mod sync_schema;
+#[cfg(not(target_arch = "wasm32"))]
 mod user;
 
 pub use annotation::{
@@ -65,6 +67,10 @@ pub use search_index::damage_search_index;
 pub use search_index::{
     IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
     copy_search_index_as, remove_search_indexes, search_index_files, write_search_index,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use sync_schema::{
+    DEVICE_PREFERENCES, SYNCED_PREFERENCES, SYNCED_TABLES, is_synced_preference,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use user::{OpenReport, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

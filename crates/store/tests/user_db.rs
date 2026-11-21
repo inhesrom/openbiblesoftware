@@ -163,7 +163,11 @@ fn preferred_order_round_trips_and_survives_the_v2_migration() {
     let path = dir.join("user.db");
     {
         let (v2, _) = UserStore::open_to(&path, 2).unwrap();
-        v2.save_layout("Study", "{}").unwrap();
+        // A Layout as schema 2 kept it (`save_layout` writes today's columns).
+        v2.execute_unchecked(
+            "INSERT INTO layout (name, snapshot, saved_at) VALUES ('Study', '{}', 0)",
+        )
+        .unwrap();
     }
     let (db, report) = UserStore::open(&path).unwrap();
     assert_eq!(report.found_version, 2);

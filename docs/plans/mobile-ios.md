@@ -64,7 +64,7 @@ to Claude Opus 5.5 later on".
 | S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | todo |
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | todo |
-| S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | todo |
+| S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (branch mobile/s27a-sync-schema, PR pending) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | todo |
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | todo |
 | S28b | Sync 2b (Rust): merge rules + property tests | AFK | n | S28a | merge module, 10k-case property tests | todo |
@@ -1427,6 +1427,30 @@ this in addition to its own lines):
 - **Done when:** `cargo xtask ci` green; the v12 fixture migrates; `cargo xtask gallery` unchanged.
 - **Verify:** `cargo xtask ci`; `cargo test -p obs-store migration`; `cargo xtask gallery`.
 - **Stop-and-ask:** a table cannot get a stable per-row id without data loss.
+- **Outcome (2026-11-20, branch `mobile/s27a-sync-schema`):** `USER_SCHEMA_VERSION` 13;
+  `crates/store/src/sync_schema.rs` holds migration 12 → 13 and the lists. Shipped: a nullable
+  `clock TEXT` (encoding left to S28a; `NULL` = before Sync, older than any clock) on every table
+  in `SYNCED_TABLES` (`notebooks`, `annotations`, `highlight_palettes`, `highlight_styles`,
+  `reading_plan`, `plan_reading`, `favorite`, `layout`, `preferred_order`, `preference`);
+  `anchors` rides on its Annotation's clock; `last_session`, `history`, `resource_names` and
+  `notes_fts` stay local. `tombstone (row_table, row_id, clock)`, one-row
+  `device (id = 1, device_id UUIDv7 made by the migration, name '')`,
+  `applied_up_to (device_id, seq)`. `layout` rebuilt with `id TEXT PRIMARY KEY` (UUIDv7) and
+  `name UNIQUE COLLATE NOCASE`, so every name-keyed call is unchanged; `save_layout` supplies an
+  id on insert and keeps it on conflict. **Owner decisions (via supervisor):** the preference
+  split is one `preference` table with the clock column and explicit lists, no rows moved
+  (`SYNCED_PREFERENCES`: `highlights.palette`, `guide-arrangement/` prefix, `copy.presets`,
+  `search.saved`, `library.collections`, `library.tags`, `search.word_forms`;
+  `DEVICE_PREFERENCES`: every other key the engine writes, incl. `copy.options`,
+  `annotations.last_notebook` and the Visual filters; an unlisted key stays on the device), and
+  `favorite.uid` / `reading_plan.uid` (UUIDv7, unique, backfilled; new rows get one) because
+  their integer ids collide across devices. The integer ids are untouched. No other write path
+  moved; no sync files; no UI. A test fails when an engine `*_PREF`/`*_KEY` constant is in
+  neither list. Four older store tests wrote Layouts/Favorites through today's API on a v2–v7
+  database; they now insert the old rows with `execute_unchecked`. Measured: `cargo xtask ci`
+  green (12 m 42 s), `cargo xtask gallery` unchanged. **For later steps:** a restore copies the
+  Backup's `device` row, so the restored device has the Backup's id until S28c applies rule 7. S27b's
+  entry gained an "Added by S27a" bullet (uids, per-item merge requirement, Visual filters).
 
 #### S27b — Sync 1b (Rust): `Row` for every synced table; every synced write via `apply_changes`
 
@@ -1449,6 +1473,18 @@ this in addition to its own lines):
 - **Verify:** `cargo xtask ci`; `cargo test -p obs-store`; `cargo test -p obs-engine`;
   `cargo xtask gallery`.
 - **Stop-and-ask:** a write cannot be expressed as a `Row` before/after pair.
+- **Added by S27a (owner decisions):** favorites and Reading plans already carry a UUIDv7
+  `uid` (S27a), the id other devices know them by. **Requirement:**
+  `library.collections`, `library.tags`, `copy.presets` and `search.saved` are each one JSON
+  list per key, and `guide-arrangement/<guide>` values hold a list of sections; whole-value
+  last-writer-wins would drop one device's concurrent addition (ADR 0006), so S27b must split
+  each into per-item rows or give it a per-item merge. **Open question, decide here:** Visual
+  filters (`reading.visual_filters`, `_next_id`) are user-made but stay device-only for now,
+  because their numeric per-device ids would collide (Layouts switch filters by id); they need
+  ids that are the same on every device before they can sync. **Also from the S27a review:**
+  Preferred order is one value (ADR 0022 rule 3), so make it one `Row` holding the whole list and
+  one clock. `save_preferred_order` replaces its rows, so the per-row `clock` column holds that
+  one clock, and replacing the order writes no tombstones.
 
 #### S28a — Sync 2a (Rust): `SyncFolder`, HLC, op files, device files
 
@@ -1457,6 +1493,10 @@ this in addition to its own lines):
 - **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S27b.
 - **Read first:** ADR 0022 rules 1–2, 5–6; #326 resolution; `docs/research/mobile-folder-sync.md`
   §2 "Platform mechanics" and §4 "Candidate designs"; A8.
+- **Added by the S27a review:** the HLC needs this device's `device` row, but a v13 database
+  or Backup can lack it: `make_device` runs only in migration 12→13, and `check_whole` checks
+  tables, not rows. Add `ensure_device()` at open, the way `ensure_default_notebook` repairs the
+  default Notebook.
 - **Do:** `obs_engine::sync`: `SyncFolder` trait (A8) + `FsSyncFolder` + `MemSyncFolder` (tests);
   HLC (`wall_ms`, `counter`, `device_id`); `sync.json` with a format version;
   `devices/<id>/device.json`; `ops/<seq>.jsonl` writer (temp + rename; trailing length-and-hash
@@ -1496,6 +1536,11 @@ this in addition to its own lines):
 - **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S28b.
 - **Read first:** ADR 0022 rules 5–8 and Consequences ("catch up or replace"); ADR 0013;
   `crates/engine/src/backups.rs` (`restore_preview`, `RestorePreview`, the restore path).
+- **Added by S27a (ADR 0022 rule 7, first clause):** `restore_from` copies a v13 Backup's
+  `device` row as is, so a restored device keeps the Backup's `device_id`. Restoring must give
+  the device a new id. Decide what happens to the restored `applied_up_to` rows (keep them as
+  the restored state's view of the other devices, or clear them so everything replays), and
+  test restoring the device's own older Backup.
 - **Do:** snapshots in Backup format with covered clocks; 90-day trimming of own ops; newer-format
   files left alone + "update the app" state; copied-database detection → new device id; **after a
   Backup restore on a syncing device:** `restore_choice(CatchUp | Replace)` — catch up (default)

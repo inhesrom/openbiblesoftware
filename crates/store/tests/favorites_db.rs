@@ -127,7 +127,11 @@ fn a_v6_database_gains_empty_favorites_and_history() {
     let path = tmp("migrate");
     {
         let (v6, _) = UserStore::open_to(&path, 6).unwrap();
-        v6.save_layout("Study", "{}").unwrap();
+        // A Layout as schema 6 kept it (`save_layout` writes today's columns).
+        v6.execute_unchecked(
+            "INSERT INTO layout (name, snapshot, saved_at) VALUES ('Study', '{}', 0)",
+        )
+        .unwrap();
     }
     let (db, report) = UserStore::open(&path).unwrap();
     assert_eq!(report.found_version, 6);

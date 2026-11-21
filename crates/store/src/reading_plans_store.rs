@@ -88,9 +88,11 @@ impl UserStore {
     ) -> Result<i64, StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
         tx.execute(
-            "INSERT INTO reading_plan (name, template, bible_id, start_day, weekdays, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO reading_plan (uid, name, template, bible_id, start_day, weekdays,
+                                       created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
+                crate::annotation::new_id(),
                 plan.name,
                 plan.template,
                 plan.bible_id,
