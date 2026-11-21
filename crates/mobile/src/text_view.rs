@@ -274,8 +274,21 @@ impl MobileApp {
         state.window = (blocks.iter())
             .map(|b| (b.index, position + f64::from(b.top), Arc::clone(&b.laid)))
             .collect();
-        let location = (view.current_location())
-            .map(|v| format_passage(Passage::verse(v), &view.doc.versification, RefStyle::Long))
+        // Over a heading (the top of a book) the Current location is the first Verse below.
+        let current = view.current_location();
+        let doc = Arc::clone(&view.doc);
+        let below = || {
+            (blocks.iter())
+                .filter(|b| b.top + b.laid.height > 0.0)
+                .find_map(|b| {
+                    let block = &doc.blocks[b.index];
+                    (doc.verses_starting_in(block.unit, block.source.range.clone()))
+                        .first()
+                        .copied()
+                })
+        };
+        let location = (current.or_else(below))
+            .map(|v| format_passage(Passage::verse(v), &doc.versification, RefStyle::Long))
             .unwrap_or_default();
         if epoch {
             self.new_epoch();
@@ -1025,6 +1038,9 @@ mod tests {
         assert!(first.y <= f.position, "tiles start at or above the view");
         assert!(last.y + f64::from(last.height) >= f.position + 1400.0);
         assert!(f.tiles.iter().all(|t| t.height > 0.0 && t.height <= BAND));
+        // At the very top, over the book's first heading, the location is its first Verse.
+        let top = app.open_reader("bsb", None).unwrap();
+        assert_eq!(frame(&mut app, top, 0.0).location, "John 1:1");
         for pair in f.tiles.windows(2) {
             assert!(pair[0].y <= pair[1].y, "top first");
         }

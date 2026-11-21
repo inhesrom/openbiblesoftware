@@ -26,11 +26,15 @@ struct ReaderScreen: View {
             HStack(spacing: 8) {
                 Button { showBooks = true } label: {
                     Image(systemName: "square.grid.3x3")
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Books and chapters")
                 .accessibilityIdentifier("reader.books")
                 TextField("Go to (Jn 3:16)", text: $reference)
-                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 44)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
                     .submitLabel(.go)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
@@ -47,6 +51,8 @@ struct ReaderScreen: View {
                     Button("About") { showAbout = true }
                 } label: {
                     Image(systemName: "textformat.size")
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Reading options")
                 .accessibilityIdentifier("reader.options")

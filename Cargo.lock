@@ -2792,6 +2792,7 @@ name = "obs-mobile"
 version = "0.2.0"
 dependencies = [
  "obs-engine",
+ "obs-layout",
  "obs-model",
  "obs-reading",
  "obs-render",
