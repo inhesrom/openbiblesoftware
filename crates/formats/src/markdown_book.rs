@@ -627,9 +627,10 @@ impl Writer {
     }
 
     fn finish_unit(&mut self) {
-        let Some((title, buf)) = self.unit.take() else {
+        let Some((title, mut buf)) = self.unit.take() else {
             return;
         };
+        buf.normalize_nfc();
         if buf.text.trim().is_empty() {
             return;
         }

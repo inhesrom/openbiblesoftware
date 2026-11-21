@@ -191,7 +191,7 @@ pub fn failure_message(error: &str) -> &'static str {
     {
         "That is not a USFM file or folder of Bible books, a Markdown book, nor a SWORD module's \
          .conf file."
-    } else if e.contains("no text found in the markdown files") {
+    } else if e.contains("no text found in the book") {
         "That Markdown file has no text the app can import."
     } else if e.contains("books; choose one book") {
         "That folder holds several books. Choose one book's Markdown file."

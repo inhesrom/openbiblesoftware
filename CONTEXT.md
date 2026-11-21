@@ -112,7 +112,7 @@ A Dictionary whose entries are Passage lists: each headword's subtopics ("Of ene
 _Avoid_: Topical Bible (as the kind), Concordance, Topic list
 
 **Book**:
-A Resource of prose that is read from its start rather than looked up: a sermon, treatise, confession, catechism, hymnal, journal or church record, such as Owen's *Mortification of Sin* or a denomination's Book of Church Order. It is organized by its own Divisions and printed pages and has no Key scheme, so no Guide or Link set opens it by a Key; its Bible references are links, and Library search finds its words. A Book is imported from Markdown (ADR 0023), such as the Christian Open Library's books.
+A Resource of prose that is read from its start rather than looked up: a sermon, treatise, confession, catechism, hymnal, journal or church record, such as Owen's *Mortification of Sin* or a denomination's Book of Church Order. It is organized by its own Divisions and printed pages and has no Key scheme, so no Guide or Link set opens it by a Key; its Bible references are links, and Library search finds its words. A Book is imported from Markdown (ADR 0023), such as the Christian Open Library's books, or downloaded from the Open catalogue, as the Text Creation Partnership's TEI texts of early printed books are (#345).
 _Avoid_: Monograph, General book, Work, Title
 
 **Division**:
@@ -178,7 +178,7 @@ Adding a Resource to the library from a local file in an open format: USFM, SWOR
 _Avoid_: Install, Download
 
 **Get Resources**:
-The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories and by the Open catalogue, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles. Its licence filter shows only what is Free to share, what is Free for personal use, or All licences.
+The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories, and the Bibles and Books offered by the Open catalogue, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles. Its licence filter shows only what is Free to share, what is Free for personal use, or All licences.
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
 
 **Language name**:
@@ -186,7 +186,7 @@ What the app shows for a Resource's language tag (`bn`, `kmo`, `zh-Hant`): the E
 _Avoid_: Language code (for what is shown), Locale
 
 **Open catalogue**:
-The curated list of openly licensed Resources that are not SWORD modules, such as eBible.org's USFM Bibles. Get Resources lists them, and Download fetches each one from its publisher's own URL and imports it with our own importer. Each entry has its licence, Attribution and archived licence evidence. A download is checked first, against a pinned sha256 or against the pinned sha256 of the licence notice inside it, which the evidence quotes.
+The curated list of openly licensed Resources that are not SWORD modules, such as eBible.org's USFM Bibles and the Text Creation Partnership's CC0 texts of historic Books, each taken from its original publisher. Get Resources lists them, and Download fetches each one from its publisher's own URL and imports it with our own importer. Each entry has its licence, Attribution and archived licence evidence. A download is checked first, against a pinned sha256 or against the pinned sha256 of the licence notice inside it, which the evidence quotes.
 _Avoid_: Store, Mirror, Extra repository
 
 **Licence class**:

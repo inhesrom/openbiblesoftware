@@ -163,7 +163,8 @@ fn a_fresh_install_opens_on_home_with_quick_starts_and_the_starter_library_summa
         "Get Commentaries…",
         "Get Dictionaries…",
         "Books",
-        "Import…",
+        // The Open catalogue's Books (#345).
+        "Get Books…",
         "Starter library: 5 Resources",
         "Genesis 1:1",
         "Today's reading",
@@ -203,12 +204,14 @@ fn a_fresh_install_opens_on_home_with_quick_starts_and_the_starter_library_summa
         h.shell.st.session.get_bibles.filter(),
         obs_engine::get_bibles::ResourceFilter::Type(obs_model::ResourceType::Commentary)
     );
-    // No Book comes with the app or Get Resources: an empty Books row offers Import… (ADR 0023).
+    // The Open catalogue offers Books (#345): an empty Books row links to them too.
     click_home_button(&mut h);
-    h.click_text("Import…");
-    h.frames(3);
-    assert!(h.shell.st.pick_import, "the Import chooser opens");
-    h.shell.st.pick_import = false;
+    h.click_text("Get Books…");
+    settle(&mut h);
+    assert_eq!(
+        h.shell.st.session.get_bibles.filter(),
+        obs_engine::get_bibles::ResourceFilter::Type(obs_model::ResourceType::Book)
+    );
 
     // The next launch restores the Last session; Home shows again only because it was open.
     let home = home_tab(&h).unwrap();
