@@ -42,6 +42,22 @@ jobs:
           path: target/gallery/
           if-no-files-found: ignore
 
+  # Every link in the README resolves (#296): repository paths and their #anchors, the
+  # badges, the release pages and the sites it cites. Retries and GitHub's rate limit (429)
+  # are in .lychee.toml, so a slow site does not fail a pull request.
+  links:
+    name: README links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: lychee README.md
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config .lychee.toml --no-progress README.md
+          fail: true
+          # .lychee.toml is read by this version.
+          lycheeVersion: v0.24.2
+
   gallery:
     name: xtask gallery (seeded colour token change)
     runs-on: ubuntu-latest

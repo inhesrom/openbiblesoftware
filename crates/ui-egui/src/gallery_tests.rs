@@ -84,10 +84,12 @@ enum Section {
     NarrowPanels,
     /// Headers and rows in a side Panel and at a Larger Interface size (#303).
     PanelFit,
+    /// The README's hero and feature images (#296), with a library of real excerpts.
+    FrontPage,
 }
 
 impl Section {
-    const ALL: [Section; 8] = [
+    const ALL: [Section; 9] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
@@ -96,6 +98,7 @@ impl Section {
         Section::ReadingText,
         Section::NarrowPanels,
         Section::PanelFit,
+        Section::FrontPage,
     ];
 
     fn heading(self) -> &'static str {
@@ -108,6 +111,7 @@ impl Section {
             Section::ReadingText => "Reading text",
             Section::NarrowPanels => "Narrow Panels",
             Section::PanelFit => "Headers and rows in a narrow Panel",
+            Section::FrontPage => "Front page (README)",
         }
     }
 }
@@ -188,6 +192,7 @@ fn surfaces() -> Vec<Surface> {
         ),
         (Section::NarrowPanels, super::narrow_panels::narrow_panels()),
         (Section::PanelFit, super::panel_fit::panel_fit()),
+        (Section::FrontPage, super::front_page::front_page()),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -1357,8 +1362,13 @@ pub(super) fn launch(name: &str, look: &Look) -> (Harness, Lab) {
     let tipnr = obs_engine::testing::tipnr();
     set.push(obs_engine::testing::theographic(Some(&tipnr)));
     set.push(bsb_genesis_1());
+    launch_with(name, look, &set)
+}
+
+/// A fresh launch with `set` in the Library, in `look`.
+fn launch_with(name: &str, look: &Look, set: &[obs_model::Resource]) -> (Harness, Lab) {
     obs_store::clock::fix(Some(NOW_MS));
-    let (mut h, lab) = setup(&format!("gallery-{name}"), &set);
+    let (mut h, lab) = setup(&format!("gallery-{name}"), set);
     // The launch's backup is dated by its file's time.
     let taken = std::time::UNIX_EPOCH + std::time::Duration::from_millis(NOW_MS as u64);
     for entry in std::fs::read_dir(lab.root.join("backups")).unwrap() {
@@ -1663,7 +1673,11 @@ fn gallery(section: Section) {
     let mut checked = 0;
     for surface in surfaces().iter().filter(|s| s.section == section) {
         for look in &LOOKS {
-            let (mut h, lab) = launch(&format!("{}-{}", surface.slug, look.slug), look);
+            let name = format!("{}-{}", surface.slug, look.slug);
+            let (mut h, lab) = match section {
+                Section::FrontPage => launch_with(&name, look, &super::front_page::library()),
+                _ => launch(&name, look),
+            };
             open(&mut h, &lab, &surface.open);
             for (scale, scale_slug) in SCALES {
                 h.root_info.native_pixels_per_point = Some(scale);
@@ -1732,6 +1746,11 @@ fn gallery_panel_fit() {
     gallery(Section::PanelFit);
 }
 
+#[test]
+fn gallery_front_page() {
+    gallery(Section::FrontPage);
+}
+
 // ---------------------------------------------------------------------------------------
 // The page.
 
@@ -1743,7 +1762,7 @@ fn page() -> String {
          <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); \
          do not edit. -->\n\n\
          Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each \
-         surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see \
+         surface's empty, loading and error states, and Tabs in a narrow side Panel, in each Look at 1× (2× linked), and the README's front page images. These are the goldens CI compares the app against; see \
          [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).\n",
     );
     for section in Section::ALL {
