@@ -19,6 +19,7 @@ use crate::highlight_style_store::{
     read_palette, read_style, style_exists, write_palette, write_style,
 };
 use crate::sync_clock::{CLOCK_SCHEMA, read_device_id, record_op, records_ops, stamp_row};
+use crate::sync_schema::is_synced_preference;
 use crate::synced_store::{
     ListItems, NO_CLOCK, has_table, mark_tombstone, read_synced_row, write_synced_row,
 };
@@ -674,6 +675,15 @@ impl UserStore {
             let key = change
                 .key()
                 .ok_or_else(|| StoreError::Rejected("a change must be about one row".into()))?;
+            // A preference that is not Synced data stays on this device (D1: Visual filters).
+            if let RowKey::Preference(k) = &key
+                && !is_synced_preference(k)
+            {
+                return Err(StoreError::Rejected(format!(
+                    "{} is not Synced data, so no Change writes it",
+                    key.describe()
+                )));
+            }
             let current = read_row(&tx, &mut lists, &key)?;
             if current != change.before {
                 return Err(StoreError::Conflict(key.describe()));

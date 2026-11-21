@@ -1486,6 +1486,13 @@ this in addition to its own lines):
 - **Goal:** ADR 0022's merge rules, proven by property tests.
 - **Type:** AFK. **Xcode:** n. **Size:** L. **Depends on:** S28a.
 - **Read first:** ADR 0022 rule 3 (every sub-rule), ADR 0006; S28a's module.
+- **Added by the S27b review:** Collections, Copy presets and Saved searches are keyed by
+  name, so a rename is a delete plus an insert; a rename on one device racing an edit on
+  another must merge without losing either (the old name's tombstone stays). One stored value
+  has two row identities, a whole-value `Row::Preference(key)` (the fallback for a value not in
+  shape) and its item rows, and the merge must handle both arriving for one key. Layout
+  snapshots carry device-local Visual filter ids (`TabSnapshot.visual_filters`): the known D1
+  consequence, already in Out of scope.
 - **Do:** merge: LWW per row, Note-text Sync conflict → second Note + Needs attention, edit beats
   delete (incl. Notebook resurrection), field-wise "absent field untouched", Reading done-marks per
   Reading, Preferred order LWW, Layout name clash "(2)", two default Notebooks. Property tests: N

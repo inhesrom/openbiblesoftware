@@ -22,6 +22,7 @@ use rusqlite::{Connection, OpenFlags, params};
 
 use crate::backup::{BackupContents, BackupFile, BackupKind, SAFETY_BACKUPS, UPDATE_BACKUPS};
 use crate::error::StoreError;
+use crate::synced_store;
 use crate::user::{USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore, backups_in, migrate, sql};
 
 /// The part of a Safety backup's file name after the database's stem.
@@ -127,7 +128,9 @@ impl UserStore {
     }
 
     /// Read everything the app reads of a User database, so a row it could not read refuses
-    /// the Backup now rather than failing after the restore.
+    /// the Backup now rather than failing after the restore. Favorites and Reading plans are
+    /// read as their writes read them too (uid, position), since those go through
+    /// `apply_changes`.
     fn read_everything(&self) -> Result<(), StoreError> {
         self.contents()?;
         self.annotations(None)?;
@@ -142,10 +145,15 @@ impl UserStore {
         self.preferred_order()?;
         self.preferences()?;
         self.resource_names()?;
-        self.favorites()?;
+        for favorite in self.favorites()? {
+            synced_store::read_favorite_by_id(&self.conn, favorite.id)?;
+        }
         self.history()?;
         for plan in self.reading_plans()? {
             self.plan_readings(plan.id)?;
+            if let Some(synced) = synced_store::read_plan_by_id(&self.conn, plan.id)? {
+                synced_store::read_readings(&self.conn, &synced.uid)?;
+            }
         }
         Ok(())
     }
