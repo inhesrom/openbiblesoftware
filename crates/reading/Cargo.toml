@@ -1,0 +1,25 @@
+[package]
+name = "obs-reading"
+description = "The reading core without egui: the reading document and view, selection, Marks, layout workers and Page tone colours."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-engine.workspace = true
+obs-fonts.workspace = true
+obs-layout.workspace = true
+obs-model.workspace = true
+obs-scripture.workspace = true
+obs-store.workspace = true
+unicode-segmentation.workspace = true
+
+[features]
+# The layout workers' hold and release hooks, for tests in dependent crates.
+test-support = []
+
+[lints]
+workspace = true

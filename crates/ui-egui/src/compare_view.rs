@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::resource_text_size::ResourceTextSizes;
-use obs_engine::{Cell, ComparedBible, CopiedBible, Marks, VerseBlock, verse_blocks};
+use obs_engine::{Cell, ComparedBible, Marks, VerseBlock, verse_blocks};
 use obs_layout::{ColorRole, LaidBlock, TextSettings, UnitPos};
 use obs_model::Direction;
 use obs_scripture::{Verse, VerseMap};
@@ -33,39 +33,6 @@ const SCROLLBAR: f32 = size::SCROLLBAR;
 pub const ABSENT: &str = "— not in this Bible —";
 /// What a row in another language than the base says (#18 rule 14).
 pub const NOT_COMPARED: &str = "not compared";
-
-impl ComparedBible for ReadingDoc {
-    fn language(&self) -> &str {
-        &self.manifest.language
-    }
-
-    fn verse_map(&self) -> Option<&VerseMap> {
-        self.verse_map.as_deref()
-    }
-
-    fn verse_at(&self, native: Verse) -> Option<(Verse, u16)> {
-        self.bible_verse_at(native).map(|v| (v.verse, v.last))
-    }
-
-    fn verse_text(&self, native: Verse) -> Option<String> {
-        ReadingDoc::verse_text(self, native)
-            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
-    }
-}
-
-impl CopiedBible for ReadingDoc {
-    fn manifest(&self) -> &obs_model::Manifest {
-        &self.manifest
-    }
-
-    fn versification(&self) -> &dyn obs_scripture::Versification {
-        &self.versification
-    }
-
-    fn starts_paragraph(&self, native: Verse) -> bool {
-        ReadingDoc::starts_paragraph(self, native)
-    }
-}
 
 /// A selected Bible keeps its row even when its Resource cannot be loaded.
 pub struct ComparisonBible {

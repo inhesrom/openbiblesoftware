@@ -14,8 +14,8 @@ use obs_scripture::Verse;
 use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
 use crate::interlinear::InterlinearSource;
+use crate::reading_tokens::{mark, motion, size, space};
 use crate::selection::{DocPos, Selection};
-use crate::tokens::{mark, motion, size, space};
 use crate::workers::{LayoutClient, lay_out};
 
 /// UI-thread layout per frame. #19 allows 2 ms; one block may overrun the check, so stop
@@ -139,14 +139,14 @@ pub struct ReadingView {
     /// The current selection, in document coordinates.
     pub selection: Option<Selection>,
     /// Whether the pointer drag in progress is on the scrollbar rather than the text.
-    pub(crate) dragging_scrollbar: bool,
+    pub dragging_scrollbar: bool,
     /// Whether the pointer drag in progress carries a Bible reference or the selection out of
     /// the pane (#216) rather than selecting.
-    pub(crate) dragging_out: bool,
+    pub dragging_out: bool,
     /// Where the pane last drew the text's top-left corner, in screen points.
-    pub(crate) text_origin: [f32; 2],
+    pub text_origin: [f32; 2],
     /// The pane last drawn, in screen points: left, top, right, bottom.
-    pub(crate) pane_rect: [f32; 4],
+    pub pane_rect: [f32; 4],
     /// The interlinear lines under its Tagged words, when the Tab shows them (#143).
     interlinear: Option<Arc<InterlinearSource>>,
     /// A jump or keyboard scroll still easing into place (#225).
@@ -699,7 +699,7 @@ impl ReadingView {
 
     /// The text under a screen point in the pane as last drawn (a Note dropped on it, #216):
     /// `None` off the pane or off the text, where [`Self::pos_at`] would clamp to it.
-    pub(crate) fn text_under(&self, x: f32, y: f32) -> Option<DocPos> {
+    pub fn text_under(&self, x: f32, y: f32) -> Option<DocPos> {
         let [left, top, right, bottom] = self.pane_rect;
         if x < left || x >= right || y < top || y >= bottom {
             return None;
@@ -767,32 +767,32 @@ impl ReadingView {
     /// Whether the block at the top of the view is laid out, so a frame draws its text (the
     /// scale bench's "first Bible text", #227).
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn top_block_laid(&self) -> bool {
+    pub fn top_block_laid(&self) -> bool {
         self.laid.contains_key(&self.anchor.0)
     }
 
     /// Whether a frame has drawn every block in view since the text was last laid out anew (a
     /// new size, say), none as a placeholder: the Text size bench's "change shown" (#299).
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn drew_all_text(&self) -> bool {
+    pub fn drew_all_text(&self) -> bool {
         self.drawn.is_some_and(|s| s.placeholders == 0)
     }
 
     /// Layouts the workers did for this view, stale ones included (tests).
-    #[cfg(test)]
-    pub(crate) fn worker_layouts(&self) -> u64 {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn worker_layouts(&self) -> u64 {
         self.client.ran()
     }
 
     /// Keep this view's layouts back from the workers until [`Self::release_layouts`], as a
     /// pool busy with other work would (tests).
-    #[cfg(test)]
-    pub(crate) fn hold_layouts(&mut self) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn hold_layouts(&mut self) {
         self.client.hold();
     }
 
-    #[cfg(test)]
-    pub(crate) fn release_layouts(&mut self) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn release_layouts(&mut self) {
         self.client.release();
     }
 

@@ -12,13 +12,13 @@ publish.workspace = true
 obs-engine.workspace = true
 obs-fonts.workspace = true
 obs-model.workspace = true
+obs-reading.workspace = true
 obs-scripture.workspace = true
 obs-search.workspace = true
 obs-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
-unicode-segmentation.workspace = true
 obs-layout.workspace = true
 obs-render.workspace = true
 egui = { workspace = true, features = ["monochrome_emoji_fonts", "serde"] }
@@ -32,7 +32,9 @@ rfd = "0.17"
 
 [dev-dependencies]
 obs-formats.workspace = true
+unicode-segmentation.workspace = true
 obs-engine = { workspace = true, features = ["test-support"] }
+obs-reading = { workspace = true, features = ["test-support"] }
 # Reads ATTRIBUTION.toml and starter/sources.toml in the Credits tests (#67).
 toml = "1"
 # Opens the Diagnostics zip Report a problem saves (#249); the engine's version and features.

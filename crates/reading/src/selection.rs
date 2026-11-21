@@ -195,7 +195,7 @@ pub fn range_rects(
 /// [`range_rects`] over the text's own glyphs only: inline objects anchored in a range (a
 /// verse number at a Verse's first byte) are left out, as a Find match (#175) covers only the
 /// letters it matched.
-pub(crate) fn text_range_rects(
+pub fn text_range_rects(
     view: &ReadingView,
     ranges: &[(DocPos, DocPos)],
     height: f32,
@@ -222,7 +222,7 @@ fn ranges_rects(
 /// [`range_rects`] in one laid-out block only, with the block's top at 0: rectangles that stay
 /// right for as long as the block keeps this layout, wherever it is scrolled (Visual filters,
 /// #211, keep them per block).
-pub(crate) fn block_range_rects(
+pub fn block_range_rects(
     doc: &crate::doc::ReadingDoc,
     index: usize,
     laid: &obs_layout::LaidBlock,

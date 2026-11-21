@@ -97,7 +97,7 @@ pub struct LayoutClient {
     /// Layouts the workers did for this client.
     ran: Arc<AtomicU64>,
     /// Jobs kept back from the pool until [`Self::release`] (tests: a pool busy elsewhere).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     held: Option<Vec<Job>>,
 }
 
@@ -118,7 +118,7 @@ impl Default for LayoutClient {
             pending: std::collections::HashSet::new(),
             epoch: Arc::default(),
             ran: Arc::default(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             held: None,
         }
     }
@@ -148,7 +148,7 @@ impl LayoutClient {
             }),
             reply: self.reply_tx.clone(),
         };
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(held) = self.held.as_mut() {
             held.push(job);
             return;
@@ -158,13 +158,13 @@ impl LayoutClient {
 
     /// Keep jobs back from the pool until [`Self::release`], as a pool busy with other work
     /// would (tests).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn hold(&mut self) {
         self.held.get_or_insert_with(Vec::new);
     }
 
     /// Send the jobs kept back since [`Self::hold`] to the pool, in order.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn release(&mut self) {
         for job in self.held.take().unwrap_or_default() {
             send(job);

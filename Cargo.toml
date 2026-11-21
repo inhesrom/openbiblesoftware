@@ -21,6 +21,7 @@ obs-search = { path = "crates/search" }
 obs-store = { path = "crates/store" }
 obs-render = { path = "crates/render" }
 obs-engine = { path = "crates/engine" }
+obs-reading = { path = "crates/reading" }
 obs-ui-egui = { path = "crates/ui-egui" }
 
 # Shared third-party crates.

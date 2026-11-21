@@ -74,6 +74,13 @@ a dark Theme) it stays the field and each snippet keeps its own page
 spacing, size or colour anywhere in the crate outside `tokens.rs` and `palette.rs`. Use a
 token, or add a named one to `tokens.rs`.
 
+The lint also reads the reading core, `crates/reading/src` (`obs-reading`, ADR 0021; see
+[reading-core.md](reading-core.md)), whose own tokens are `reading_tokens.rs` (`space`,
+`motion`, `size::TEXT_MIN`, `mark::FOOTNOTE_BOX`, which `tokens` re-exports) and whose Page
+tone colours are its `palette.rs` (`TonePalette`). Its allowlist entries are named by the
+crate-relative path with a `reading/` prefix (`reading/view.rs`). A token the reading core
+measures with goes in `reading_tokens.rs`, a chrome token in `tokens.rs`.
+
 No value is exempt as such. The rule lets through only what cannot be a measurement: 0,
 halving or doubling a length (`w / 2.0`, `h * 0.5`, `2.0 * MARGIN`), the rest of a fraction
 (`1.0 - t`) and, inside a call, an integer 1 that counts (`level.saturating_sub(1)`). A ½, 1
