@@ -34,6 +34,13 @@ pub struct Paths {
     pub downloads: PathBuf,
 }
 
+/// The most device pixels a tile may have on a side. A tile is `width × height × 4` bytes
+/// allocated at once, and a failed allocation aborts the app, so a shell's bad size is refused
+/// instead: 8192 px bounds a tile at 256 MiB, and is still several times the longest side of
+/// an iPhone or iPad screen at its own scale. S03 spike.
+#[doc(hidden)]
+pub const MAX_TILE_PX: usize = 8192;
+
 /// One reader of the running app: an index into its readers. S03 spike.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -53,7 +60,8 @@ pub enum MobileError {
     Reference { reference: String, error: String },
     /// No reader has that id.
     NoReader(ReaderId),
-    /// A tile must have a size and a scale above zero.
+    /// A tile must have a size and a scale above zero, and at most [`MAX_TILE_PX`] device
+    /// pixels on a side.
     TileSize,
 }
 
@@ -67,7 +75,10 @@ impl std::fmt::Display for MobileError {
             MobileError::Open { resource, error } => write!(f, "cannot open {resource}: {error}"),
             MobileError::Reference { reference, error } => write!(f, "“{reference}”: {error}"),
             MobileError::NoReader(r) => write!(f, "no reader {}", r.0),
-            MobileError::TileSize => write!(f, "a tile needs a size and a scale above zero"),
+            MobileError::TileSize => write!(
+                f,
+                "a tile needs a size and a scale above zero, and at most {MAX_TILE_PX} px a side"
+            ),
         }
     }
 }
@@ -210,7 +221,8 @@ impl MobileApp {
 
     /// The tile of `reader`'s page, `width` points wide, `height` points tall from `top`
     /// points below its Current location, at `scale` device px per point, in the Page tone
-    /// the User database has (Auto as in a light Theme). S03 spike.
+    /// the User database has (Auto as in a light Theme). Refused when it is more than
+    /// [`MAX_TILE_PX`] device pixels on a side. S03 spike.
     #[doc(hidden)]
     pub fn layout_tile(
         &mut self,
@@ -222,6 +234,10 @@ impl MobileApp {
     ) -> Result<Tile, MobileError> {
         let positive = |x: f32| x.is_finite() && x > 0.0;
         if !(positive(width) && positive(height) && positive(scale) && top.is_finite()) {
+            return Err(MobileError::TileSize);
+        }
+        let (w, h) = obs_render::tile_size([0.0, top, width, top + height], scale);
+        if w > MAX_TILE_PX || h > MAX_TILE_PX {
             return Err(MobileError::TileSize);
         }
         let appearance = self.session.appearance;
@@ -358,12 +374,20 @@ mod tests {
             (0.0, 256.0, 3.0),
             (390.0, -1.0, 3.0),
             (390.0, 256.0, f32::NAN),
+            // Over MAX_TILE_PX on a side, up to absurd but finite sizes.
+            (2731.0, 256.0, 3.0),
+            (390.0, 2731.0, 3.0),
+            (1e20, 256.0, 3.0),
+            (390.0, f32::MAX, 3.0),
         ] {
             assert_eq!(
                 app.layout_tile(ReaderId(0), 0.0, w, h, s),
                 Err(MobileError::TileSize)
             );
         }
+        // MAX_TILE_PX itself is allowed.
+        let edge = app.layout_tile(ReaderId(0), 0.0, 4096.0, 1.0, 2.0).unwrap();
+        assert_eq!((edge.width as usize, edge.height), (MAX_TILE_PX, 2));
     }
 
     #[test]

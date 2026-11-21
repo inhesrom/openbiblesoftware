@@ -110,7 +110,7 @@ fn genesis_1_in_the_bsb_at_3x_from_the_real_bundled_set() {
         eprintln!("no apps/ios/Bundled/starter or dist/starter; skipped");
         return;
     };
-    let (_, paths) = paths("gen1");
+    let (root, paths) = paths("gen1");
     let started = Instant::now();
     let app = MobileApp::boot(paths, Some(bundle.to_string_lossy().into_owned())).unwrap();
     let boot = started.elapsed();
@@ -150,4 +150,7 @@ fn genesis_1_in_the_bsb_at_3x_from_the_real_bundled_set() {
         ms(warm[warm.len() - 1]),
         png.display()
     );
+    // The copy of the Bundled set is tens of MB: leave none behind.
+    drop(app);
+    std::fs::remove_dir_all(&root).unwrap();
 }
