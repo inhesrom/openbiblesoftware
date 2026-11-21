@@ -732,7 +732,7 @@ impl UserStore {
                 if recording {
                     record_op(&tx, &clock, change)?;
                 }
-                Some(clock.encode())
+                Some(clock.encode()?)
             } else {
                 None
             };

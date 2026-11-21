@@ -5,13 +5,17 @@
 //! `Change` with its clock in `op_outbox` until it is written to an op file in the Sync folder.
 //!
 //! The clock never goes back: it is seeded from the largest clock the database holds, at the
-//! first change after opening or restoring it, and in between it only counts on.
+//! first change after opening or restoring it, and in between it only counts on and passes
+//! every clock it observes ([`UserStore::observe_clock`], a merge's). A clock more than
+//! [`MAX_FORWARD_SKEW_MS`](crate::hlc::MAX_FORWARD_SKEW_MS) ahead of the wall clock, or one
+//! that does not parse, is not taken in; its row is left as it is.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::annotation::is_valid_id;
 use crate::annotation::{Change, RowKey};
 use crate::error::StoreError;
-use crate::hlc::Hlc;
+use crate::hlc::{Hlc, latest_wall_taken_in};
 use crate::preference_items::ListPreference;
 use crate::sync_schema::SYNCED_TABLES;
 use crate::user::{UserStore, sql};
@@ -53,12 +57,28 @@ fn clocked_tables() -> impl Iterator<Item = &'static str> {
         .chain(["tombstone", "item_clock", "op_outbox"])
 }
 
-/// The largest wall time and counter of any clock in the database.
-fn largest_clock(c: &Connection) -> Result<Option<(u64, u16)>, StoreError> {
+/// A `GLOB` pattern matching exactly the text form of a clock ([`Hlc::parse`]).
+fn clock_glob() -> String {
+    let hex = |n: usize| "[0-9a-f]".repeat(n);
+    [12, 4, 8, 4, 4, 4, 12].map(hex).join("-")
+}
+
+/// The largest wall time and counter of any clock in the database that the clock takes in at
+/// wall time `now_ms`: one that parses, at most
+/// [`MAX_FORWARD_SKEW_MS`](crate::hlc::MAX_FORWARD_SKEW_MS) ahead.
+fn largest_clock(c: &Connection, now_ms: i64) -> Result<Option<(u64, u16)>, StoreError> {
+    let glob = clock_glob();
+    let latest = format!("{:012x}", latest_wall_taken_in(now_ms));
     let mut largest = None;
     for table in clocked_tables() {
         let clock: Option<String> = c
-            .query_row(&format!("SELECT MAX(clock) FROM {table}"), [], |r| r.get(0))
+            .query_row(
+                &format!(
+                    "SELECT MAX(clock) FROM {table} WHERE clock GLOB ?1 AND substr(clock, 1, 12) <= ?2"
+                ),
+                params![glob, latest],
+                |r| r.get(0),
+            )
             .map_err(sql)?;
         if let Some(tick) = clock.as_deref().and_then(Hlc::parse).map(|h| h.tick()) {
             largest = largest.max(Some(tick));
@@ -67,31 +87,54 @@ fn largest_clock(c: &Connection) -> Result<Option<(u64, u16)>, StoreError> {
     Ok(largest)
 }
 
+/// This device's id; [`StoreError::Corrupt`] when there is none or it is not a UUID
+/// (`ensure_device` at open replaces both).
 pub(crate) fn read_device_id(c: &Connection) -> Result<String, StoreError> {
-    c.query_row("SELECT device_id FROM device WHERE id = 1", [], |r| {
-        r.get(0)
-    })
-    .optional()
-    .map_err(sql)?
-    .ok_or_else(|| StoreError::Corrupt("the User database has no device id".into()))
+    let id: String = c
+        .query_row("SELECT device_id FROM device WHERE id = 1", [], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(sql)?
+        .ok_or_else(|| StoreError::Corrupt("the User database has no device id".into()))?;
+    if !is_valid_id(&id) {
+        return Err(StoreError::Corrupt(format!(
+            "the User database's device id `{id}` is not one"
+        )));
+    }
+    Ok(id)
 }
 
 impl UserStore {
     /// The next clock, from the database `c` this store writes through.
     pub(crate) fn next_clock(&self, c: &Connection) -> Result<Hlc, StoreError> {
+        let now = crate::clock::now_ms();
         let mut state = self.clock.borrow_mut();
         if !state.seeded {
             state.device_id = Some(read_device_id(c)?);
-            state.last = state.last.max(largest_clock(c)?);
+            state.last = state.last.max(largest_clock(c, now)?);
             state.seeded = true;
         }
         let device_id = state
             .device_id
             .clone()
             .ok_or_else(|| StoreError::Corrupt("the User database has no device id".into()))?;
-        let clock = Hlc::next(state.last, crate::clock::now_ms(), &device_id);
+        let clock = Hlc::next(state.last, now, &device_id)?;
         state.last = Some(clock.tick());
         Ok(clock)
+    }
+
+    /// Take in `clock`, one merged in from another device (the HLC receive rule): every
+    /// clock handed out after it passes it. A clock more than
+    /// [`MAX_FORWARD_SKEW_MS`](crate::hlc::MAX_FORWARD_SKEW_MS) ahead of the wall clock is
+    /// not taken in; returns whether it was.
+    pub fn observe_clock(&self, clock: &Hlc) -> bool {
+        if clock.wall_ms > latest_wall_taken_in(crate::clock::now_ms()) {
+            return false;
+        }
+        let mut state = self.clock.borrow_mut();
+        state.last = state.last.max(Some(clock.tick()));
+        true
     }
 
     /// Seed the clock from the database again at the next change (after a restore replaced
@@ -180,12 +223,32 @@ impl UserStore {
     }
 
     /// Op file `seq` is in the Sync folder: its ops leave the outbox, and it is the last of
-    /// this device's op files written.
+    /// this device's op files written. [`StoreError::Rejected`] unless `seq` is reserved
+    /// ([`UserStore::reserve_op_files`]) and at most one after the last written, so the own
+    /// files never skip a number.
     pub fn op_file_written(&self, seq: u64) -> Result<(), StoreError> {
         let seq = i64::try_from(seq)
             .map_err(|_| StoreError::Rejected(format!("op file number {seq}")))?;
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
         let device = read_device_id(&tx)?;
+        let (written, reserved): (Option<i64>, bool) = tx
+            .query_row(
+                "SELECT (SELECT seq FROM applied_up_to WHERE device_id = ?1),
+                        EXISTS (SELECT 1 FROM op_outbox WHERE file_seq = ?2)",
+                params![device, seq],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(sql)?;
+        let Some(written) = written else {
+            return Err(StoreError::Rejected(
+                "this device does not record ops".into(),
+            ));
+        };
+        if !reserved || seq > written + 1 {
+            return Err(StoreError::Rejected(format!(
+                "op file {seq} is not the next one reserved (the last written is {written})"
+            )));
+        }
         tx.execute("DELETE FROM op_outbox WHERE file_seq = ?1", [seq])
             .map_err(sql)?;
         tx.execute(
@@ -214,7 +277,7 @@ pub(crate) fn record_op(c: &Connection, clock: &Hlc, change: &Change) -> Result<
         .map_err(|e| StoreError::Rejected(format!("a change that is not JSON: {e}")))?;
     c.execute(
         "INSERT INTO op_outbox (clock, change) VALUES (?1, ?2)",
-        params![clock.encode(), json],
+        params![clock.encode()?, json],
     )
     .map(drop)
     .map_err(sql)
@@ -222,14 +285,16 @@ pub(crate) fn record_op(c: &Connection, clock: &Hlc, change: &Change) -> Result<
 
 /// Write `clock` as the clock of the row `key` names, which `change` has just written. A
 /// deleted row has none (its tombstone has it); a list preference's item has its
-/// `item_clock` row, and its preference's row the same clock.
+/// `item_clock` row, and its preference's row the same clock; the Preferred order has its
+/// `item_clock` row (`preferred_order`, `''`), kept when the order is empty, and every
+/// `preferred_order` row the same clock.
 pub(crate) fn stamp_row(
     c: &Connection,
     key: &RowKey,
     change: &Change,
     clock: &Hlc,
 ) -> Result<(), StoreError> {
-    let clock = clock.encode();
+    let clock = clock.encode()?;
     let deleted = change.after.is_none();
     let set = |table: &str, column: &str, id: &str| {
         if deleted {
@@ -260,10 +325,18 @@ pub(crate) fn stamp_row(
             .map(drop)
             .map_err(sql),
         RowKey::Reading(..) => Ok(()),
-        RowKey::PreferredOrder => c
-            .execute("UPDATE preferred_order SET clock = ?1", [&clock])
-            .map(drop)
-            .map_err(sql),
+        RowKey::PreferredOrder => {
+            let (kind, id) = key.tombstone();
+            c.execute(
+                "INSERT INTO item_clock (row_table, row_id, clock) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock",
+                params![kind, id, clock],
+            )
+            .map_err(sql)?;
+            c.execute("UPDATE preferred_order SET clock = ?1", [&clock])
+                .map(drop)
+                .map_err(sql)
+        }
         RowKey::Collection(_)
         | RowKey::CopyPreset(_)
         | RowKey::SavedSearch(_)

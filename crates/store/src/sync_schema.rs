@@ -10,9 +10,9 @@
 //! `apply_changes` stamps every row, item and tombstone it writes with a hybrid logical clock
 //! (`hlc.rs`, `sync_clock.rs`).
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::annotation::new_id;
+use crate::annotation::{is_valid_id, new_id};
 use crate::error::StoreError;
 use crate::user::sql;
 
@@ -189,7 +189,8 @@ CREATE TABLE applied_up_to (
 /// - `item_clock`: the clock of each item of a list preference (a Collection, Copy preset,
 ///   Saved search, Guide section or Resource tags row), keyed as its tombstone is
 ///   (`row_table` the `Row` kind, `row_id` its id), since `preference.clock` is one per key.
-///   A deleted item's row goes; its tombstone keeps the clock.
+///   A deleted item's row goes; its tombstone keeps the clock. The Preferred order's clock
+///   is here too (`preferred_order`, `''`), so an empty order still has one.
 /// - `op_outbox`: while this device records ops (`applied_up_to` has a row for its own id),
 ///   every `Change` applied, with its clock, in order, until it is written to an op file.
 ///   `file_seq` is the op file it was reserved for (`NULL`: not yet), so a write that stopped
@@ -219,11 +220,23 @@ pub(crate) fn make_device(c: &Connection) -> Result<(), StoreError> {
     .map_err(sql)
 }
 
-/// Give the database this device's id if it has none: a v13 database or Backup can lack the
-/// `device` row (only migration 12 → 13 makes it), and every clock names the device.
+/// Give the database this device's id if it has none, or a new one in place of one that is
+/// not a UUID: a v13 database or Backup can lack the `device` row (only migration 12 → 13
+/// makes it), a damaged one can hold anything, and every clock names the device (a clock
+/// naming a device that is not a UUID never parses).
 pub(crate) fn ensure_device(c: &Connection) -> Result<(), StoreError> {
+    let id: Option<String> = c
+        .query_row("SELECT device_id FROM device WHERE id = 1", [], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(sql)?;
+    if id.as_deref().is_some_and(is_valid_id) {
+        return Ok(());
+    }
     c.execute(
-        "INSERT INTO device (id, device_id) VALUES (1, ?1) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO device (id, device_id) VALUES (1, ?1)
+         ON CONFLICT (id) DO UPDATE SET device_id = excluded.device_id",
         [new_id()],
     )
     .map(drop)

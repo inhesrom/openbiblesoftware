@@ -350,6 +350,11 @@ const WRITES: &[(&str, Write, &[&str])] = &[
         &["preferred_order"],
     ),
     (
+        "empty the Preferred order",
+        |db| db.save_preferred_order(&[]).unwrap(),
+        &["preferred_order"],
+    ),
+    (
         "choose the active Highlight palette",
         |db| db.set_preference("highlights.palette", "mine").unwrap(),
         &["preference"],
@@ -442,8 +447,8 @@ fn every_write_of_synced_data_emits_changes_and_they_are_the_whole_write() {
     assert_eq!(covered, every, "every kind of Row has a write above");
 }
 
-/// The clock stored for the row `key` names: its row's `clock`, its item's `item_clock` or,
-/// once deleted, its tombstone's.
+/// The clock stored for the row `key` names: its row's `clock`, its item's (or the Preferred
+/// order's) `item_clock` or, once deleted, its tombstone's.
 fn stored_clock(c: &Connection, key: &RowKey, deleted: bool) -> Option<String> {
     let (kind, id) = key.tombstone();
     let one = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Option<String> {
@@ -478,7 +483,13 @@ fn stored_clock(c: &Connection, key: &RowKey, deleted: bool) -> Option<String> {
             &[plan, position],
         ),
         RowKey::PreferredOrder => {
-            let clocks: BTreeSet<Option<String>> = c
+            // Its `item_clock` row, kept when the order is empty, and every row of the order
+            // the same clock.
+            let clock = one(
+                "SELECT clock FROM item_clock WHERE row_table = ?1 AND row_id = ?2",
+                &[&kind, &id],
+            );
+            let rows: BTreeSet<Option<String>> = c
                 .prepare("SELECT clock FROM preferred_order")
                 .unwrap()
                 .query_map([], |r| r.get(0))
@@ -486,10 +497,10 @@ fn stored_clock(c: &Connection, key: &RowKey, deleted: bool) -> Option<String> {
                 .collect::<Result<_, _>>()
                 .unwrap();
             assert!(
-                clocks.len() <= 1,
-                "one clock for the whole order: {clocks:?}"
+                rows.iter().all(|r| *r == clock),
+                "one clock for the whole order: {rows:?}, {clock:?}"
             );
-            clocks.into_iter().next().flatten()
+            clock
         }
         RowKey::Collection(_)
         | RowKey::CopyPreset(_)
@@ -555,7 +566,7 @@ fn every_write_of_synced_data_stamps_its_rows_with_clocks_and_records_its_ops() 
             let deleted = op.change.after.is_none();
             assert_eq!(
                 stored_clock(&c, key, deleted),
-                Some(op.clock.encode()),
+                Some(op.clock.encode().unwrap()),
                 "{what}: {}",
                 key.describe()
             );
@@ -563,7 +574,7 @@ fn every_write_of_synced_data_stamps_its_rows_with_clocks_and_records_its_ops() 
                 let newest = ops
                     .iter()
                     .filter(|o| list_key(&o.change.key().unwrap()).as_ref() == Some(&list))
-                    .map(|o| o.clock.encode())
+                    .map(|o| o.clock.encode().unwrap())
                     .max();
                 assert_eq!(
                     stored_clock(&c, &RowKey::Preference(list.clone()), false),

@@ -1,8 +1,10 @@
 //! Sync's clocks and outbox in the User database (ADR 0022 rules 2–3, S28a): migration 13 → 14
-//! loses nothing, from a database or a Backup; every database has a device id; the clock never
-//! hands out one at or below a clock the database holds, after a reopen, a restore or a wall
-//! clock stepping back; and the outbox keeps ops only while this device records them, giving a
-//! reserved op file the same ops when it is retried.
+//! loses nothing, from a database or a Backup; every database has a device id, a damaged one
+//! replaced; the clock never hands out one at or below a clock the database holds or a merge
+//! observed, after a reopen, a restore or a wall clock stepping back, taking in no clock that
+//! does not parse or is more than a day ahead (whose rows stay); and the outbox keeps ops only
+//! while this device records them, giving a reserved op file the same ops when it is retried
+//! and marking only the next reserved file written.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(not(target_arch = "wasm32"))]
@@ -264,6 +266,44 @@ fn every_database_has_a_device_id_from_open_and_from_open_backup() {
 }
 
 #[test]
+fn a_damaged_device_id_is_replaced_at_open_as_a_missing_one_is() {
+    let dir = Dir::new("bad-device");
+    obs_store::clock::fix(Some(1_800_000_000_000));
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let first = add_notebook(&db, "A");
+    db.execute_unchecked("UPDATE device SET device_id = 'not-a-device'")
+        .unwrap();
+    assert!(matches!(
+        db.device_id(),
+        Err(obs_store::StoreError::Corrupt(_))
+    ));
+    let backup = dir.0.join("bad-device.obsbackup");
+    db.back_up(&backup).unwrap();
+    drop(db);
+
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let id = db.device_id().unwrap();
+    assert!(obs_store::annotation::is_valid_id(&id));
+    assert_ne!(id, first.device_id);
+    // Its clocks name the new id and still pass every clock held.
+    let next = add_notebook(&db, "B");
+    assert_eq!(next.device_id, id);
+    assert_eq!(next.tick(), (1_800_000_000_000, first.counter + 1));
+
+    let (from_backup, _) = UserStore::open_backup(&backup).unwrap();
+    let other = from_backup.device_id().unwrap();
+    assert!(obs_store::annotation::is_valid_id(&other));
+    assert_eq!(
+        strings(
+            &Connection::open(&backup).unwrap(),
+            "SELECT device_id FROM device"
+        ),
+        ["not-a-device"],
+        "the Backup itself is left as it is"
+    );
+}
+
+#[test]
 fn the_clock_passes_every_clock_held_after_a_reopen_even_when_the_wall_clock_steps_back() {
     let dir = Dir::new("reopen");
     obs_store::clock::fix(Some(1_800_000_000_000));
@@ -283,13 +323,14 @@ fn the_clock_passes_every_clock_held_after_a_reopen_even_when_the_wall_clock_ste
     let held = clocks(&Connection::open(dir.db()).unwrap());
     let next = add_notebook(&db, "C");
     assert!(
-        held.iter().all(|c| next.encode() > *c),
+        held.iter().all(|c| next.encode().unwrap() > *c),
         "{next} passes {held:?}"
     );
     assert_eq!(next.tick(), (1_800_000_000_000, 3));
-    // A clock from another device in the database (as a merge would write) is passed too.
+    // A clock from another device in the database (as a merge would write), a day ahead of
+    // this one's wall clock (the most a clock taken in may be), is passed too.
     let other = Hlc {
-        wall_ms: 1_900_000_000_000,
+        wall_ms: 1_800_000_000_000,
         counter: 9,
         device_id: new_id(),
     };
@@ -300,12 +341,93 @@ fn the_clock_passes_every_clock_held_after_a_reopen_even_when_the_wall_clock_ste
     drop(db);
     let (db, _) = UserStore::open(&dir.db()).unwrap();
     let after = add_notebook(&db, "D");
-    assert_eq!(after.tick(), (1_900_000_000_000, 10));
+    assert_eq!(after.tick(), (1_800_000_000_000, 10));
     assert_ne!(after.device_id, other.device_id);
 }
 
 #[test]
-fn the_clock_passes_every_clock_held_after_a_restore() {
+fn the_seed_takes_in_no_damaged_clock_nor_one_more_than_a_day_ahead_and_keeps_their_rows() {
+    let dir = Dir::new("seed-bounds");
+    let now = 1_800_000_000_000_u64;
+    obs_store::clock::fix(Some(i64::try_from(now).unwrap()));
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let first = add_notebook(&db, "A");
+    let clock = |wall_ms, counter| Hlc {
+        wall_ms,
+        counter,
+        device_id: new_id(),
+    };
+    let day = obs_store::hlc::MAX_FORWARD_SKEW_MS;
+    // An hour ahead, a day ahead (the bound, still taken in), a day and a millisecond ahead,
+    // and text that is no clock but sorts above every clock.
+    let hour = clock(now + 3_600_000, 4);
+    let bound = clock(now + day, 2);
+    let beyond = clock(now + day + 1, 0);
+    for statement in [
+        format!(
+            "INSERT INTO tombstone (row_table, row_id, clock) VALUES
+                 ('notebook', 'hour', '{hour}'), ('notebook', 'beyond', '{beyond}')"
+        ),
+        "UPDATE notebooks SET clock = 'zz-not-a-clock' WHERE name = 'A'".into(),
+        format!(
+            "INSERT INTO item_clock (row_table, row_id, clock) VALUES ('collection', 'x', '{bound}')"
+        ),
+    ] {
+        db.execute_unchecked(&statement).unwrap();
+    }
+    let held = everything(&Connection::open(dir.db()).unwrap());
+    drop(db);
+
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let next = add_notebook(&db, "B");
+    assert_eq!(next.tick(), (now + day, 3), "passes the bound's clock only");
+    assert!(next > first);
+    // The rows holding them are as they were.
+    let after = everything(&Connection::open(dir.db()).unwrap());
+    for table in ["tombstone", "item_clock", "op_outbox"] {
+        assert_eq!(after[table], held[table], "{table}");
+    }
+    assert!(
+        after["notebooks"]
+            .iter()
+            .any(|r| r.contains("zz-not-a-clock") && r.contains("\"A\""))
+    );
+    // Two days on, the wall clock passes them all.
+    drop(db);
+    obs_store::clock::fix(Some(i64::try_from(now + 2 * day).unwrap()));
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(add_notebook(&db, "C").tick(), (now + 2 * day, 0));
+    // Back at `now`, C's clock is more than a day ahead; the largest taken in is B's, in
+    // notebooks under its damaged text.
+    drop(db);
+    obs_store::clock::fix(Some(i64::try_from(now).unwrap()));
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(add_notebook(&db, "D").tick(), (now + day, 4));
+}
+
+#[test]
+fn a_clock_merged_in_is_observed_so_the_next_clock_passes_it_unless_more_than_a_day_ahead() {
+    let dir = Dir::new("observe");
+    let now = 1_800_000_000_000_u64;
+    obs_store::clock::fix(Some(i64::try_from(now).unwrap()));
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let first = add_notebook(&db, "A");
+    let remote = |wall_ms, counter| Hlc {
+        wall_ms,
+        counter,
+        device_id: new_id(),
+    };
+    // Within the session, with nothing written to the database.
+    assert!(db.observe_clock(&remote(now + 3_600_000, 5)));
+    assert_eq!(add_notebook(&db, "B").tick(), (now + 3_600_000, 6));
+    // An older clock leaves it where it is; one more than a day ahead is not taken in.
+    assert!(db.observe_clock(&first));
+    assert!(!db.observe_clock(&remote(now + obs_store::hlc::MAX_FORWARD_SKEW_MS + 1, 0)));
+    assert_eq!(add_notebook(&db, "C").tick(), (now + 3_600_000, 7));
+}
+
+#[test]
+fn the_clock_passes_every_clock_held_after_a_restore_but_not_a_backups_a_year_ahead() {
     let dir = Dir::new("restore");
     // A Backup made on a computer whose clock was a year ahead.
     obs_store::clock::fix(Some(1_830_000_000_000));
@@ -326,24 +448,28 @@ fn the_clock_passes_every_clock_held_after_a_restore() {
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
     let mine = add_notebook(&db, "Mine");
     db.restore(&ahead_backup).unwrap();
-    let held = clocks(&Connection::open(db.path()).unwrap());
+    let held = everything(&Connection::open(db.path()).unwrap());
     let next = add_notebook(&db, "After ahead");
+    // Its clocks are more than a day ahead: not taken in, and its rows kept as they are.
+    assert_eq!(next.tick(), (1_800_000_000_000, mine.counter + 1));
+    let after = everything(&Connection::open(db.path()).unwrap());
     assert!(
-        held.iter().all(|c| next.encode() > *c),
-        "{next} passes {held:?}"
+        held["notebooks"]
+            .iter()
+            .all(|row| after["notebooks"].contains(row))
     );
-    assert_eq!(next.wall_ms, 1_830_000_000_000);
+    assert!(after["notebooks"].iter().any(|r| r.contains("\"Ahead\"")));
 
     db.restore(&behind_backup).unwrap();
     let held = clocks(&Connection::open(db.path()).unwrap());
     let next = add_notebook(&db, "After behind");
     assert!(
-        held.iter().all(|c| next.encode() > *c),
+        held.iter().all(|c| next.encode().unwrap() > *c),
         "{next} passes {held:?}"
     );
     // It never goes below a clock it handed out before, either.
     assert!(next.tick() > mine.tick());
-    assert!(next.wall_ms >= 1_830_000_000_000);
+    assert_eq!(next.tick(), (1_800_000_000_000, mine.counter + 2));
 }
 
 #[test]
@@ -380,8 +506,25 @@ fn the_outbox_keeps_ops_only_while_recording_and_a_reserved_file_comes_back_the_
         retried,
         "nothing new: the same files"
     );
+    // Only the next reserved file is marked written: no number is skipped.
+    for (seq, why) in [(2, "after one not written"), (7, "not reserved")] {
+        assert!(
+            matches!(
+                db.op_file_written(seq),
+                Err(obs_store::StoreError::Rejected(_))
+            ),
+            "{seq}: {why}"
+        );
+    }
     db.op_file_written(1).unwrap();
     db.op_file_written(2).unwrap();
+    assert!(
+        matches!(
+            db.op_file_written(2),
+            Err(obs_store::StoreError::Rejected(_))
+        ),
+        "written already"
+    );
     assert_eq!(db.reserve_op_files().unwrap(), Vec::new());
     // Op files count on from the last written, across a reopen.
     drop(db);
