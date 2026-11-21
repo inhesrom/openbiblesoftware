@@ -80,6 +80,55 @@ impl TextBuf {
         self.spans.push((range, kind));
     }
 
+    /// Put the text in NFC where pieces pushed apart left it otherwise (a combining mark in
+    /// an element of its own after its letter: TCP's `<g ref="char:cmbAbbrStroke">̄</g>`), and
+    /// move the spans with it. Each letter is recomposed with the marks after it; an offset
+    /// inside a letter and its marks moves to the end of what they became.
+    pub fn normalize_nfc(&mut self) {
+        use unicode_normalization::char::canonical_combining_class;
+        if unicode_normalization::is_nfc(&self.text) {
+            return;
+        }
+        let text = std::mem::take(&mut self.text);
+        let mut out = String::with_capacity(text.len());
+        // (old start, new start) of each letter and the marks after it.
+        let mut clusters: Vec<(usize, usize)> = Vec::new();
+        let mut chars = text.char_indices().peekable();
+        while let Some((start, _)) = chars.next() {
+            while chars
+                .peek()
+                .is_some_and(|(_, c)| canonical_combining_class(*c) != 0)
+            {
+                chars.next();
+            }
+            let end = chars.peek().map_or(text.len(), |(i, _)| *i);
+            clusters.push((start, out.len()));
+            out.extend(text[start..end].nfc());
+        }
+        clusters.push((text.len(), out.len()));
+        let map = |offset: usize| -> usize {
+            let i = clusters.partition_point(|(old, _)| *old <= offset);
+            let (old, new) = clusters[i.saturating_sub(1)];
+            if old == offset {
+                new
+            } else {
+                clusters.get(i).map_or(out.len(), |(_, next)| *next)
+            }
+        };
+        for (range, _) in &mut self.spans {
+            *range = map(range.start)..map(range.end);
+        }
+        self.tracked_end = map(self.tracked_end.min(text.len()));
+        // Letters that compose across clusters (Hangul jamo) are left as they are: rare, and
+        // still valid text.
+        self.text = if unicode_normalization::is_nfc(&out) {
+            out
+        } else {
+            let whole: String = out.nfc().collect();
+            if whole.len() == out.len() { whole } else { out }
+        };
+    }
+
     /// Open a Dictionary entry with its headword (see [`lead_with_headword`]).
     pub fn lead_with_headword(&mut self, headword: &str) {
         lead_with_headword(&mut self.text, &mut self.spans, headword);

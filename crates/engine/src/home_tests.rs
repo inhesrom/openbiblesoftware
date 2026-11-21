@@ -288,7 +288,7 @@ fn a_fresh_install_lists_quick_starts_and_the_starter_library_by_resource_type()
     assert_eq!(s.quick_start_params(&QUICK_STARTS[2]), json!({}));
 
     // The library by Resource type: the Starter's one Bible and four Lexicons; an empty type
-    // links to Get Resources at that type when the repositories offer it.
+    // links to Get Resources at that type when the repositories or the Open catalogue offer it.
     let summary: Vec<(ResourceType, usize, Option<ResourceFilter>)> = s
         .library_summary()
         .into_iter()
@@ -317,7 +317,12 @@ fn a_fresh_install_lists_quick_starts_and_the_starter_library_by_resource_type()
                 0,
                 Some(ResourceFilter::Type(ResourceType::Dictionary))
             ),
-            (ResourceType::Book, 0, None),
+            // The Open catalogue's Books (#345).
+            (
+                ResourceType::Book,
+                0,
+                Some(ResourceFilter::Type(ResourceType::Book))
+            ),
             (ResourceType::CrossReferenceSet, 0, None),
             (ResourceType::PeopleAndPlaces, 0, None),
         ]

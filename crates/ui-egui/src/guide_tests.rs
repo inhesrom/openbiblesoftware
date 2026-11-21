@@ -424,6 +424,17 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             "Cited in"
         ]
     );
+    // The footer is below the sections: scroll the Guide to it.
+    h.events
+        .push(Event::PointerMoved(pane(&h, guides[1]).center()));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -2000.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(4);
     let show = find_in(&h, guides[1], "Show Cross-references")
         .unwrap()
         .center();

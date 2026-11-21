@@ -358,7 +358,7 @@ fn live_every_featured_hebrew_and_greek_bible_downloads_and_imports_with_its_tag
 
 /// #134: every Open catalogue entry downloads from its publisher through the app's HTTPS
 /// transport, passes its checks (pinned sha256, or the licence notice inside the zip), and
-/// imports with its licence and Attribution. Public-domain and CC BY-SA texts only.
+/// imports with its licence and Attribution. Public-domain, CC0 and CC BY-SA texts only.
 #[test]
 #[ignore = "network; downloads every Open catalogue entry to a temp folder"]
 fn live_every_open_catalogue_entry_downloads_checks_and_imports() {
@@ -383,17 +383,24 @@ fn live_every_open_catalogue_entry_downloads_checks_and_imports() {
         let report = r.report.as_ref().unwrap();
         let sha = r.open_origin.as_ref().unwrap().sha256.clone().unwrap();
         println!(
-            "{}: {} ({}) {} books, {} bytes .obr, sha256 {sha}, licence {}",
+            "{}: {} ({}) {} books, {} divisions, {} bytes .obr, sha256 {sha}, licence {}",
             source.id,
             entry.manifest.title,
             entry.manifest.abbreviation,
             report.books.len(),
+            report.entries,
             std::fs::metadata(&entry.path).map(|m| m.len()).unwrap_or(0),
             entry.manifest.license
         );
         assert_eq!(entry.manifest.license, source.spdx);
         assert_eq!(entry.manifest.attribution, source.attribution);
-        assert!(!report.books.is_empty());
+        // A Bible has books; a Book (a TCP text, #345) has divisions, at its pinned sha256.
+        if entry.manifest.resource_type == obs_model::ResourceType::Book {
+            assert!(report.entries > 0, "{}", source.id);
+            assert_eq!(Some(&sha), source.sha256.as_ref(), "{}", source.id);
+        } else {
+            assert!(!report.books.is_empty(), "{}", source.id);
+        }
     }
     assert!(failed.is_empty(), "{failed:#?}");
     assert_eq!(s.open_resource_credits().len(), sources.len());

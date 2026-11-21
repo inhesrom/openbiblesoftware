@@ -269,3 +269,11 @@ name = "English hyphenation patterns (hyph-en-us, from the hyph-utf8 package)"
 license = "LicenseRef-hyph-en-us"
 source = "https://github.com/hyphenation/tex-hyphen (hyph-en-us.tex), compiled into the hypher crate 0.1.8 (https://github.com/typst/hypher)"
 copyright = "Copyright (C) 1990, 2004, 2005 Gerard D.C. Kuiken"
+
+[[asset]]
+path = "crates/formats/tests/assets/tcp/*"
+name = "Text Creation Partnership texts (Evans-TCP N03833, EEBO-TCP A96226), TEI import test fixtures"
+license = "CC0-1.0"
+source = "https://github.com/textcreationpartnership"
+copyright = "Keyboarded and encoded by the Text Creation Partnership; released under CC0 1.0"
+changes = "None: the files as published, used as fixtures for the TCP TEI importer (#345)."

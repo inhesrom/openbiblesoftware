@@ -23,8 +23,9 @@ use crate::licence::{LicenceClass, licence_class};
 const OPEN_CATALOGUE_TOML: &str = include_str!("../data/open-catalogue.toml");
 
 /// The importers an Open catalogue entry may name. `usfm-zip`: a publisher's zip of USFM
-/// books (eBible.org's `<id>_usfm.zip`) → a Bible.
-pub const OPEN_IMPORTERS: &[&str] = &["usfm-zip"];
+/// books (eBible.org's `<id>_usfm.zip`) → a Bible. `tcp-tei`: one TEI text of the Text
+/// Creation Partnership (EEBO-TCP, Evans-TCP, ECCO-TCP) → a Book (#345).
+pub const OPEN_IMPORTERS: &[&str] = &["usfm-zip", "tcp-tei"];
 
 /// The Open catalogue section's title in Get Resources.
 pub const OPEN_CATALOGUE: &str = "Open catalogue";
@@ -162,13 +163,15 @@ impl OpenSource {
         if !OPEN_IMPORTERS.contains(&self.importer.as_str()) {
             bad(format!("unknown importer `{}`", self.importer));
         }
-        match self.resource_type() {
-            Some(ResourceType::Bible) => {}
-            Some(t) if self.importer == "usfm-zip" => {
+        match (self.importer.as_str(), self.resource_type()) {
+            (_, None) => bad(format!("unknown type `{}`", self.kind)),
+            ("usfm-zip", Some(t)) if t != ResourceType::Bible => {
                 bad(format!("the usfm-zip importer makes Bibles, not {t:?}"));
             }
-            Some(_) => {}
-            None => bad(format!("unknown type `{}`", self.kind)),
+            ("tcp-tei", Some(t)) if t != ResourceType::Book => {
+                bad(format!("the tcp-tei importer makes Books, not {t:?}"));
+            }
+            _ => {}
         }
         if !self.url.starts_with("https://") {
             bad("the download must be an https:// URL".into());
@@ -261,6 +264,7 @@ impl OpenSource {
     ) -> Result<(Resource, obs_formats::ImportReport), String> {
         let (mut resource, mut report) = match self.importer.as_str() {
             "usfm-zip" => self.import_usfm_zip(bytes, resource_id, tool_version, progress)?,
+            "tcp-tei" => self.import_tcp_tei(bytes, resource_id, tool_version, progress)?,
             other => return Err(format!("unknown importer `{other}`")),
         };
         let m = &mut resource.manifest;
@@ -274,6 +278,27 @@ impl OpenSource {
         resource.validate().map_err(|e| e.to_string())?;
         report.license_missing = false;
         Ok((resource, report))
+    }
+
+    fn import_tcp_tei(
+        &self,
+        bytes: &[u8],
+        resource_id: &str,
+        tool_version: &str,
+        progress: impl FnMut(usize, usize) -> bool,
+    ) -> Result<(Resource, obs_formats::ImportReport), String> {
+        let xml = std::str::from_utf8(bytes)
+            .map_err(|_| "the TEI text is not UTF-8; not imported".to_string())?;
+        let file = self.url.rsplit('/').next().unwrap_or(&self.url).to_string();
+        let options = obs_formats::TeiBookOptions {
+            resource_id: resource_id.into(),
+            title: self.title.clone(),
+            abbreviation: self.abbreviation.clone(),
+            language: self.language.clone(),
+            source_file: file,
+            tool_version: tool_version.into(),
+        };
+        obs_formats::import_tcp_tei(xml, &options, progress).map_err(|e| e.to_string())
     }
 
     fn import_usfm_zip(

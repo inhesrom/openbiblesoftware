@@ -36,8 +36,10 @@ pub enum ImportError {
     EmptyModule(String),
     /// A downloaded archive (a publisher's `*_usfm.zip`) that cannot be read.
     Archive(String),
-    /// A Markdown book with no text (ADR 0023).
+    /// A Book source (Markdown, ADR 0023; a TCP text, #345) with no text.
     NoText,
+    /// An XML source (a TCP text) that is not well-formed, or declares a DTD.
+    Xml(String),
     /// A source file over the size an importer reads.
     TooLarge(String),
 }
@@ -75,7 +77,8 @@ impl fmt::Display for ImportError {
                 write!(f, "SWORD module `{module}` has no entries")
             }
             ImportError::Archive(e) => write!(f, "archive: {e}"),
-            ImportError::NoText => f.write_str("no text found in the Markdown files"),
+            ImportError::NoText => f.write_str("no text found in the book"),
+            ImportError::Xml(e) => write!(f, "not readable XML: {e}"),
             ImportError::TooLarge(name) => write!(f, "{name} is too large to import"),
         }
     }

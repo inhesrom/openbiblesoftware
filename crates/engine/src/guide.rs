@@ -291,8 +291,8 @@ impl GuideSection {
                 "None in your library: no Cross-references start in this Passage."
             }
             (GuideSection::CitedIn, false) => {
-                "None in your library. Import Books (sermons, treatises, confessions) to see \
-                 which of them cite this Passage."
+                "None in your library. Get or import Books (sermons, treatises, confessions) \
+                 to see which of them cite this Passage."
             }
             (GuideSection::CitedIn, true) => "None in your library: no Book cites this Passage.",
             (GuideSection::ParallelPassages, false) => {

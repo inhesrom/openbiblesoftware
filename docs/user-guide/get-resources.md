@@ -12,6 +12,8 @@ Your library starts with the Starter library. **File → Get Resources…** adds
 
 Featured Resources come first; **Hebrew & Greek** lists the original-language Bibles, and says which carry Strong's numbers and Morphology for [Word Study](word-study.md).
 
+**Books** lists historic Christian books, such as Owen's *Of the Mortification of Sin in Believers* (1668), the Westminster Confession (1646) and *The Pilgrim's Progress* (1678). The Text Creation Partnership typed each from its first printing, kept its spelling and page numbers, and gave its texts to the public domain. A downloaded Book reads like an imported one: by its chapters, with its printed pages shown as [p. 23] and its Bible references as links.
+
 ## Updates
 
 When a repository offers a newer edition of a Resource you downloaded, Get Resources marks it **Update available**, and **Update all** brings every one up to date. Nothing downloads until you click.

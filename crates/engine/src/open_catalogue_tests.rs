@@ -3,9 +3,10 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use obs_model::ResourceType;
 use serde_json::{Value, json};
 
 use crate::get_bibles::{ListingSource, ListingStatus, ResourceFilter, ResourceListing};
@@ -411,4 +412,109 @@ fn an_unknown_open_entry_is_an_error() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("no entry \"nope\""), "{err}");
+}
+
+/// #345 pilot: historic Books from the Text Creation Partnership. Get Resources' Books filter
+/// lists them in the Open catalogue section; one downloads from its pinned URL (here a
+/// `file://` copy of the same bytes), its sha256 checked, and imports as a Book that reads by
+/// its divisions and printed pages, with TCP's CC0 waiver and the entry's Attribution.
+#[test]
+fn a_tcp_book_downloads_by_its_pin_and_imports_as_a_book() {
+    let root = temp("tcp-book");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/tcp/N03833.xml");
+    let mut source = crate::open_catalogue::open_sources()
+        .iter()
+        .find(|s| s.id == "tcp-edwards-sinners-1741")
+        .unwrap()
+        .clone();
+    assert!(
+        source
+            .url
+            .starts_with("https://raw.githubusercontent.com/textcreationpartnership/N03833/"),
+        "{}",
+        source.url
+    );
+    std::fs::create_dir_all(root.join("open")).unwrap();
+    let copy = root.join("open/N03833.xml");
+    std::fs::copy(&fixture, &copy).unwrap();
+    source.url = crate::credits::file_url(&copy);
+    let mut tampered = source.clone();
+    tampered.id = "tcp-tampered".into();
+    let changed = root.join("open/N03833-changed.xml");
+    let xml = std::fs::read_to_string(&fixture).unwrap();
+    std::fs::write(&changed, xml.replace("Angry GOD", "Angry King")).unwrap();
+    tampered.url = crate::credits::file_url(&changed);
+
+    let mut s = Session::new(JobMode::Inline);
+    s.get_bibles
+        .set_open_catalogue(vec![source.clone(), tampered]);
+    std::fs::create_dir_all(root.join("library")).unwrap();
+    s.library.scan(&root.join("library"));
+
+    // The Books filter lists them, and only them, in the Open catalogue section.
+    let books = s.get_bibles.sections(
+        ResourceFilter::Type(ResourceType::Book),
+        LicenceFilter::FreeToShare,
+    );
+    let (title, rows) = books.last().unwrap();
+    assert_eq!(title, "Open catalogue");
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.kind == ResourceType::Book));
+    let bibles = s.get_bibles.sections(
+        ResourceFilter::Type(ResourceType::Bible),
+        LicenceFilter::All,
+    );
+    assert!(
+        bibles
+            .iter()
+            .all(|(_, rows)| rows.iter().all(|r| r.kind != ResourceType::Book))
+    );
+    let out = s.run("getbibles.list", &json!({"type": "books"})).unwrap();
+    assert_eq!(
+        modules(&out["open"]),
+        ["tcp-edwards-sinners-1741", "tcp-tampered"]
+    );
+
+    let id = download_open(&mut s, "tcp-edwards-sinners-1741");
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+    assert_eq!(
+        record.open_origin.as_ref().unwrap().sha256.as_ref(),
+        source.sha256.as_ref()
+    );
+    let entry = s.library.get(&id).unwrap();
+    let m = &entry.manifest;
+    assert_eq!(m.resource_type, ResourceType::Book);
+    assert_eq!(m.title, "Sinners in the Hands of an Angry God");
+    assert_eq!(m.license, "CC0-1.0");
+    assert_eq!(m.attribution, source.attribution);
+    assert_eq!(m.source_format, obs_formats::TCP_TEI_FORMAT);
+    // The reader is closed before the folder is removed (Windows refuses to delete an open
+    // file).
+    let pages = {
+        use obs_store::ResourceStore;
+        let reader = obs_store::ObrReader::open(&entry.path).unwrap();
+        let mut pages = Vec::new();
+        for unit in reader.unit_ids().unwrap() {
+            let unit = reader.unit(&unit).unwrap().unwrap();
+            for span in reader.spans_in(&unit.id, 0..unit.text.len()).unwrap() {
+                if let obs_model::SpanKind::Page { label } = span.kind {
+                    pages.push(label);
+                }
+            }
+        }
+        pages
+    };
+    assert_eq!(pages.first().map(String::as_str), Some("3"));
+    assert!(pages.len() >= 20);
+    assert!(!record.report.as_ref().unwrap().license_missing);
+
+    // Other bytes at the URL are refused.
+    let id = download_open(&mut s, "tcp-tampered");
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    assert!(s.library.get(&id).is_none());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
 }

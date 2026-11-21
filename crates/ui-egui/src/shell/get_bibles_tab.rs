@@ -400,6 +400,12 @@ impl State {
                             "Bibles in Hebrew, Aramaic and Greek. Those marked Strong's and \
                                  Morphology fill in Word Info and Word Study › Forms.",
                         )
+                    } else if f == ResourceFilter::Type(obs_model::ResourceType::Book) {
+                        chip.on_hover_text(
+                            "Sermons, treatises and confessions of the 1600s and 1700s, as \
+                                 the Text Creation Partnership keyed them from the first \
+                                 printings, in their own spelling. Free to share.",
+                        )
                     } else {
                         chip
                     };

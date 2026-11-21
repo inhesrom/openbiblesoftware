@@ -223,6 +223,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Get Resources: Lexicons, section gaps, Light](gallery/get-resources-lexicons-section-gaps-light-1x.png) | ![Get Resources: Lexicons, section gaps, Dark](gallery/get-resources-lexicons-section-gaps-dark-1x.png) | ![Get Resources: Lexicons, section gaps, Sepia](gallery/get-resources-lexicons-section-gaps-sepia-1x.png) |
 | [2×](gallery/get-resources-lexicons-section-gaps-light-2x.png) | [2×](gallery/get-resources-lexicons-section-gaps-dark-2x.png) | [2×](gallery/get-resources-lexicons-section-gaps-sepia-2x.png) |
 
+### Get Resources: Books
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Books, Light](gallery/get-resources-books-light-1x.png) | ![Get Resources: Books, Dark](gallery/get-resources-books-dark-1x.png) | ![Get Resources: Books, Sepia](gallery/get-resources-books-sepia-1x.png) |
+| [2×](gallery/get-resources-books-light-2x.png) | [2×](gallery/get-resources-books-dark-2x.png) | [2×](gallery/get-resources-books-sepia-2x.png) |
+
 ### Get Resources: rows beside the scroll bar
 
 | Light | Dark | Sepia |
