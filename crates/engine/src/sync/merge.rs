@@ -11,7 +11,11 @@
 //! - **Edit beats delete:** a delete covers the version of the row it removed (the op's
 //!   `before_clock`). A row exists when its latest write is later than everything its
 //!   deletes cover, so an edit the deleting device had not seen keeps or brings back the row,
-//!   whichever arrives first.
+//!   whichever arrives first. Tombstones are kept for good, beside a row made again, each
+//!   with the newest delete clock and the newest version any delete of it covered.
+//! - **List-preference items** (Collections …) are rows as above; a list is composed by each
+//!   item's stored position (its last write's), then name, so every device builds the same
+//!   order, and its `preference.clock` is the newest of any op on its items.
 //! - **Fields an op does not carry** (an older app's) are left as they are here.
 //! - **Reading done-marks** are one row per Reading, and the **Preferred order** one row, so
 //!   both are last writer wins as above.
@@ -199,19 +203,6 @@ pub fn merge_op(tx: &mut MergeTx<'_>, op: &Op) -> Result<Outcome, MergeError> {
         None => merge_delete(tx, op, &key, &state)?,
     };
     tx.note_item_op(&key, &op.clock)?;
-    if std::env::var("OBS_MERGE_DEBUG").is_ok() {
-        eprintln!(
-            "{} merges {:?} {} at {}: {outcome:?}",
-            tx.device_id(),
-            key,
-            if op.after.is_some() {
-                "write"
-            } else {
-                "delete"
-            },
-            op.clock
-        );
-    }
     Ok(outcome)
 }
 

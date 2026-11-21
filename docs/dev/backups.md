@@ -31,24 +31,25 @@ single-instance Tab with all of it.
 - The launch backups (`backups/user-000006.db`) and the before-upgrade copy
   (`user.v8-<time>.bak`) are written the same way, so they are Backups too.
 
-### What Sync added (schemas 13 and 14, ADR 0022)
+### What Sync added (schemas 13 to 15, ADR 0022)
 
-Migrations 12 → 13 and 13 → 14 (`crates/store/src/sync_schema.rs`) add what Sync needs; a
+Migrations 12 → 13, 13 → 14 and 14 → 15 (`crates/store/src/sync_schema.rs`) add what Sync needs; a
 Backup holds it like every other table, and an older Backup gains it as it is restored (with
 ids made then). Every write of Synced data is a `Change` through `UserStore::apply_changes`
 (S27b, `crates/store/src/synced.rs`), which writes the tombstones and, from schema 14, stamps
 each row, item and tombstone with its hybrid logical clock (S28a, `sync_clock.rs`; the
-encoding is in [`sync.md`](sync.md#clocks)).
+encoding is in [`sync.md`](sync.md#clocks)); schema 15 adds what the merge needs (S28b-1,
+[`sync.md`](sync.md#merging)).
 
 | Table or column | What |
 |---|---|
 | `clock` on every table in `SYNCED_TABLES` | The hybrid logical clock of the row's last change ([`sync.md`](sync.md#clocks)); `NULL` for a row last changed before schema 14, which sorts before every clock. `anchors` has none (an Anchor goes with its Annotation's clock); in `preference` only the keys in `SYNCED_PREFERENCES` are Synced data, every other key (`DEVICE_PREFERENCES`, or unlisted) stays on the device. |
 | `layout.id` | Layouts are keyed by a UUIDv7; the name stays unique ignoring case, so every Layout keeps its name and is still found by it. Saving over a Layout keeps its id. |
 | `favorite.uid`, `reading_plan.uid` | A UUIDv7 each, unique, beside the numbers the app names them by (which another device also hands out). |
-| `tombstone` | A deleted synced row, kept for good: `row_table` is its kind (the `row` tag of a serialized `Row`: `notebook`, `annotation`, `favorite`, `layout`, `reading`, `collection`, `guide_section` …), `row_id` its id (a Reading's `<plan uid>/<position>`, a Guide section's `<guide>/<section>`, a list item's name), `clock` its delete's clock. A tombstone written at schema 13 has empty text (`synced_store::NO_CLOCK`), which, like a row's `NULL` clock, means "before this device recorded clocks" and sorts before any clock ([`sync.md`](sync.md#clocks)); from schema 14 every delete writes its clock. A row made again (an undone delete) takes its tombstone away; replacing the Preferred order leaves none. |
+| `tombstone` | A deleted synced row, kept for good: `row_table` is its kind (the `row` tag of a serialized `Row`: `notebook`, `annotation`, `favorite`, `layout`, `reading`, `collection`, `guide_section` …), `row_id` its id (a Reading's `<plan uid>/<position>`, a Guide section's `<guide>/<section>`, a list item's name), `clock` its delete's clock. A tombstone written at schema 13 has empty text (`synced_store::NO_CLOCK`), which, like a row's `NULL` clock, means "before this device recorded clocks" and sorts before any clock ([`sync.md`](sync.md#clocks)); from schema 14 every delete writes its clock. `covers` (15): the clock of the version the delete removed (`''`: one from before clocks; `NULL`, every tombstone written before schema 15: up to its own clock), so another device's edit it did not see brings the row back. From schema 15 a tombstone is kept beside a row made again (an undone delete, such an edit), with the newest delete clock and the newest version covered; before it, a row made again took its tombstone away. Replacing the Preferred order leaves none. |
 | `device` | One row: this Synced device's id (UUIDv7, made by the migration) and the name the user gives it. A restore copies the Backup's row like any other; giving a restored device a new id is Sync's (ADR 0022 rule 7). |
 | `applied_up_to` | For each other Synced device, the last of its op files applied here; for this device's own id, the last of its own op files written. This device records ops (keeps them in `op_outbox`) only while its own id has a row. |
-| `item_clock` (14) | The clock of each item of a list preference (a Collection, Copy preset, Saved search, Guide section, Resource tags), keyed as its tombstone is; `preference.clock` of the list's key is its newest item's. A deleted item's row goes; its tombstone has the clock. The Preferred order's clock is here too (`preferred_order`, `''`), kept when the order is empty. |
+| `item_clock` (14) | The clock of each item of a list preference (a Collection, Copy preset, Saved search, Guide section, Resource tags), keyed as its tombstone is; `preference.clock` of the list's key is the newest clock of any op on its items. `position` (15): the item's position as its last write gave it, so every device composes the list in the same order (`NULL`, an item written before schema 15 or a list last written whole: its index). A deleted item's row goes; its tombstone has the clock. The Preferred order's clock is here too (`preferred_order`, `''`), kept when the order is empty. |
 | `op_outbox` (14) | While this device records ops: each `Change` applied, with its clock, until it is in an op file of the Sync folder (`file_seq`, once reserved). Empty on a device that does not sync. |
 
 The restore checks treat them as any table: a Backup missing one is refused, and the trial
@@ -239,8 +240,10 @@ uses):
   ids (kept when saved over or renamed); new Favorites and Reading plans get ids; a v13 Backup
   round-trips and a v12 one gains the new tables as it is restored; every preference the
   engine keeps is listed once as synced or staying on the device.
-- `crates/store/tests/sync_clock_db.rs`: a v13 database and a v13 Backup migrate to 14
-  losing nothing; a Backup carries the item clocks and the outbox; every database has a
+- `crates/store/tests/sync_clock_db.rs`: a v13 database and a v13 Backup migrate to 15
+  losing nothing; a Backup carries the item clocks and the outbox; item positions and what
+  each tombstone covers round-trip through a Backup, and a v14 Backup restores with both
+  `NULL` (an item at its index, a tombstone covering up to its own clock); every database has a
   device id after `open` and `open_backup`; the clock passes every clock held after a reopen
   (with the wall clock stepped back) and after a restore; the outbox keeps ops only while
   recording and a reserved op file comes back with the same ops.
