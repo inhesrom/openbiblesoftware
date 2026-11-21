@@ -448,6 +448,44 @@ fn a_write_that_changes_nothing_emits_no_change_and_a_device_preference_none() {
     );
 }
 
+/// No Change, from this device or another, writes a preference that is not Synced data (D1:
+/// Visual filters stay on their device).
+#[test]
+fn a_change_to_a_device_preference_is_refused_and_leaves_it_as_it_is() {
+    let dir = Dir::new("device-preference-change");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let key = "reading.visual_filters";
+    let mine = r#"[{"id":1}]"#;
+    db.set_preference(key, mine).unwrap();
+    let row = |value: &str| {
+        Row::Preference(SyncedPreference {
+            key: key.into(),
+            value: value.into(),
+        })
+    };
+    for (name, change) in [
+        ("update", Change::update(row(mine), row("[]"))),
+        ("delete", Change::delete(row(mine))),
+        ("insert", Change::insert(row("[]"))),
+    ] {
+        let refused = db.apply_changes(&[change]).unwrap_err();
+        assert!(
+            matches!(refused, StoreError::Rejected(_)),
+            "{name}: {refused}"
+        );
+        assert_eq!(raw(&dir.db(), key).as_deref(), Some(mine), "{name}");
+    }
+    let refused = db
+        .apply_changes(&[Change::insert(Row::Preference(SyncedPreference {
+            key: "view".into(),
+            value: "{}".into(),
+        }))])
+        .unwrap_err();
+    assert!(matches!(refused, StoreError::Rejected(_)), "{refused}");
+    assert_eq!(raw(&dir.db(), "view"), None);
+    assert_eq!(tombstones(&dir.db()), Vec::new());
+}
+
 #[test]
 fn the_default_notebook_is_made_through_apply_changes() {
     let dir = Dir::new("default-notebook");

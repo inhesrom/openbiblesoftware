@@ -409,6 +409,17 @@ fn a_backup_missing_part_of_the_format_or_with_unreadable_rows_is_refused() {
             "it is damaged",
         ),
         (
+            // The Favorite list reads no uid; removing or moving the Favorite would (S27b).
+            "null-favorite-uid",
+            "UPDATE favorite SET uid = NULL",
+            "it is damaged (database error: Invalid column type Null",
+        ),
+        (
+            "text-favorite-position",
+            "UPDATE favorite SET position = 'first'",
+            "it is damaged (database error: Invalid column type Text",
+        ),
+        (
             // SQLite's integrity check does not look at foreign keys (#258): both Annotations
             // then belong to no Notebook.
             "no-notebook",
