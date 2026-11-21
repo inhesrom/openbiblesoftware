@@ -22,6 +22,10 @@ When a repository offers a newer edition of a Resource you downloaded, Get Resou
 
 **Markdown book…** in the same window adds a book kept as Markdown, such as a sermon, treatise or confession from the Christian Open Library. Choose its `.md` file; a long work split into Part files comes in as one Book. **Markdown folder…** adds every book in a folder and its subfolders, each its own Book, with one Import report listing what came in and what could not. Type a page ("p. 23") in a Book's header to go to that printed page. A Book is read by its chapters, shows its printed pages as [p. 23], and its Bible references are links. Its licence is the one its file names; one the app does not recognise is shown as given, and the Book is marked for personal use.
 
+## Search the Christian Open Library
+
+Right-click a verse or selected text and choose **Search Christian Open Library** to search that library's website (sermons, treatises, confessions and church records) in your browser; the Passage Guide's Cited in section offers the same for its Passage. Settings → Search turns it off.
+
 ## The Starter library
 
 **File → Starter library** lists every Starter Resource, and adds back any you removed. **Help → Credits** credits every Starter Resource and its licence; each Resource's own licence and Attribution are in its About Tab (right-click it in the Library Tab and choose About).

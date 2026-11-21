@@ -524,6 +524,20 @@ pub const SETTINGS: &[Setting] = &[
         },
     ),
     setting(
+        "col_search_link",
+        S::Search,
+        "Search Christian Open Library",
+        "Right-click menus and the Passage Guide offer to search the Christian Open Library's \
+         website for a Verse, a Passage or selected text, in your browser",
+        "christian open library col website search link browser",
+        SettingKind::Toggle {
+            command: "col.search_link",
+            param: Some("on"),
+            default: true,
+            get: Session::col_search_link,
+        },
+    ),
+    setting(
         "clear_history",
         S::PrivacyAndData,
         "Clear History",

@@ -188,6 +188,27 @@ impl State {
                             if let Some(a) = self.section_body(ui, tab, section, &status, key) {
                                 action = Some(a);
                             }
+                            // The website has the rest of COL's books (#343).
+                            if section == GuideSection::CitedIn
+                                && matches!(status, SectionStatus::Ready(_))
+                                && let Key::Passage(p) = key
+                                && self.session.col_search_link()
+                            {
+                                let label = format_passage(*p, &Standard, RefStyle::Long);
+                                ui.add_space(space::XS);
+                                if crate::components::link(
+                                    ui,
+                                    format!("Search the Christian Open Library for {label}"),
+                                )
+                                .on_hover_text("Opens christianopenlibrary.org in your browser")
+                                .clicked()
+                                {
+                                    action = Some(Action::Command(
+                                        "col.search_website",
+                                        json!({ "text": label }),
+                                    ));
+                                }
+                            }
                         }
                         ui.add_space(space::L);
                         let rect =

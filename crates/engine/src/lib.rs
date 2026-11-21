@@ -31,6 +31,7 @@ pub mod books;
 mod books_tests;
 mod builtin;
 pub mod cited_in;
+pub mod col_link;
 pub mod collections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod collections_tests;

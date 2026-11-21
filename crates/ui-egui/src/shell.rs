@@ -229,6 +229,8 @@ pub(crate) struct State {
     pick_import: bool,
     /// The Get Bibles Tab's search and language filter.
     get_bibles_ui: get_bibles_tab::GetBiblesUi,
+    /// Web pages to open in the system browser this frame (Effect::OpenUrl, #343).
+    open_urls: Vec<String>,
     picker: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
     /// The Search Analysis's CSV save dialog, for its Tab (#146).
     csv_picker: Option<(TabId, std::sync::mpsc::Receiver<Option<std::path::PathBuf>>)>,
@@ -388,6 +390,7 @@ impl Shell {
                 confirm: None,
                 pick_import: false,
                 get_bibles_ui: get_bibles_tab::GetBiblesUi::default(),
+                open_urls: Vec::new(),
                 picker: None,
                 csv_picker: None,
                 last_save: 0.0,
@@ -713,6 +716,7 @@ impl Shell {
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
+                Effect::OpenUrl(url) => self.st.open_urls.push(url),
                 Effect::ReportProblem => self.st.show_report_problem(),
                 Effect::SaveDiagnosticsZip => self.st.show_diagnostics_zip(),
                 Effect::Restart(exe) => self.restart_now(&exe),
@@ -3868,6 +3872,9 @@ impl State {
             self.reanchor_prompt(&ctx);
         }
         self.import_chooser(&ctx);
+        for url in std::mem::take(&mut self.open_urls) {
+            ctx.open_url(egui::OpenUrl::new_tab(url));
+        }
         self.fonts_window(&ctx);
         self.highlight_styles_window(&ctx);
         self.visual_filters_window(&ctx);

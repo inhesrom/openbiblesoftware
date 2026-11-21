@@ -251,6 +251,8 @@ pub(super) enum MenuAction {
     SearchLemma,
     SearchStrongs,
     CopyMorphology,
+    /// Search Christian Open Library (#343): the selection or the Verse, on COL's website.
+    SearchCol,
 }
 
 /// The menu's two columns; returns the action clicked. `can_annotate`: there is a User
@@ -261,6 +263,7 @@ fn menu_ui(
     styles: &StyleBook,
     can_annotate: bool,
     keys: &SelectionKeyText,
+    col_link: bool,
 ) -> Option<MenuAction> {
     let mut picked = None;
     ui.horizontal_top(|ui| {
@@ -283,7 +286,7 @@ fn menu_ui(
         ui.separator();
         ui.vertical(|ui| {
             ui.set_min_width(size::MENU_COLUMN);
-            picked = actions_ui(ui, m, styles, can_annotate, keys);
+            picked = actions_ui(ui, m, styles, can_annotate, keys, col_link);
         });
     });
     if picked.is_some() {
@@ -292,13 +295,15 @@ fn menu_ui(
     picked
 }
 
-/// The right column: the chosen target's actions.
+/// The right column: the chosen target's actions. `col_link`: offer Search Christian Open
+/// Library (#343).
 fn actions_ui(
     ui: &mut Ui,
     m: &MenuTargets,
     styles: &StyleBook,
     can_annotate: bool,
     keys: &SelectionKeyText,
+    col_link: bool,
 ) -> Option<MenuAction> {
     let mut picked = None;
     let mut item = |ui: &mut Ui, enabled: bool, button: egui::Button<'_>, action, hint: &str| {
@@ -368,6 +373,19 @@ fn actions_ui(
                 MenuAction::LookUp,
                 "",
             );
+            if col_link {
+                item(
+                    ui,
+                    true,
+                    crate::components::button(with_icon(
+                        ui,
+                        Icon::Library,
+                        "Search Christian Open Library",
+                    )),
+                    MenuAction::SearchCol,
+                    "",
+                );
+            }
             item(
                 ui,
                 m.short_selection().is_some(),
@@ -410,6 +428,19 @@ fn actions_ui(
             ] {
                 let button = crate::components::button(with_icon(ui, icon, label));
                 item(ui, mapped, button, action, unmapped);
+            }
+            if col_link {
+                item(
+                    ui,
+                    v.resolving.is_none(),
+                    crate::components::button(with_icon(
+                        ui,
+                        Icon::Library,
+                        "Search Christian Open Library",
+                    )),
+                    MenuAction::SearchCol,
+                    "Looking up the reference…",
+                );
             }
             ui.separator();
             item(
@@ -678,6 +709,7 @@ impl State {
         let styles = self.marks.styles(&self.session).clone();
         let can_annotate = self.session.is_enabled("annotation.highlight");
         let keys = SelectionKeyText::of(&self.session);
+        let col_link = self.session.col_search_link();
         let mut picked = None;
         let mut popup = egui::Popup::context_menu(response);
         if menu.is_none() {
@@ -690,7 +722,7 @@ impl State {
         }
         popup.show(|ui| {
             if let Some(m) = menu.as_mut() {
-                picked = menu_ui(ui, m, &styles, can_annotate, &keys);
+                picked = menu_ui(ui, m, &styles, can_annotate, &keys, col_link);
             }
         });
         let new_tab = ui.input(|i| i.modifiers.command);
@@ -922,6 +954,18 @@ impl State {
                     ctx.copy_text(text);
                 }
                 None
+            }
+            // The selection, or the Verse (Standard numbering; an Unmapped verse as shown).
+            MenuAction::SearchCol => {
+                let text = if m.chosen == Target::Selection {
+                    selection.clone()
+                } else {
+                    passage
+                        .clone()
+                        .or_else(|| m.verse.as_ref().map(|v| v.label.clone()))
+                        .unwrap_or_default()
+                };
+                Some(("col.search_website", json!({ "text": text })))
             }
         };
         if let Some((id, params)) = run {

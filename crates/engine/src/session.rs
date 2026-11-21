@@ -45,6 +45,8 @@ pub struct Session {
     pub bible_search: crate::bible_search::BibleSearches,
     /// Get Bibles catalog (#91).
     pub get_bibles: crate::get_bibles::GetBibles,
+    /// Search Christian Open Library (#343): whether it is offered.
+    pub col_link: crate::col_link::ColLink,
     /// The Starter library: its bundle, the released manifest and a download (#131).
     pub starter: crate::starter::StarterLibrary,
     pub workspace: Workspace,
@@ -136,6 +138,7 @@ impl Session {
             search: crate::search::SearchIndexes::default(),
             bible_search: crate::bible_search::BibleSearches::default(),
             get_bibles: crate::get_bibles::GetBibles::default(),
+            col_link: crate::col_link::ColLink::default(),
             starter: crate::starter::StarterLibrary::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
@@ -291,6 +294,8 @@ impl Session {
         self.guides.forget_arrangements();
         self.copy_verses = crate::copy_verses::CopyVerses::default();
         self.imports.reports.clear();
+        // Search Christian Open Library is read again when next asked (#343).
+        self.col_link.forget();
     }
 
     /// Save the library's Preferred order.

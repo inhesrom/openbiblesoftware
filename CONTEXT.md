@@ -181,6 +181,10 @@ _Avoid_: Install, Download
 The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories and by the Open catalogue, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles. Its licence filter shows only what is Free to share, what is Free for personal use, or All licences.
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
 
+**Christian Open Library**:
+An independent online library of some 7,600 Christian books and church records (COL, christianopenlibrary.org). The app links to its website: **Search Christian Open Library**, on a Verse, a Passage or selected text, opens the website's search for it in the browser, and the app itself sends nothing. COL's terms keep its collection out of apps, so the app's own historic Books come from the original publishers instead (#345).
+_Avoid_: COL store, COL catalogue (for the app's own Books)
+
 **Language name**:
 What the app shows for a Resource's language tag (`bn`, `kmo`, `zh-Hant`): the English name and, where known, the name in the language itself ("Bangla — বাংলা", "Kwoma"), from the built-in Unicode CLDR names and the ISO 639-3 reference names; the tag shows on hover. A tag no table names shows as "Unknown language (xyz)". Tags of one language (`bn`, `ben`, `ben-Beng`) are one language: Get Resources' language filter lists each once, with how many Resources it has, the OS language first, and its search matches the English name, other English names ("Bengali"), the name in the language itself, or a code.
 _Avoid_: Language code (for what is shown), Locale
