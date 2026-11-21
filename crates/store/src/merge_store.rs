@@ -349,6 +349,66 @@ impl UserStore {
         Ok(out)
     }
 
+    /// The key of every row of Synced data here, sorted: a list preference in shape by its
+    /// items, one not in shape (and every other synced preference) as a whole value.
+    #[cfg(feature = "test-support")]
+    pub fn synced_keys(&self) -> Result<Vec<RowKey>, StoreError> {
+        let column = |query: &str| -> Result<Vec<String>, StoreError> {
+            let mut stmt = self.conn.prepare(query).map_err(sql)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)
+        };
+        let mut keys = vec![RowKey::PreferredOrder];
+        type KeyOf = fn(String) -> RowKey;
+        let tables: [(&str, KeyOf); 7] = [
+            ("SELECT id FROM notebooks", RowKey::Notebook),
+            ("SELECT id FROM annotations", RowKey::Annotation),
+            ("SELECT id FROM highlight_styles", RowKey::HighlightStyle),
+            (
+                "SELECT id FROM highlight_palettes",
+                RowKey::HighlightPalette,
+            ),
+            ("SELECT uid FROM favorite", RowKey::Favorite),
+            ("SELECT uid FROM reading_plan", RowKey::ReadingPlan),
+            ("SELECT id FROM layout", RowKey::Layout),
+        ];
+        for (query, key) in tables {
+            keys.extend(column(query)?.into_iter().map(key));
+        }
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT p.uid, r.position FROM plan_reading r JOIN reading_plan p ON p.id = r.plan_id",
+            )
+            .map_err(sql)?;
+        let readings = stmt
+            .query_map([], |r| Ok(RowKey::Reading(r.get(0)?, r.get(1)?)))
+            .map_err(sql)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql)?;
+        keys.extend(readings);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, value FROM preference")
+            .map_err(sql)?;
+        let preferences = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(sql)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql)?;
+        for (key, value) in preferences {
+            if !crate::sync_schema::is_synced_preference(&key) {
+                continue;
+            }
+            match ListPreference::of_key(&key).and_then(|list| list.items(Some(&value))) {
+                Some(items) => keys.extend(items.iter().map(crate::annotation::Row::key)),
+                None => keys.push(RowKey::Preference(key)),
+            }
+        }
+        keys.sort_by_key(RowKey::tombstone);
+        Ok(keys)
+    }
+
     /// The last op file of Synced device `device` merged here (0: none). For this device's
     /// own id it is the last of its own op files written (`sync_clock.rs`).
     pub fn applied_up_to(&self, device: &str) -> Result<u64, StoreError> {

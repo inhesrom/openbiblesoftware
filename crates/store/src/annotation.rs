@@ -391,6 +391,10 @@ pub fn new_id() -> String {
 /// A new UUIDv7 for the time `ms` (clamped to 48 bits).
 pub fn new_id_at(ms: i64) -> String {
     let ms = u64::try_from(ms).unwrap_or(0) & 0xFFFF_FFFF_FFFF;
+    #[cfg(feature = "test-support")]
+    if let Some(id) = seeded_id(ms) {
+        return id;
+    }
     let seed = random_u64(ms);
     // A fresh millisecond starts its counter at a random point in the lower half, leaving
     // room to count up; within the same millisecond (or a clock step back) count on.
@@ -404,9 +408,14 @@ pub fn new_id_at(ms: i64) -> String {
             Err(p) => prev = p,
         }
     };
+    uuid_v7(clock, random_u64(clock))
+}
+
+/// The UUIDv7 text of `clock` (millisecond × 4096 + counter) and 62 of `random`'s bits.
+fn uuid_v7(clock: u64, random: u64) -> String {
     let ms = (clock >> 12) & 0xFFFF_FFFF_FFFF;
     let counter = clock & 0xFFF;
-    let rand_b = random_u64(clock) & 0x3FFF_FFFF_FFFF_FFFF;
+    let rand_b = random & 0x3FFF_FFFF_FFFF_FFFF;
     let hi = (ms << 16) | (0x7 << 12) | counter;
     let lo = (0b10 << 62) | rand_b;
     format!(
@@ -417,6 +426,40 @@ pub fn new_id_at(ms: i64) -> String {
         lo >> 48,
         lo & 0xFFFF_FFFF_FFFF
     )
+}
+
+#[cfg(feature = "test-support")]
+thread_local! {
+    /// This thread's seeded ids ([`seed_ids`]): a SplitMix64 state and the last
+    /// (millisecond × 4096 + counter) handed out.
+    static SEEDED_IDS: std::cell::Cell<Option<(u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Make this thread's new ids from `seed` (with the time each is made for, as always), so a
+/// test under a fixed clock (`clock::fix`) makes the same ids on every run; `None` makes them
+/// unpredictable again. They still sort in the order this thread made them.
+#[cfg(feature = "test-support")]
+pub fn seed_ids(seed: Option<u64>) {
+    SEEDED_IDS.with(|s| s.set(seed.map(|seed| (seed, 0))));
+}
+
+#[cfg(feature = "test-support")]
+fn seeded_id(ms: u64) -> Option<String> {
+    SEEDED_IDS.with(|cell| {
+        let (mut state, prev) = cell.get()?;
+        let mut next = || {
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        };
+        let fresh = (ms << 12) | (next() & 0x7FF);
+        let clock = if fresh > prev { fresh } else { prev + 1 };
+        let random = next();
+        cell.set(Some((state, clock)));
+        Some(uuid_v7(clock, random))
+    })
 }
 
 /// Whether `id` looks like an id this module makes (a lowercase hyphenated UUID).
