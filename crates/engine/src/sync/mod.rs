@@ -40,6 +40,9 @@ pub enum SyncError {
     Store(obs_store::StoreError),
     /// A file of the Sync folder is not what it should be; it is left as it is.
     Damaged(String),
+    /// The file at this path is only in the cloud (a placeholder); its download has started,
+    /// and the next sync reads it.
+    NotDownloaded(String),
 }
 
 impl fmt::Display for SyncError {
@@ -48,6 +51,7 @@ impl fmt::Display for SyncError {
             SyncError::Folder(e) => e.fmt(f),
             SyncError::Store(e) => e.fmt(f),
             SyncError::Damaged(why) => f.write_str(why),
+            SyncError::NotDownloaded(path) => write!(f, "{path} is still downloading"),
         }
     }
 }
@@ -91,7 +95,7 @@ fn json_file<T: Serialize>(value: &T) -> Result<Vec<u8>, SyncError> {
 
 /// Read the folder's `sync.json`, writing it first when there is none (the first device to
 /// join), and say whether this build reads the folder's format. A `sync.json` that is not one
-/// is left as it is.
+/// is left as it is; one still downloading is [`SyncError::NotDownloaded`].
 pub fn ensure_sync_json(folder: &dyn SyncFolder) -> Result<FolderFormat, SyncError> {
     if !folder.list(SYNC_ROOT)?.iter().any(|n| n == "sync.json") {
         folder.write_new(
@@ -101,6 +105,9 @@ pub fn ensure_sync_json(folder: &dyn SyncFolder) -> Result<FolderFormat, SyncErr
             })?,
         )?;
         return Ok(FolderFormat::Known);
+    }
+    if !folder.ensure_available(SYNC_JSON)? {
+        return Err(SyncError::NotDownloaded(SYNC_JSON.to_string()));
     }
     let bytes = folder.read(SYNC_JSON)?;
     let sync: SyncJson = serde_json::from_slice(&bytes)

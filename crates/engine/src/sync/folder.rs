@@ -5,7 +5,7 @@
 //! [`MemSyncFolder`]. Every rule about the files (names, hash lines, clocks) stays in Rust.
 //!
 //! Paths are relative to the folder the user picked, with `/` between their parts, and never
-//! hold an empty part, `.` or `..`.
+//! hold an empty part, `.`, `..`, `\`, `:` or a control character.
 
 #[cfg(any(test, feature = "test-support"))]
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 pub enum FolderError {
     /// No file at that path.
     NotFound(String),
-    /// The path is not one of the Sync folder's (empty, absolute, or with `.` or `..`).
+    /// The path is not one of the Sync folder's: empty, absolute, with a part that is empty,
+    /// `.` or `..` or holds `\`, `:` or a control character, or (on disk) through a symbolic
+    /// link in the folder.
     BadPath(String),
     /// The folder or the platform refused, or the disk failed; the message is theirs.
     Io(String),
@@ -39,7 +41,9 @@ impl std::error::Error for FolderError {}
 /// one whole thing, so a shell implements it with its platform's file access.
 pub trait SyncFolder: Send + Sync {
     /// The names of the files and folders directly in `dir` (`""` is the folder itself), in
-    /// any order; none when `dir` does not exist yet.
+    /// any order; none when `dir` does not exist yet. A file the provider keeps only in the
+    /// cloud (a placeholder) is listed under its real name (`sync.json`, not iCloud's
+    /// `.sync.json.icloud`), so a reader asks [`SyncFolder::ensure_available`] for it.
     fn list(&self, dir: &str) -> Result<Vec<String>, FolderError>;
     /// The whole file at `path`.
     fn read(&self, path: &str) -> Result<Vec<u8>, FolderError>;
@@ -58,17 +62,22 @@ pub trait SyncFolder: Send + Sync {
 /// The parts of `path`, or why it is not a path in the Sync folder.
 fn parts(path: &str) -> Result<Vec<&str>, FolderError> {
     let parts: Vec<&str> = path.split('/').collect();
-    if path.is_empty()
-        || parts
-            .iter()
-            .any(|p| p.is_empty() || *p == "." || *p == ".." || p.contains('\\'))
-    {
+    let bad = |p: &str| {
+        p.is_empty()
+            || p == "."
+            || p == ".."
+            || p.contains(['\\', ':'])
+            || p.chars().any(char::is_control)
+    };
+    if path.is_empty() || parts.iter().any(|p| bad(p)) {
         return Err(FolderError::BadPath(path.to_string()));
     }
     Ok(parts)
 }
 
-/// A Sync folder on a disk this computer reaches through `std::fs` (the desktop app's).
+/// A Sync folder on a disk this computer reaches through `std::fs` (the desktop app's). It
+/// never goes through a symbolic link inside the folder (a sync client can bring one), so
+/// nothing is read or written outside it; the folder the user picked may be one.
 #[derive(Debug, Clone)]
 pub struct FsSyncFolder {
     root: PathBuf,
@@ -84,11 +93,34 @@ impl FsSyncFolder {
         &self.root
     }
 
+    /// The file or folder at `path`, refusing one reached through a symbolic link.
     fn resolve(&self, path: &str) -> Result<PathBuf, FolderError> {
-        Ok(parts(path)?
-            .into_iter()
-            .fold(self.root.clone(), |p, part| p.join(part)))
+        let mut resolved = self.root.clone();
+        let mut exists = true;
+        for part in parts(path)? {
+            resolved.push(part);
+            if !exists {
+                continue;
+            }
+            match std::fs::symlink_metadata(&resolved) {
+                Ok(m) if m.file_type().is_symlink() => {
+                    return Err(FolderError::BadPath(path.to_string()));
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => exists = false,
+                Err(e) => return Err(io(&e)),
+            }
+        }
+        Ok(resolved)
     }
+}
+
+/// The real name of the file an iCloud placeholder named `name` (`.<name>.icloud`, as
+/// `std::fs` sees an evicted file before macOS 14) stands for.
+fn icloud_placeholder_of(name: &str) -> Option<&str> {
+    name.strip_prefix('.')?
+        .strip_suffix(".icloud")
+        .filter(|n| !n.is_empty())
 }
 
 fn io(e: &std::io::Error) -> FolderError {
@@ -107,14 +139,14 @@ impl SyncFolder for FsSyncFolder {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(e) => return Err(io(&e)),
         };
-        let mut names = Vec::new();
+        let mut names = std::collections::BTreeSet::new();
         for entry in entries {
             let entry = entry.map_err(|e| io(&e))?;
             if let Some(name) = entry.file_name().to_str() {
-                names.push(name.to_string());
+                names.insert(icloud_placeholder_of(name).unwrap_or(name).to_string());
             }
         }
-        Ok(names)
+        Ok(names.into_iter().collect())
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, FolderError> {
@@ -141,7 +173,11 @@ impl SyncFolder for FsSyncFolder {
             file.write_all(bytes)?;
             file.sync_all()?;
             drop(file);
-            std::fs::rename(&temp, &target)
+            std::fs::rename(&temp, &target)?;
+            // The rename is on disk too, before anyone notes the file written.
+            #[cfg(unix)]
+            std::fs::File::open(dir)?.sync_all()?;
+            Ok(())
         })();
         if let Err(e) = written {
             let _ = std::fs::remove_file(&temp);
@@ -157,9 +193,19 @@ impl SyncFolder for FsSyncFolder {
         }
     }
 
+    /// An iCloud placeholder (`.<name>.icloud`) is `false`: `std::fs` cannot start its
+    /// download, so it is read once the provider has downloaded it.
     fn ensure_available(&self, path: &str) -> Result<bool, FolderError> {
-        if self.resolve(path)?.is_file() {
-            Ok(true)
+        let target = self.resolve(path)?;
+        if target.is_file() {
+            return Ok(true);
+        }
+        let placeholder = match (target.parent(), target.file_name()) {
+            (Some(dir), Some(name)) => dir.join(format!(".{}.icloud", name.to_string_lossy())),
+            _ => return Err(FolderError::BadPath(path.to_string())),
+        };
+        if placeholder.is_file() {
+            Ok(false)
         } else {
             Err(FolderError::NotFound(path.to_string()))
         }

@@ -61,15 +61,13 @@ pub enum OpFileRead {
 }
 
 /// The bytes of an op file holding `ops`, in order. The same ops always give the same bytes.
-pub fn encode_op_file(ops: &[Op]) -> Vec<u8> {
+/// An op that does not serialize (a clock without a text form, `Hlc::encode`) fails it
+/// whole, so no file holds fewer ops than its trailer says.
+pub fn encode_op_file(ops: &[Op]) -> Result<Vec<u8>, serde_json::Error> {
     let mut body = Vec::new();
     for op in ops {
-        // An `Op` is plain data (strings, numbers, options and lists), which serializes
-        // without fail.
-        if let Ok(line) = serde_json::to_vec(op) {
-            body.extend_from_slice(&line);
-            body.push(b'\n');
-        }
+        body.extend_from_slice(&serde_json::to_vec(op)?);
+        body.push(b'\n');
     }
     let trailer = Trailer {
         format: OP_FORMAT,
@@ -77,11 +75,9 @@ pub fn encode_op_file(ops: &[Op]) -> Vec<u8> {
         bytes: u64::try_from(body.len()).unwrap_or(u64::MAX),
         sha256: crate::starter::sha256_hex(&body),
     };
-    if let Ok(line) = serde_json::to_vec(&trailer) {
-        body.extend_from_slice(&line);
-    }
+    body.extend_from_slice(&serde_json::to_vec(&trailer)?);
     body.push(b'\n');
-    body
+    Ok(body)
 }
 
 /// Read an op file's `bytes`.
@@ -159,7 +155,8 @@ pub enum OpsStop {
     Missing,
     /// The provider has it only in the cloud; it is downloading.
     NotDownloaded,
-    /// It is incomplete or damaged ([`OpFileRead::NotWhole`]); it is read again next time.
+    /// It is incomplete or damaged ([`OpFileRead::NotWhole`]), or holds an op another device
+    /// is named on (as its `device` or its clock's); it is read again next time.
     NotWhole(String),
     /// A newer app wrote it: update the app to sync with this device (ADR 0022 rule 6).
     Newer { format: u32 },
@@ -181,7 +178,9 @@ impl DeviceOps {
     }
 }
 
-/// Read `device`'s op files numbered after `applied`, in order, as far as they are whole.
+/// Read `device`'s op files numbered after `applied`, in order, as far as they are whole and
+/// every op in them names `device`, as its `device` and its clock's (a file copied into
+/// another device's folder is not read as that device's).
 pub fn read_ops_after(
     folder: &dyn SyncFolder,
     device: &str,
@@ -206,11 +205,20 @@ pub fn read_ops_after(
         let stop = match folder.ensure_available(&path) {
             Ok(true) => match folder.read(&path) {
                 Ok(bytes) => match decode_op_file(&bytes) {
-                    OpFileRead::Whole(ops) => {
-                        out.files.push((seq, ops));
-                        expected += 1;
-                        continue;
-                    }
+                    OpFileRead::Whole(ops) => match ops
+                        .iter()
+                        .position(|o| o.device != device || o.clock.device_id != device)
+                    {
+                        None => {
+                            out.files.push((seq, ops));
+                            expected += 1;
+                            continue;
+                        }
+                        Some(i) => OpsStop::NotWhole(format!(
+                            "op {} names another device than {device}",
+                            i + 1
+                        )),
+                    },
                     OpFileRead::Newer { format } => OpsStop::Newer { format },
                     OpFileRead::NotWhole(why) => OpsStop::NotWhole(why),
                 },
@@ -228,8 +236,10 @@ pub fn read_ops_after(
 }
 
 /// Write this device's ops waiting in the User database's outbox to op files in `folder`,
-/// one file for each reserved batch; returns the numbers written. A file reserved by an
-/// earlier try that stopped half way is written again with the same bytes.
+/// one file for each reserved batch; returns the numbers written. A file an earlier try
+/// wrote but did not note written (it stopped half way) is kept when it has the same bytes,
+/// and is [`SyncError::Damaged`] when it has others (an op file never changes once written);
+/// nothing is noted written then.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn write_pending_ops(
     user: &obs_store::UserStore,
@@ -248,7 +258,19 @@ pub fn write_pending_ops(
                 after: o.change.after,
             })
             .collect();
-        folder.write_new(&op_file_path(&device, file.seq), &encode_op_file(&ops))?;
+        let path = op_file_path(&device, file.seq);
+        let bytes = encode_op_file(&ops)
+            .map_err(|e| super::SyncError::Damaged(format!("an op that is not JSON: {e}")))?;
+        match folder.read(&path) {
+            Ok(old) if old == bytes => {}
+            Ok(_) => {
+                return Err(super::SyncError::Damaged(format!(
+                    "{path} is in the Sync folder with other ops than it was reserved for; it is left as it is"
+                )));
+            }
+            Err(FolderError::NotFound(_)) => folder.write_new(&path, &bytes)?,
+            Err(e) => return Err(e.into()),
+        }
         user.op_file_written(file.seq)?;
         written.push(file.seq);
     }
