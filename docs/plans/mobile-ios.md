@@ -36,7 +36,7 @@ to Claude Opus 5.5 later on".
 
 | ID | Step | AFK/HITL | Xcode | Depends on | Key deliverable | Status |
 |---|---|---|---|---|---|---|
-| S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | review (bench re-check pending) |
+| S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | done (PR #359) |
 | S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | done (branch mobile/s02-ffi-scaffold, PR pending) |
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | todo |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (branch mobile/s04-mobile-sets, PR pending) |
@@ -533,8 +533,12 @@ this in addition to its own lines):
     machine, fails it too (678 ms, plus `atlas`, `exegetical-guide` and `text-size-tools`), so it
     is the machine, not this step; steady/fling frame CPU p50 0.89/0.94 ms on the branch vs
     1.12/1.41 ms at base. Worth re-running the bench on an idle machine or CI before merge.
-    The supervisor re-runs `cargo xtask bench` on an idle machine, base vs branch, before the PR,
-    because the search-preview gate also fails at base `055d47d`.
+    **Idle re-check (supervisor, 2026-11-21, load ≤ 3):** two interleaved runs each of base `055d47d`
+    and branch `14700fa` exceed the same thresholds by similar amounts: `search-preview` action max
+    704/619 ms base vs 695/842 ms branch (limit 150), `text-size-tools` 103–121 ms on both, and
+    `atlas`/`exegetical-guide` sync p99 ≈ 2.0–2.8 ms on both. `jumps` placeholder frames 21/21 base vs
+    20/20 branch, and steady p50 1.10–1.11 vs 1.13–1.14 ms. No regression from S01. The bench
+    fails at `master` on this Mac (it is not a `cargo xtask ci` gate), which needs its own issue.
   - **For later steps:** S03 can call `obs_reading::TonePalette` and `reading_tokens` directly;
     the CPU tile compositor of A1 is not here yet (S03 adds it). The PR carries `ui-review`
     (ADR 0020 rule 4: shared painting code moved); no screenshots change.
