@@ -17,8 +17,9 @@ use crate::error::StoreError;
 use crate::user::sql;
 
 /// The tables of Synced data. Each has a nullable `clock` column: the hybrid logical clock of
-/// the row's last change, as text whose encoding Sync defines (S28a). `NULL` means the row
-/// was last changed before this device recorded clocks, which is older than any clock.
+/// the row's last change, as text (`hlc.rs`, `docs/dev/sync.md`). `NULL` means the row was
+/// last changed before this device recorded clocks (schema 14), which is older than any
+/// clock.
 ///
 /// `anchors` has none: an Anchor is part of its Annotation's row and goes with its clock.
 /// In `preference` only the rows [`is_synced_preference`] names are Synced data; the clock of
@@ -141,7 +142,8 @@ pub(crate) fn give_rows_ids(c: &Connection) -> Result<(), StoreError> {
 /// - `tombstone`: a deleted synced row's table, id and the clock of its delete, kept for good.
 /// - `device`: this Synced device's id (a UUIDv7, made by [`make_device`]) and the name the
 ///   user gives it (empty until then).
-/// - `applied_up_to`: for each other Synced device, the last of its op files applied here.
+/// - `applied_up_to`: for each other Synced device, the last of its op files applied here
+///   (from schema 14, for this device's own id the last of its own op files written).
 pub(crate) const SCHEMA_13: &str = "
 ALTER TABLE preference ADD COLUMN clock TEXT;
 ALTER TABLE preferred_order ADD COLUMN clock TEXT;
