@@ -58,7 +58,12 @@ fn everything(c: &Connection) -> Tables {
     tables
         .into_iter()
         .map(|t| {
-            let columns = strings(c, &format!("SELECT name FROM pragma_table_info('{t}')"));
+            // `tombstone.covers` (schema 15) is `NULL` on every tombstone written before it;
+            // the migration tests below check that on their own.
+            let columns = strings(
+                c,
+                &format!("SELECT name FROM pragma_table_info('{t}') WHERE name <> 'covers'"),
+            );
             let list = columns
                 .iter()
                 .map(|c| format!("\"{c}\""))
@@ -146,7 +151,7 @@ fn v13_fixture(path: &Path) {
 }
 
 #[test]
-fn migration_14_keeps_every_row_of_a_v13_database_and_copies_it_first() {
+fn migrations_14_and_15_keep_every_row_of_a_v13_database_and_copy_it_first() {
     let dir = Dir::new("v13");
     v13_fixture(&dir.db());
     let before = everything(&Connection::open(dir.db()).unwrap());
@@ -160,8 +165,8 @@ fn migration_14_keeps_every_row_of_a_v13_database_and_copies_it_first() {
 
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 13);
-    assert_eq!(USER_SCHEMA_VERSION, 14);
-    assert_eq!(db.schema_version().unwrap(), 14);
+    assert_eq!(USER_SCHEMA_VERSION, 15);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let copy = report.migration_backup.unwrap();
     assert!(copy.to_string_lossy().contains(".v13-"));
     assert_eq!(everything(&Connection::open(&copy).unwrap()), before);
@@ -174,10 +179,18 @@ fn migration_14_keeps_every_row_of_a_v13_database_and_copies_it_first() {
     for table in ["item_clock", "op_outbox"] {
         assert_eq!(after[table], Vec::<String>::new(), "{table}");
     }
+    // A tombstone from before schema 15 covers up to its own clock (`NULL`).
+    assert_eq!(
+        strings(
+            &Connection::open(dir.db()).unwrap(),
+            "SELECT coalesce(covers, 'NULL') FROM tombstone"
+        ),
+        ["NULL"]
+    );
 }
 
 #[test]
-fn a_v13_backup_restores_into_14_losing_nothing() {
+fn a_v13_backup_restores_into_15_losing_nothing() {
     let dir = Dir::new("v13-backup");
     let old = dir.0.join("old").join("user.db");
     v13_fixture(&old);
@@ -191,7 +204,7 @@ fn a_v13_backup_restores_into_14_losing_nothing() {
 
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
     db.restore(&backup).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 14);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let restored = everything(&Connection::open(db.path()).unwrap());
     for (table, rows) in &held {
         assert_eq!(&restored[table], rows, "{table}");

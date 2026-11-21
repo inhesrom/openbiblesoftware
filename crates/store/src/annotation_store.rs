@@ -18,7 +18,11 @@ use crate::error::StoreError;
 use crate::highlight_style_store::{
     read_palette, read_style, style_exists, write_palette, write_style,
 };
-use crate::sync_clock::{CLOCK_SCHEMA, read_device_id, record_op, records_ops, stamp_row};
+use crate::hlc::Hlc;
+use crate::sync_clock::{
+    CLOCK_SCHEMA, COVERS_SCHEMA, Stamp, SyncColumns, read_device_id, read_row_clock, record_op,
+    records_ops, stamp_row,
+};
 use crate::sync_schema::is_synced_preference;
 use crate::synced_store::{
     ListItems, NO_CLOCK, has_table, mark_tombstone, read_synced_row, write_synced_row,
@@ -366,6 +370,15 @@ fn read_notebook(c: &Connection, id: &str) -> Result<Option<Notebook>, StoreErro
     .map_err(sql)
 }
 
+/// The default Notebook.
+pub(crate) fn read_default_notebook(c: &Connection) -> Result<Option<Notebook>, StoreError> {
+    c.prepare_cached(&format!(
+        "SELECT {NOTEBOOK_COLUMNS} FROM notebooks WHERE is_default = 1"
+    ))
+    .and_then(|mut s| s.query_row([], notebook_from).optional())
+    .map_err(sql)
+}
+
 fn read_annotation(c: &Connection, id: &str) -> Result<Option<Annotation>, StoreError> {
     c.prepare_cached(&format!(
         "SELECT {ANNOTATION_COLUMNS} FROM {ANNOTATION_FROM} WHERE a.id = ?1"
@@ -374,7 +387,7 @@ fn read_annotation(c: &Connection, id: &str) -> Result<Option<Annotation>, Store
     .map_err(sql)
 }
 
-fn read_row(
+pub(crate) fn read_row(
     c: &Connection,
     lists: &mut ListItems,
     key: &RowKey,
@@ -661,88 +674,150 @@ impl UserStore {
     /// Notebook cannot be deleted or stop being the default. Every write of Synced data goes
     /// through here (ADR 0022): a row deleted leaves a tombstone, and one made again takes
     /// its tombstone away. Each Change gets the next clock (`sync_clock.rs`), written into
-    /// its row (or its tombstone), and while this device records ops it waits in the outbox
-    /// for the Sync folder.
+    /// its row (or its tombstone, with the clock of the version it deleted), and while this
+    /// device records ops it waits in the outbox for the Sync folder.
     pub fn apply_changes(&self, changes: &[Change]) -> Result<(), StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
-        // A database opened at an older schema (migration tests) has no tombstones, and
-        // before schema 14 no clocks.
-        let tombstones = has_table(&tx, "tombstone")?;
-        let clocks = self.schema_version()? >= CLOCK_SCHEMA;
-        let recording = clocks && records_ops(&tx, &read_device_id(&tx)?)?;
+        let columns = self.sync_columns(&tx)?;
+        let recording = columns.clocks && records_ops(&tx, &read_device_id(&tx)?)?;
         let mut lists = ListItems::default();
         for change in changes {
-            let key = change
-                .key()
-                .ok_or_else(|| StoreError::Rejected("a change must be about one row".into()))?;
-            // A preference that is not Synced data stays on this device (D1: Visual filters).
-            if let RowKey::Preference(k) = &key
-                && !is_synced_preference(k)
-            {
-                return Err(StoreError::Rejected(format!(
-                    "{} is not Synced data, so no Change writes it",
-                    key.describe()
-                )));
-            }
-            let current = read_row(&tx, &mut lists, &key)?;
-            if current != change.before {
-                return Err(StoreError::Conflict(key.describe()));
-            }
-            match (&key, &change.before, &change.after) {
-                (RowKey::Notebook(id), before, after) => {
-                    let was_default = matches!(before, Some(Row::Notebook(n)) if n.is_default);
-                    let is_default = matches!(after, Some(Row::Notebook(n)) if n.is_default);
-                    if was_default && !is_default {
-                        return Err(StoreError::Rejected(
-                            "the default Notebook cannot be deleted".into(),
-                        ));
-                    }
-                    let after = match after {
-                        Some(Row::Notebook(n)) => Some(n),
-                        _ => None,
-                    };
-                    write_notebook(&tx, id, after)?;
-                }
-                (RowKey::Annotation(id), before, after) => {
-                    let pick = |r: &Option<Row>| match r {
-                        Some(Row::Annotation(a)) => Some(a.clone()),
-                        _ => None,
-                    };
-                    write_annotation(&tx, id, pick(before).as_ref(), pick(after).as_ref())?;
-                }
-                (RowKey::HighlightStyle(id), _, after) => {
-                    let after = match after {
-                        Some(Row::HighlightStyle(s)) => Some(s),
-                        _ => None,
-                    };
-                    write_style(&tx, id, after)?;
-                }
-                (RowKey::HighlightPalette(id), _, after) => {
-                    let after = match after {
-                        Some(Row::HighlightPalette(p)) => Some(p),
-                        _ => None,
-                    };
-                    write_palette(&tx, id, after)?;
-                }
-                (key, _, after) => write_synced_row(&tx, &mut lists, key, after.as_ref())?,
-            }
-            let clock = if clocks {
-                let clock = self.next_clock(&tx)?;
-                stamp_row(&tx, &key, change, &clock)?;
-                if recording {
-                    record_op(&tx, &clock, change)?;
-                }
-                Some(clock.encode()?)
-            } else {
-                None
-            };
-            if tombstones {
-                mark_tombstone(&tx, change, &key, clock.as_deref().unwrap_or(NO_CLOCK))?;
-            }
+            self.apply_one(
+                &tx,
+                &mut lists,
+                columns,
+                change,
+                &Stamp::Local { recording },
+                false,
+            )?;
         }
         tx.commit().map_err(sql)?;
         #[cfg(feature = "test-support")]
         self.recorded.borrow_mut().extend_from_slice(changes);
+        Ok(())
+    }
+
+    /// Which of Sync's tables and columns the database has: one opened at an older schema
+    /// (migration tests) has no tombstones before 13, no clocks before 14 and no `covers`
+    /// before 15.
+    pub(crate) fn sync_columns(&self, c: &Connection) -> Result<SyncColumns, StoreError> {
+        let version = self.schema_version()?;
+        Ok(SyncColumns {
+            tombstones: has_table(c, "tombstone")?,
+            clocks: version >= CLOCK_SCHEMA,
+            covers: version >= COVERS_SCHEMA,
+        })
+    }
+
+    /// Apply one Change inside the transaction `tx` (see [`UserStore::apply_changes`]),
+    /// stamping it as `stamp` says. `default_may_change`: the default Notebook may stop being
+    /// the default (only the merge does that, when two devices each made one, ADR 0022 rule 3).
+    pub(crate) fn apply_one(
+        &self,
+        tx: &Connection,
+        lists: &mut ListItems,
+        columns: SyncColumns,
+        change: &Change,
+        stamp: &Stamp<'_>,
+        default_may_change: bool,
+    ) -> Result<(), StoreError> {
+        let key = change
+            .key()
+            .ok_or_else(|| StoreError::Rejected("a change must be about one row".into()))?;
+        // A preference that is not Synced data stays on this device (D1: Visual filters).
+        if let RowKey::Preference(k) = &key
+            && !is_synced_preference(k)
+        {
+            return Err(StoreError::Rejected(format!(
+                "{} is not Synced data, so no Change writes it",
+                key.describe()
+            )));
+        }
+        let current = read_row(tx, lists, &key)?;
+        if current != change.before {
+            return Err(StoreError::Conflict(key.describe()));
+        }
+        // The clock of the version this Change replaces or deletes, before it is written over.
+        let before_clock = if columns.clocks && change.before.is_some() {
+            read_row_clock(tx, &key)?
+        } else {
+            None
+        };
+        if matches!(stamp, Stamp::Kept) && (change.before.is_none() || change.after.is_none()) {
+            return Err(StoreError::Rejected(format!(
+                "{} keeps its clock only when it is rewritten",
+                key.describe()
+            )));
+        }
+        match (&key, &change.before, &change.after) {
+            (RowKey::Notebook(id), before, after) => {
+                let was_default = matches!(before, Some(Row::Notebook(n)) if n.is_default);
+                let is_default = matches!(after, Some(Row::Notebook(n)) if n.is_default);
+                if was_default && !is_default && !(default_may_change && after.is_some()) {
+                    return Err(StoreError::Rejected(
+                        "the default Notebook cannot be deleted".into(),
+                    ));
+                }
+                let after = match after {
+                    Some(Row::Notebook(n)) => Some(n),
+                    _ => None,
+                };
+                write_notebook(tx, id, after)?;
+            }
+            (RowKey::Annotation(id), before, after) => {
+                let pick = |r: &Option<Row>| match r {
+                    Some(Row::Annotation(a)) => Some(a.clone()),
+                    _ => None,
+                };
+                write_annotation(tx, id, pick(before).as_ref(), pick(after).as_ref())?;
+            }
+            (RowKey::HighlightStyle(id), _, after) => {
+                let after = match after {
+                    Some(Row::HighlightStyle(s)) => Some(s),
+                    _ => None,
+                };
+                write_style(tx, id, after)?;
+            }
+            (RowKey::HighlightPalette(id), _, after) => {
+                let after = match after {
+                    Some(Row::HighlightPalette(p)) => Some(p),
+                    _ => None,
+                };
+                write_palette(tx, id, after)?;
+            }
+            (key, _, after) => write_synced_row(tx, lists, key, after.as_ref())?,
+        }
+        let (clock, covers) = match stamp {
+            Stamp::Local { recording } if columns.clocks => {
+                let clock = self.next_clock(tx)?;
+                stamp_row(tx, &key, change, &clock)?;
+                if *recording {
+                    let before = before_clock.as_deref().and_then(Hlc::parse);
+                    record_op(tx, &clock, change, before.as_ref())?;
+                }
+                (clock.encode()?, before_clock.unwrap_or_default())
+            }
+            Stamp::Local { .. } => (NO_CLOCK.to_string(), NO_CLOCK.to_string()),
+            Stamp::Merged { clock, covers } => {
+                stamp_row(tx, &key, change, clock)?;
+                let covers = match covers {
+                    Some(c) => c.encode()?,
+                    None => NO_CLOCK.to_string(),
+                };
+                (clock.encode()?, covers)
+            }
+            // An update: the row's clock and its (absent) tombstone stay as they are.
+            Stamp::Kept => return Ok(()),
+        };
+        if columns.tombstones {
+            mark_tombstone(
+                tx,
+                change,
+                &key,
+                &clock,
+                columns.covers.then_some(covers.as_str()),
+            )?;
+        }
         Ok(())
     }
 

@@ -11,9 +11,10 @@
 //! that does not parse, is not taken in; its row is left as it is.
 
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 
 use crate::annotation::is_valid_id;
-use crate::annotation::{Change, RowKey};
+use crate::annotation::{Change, Row, RowKey};
 use crate::error::StoreError;
 use crate::hlc::{Hlc, latest_wall_taken_in};
 use crate::preference_items::ListPreference;
@@ -22,6 +23,33 @@ use crate::user::{UserStore, sql};
 
 /// The first schema whose `apply_changes` stamps clocks and records ops.
 pub(crate) const CLOCK_SCHEMA: u32 = 14;
+
+/// The first schema whose tombstones say what their delete covers (`tombstone.covers`).
+pub(crate) const COVERS_SCHEMA: u32 = 15;
+
+/// Which of Sync's tables and columns a database has (one opened at an older schema, for a
+/// migration test, lacks the later ones).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SyncColumns {
+    pub(crate) tombstones: bool,
+    pub(crate) clocks: bool,
+    pub(crate) covers: bool,
+}
+
+/// How a `Change` applied gets its clock.
+pub(crate) enum Stamp<'a> {
+    /// Made on this device: the next clock, kept in the outbox while `recording`.
+    Local { recording: bool },
+    /// Merged from another device's op: the op's clock, and for a delete the clock of the
+    /// version it removed (`None`: one from before clocks).
+    Merged {
+        clock: &'a Hlc,
+        covers: Option<&'a Hlc>,
+    },
+    /// Rewritten here the way every device rewrites it from what they all merged (a default
+    /// Notebook another device's older one replaces): an update, and the row keeps its clock.
+    Kept,
+}
 
 /// Where this process's clock is: the device it names, the last wall time and counter it
 /// handed out, and whether it has been seeded from the database since it was opened or
@@ -38,6 +66,19 @@ pub(crate) struct ClockState {
 pub struct OutboxOp {
     pub clock: Hlc,
     pub change: Change,
+    /// The clock its `before` row had here (none: no `before`, or a row from before clocks):
+    /// what a delete covers, so another device's edit it did not see beats it.
+    pub before_clock: Option<Hlc>,
+}
+
+/// An outbox row's `change` JSON: the `Change`, and the clock of its `before` row when it has
+/// one (an outbox row written before schema 15 has none).
+#[derive(Serialize, Deserialize)]
+struct OutboxChange {
+    before: Option<Row>,
+    after: Option<Row>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    before_clock: Option<Hlc>,
 }
 
 /// An op file reserved for the outbox's ops: its number and its ops, in the order they were
@@ -208,11 +249,17 @@ impl UserStore {
         for (seq, clock, change) in rows {
             let seq = u64::try_from(seq)
                 .map_err(|_| StoreError::Corrupt(format!("op file number {seq}")))?;
+            let OutboxChange {
+                before,
+                after,
+                before_clock,
+            } = serde_json::from_str(&change)
+                .map_err(|e| StoreError::Corrupt(format!("outbox change: {e}")))?;
             let op = OutboxOp {
                 clock: Hlc::parse(&clock)
                     .ok_or_else(|| StoreError::Corrupt(format!("outbox clock `{clock}`")))?,
-                change: serde_json::from_str(&change)
-                    .map_err(|e| StoreError::Corrupt(format!("outbox change: {e}")))?,
+                change: Change { before, after },
+                before_clock,
             };
             match files.last_mut() {
                 Some(file) if file.seq == seq => file.ops.push(op),
@@ -271,10 +318,19 @@ pub(crate) fn records_ops(c: &Connection, device: &str) -> Result<bool, StoreErr
     .map_err(sql)
 }
 
-/// Keep `change`, applied with `clock`, in the outbox.
-pub(crate) fn record_op(c: &Connection, clock: &Hlc, change: &Change) -> Result<(), StoreError> {
-    let json = serde_json::to_string(change)
-        .map_err(|e| StoreError::Rejected(format!("a change that is not JSON: {e}")))?;
+/// Keep `change`, applied with `clock`, in the outbox, with the clock its `before` row had.
+pub(crate) fn record_op(
+    c: &Connection,
+    clock: &Hlc,
+    change: &Change,
+    before_clock: Option<&Hlc>,
+) -> Result<(), StoreError> {
+    let json = serde_json::to_string(&OutboxChange {
+        before: change.before.clone(),
+        after: change.after.clone(),
+        before_clock: before_clock.cloned(),
+    })
+    .map_err(|e| StoreError::Rejected(format!("a change that is not JSON: {e}")))?;
     c.execute(
         "INSERT INTO op_outbox (clock, change) VALUES (?1, ?2)",
         params![clock.encode()?, json],
@@ -366,6 +422,49 @@ pub(crate) fn stamp_row(
                     .map_err(sql),
                 None => Ok(()),
             }
+        }
+    }
+}
+
+/// The clock of the row `key` names as stored (its `clock` column, or its `item_clock` row for
+/// a list item and the Preferred order): `None` when it has none (`NULL`, a row from before
+/// clocks) or there is no such row. Text that is not a clock is returned as it is.
+pub(crate) fn read_row_clock(c: &Connection, key: &RowKey) -> Result<Option<String>, StoreError> {
+    let one = |sql_text: &str, p: &[&dyn rusqlite::ToSql]| -> Result<Option<String>, StoreError> {
+        c.prepare_cached(sql_text)
+            .and_then(|mut s| s.query_row(p, |r| r.get::<_, Option<String>>(0)).optional())
+            .map(Option::flatten)
+            .map_err(sql)
+    };
+    match key {
+        RowKey::Notebook(id) => one("SELECT clock FROM notebooks WHERE id = ?1", &[id]),
+        RowKey::Annotation(id) => one("SELECT clock FROM annotations WHERE id = ?1", &[id]),
+        RowKey::HighlightStyle(id) => {
+            one("SELECT clock FROM highlight_styles WHERE id = ?1", &[id])
+        }
+        RowKey::HighlightPalette(id) => {
+            one("SELECT clock FROM highlight_palettes WHERE id = ?1", &[id])
+        }
+        RowKey::Favorite(uid) => one("SELECT clock FROM favorite WHERE uid = ?1", &[uid]),
+        RowKey::ReadingPlan(uid) => one("SELECT clock FROM reading_plan WHERE uid = ?1", &[uid]),
+        RowKey::Reading(plan, position) => one(
+            "SELECT r.clock FROM plan_reading r JOIN reading_plan p ON p.id = r.plan_id
+             WHERE p.uid = ?1 AND r.position = ?2",
+            &[plan, position],
+        ),
+        RowKey::Layout(id) => one("SELECT clock FROM layout WHERE id = ?1", &[id]),
+        RowKey::Preference(k) => one("SELECT clock FROM preference WHERE key = ?1", &[k]),
+        RowKey::PreferredOrder
+        | RowKey::Collection(_)
+        | RowKey::CopyPreset(_)
+        | RowKey::SavedSearch(_)
+        | RowKey::GuideSection(..)
+        | RowKey::ResourceTags(_) => {
+            let (kind, id) = key.tombstone();
+            one(
+                "SELECT clock FROM item_clock WHERE row_table = ?1 AND row_id = ?2",
+                &[&kind, &id],
+            )
         }
     }
 }

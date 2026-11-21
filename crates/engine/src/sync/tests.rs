@@ -90,6 +90,8 @@ fn ops(device: &str, n: usize) -> Vec<Op> {
             },
             before: None,
             after: Some(Row::Notebook(notebook(&format!("N{i}")))),
+            before_clock: None,
+            absent: Vec::new(),
         })
         .collect()
 }

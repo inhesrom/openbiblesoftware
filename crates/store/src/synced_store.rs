@@ -34,23 +34,33 @@ pub(crate) fn has_table(c: &Connection, name: &str) -> Result<bool, StoreError> 
     .map_err(sql)
 }
 
-/// A delete leaves a tombstone of the row with the delete's `clock`; a row made again (an
-/// undone delete) takes its tombstone away. An update changes neither.
+/// A delete leaves a tombstone of the row with the delete's `clock` and, from schema 15, what
+/// it `covers` (the clock of the version deleted, `NO_CLOCK` for one from before clocks); a
+/// row made again (an undone delete, or another device's edit the delete did not cover) takes
+/// its tombstone away. An update changes neither.
 pub(crate) fn mark_tombstone(
     c: &Connection,
     change: &Change,
     key: &RowKey,
     clock: &str,
+    covers: Option<&str>,
 ) -> Result<(), StoreError> {
     let (kind, id) = key.tombstone();
     match (&change.before, &change.after) {
-        (Some(_), None) => c
-            .execute(
+        (Some(_), None) => match covers {
+            Some(covers) => c.execute(
+                "INSERT INTO tombstone (row_table, row_id, clock, covers) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock,
+                     covers = excluded.covers",
+                params![kind, id, clock, covers],
+            ),
+            None => c.execute(
                 "INSERT INTO tombstone (row_table, row_id, clock) VALUES (?1, ?2, ?3)
                  ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock",
                 params![kind, id, clock],
-            )
-            .map(drop),
+            ),
+        }
+        .map(drop),
         (None, Some(_)) => c
             .execute(
                 "DELETE FROM tombstone WHERE row_table = ?1 AND row_id = ?2",

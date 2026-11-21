@@ -25,6 +25,8 @@ pub mod highlight_style;
 mod highlight_style_store;
 pub mod hlc;
 #[cfg(not(target_arch = "wasm32"))]
+mod merge_store;
+#[cfg(not(target_arch = "wasm32"))]
 mod obr;
 #[cfg(not(target_arch = "wasm32"))]
 mod preference_items;
@@ -64,6 +66,8 @@ pub use highlight_style::{
     STANDARD_PALETTE_NAME, StyleAppearance, built_in_styles, fallback_appearance, standard_palette,
 };
 pub use hlc::Hlc;
+#[cfg(not(target_arch = "wasm32"))]
+pub use merge_store::{MergeTx, RowState, Tombstone};
 #[cfg(not(target_arch = "wasm32"))]
 pub use obr::{APPLICATION_ID, ObrReader, copy_obr_as, write_obr};
 pub use reading_plans::{PlanReadingRow, ReadingPlanRow};

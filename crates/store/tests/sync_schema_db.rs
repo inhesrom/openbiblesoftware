@@ -158,7 +158,7 @@ fn migration_13_keeps_every_row_of_a_v12_database_and_copies_it_first() {
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 12);
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    assert_eq!(USER_SCHEMA_VERSION, 14);
+    assert_eq!(USER_SCHEMA_VERSION, 15);
     // The copy taken before migrating is the v12 database as it was.
     let copy = report.migration_backup.unwrap();
     assert!(
