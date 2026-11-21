@@ -196,9 +196,25 @@ impl ReadingDoc {
             .map(|(i, v)| (v.verse, i))
             .collect();
         let span_indexes = units.iter().map(|_| OnceLock::new()).collect();
+        // A Book's printed pages (ADR 0023), for Go to page… and the header's page.
+        let pages: Vec<obs_engine::resource_navigation::PageMark> = units
+            .iter()
+            .flat_map(|u| {
+                u.spans.iter().filter_map(move |s| match &s.kind {
+                    SpanKind::Page { label } => Some(obs_engine::resource_navigation::PageMark {
+                        label: label.clone(),
+                        unit: u.id.clone(),
+                        byte: s.start,
+                    }),
+                    _ => None,
+                })
+            })
+            .collect();
+        let navigation =
+            ResourceNavigation::new(keys).with_pages(pages, units.iter().map(|u| u.id.clone()));
         Self {
             manifest,
-            navigation: std::sync::Arc::new(ResourceNavigation::new(keys)),
+            navigation: std::sync::Arc::new(navigation),
             units,
             blocks,
             verses,

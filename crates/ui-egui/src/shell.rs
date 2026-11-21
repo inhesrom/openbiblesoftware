@@ -2371,8 +2371,8 @@ impl State {
                             t.navigation = Some(Arc::clone(&doc.navigation));
                         }
                         t.verse_map = doc.verse_map.clone();
-                        if !doc.manifest.key_schemes.is_empty() {
-                            t.key_schemes = doc.manifest.key_schemes.clone();
+                        if let Some(schemes) = obs_engine::tab_key_schemes(&doc.manifest) {
+                            t.set_key_schemes(schemes);
                         }
                     }
                     // A switch to a parallel resource goes to the same place (#151);
@@ -2498,6 +2498,14 @@ impl State {
         let Some(t) = self.session.workspace.tab(tab) else {
             return String::new();
         };
+        if t.header_box() == HeaderBox::Page {
+            // The printed page at the top of a Book's view (ADR 0023).
+            return (t.scroll.as_ref())
+                .zip(t.navigation.as_ref())
+                .and_then(|(at, n)| n.page_at(&at.unit, at.byte))
+                .map(|p| format!("p. {}", p.label))
+                .unwrap_or_default();
+        }
         if t.header_box() == HeaderBox::Word
             && let Some(words) = self.session.word_study.choosing(tab)
         {
@@ -3312,7 +3320,9 @@ impl State {
                     ui.spacing_mut().item_spacing.x = space::XS;
                     let narrow = ui.available_width() < size::HEADER_NARROW;
                     ui.add_space(space::XS);
-                    if kind.has_link_chip() {
+                    if (self.session.workspace.tab(tab))
+                        .map_or(kind.has_link_chip(), obs_engine::Tab::has_link_chip)
+                    {
                         self.link_chip(ui, tab);
                     }
                     if matches!(kind, TabKind::Resource(_)) {
@@ -3667,9 +3677,11 @@ impl State {
             | HeaderBox::Topic
             | HeaderBox::Reference
             | HeaderBox::Lexicon
-            | HeaderBox::Headword => {
+            | HeaderBox::Headword
+            | HeaderBox::Page => {
                 let shown = self.location_text(tab);
                 let hint = match kind {
+                    HeaderBox::Page => "Go to page",
                     HeaderBox::Word => "Strong's number or word",
                     HeaderBox::Name => "Person or place",
                     HeaderBox::Topic => "Topic",
@@ -4082,7 +4094,7 @@ impl egui_tiles::Behavior<TabId> for State {
                 .session
                 .workspace
                 .tab(t)
-                .is_some_and(|tab| tab.kind.has_link_chip());
+                .is_some_and(obs_engine::Tab::has_link_chip);
             resp.context_menu(|ui| {
                 if linkable {
                     self.link_menu(ui, t);

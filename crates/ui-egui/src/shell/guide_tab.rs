@@ -35,6 +35,8 @@ pub(super) enum Action {
     Move(GuideSection, usize),
     Reference(Passage, bool),
     Commentary(CommentaryRow, bool),
+    /// Cited in (ADR 0023): open a Book at the place that cites the Passage.
+    CitingBook(obs_engine::cited_in::CitingBook, bool),
     /// Parallel passages (#212): compare a parallel in Text Comparison (a new one when
     /// Ctrl/Cmd is held).
     CompareParallel(Passage, bool),
@@ -299,6 +301,7 @@ impl State {
             }
             Action::Reference(passage, new_tab) => self.reference_navigate(tab, passage, new_tab),
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
+            Action::CitingBook(book, new_tab) => self.open_citing_book(tab, &book, new_tab),
             Action::CompareParallel(passage, new_tab) => {
                 self.run(
                     "compare.parallel",
@@ -421,6 +424,16 @@ impl State {
                 self.parallel_passages_section(ui, found, *passage)
                     .map(|p| Action::CompareParallel(p, new_tab))
             }
+            SectionData::CitedIn(books) => {
+                let mut clicked = None;
+                for book in books {
+                    if self.citing_book_row(ui, tab, book) {
+                        clicked = Some(Action::CitingBook(book.clone(), new_tab));
+                    }
+                    ui.add_space(space::S);
+                }
+                clicked
+            }
             SectionData::Commentaries(rows) => {
                 let mut clicked = None;
                 for row in rows {
@@ -542,6 +555,89 @@ impl State {
             });
         }
         r.clicked()
+    }
+
+    /// One Book of Cited in (ADR 0023): its title, author and year, how often it cites the
+    /// Passage, and the paragraph of the first place. Returns whether it was clicked.
+    fn citing_book_row(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        book: &obs_engine::cited_in::CitingBook,
+    ) -> bool {
+        let top = ui.cursor().min;
+        let mut detail: Vec<String> = Vec::new();
+        if let Some(a) = &book.author {
+            detail.push(a.clone());
+        }
+        if let Some(y) = book.year {
+            detail.push(y.to_string());
+        }
+        if book.count > 1 {
+            detail.push(format!("{} places", book.count));
+        }
+        crate::components::title_and_detail(
+            ui,
+            RichText::new(&book.title).strong().color(theme::c().lapis),
+            RichText::new(detail.join(" · ")).color(theme::c().muted),
+        );
+        if let Some(d) = &book.first.division {
+            self.guide_snippet(ui, d, ColorRole::Accent, false, 1);
+        }
+        if !book.first.excerpt.is_empty() {
+            self.guide_snippet(ui, &book.first.excerpt, ColorRole::Ink, false, ROW_LINES);
+        }
+        let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
+        let r = ui
+            .interact(
+                rect,
+                ui.scope_id()
+                    .with(("citing-book-row", tab, &book.resource_id)),
+                Sense::click(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let label = format!("Open {} where it cites this Passage", book.title);
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
+        if r.hovered() {
+            crate::components::hover_outline(ui, rect);
+        }
+        r.on_hover_text("Click to open the Book here · Ctrl/Cmd-click opens a new Tab")
+            .clicked()
+    }
+
+    /// Open a Book at the first place it cites the Passage: in a Tab already showing it,
+    /// else a new one (a new one always with Ctrl/Cmd).
+    fn open_citing_book(
+        &mut self,
+        guide: TabId,
+        book: &obs_engine::cited_in::CitingBook,
+        new_tab: bool,
+    ) {
+        let kind = TabKind::Resource(book.resource_id.clone());
+        let existing = (!new_tab)
+            .then(|| self.session.workspace.most_recent(|t| t.kind == kind))
+            .flatten();
+        let tab = match existing {
+            Some(t) => t,
+            None => {
+                self.session.workspace.focus(guide);
+                let Some(out) = self.run(
+                    "resource.open",
+                    &json!({ "id": book.resource_id, "split": new_tab }),
+                ) else {
+                    return;
+                };
+                let Some(t) = out["tab"].as_u64() else {
+                    return;
+                };
+                TabId(t)
+            }
+        };
+        self.session.workspace.focus(tab);
+        let (start, end) = book.first.range;
+        self.session
+            .workspace
+            .navigate_text(tab, book.first.unit.clone(), start..end, None);
     }
 
     /// Draw Resource text through the inline-snippet pipeline, at most `lines` lines (a

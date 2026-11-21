@@ -7,9 +7,21 @@ use std::ops::Bound;
 use obs_model::{Key, KeyEntry, UnitId, normalize, transliteration_key};
 use obs_scripture::Verse;
 
+/// Where a printed page of a Book begins (ADR 0023): its label, unit and byte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageMark {
+    pub label: String,
+    pub unit: UnitId,
+    pub byte: u32,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ResourceNavigation {
     pub keys: Vec<KeyEntry>,
+    /// A Book's printed pages, in document order.
+    pages: Vec<PageMark>,
+    /// Each unit's place in document order, for [`Self::page_at`].
+    unit_order: BTreeMap<UnitId, usize>,
     sections: BTreeMap<Verse, usize>,
     entries: Vec<usize>,
     entry_units: BTreeMap<UnitId, usize>,
@@ -59,11 +71,55 @@ impl ResourceNavigation {
             lookup,
             transliterations,
             keys,
+            pages: Vec::new(),
+            unit_order: BTreeMap::new(),
             sections,
             entries,
             entry_units,
             unit_keys,
         }
+    }
+
+    /// With a Book's printed pages, in document order; `units` are its text units' ids in
+    /// document order.
+    pub fn with_pages(
+        mut self,
+        pages: Vec<PageMark>,
+        units: impl IntoIterator<Item = UnitId>,
+    ) -> Self {
+        self.pages = pages;
+        self.unit_order = units.into_iter().enumerate().map(|(i, u)| (u, i)).collect();
+        self
+    }
+
+    pub fn pages(&self) -> &[PageMark] {
+        &self.pages
+    }
+
+    /// The printed page typed as `text` ("23", "p. 23", "page iv"), case aside; the first
+    /// when a label repeats (a second volume starting again at 1).
+    pub fn page(&self, text: &str) -> Option<&PageMark> {
+        let text = text.trim();
+        let lower = text.to_lowercase();
+        let label = ["page", "pg", "p."]
+            .iter()
+            .find_map(|p| lower.strip_prefix(p))
+            .unwrap_or(&lower)
+            .trim();
+        self.pages.iter().find(|p| p.label.to_lowercase() == label)
+    }
+
+    /// The printed page showing at `byte` of `unit`: the last one that begins at or before it.
+    pub fn page_at(&self, unit: &UnitId, byte: usize) -> Option<&PageMark> {
+        let at = (*self.unit_order.get(unit)?, byte);
+        self.pages
+            .iter()
+            .take_while(|p| {
+                self.unit_order
+                    .get(&p.unit)
+                    .is_some_and(|&u| (u, p.byte as usize) <= at)
+            })
+            .last()
     }
 
     /// Last section starting at or before the requested Verse, even across chapters/books.

@@ -77,6 +77,10 @@ pub struct ImportRecord {
     /// The Open catalogue entry a download came from (#134).
     #[serde(default)]
     pub open_origin: Option<OpenOrigin>,
+    /// A batch of Books (ADR 0023): each book brought in and each that could not be. Such a
+    /// record's id is no Resource's ([`crate::books::BATCH_PREFIX`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub books: Option<crate::books::BookBatchSummary>,
 }
 
 /// Where a Resource downloaded from the Open catalogue came from (#134).
@@ -111,7 +115,9 @@ pub struct Imports {
     /// Resources being replaced by a new Resource revision (an update, #136), with the
     /// record of the revision in the library: put back if the update fails.
     replacing: BTreeMap<String, ImportRecord>,
-    indexer: Arc<dyn ImportIndexer>,
+    /// Running book batches (ADR 0023), by job: their report ids.
+    pub(crate) batches: BTreeMap<JobId, String>,
+    pub(crate) indexer: Arc<dyn ImportIndexer>,
 }
 
 impl Default for Imports {
@@ -120,6 +126,7 @@ impl Default for Imports {
             reports: BTreeMap::new(),
             active: BTreeMap::new(),
             replacing: BTreeMap::new(),
+            batches: BTreeMap::new(),
             indexer: Arc::new(DeferredIndexer),
         }
     }
@@ -130,7 +137,7 @@ impl Imports {
         self.reports.get(id)
     }
     pub fn is_running(&self) -> bool {
-        !self.active.is_empty()
+        !self.active.is_empty() || !self.batches.is_empty()
     }
     pub fn set_indexer(&mut self, indexer: Arc<dyn ImportIndexer>) {
         self.indexer = indexer;
@@ -141,8 +148,8 @@ impl Imports {
     }
     /// The job of a running Import.
     pub fn job_of(&self, id: &str) -> Option<JobId> {
-        self.active
-            .iter()
+        (self.active.iter())
+            .chain(self.batches.iter())
             .find_map(|(job, r)| (r == id).then_some(*job))
     }
     /// Whether the running Import of `id` is an update to a new Resource revision.
@@ -276,6 +283,7 @@ impl Session {
         let events = self.poll_factbooks(events);
         let events = self.poll_topic_guides(events);
         let events = self.poll_reanchoring(events);
+        let events = self.poll_book_batches(events);
         for event in events {
             let Some(id) = self.imports.active.get(&event.id).cloned() else {
                 other.push(event);
@@ -581,9 +589,13 @@ fn start(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         .str("module")
         .filter(|m| !m.is_empty())
         .map(str::to_string);
-    let (id, tab, job) = s
-        .start_import(ImportSource::detect(path, module))
-        .map_err(|e| failed("import.start", e))?;
+    let source = ImportSource::detect(path, module);
+    // A folder of Markdown books comes in book by book, each its own Resource (ADR 0023).
+    let (id, tab, job) = match source {
+        ImportSource::Markdown(dir) if dir.is_dir() => s.start_book_folder_import(&dir),
+        source => s.start_import(source),
+    }
+    .map_err(|e| failed("import.start", e))?;
     Ok(json!({"id": id, "tab": tab, "job": job.0}))
 }
 
@@ -709,6 +721,7 @@ impl Session {
             error: None,
             origin,
             open_origin,
+            books: None,
         };
         let indexer = Arc::clone(&self.imports.indexer);
         let fetch = self.fetch();
@@ -731,26 +744,26 @@ impl Session {
 /// Where an Import writes: Resource `id` in library folder `dir`, as a new Resource, or
 /// (`revision`) as that Resource revision of the Resource already there.
 #[cfg(not(target_arch = "wasm32"))]
-struct Target<'a> {
-    dir: &'a Path,
-    id: &'a str,
-    revision: Option<Revision>,
+pub(crate) struct Target<'a> {
+    pub(crate) dir: &'a Path,
+    pub(crate) id: &'a str,
+    pub(crate) revision: Option<Revision>,
 }
 
 /// A Resource revision replacing the `.obr` file at `path`: the file the library read the
 /// Resource from, which need not be named after its id.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
-struct Revision {
-    number: u32,
-    path: std::path::PathBuf,
+pub(crate) struct Revision {
+    pub(crate) number: u32,
+    pub(crate) path: std::path::PathBuf,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 type Parsed = (Resource, ImportReport);
 
 #[cfg(not(target_arch = "wasm32"))]
-fn tool_version() -> String {
+pub(crate) fn tool_version() -> String {
     format!("Open Bible {}", env!("CARGO_PKG_VERSION"))
 }
 
@@ -840,8 +853,9 @@ fn parse_sword(
     Ok(import_sword(&source, &module, &options)?)
 }
 
-/// Whether a path is a Markdown book: a `.md` or `.markdown` file, or a folder with Markdown
-/// files and no USFM ones.
+/// Whether a path is a Markdown book: a `.md` or `.markdown` file, or a folder with no USFM
+/// files of its own and Markdown files in it or its subfolders (a COL download keeps its
+/// books in folders by collection and author).
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 fn is_markdown_source(path: &Path) -> bool {
     let name = |p: &Path| {
@@ -856,15 +870,18 @@ fn is_markdown_source(path: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(path) else {
         return false;
     };
-    let mut markdown = false;
     for entry in entries.flatten() {
         let n = name(&entry.path()).to_ascii_lowercase();
         if n.ends_with(".usfm") || n.ends_with(".sfm") {
             return false;
         }
-        markdown |= obs_formats::is_markdown_name(&n);
     }
-    markdown
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        crate::books::markdown_files(path).is_ok_and(|files| !files.is_empty())
+    }
+    #[cfg(target_arch = "wasm32")]
+    false
 }
 
 /// The Markdown file names directly in `dir` (no subfolders), as the folder lists them.
@@ -956,6 +973,62 @@ fn parse_markdown(
     )?)
 }
 
+/// Write an imported Resource into the library folder and build its Search index: as a new
+/// Resource `to.id`, or (`to.revision`) as the next revision of the Resource there, which
+/// stays whole until the new one is written and indexed. `written` holds the file this made,
+/// for the caller to remove if anything after fails; it is `None` again once the file is in
+/// place as a revision.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn write_resource(
+    mut resource: Resource,
+    to: &Target<'_>,
+    indexer: &dyn ImportIndexer,
+    ctx: &JobContext,
+    written_file: &mut Option<std::path::PathBuf>,
+) -> Result<(LibraryEntry, ImportIndexStatus), Box<dyn std::error::Error>> {
+    let (dir, id) = (to.dir, to.id);
+    std::fs::create_dir_all(dir)?;
+    // A new Resource revision is written beside the file in the library (a name the
+    // library scan skips) and replaces that exact file in one rename once indexed, so the
+    // revision before it stays whole if the update fails or is cancelled.
+    let (out, written) = if let Some(revision) = &to.revision {
+        resource.manifest.revision = revision.number;
+        let mut staged = revision.path.clone().into_os_string();
+        staged.push(".update");
+        (revision.path.clone(), std::path::PathBuf::from(staged))
+    } else {
+        let out = dir.join(format!("{id}.obr"));
+        // Reserve filename, including files not scanned (or written by another app
+        // instance).
+        let reservation = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&out)?;
+        drop(reservation);
+        (out.clone(), out)
+    };
+    *written_file = Some(written.clone());
+    obs_store::write_obr(&resource, &written)?;
+    ctx.phase("Index");
+    let index = indexer
+        .build(&resource, &out, ctx)
+        .unwrap_or_else(ImportIndexStatus::Failed);
+    if ctx.is_cancelled() {
+        return Err(cancelled());
+    }
+    if written != out {
+        std::fs::rename(&written, &out)?;
+        *written_file = None;
+    }
+    Ok((
+        LibraryEntry {
+            manifest: resource.manifest,
+            path: out,
+        },
+        index,
+    ))
+}
+
 /// Files an Import made, removed again if it fails or is cancelled.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
@@ -1013,12 +1086,12 @@ fn import_source(
     fetch: Arc<dyn obs_formats::sword_repo::Fetch>,
     ctx: &JobContext,
 ) -> Result<Imported, String> {
-    let (dir, id) = (to.dir, to.id);
+    let id = to.id;
     let mut made = Made::default();
     let mut version = None;
     let mut sha256 = None;
     let run = || -> Result<Imported, Box<dyn std::error::Error>> {
-        let (mut resource, report) = match source {
+        let (resource, report) = match source {
             ImportSource::Usfm(path) => {
                 ctx.phase("Parse");
                 parse_usfm(path, id, ctx)?
@@ -1092,44 +1165,9 @@ fn import_source(
         if ctx.is_cancelled() {
             return Err(cancelled());
         }
-        std::fs::create_dir_all(dir)?;
-        // A new Resource revision is written beside the file in the library (a name the
-        // library scan skips) and replaces that exact file in one rename once indexed, so the
-        // revision before it stays whole if the update fails or is cancelled.
-        let (out, written) = if let Some(revision) = &to.revision {
-            resource.manifest.revision = revision.number;
-            let mut staged = revision.path.clone().into_os_string();
-            staged.push(".update");
-            (revision.path.clone(), std::path::PathBuf::from(staged))
-        } else {
-            let out = dir.join(format!("{id}.obr"));
-            // Reserve filename, including files not scanned (or written by another app
-            // instance).
-            let reservation = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&out)?;
-            drop(reservation);
-            (out.clone(), out)
-        };
-        made.obr = Some(written.clone());
-        obs_store::write_obr(&resource, &written)?;
-        ctx.phase("Index");
-        let index = indexer
-            .build(&resource, &out, ctx)
-            .unwrap_or_else(ImportIndexStatus::Failed);
-        if ctx.is_cancelled() {
-            return Err(cancelled());
-        }
-        if written != out {
-            std::fs::rename(&written, &out)?;
-            made.obr = None;
-        }
+        let (entry, index) = write_resource(resource, to, indexer, ctx, &mut made.obr)?;
         Ok(Imported {
-            entry: LibraryEntry {
-                manifest: resource.manifest,
-                path: out,
-            },
+            entry,
             report,
             index,
             version: version.take(),

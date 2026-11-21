@@ -65,8 +65,8 @@ use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, Event, EventEntity,
     FORMAT_VERSION, HistoricalDate, Key, KeyEntry, KeyScheme, LemmaTransliteration, Manifest,
     Mention, OLDEST_FORMAT_VERSION, Origin, ParallelSection, PartOfSpeech, PlaceLocation,
-    Rendering, RenderingIndex, Resource, ResourceType, Span, StrongsTotal, TextUnit, UnitId,
-    UnitKind,
+    Rendering, RenderingIndex, Resource, ResourceType, Span, SpanKind, StrongsTotal, TextUnit,
+    UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -1137,6 +1137,48 @@ impl ObrReader {
             .query_row([ord], |r| r.get(0))
             .map_err(|_| corrupt(format!("no unit with ordinal {ord}")))?;
         unit_id(id)
+    }
+
+    /// Every Bible reference found in the text (`scripture_ref` spans), outside note units: its
+    /// unit, byte range and Passages, in document order. What the Passage Guide's Cited in
+    /// reads of a Book (ADR 0023): one scan of the span table, never the text.
+    pub fn scripture_references(
+        &self,
+    ) -> Result<Vec<(UnitId, Range<u32>, obs_scripture::PassageList)>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT u.id, s.start, s.end, s.attrs FROM spans s JOIN units u ON u.ord = s.unit \
+                 WHERE s.kind = ?1 AND u.kind != 'note' ORDER BY s.unit, s.seq",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([i64::from(crate::span_codec::SCRIPTURE_REF)], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, Vec<u8>>(3)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (unit, start, end, attrs) = row.map_err(sql)?;
+            let SpanKind::ScriptureRef { targets } =
+                span_from(i64::from(crate::span_codec::SCRIPTURE_REF), &attrs)?
+            else {
+                continue;
+            };
+            let (start, end) = (to_u32(start, "span start")?, to_u32(end, "span end")?);
+            if start > end {
+                return Err(corrupt(format!(
+                    "span {start}..{end} ends before it starts"
+                )));
+            }
+            out.push((unit_id(unit)?, start..end, targets));
+        }
+        Ok(out)
     }
 
     /// The spans of `unit` that start inside `range` (`range.start <= start < range.end`), in

@@ -20,6 +20,7 @@ enum Pick {
     UsfmFolder,
     SwordConf,
     MarkdownBook,
+    MarkdownFolder,
 }
 
 impl State {
@@ -50,6 +51,10 @@ impl State {
                     ui.label(crate::components::title_text(title));
                     ui.label(RichText::new(&record.source).color(theme::c().muted));
                     ui.add_space(space::L);
+                    if let Some(books) = &record.books {
+                        action = batch(ui, id, &record, books);
+                        return;
+                    }
                     if record.phase == ImportPhase::Failed {
                         // What went wrong in plain words, the error under Details, and a way
                         // on (LIBRARY-13); not three phases of "not built".
@@ -95,6 +100,9 @@ impl State {
             Some(ReportAction::Run(command)) => {
                 self.run(command, &json!({ "id": id }));
             }
+            Some(ReportAction::OpenBook(book)) => {
+                self.run("resource.open", &json!({ "id": book }));
+            }
             None => {}
         }
     }
@@ -119,6 +127,7 @@ impl State {
                 ui.label(
                     "For a book kept as Markdown, choose its .md file; its Part files come with it.",
                 );
+                ui.label("A folder of Markdown books imports each book in it, subfolders too.");
                 ui.add_space(space::S);
                 ui.horizontal(|ui| {
                     if ui.button("USFM file…").clicked() {
@@ -132,6 +141,9 @@ impl State {
                     }
                     if ui.button("Markdown book…").clicked() {
                         chosen = Some(Pick::MarkdownBook);
+                    }
+                    if ui.button("Markdown folder…").clicked() {
+                        chosen = Some(Pick::MarkdownFolder);
                     }
                 });
             });
@@ -171,6 +183,9 @@ impl State {
                         .set_title("Import a Markdown book")
                         .add_filter("Markdown", &["md", "markdown"])
                         .pick_file(),
+                    Pick::MarkdownFolder => rfd::FileDialog::new()
+                        .set_title("Import a folder of Markdown books")
+                        .pick_folder(),
                 };
                 let _ = tx.send(selected);
                 ctx.request_repaint();
@@ -228,6 +243,98 @@ enum ReportAction {
     Run(&'static str),
     ImportAnother,
     Close,
+    /// Open one Book a batch brought in.
+    OpenBook(String),
+}
+
+/// A batch of Books (ADR 0023): how far it has got, then every Book brought in (each opens)
+/// and every one that could not be, with why in plain words and the error under Details.
+fn batch(
+    ui: &mut Ui,
+    id: &str,
+    record: &ImportRecord,
+    books: &obs_engine::books::BookBatchSummary,
+) -> Option<ReportAction> {
+    let mut action = None;
+    let running = matches!(
+        record.phase,
+        ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
+    );
+    section(ui, "Books");
+    if running {
+        let text = if record.total > 0 {
+            format!("{} of {} books", record.done, record.total)
+        } else {
+            format!("{} books", record.done)
+        };
+        ui.add(progress(record).text(text));
+        if ui.button("Cancel").clicked() {
+            action = Some(ReportAction::Run("import.cancel"));
+        }
+    } else if record.phase == ImportPhase::Failed {
+        let error = record.error.as_deref().unwrap_or_default();
+        crate::components::error_notice(ui, failure_message(error), error);
+    }
+    ui.add_space(space::S);
+    ui.label(format!(
+        "{} imported · {} could not be imported",
+        plural(books.imported.len(), "book", "books"),
+        books.failed.len()
+    ));
+    ui.add_space(space::M);
+    let row = ui.text_style_height(&egui::TextStyle::Body) + space::XS;
+    if !books.imported.is_empty() {
+        section(ui, "Imported");
+        egui::ScrollArea::vertical()
+            .id_salt(("batch-imported", id))
+            .max_height(crate::tokens::size::LIST_MAX)
+            .auto_shrink([false, true])
+            .show_rows(ui, row, books.imported.len(), |ui, rows| {
+                for book in &books.imported[rows] {
+                    ui.horizontal(|ui| {
+                        if crate::components::link(ui, &book.title)
+                            .on_hover_text(&book.name)
+                            .clicked()
+                        {
+                            action = Some(ReportAction::OpenBook(book.resource_id.clone()));
+                        }
+                        if book.updated {
+                            ui.label(RichText::new("updated").color(theme::c().muted));
+                        }
+                    });
+                }
+            });
+        ui.add_space(space::M);
+    }
+    if !books.failed.is_empty() {
+        section(ui, "Could not be imported");
+        egui::ScrollArea::vertical()
+            .id_salt(("batch-failed", id))
+            .max_height(crate::tokens::size::LIST_MAX)
+            .auto_shrink([false, true])
+            .show_rows(ui, row, books.failed.len(), |ui, rows| {
+                for failure in &books.failed[rows] {
+                    ui.label(format!(
+                        "{} — {}",
+                        failure.name,
+                        failure_message(&format!("{}: {}", failure.name, failure.error))
+                    ))
+                    .on_hover_text(&failure.error);
+                }
+            });
+    }
+    if !running {
+        ui.add_space(space::L);
+        ui.horizontal(|ui| {
+            if ui.button("Import another…").clicked() {
+                action = Some(ReportAction::ImportAnother);
+            }
+            if ui.button("Close").clicked() {
+                action = Some(ReportAction::Close);
+            }
+        });
+    }
+    action
 }
 
 /// Bytes as "4.5 MB".
@@ -357,7 +464,12 @@ pub(super) fn summary_counts(report: &ImportReport) -> String {
         + report.events
         + report.parallel_sections
         > 0;
-    if report.entries > 0 {
+    if report.source_format == obs_engine::MARKDOWN_BOOK_FORMAT {
+        // A Book (ADR 0023): its chapters and sections are its Divisions.
+        nonzero(report.entries, "Division", "Divisions");
+        nonzero(report.notes, "note", "notes");
+        nonzero(report.scripture_refs, "Bible reference", "Bible references");
+    } else if report.entries > 0 {
         nonzero(report.entries, "entry", "entries");
         nonzero(report.notes, "note", "notes");
         nonzero(report.scripture_refs, "Bible reference", "Bible references");

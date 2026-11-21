@@ -26,7 +26,11 @@ pub mod base_map;
 pub mod bible_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod bible_search_tests;
+pub mod books;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod books_tests;
 mod builtin;
+pub mod cited_in;
 pub mod collections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod collections_tests;
@@ -201,6 +205,8 @@ pub mod word_study;
 mod word_study_tests;
 pub mod workspace;
 
+/// The `source_format` of a Book imported from Markdown (ADR 0023).
+pub use obs_formats::MARKDOWN_BOOK_FORMAT;
 /// SWORD repository transport types (Get Bibles, #91).
 pub use obs_formats::sword_repo;
 mod workspace_commands;
@@ -352,7 +358,7 @@ pub use workspace::{
     RECENTLY_CLOSED_LIMIT, RecentlyClosed, Side, Tab, TabId, TabKind, Tool, Workspace,
 };
 pub use workspace_commands::{
-    BACKUPS_TITLE, MENUS, Menu, MenuItem, choices, menu_of, parallel_resources,
+    BACKUPS_TITLE, MENUS, Menu, MenuItem, choices, menu_of, parallel_resources, tab_key_schemes,
 };
 
 #[cfg(test)]

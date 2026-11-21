@@ -294,6 +294,8 @@ fn with_no_commentaries_in_the_library_the_section_shows_its_hint() {
 fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts() {
     let db = temp_db("guide-arrangement");
     let mut h = Harness::launch(Some(&db));
+    // Cited in (ADR 0023) is below the fold until Commentaries collapses: the headers are
+    // the ones that show.
     let first = open_guide(&mut h);
     let second = open_guide(&mut h);
     h.frames(4);
@@ -362,7 +364,8 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             "Commentaries",
             "Parallel passages",
             "Key words",
-            "People & places"
+            "People & places",
+            "Cited in"
         ]
     );
 
@@ -388,7 +391,8 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
                 "Commentaries",
                 "Parallel passages",
                 "Key words",
-                "People & places"
+                "People & places",
+                "Cited in"
             ]
         );
         assert!(!has_prefix_in(&h, *g, hint));
@@ -416,7 +420,8 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             "Commentaries",
             "Parallel passages",
             "Key words",
-            "People & places"
+            "People & places",
+            "Cited in"
         ]
     );
     let show = find_in(&h, guides[1], "Show Cross-references")
@@ -431,7 +436,8 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             "Commentaries",
             "Parallel passages",
             "Key words",
-            "People & places"
+            "People & places",
+            "Cited in"
         ]
     );
     let menu = find_in(&h, guides[0], "[ellipsis]").unwrap().center();

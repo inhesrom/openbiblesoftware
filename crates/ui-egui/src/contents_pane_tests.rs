@@ -823,3 +823,74 @@ fn contents_pane_previews() {
     h.frames(3);
     h.screenshot(&dir.join("easton-abraham.ppm"));
 }
+
+/// A Book (ADR 0023): two Divisions, the second running over printed pages 3 and 4.
+fn book() -> Resource {
+    let mut m = Manifest::new(
+        "test-owen",
+        "Of the Mortification of Sin",
+        "OMS",
+        ResourceType::Book,
+        "en",
+    );
+    m.license = "LicenseRef-PublicDomain".into();
+    let mut b = ResourceBuilder::new(m);
+    let long = "Mortify the deeds of the body. ".repeat(200);
+    for (id, title, text) in [
+        ("div.1", "Chapter I", "The first chapter is short."),
+        ("div.2", "Chapter II", long.as_str()),
+    ] {
+        let unit = UnitId::new(id).unwrap();
+        prose(&mut b, &unit, UnitKind::Division, title, text);
+    }
+    let div2 = UnitId::new("div.2").unwrap();
+    b.add_span(&div2, 0..0, obs_model::SpanKind::Page { label: "3".into() });
+    let page4 = long.len() / 2 - (long.len() / 2) % "Mortify the deeds of the body. ".len();
+    b.add_span(
+        &div2,
+        page4..page4,
+        obs_model::SpanKind::Page { label: "4".into() },
+    );
+    b.build().unwrap()
+}
+
+#[test]
+fn a_books_contents_lists_its_divisions_and_go_to_page_jumps_to_a_printed_page() {
+    let mut h = Harness::new();
+    let bible = h.tab_id("TB");
+    h.shell
+        .run("tab.link", &json!({ "tab": bible.0, "set": "A" }));
+    h.shell.st.session.workspace.user_focused(bible);
+    let tb = open_resource(&mut h, book());
+    {
+        let t = h.shell.session().workspace.tab(tb).unwrap();
+        assert_eq!(t.header_box(), obs_engine::HeaderBox::Page);
+        assert_eq!(t.link, None, "a Book joins no Link set");
+    }
+    click_contents(&mut h, tb);
+    settle_all(&mut h);
+    for line in ["Chapter I", "Chapter II", "Filter chapters"] {
+        assert!(find_in(&h, tb, line).is_some(), "{line}: {:?}", h.texts());
+    }
+    click_in(&mut h, tb, "Chapter II");
+    settle_all(&mut h);
+    assert_eq!(shown_unit(&mut h, tb), "div.2");
+    h.frame();
+    assert_eq!(highlighted(&mut h, tb).as_deref(), Some("Chapter II"));
+    assert_eq!(h.shell.st.location_text(tb), "p. 3");
+
+    // The header's box goes to a printed page; the Bible's Link set never moves the Book.
+    let out = h
+        .shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "p. 4" }))
+        .unwrap();
+    assert_eq!(out["page"], "4");
+    settle_all(&mut h);
+    h.frames(3);
+    assert_eq!(h.shell.st.location_text(tb), "p. 4");
+    h.shell
+        .run("tab.go", &json!({ "tab": bible.0, "text": "Gen 30:2" }))
+        .unwrap();
+    settle_all(&mut h);
+    assert_eq!(h.shell.st.location_text(tb), "p. 4");
+}

@@ -146,6 +146,8 @@ pub enum HeaderBox {
     FollowsHover,
     /// No box: the Tab has no Key (About).
     Keyless,
+    /// A printed page to go to: a Book, which has no Key (ADR 0023).
+    Page,
 }
 
 /// Which remembered-Panel slot a Tab kind uses.
@@ -548,6 +550,10 @@ impl Tab {
 
     pub fn header_box(&self) -> HeaderBox {
         if matches!(self.kind, TabKind::Resource(_)) {
+            // Only a Book declares no Key scheme (ADR 0023).
+            if self.key_schemes.is_empty() {
+                return HeaderBox::Page;
+            }
             if self.key_schemes.contains(&KeyScheme::Headword) {
                 return HeaderBox::Headword;
             }
@@ -558,6 +564,21 @@ impl Tab {
             }
         }
         self.kind.header_box()
+    }
+
+    /// Whether the Tab can join a Link set: its kind can, and it follows a Key (a Book does
+    /// not, ADR 0023).
+    pub fn has_link_chip(&self) -> bool {
+        self.kind.has_link_chip() && self.header_box() != HeaderBox::Page
+    }
+
+    /// Follow `schemes` (a Resource's, [`crate::tab_key_schemes`]); a Tab that now follows
+    /// none leaves its Link set.
+    pub fn set_key_schemes(&mut self, schemes: Vec<KeyScheme>) {
+        if schemes.is_empty() {
+            self.link = None;
+        }
+        self.key_schemes = schemes;
     }
 
     /// The entry Key this Tab shows for a Link set's `key`: a Lexicon's or Dictionary's own

@@ -6,7 +6,7 @@ A **Guide** is a Tab that gathers everything your library has on one Passage, wo
 
 ## The Guides
 
-- **Passage Guide**: Commentaries, Cross-references, Parallel passages, Key words and People & places for a Passage. Type "pg Rom 8" in the Command box to open one.
+- **Passage Guide**: Commentaries, Cross-references, Parallel passages, Key words, People & places and Cited in (the Books in your library that cite the Passage, earliest first) for a Passage. Type "pg Rom 8" in the Command box to open one.
 - **Exegetical Guide**: a Passage word by word in its Hebrew or Greek, with each word's Lemma, Gloss and Morphology in plain English ("eg Jn 3:16").
 - **[Word Study](word-study.md)**: one Hebrew or Greek word across the whole Bible.
 - **Factbook**: one person or place: other names, a map, Key Passages, Dictionary articles and related people and places.
