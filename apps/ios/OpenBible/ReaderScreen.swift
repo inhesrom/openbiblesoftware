@@ -2,7 +2,8 @@ import OpenBibleCore
 import SwiftUI
 
 /// S07 prototype (#331): the reader screen. The chrome is deliberately plain (the screen
-/// anatomy is #335's); every label, choice and answer in it comes from the core.
+/// anatomy is #335's); every choice and answer in it comes from the core. Its own labels and
+/// chrome colours are Swift's, an accepted prototype gap (`docs/dev/mobile-text-view.md`).
 struct ReaderScreen: View {
     @Bindable var model: ReaderModel
     @State private var reference = ""

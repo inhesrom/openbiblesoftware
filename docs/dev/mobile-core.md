@@ -120,17 +120,28 @@ it is under the ignored `/target`.
     clamps its offset to the page before sending it (rubber-banding stays UIKit's) and moves
     to the position the core reports; a missing tile in view is drawn at once and the others
     on a serial queue; tiles are shown 1:1 (`contentsGravity .topLeft`, pixel size ÷ scale);
-    the page colour, Page tone and Bible choices, labels, location, sheet text and counts are
-    the core's; `UITextGranularity` is renamed 1:1 to the core's `TextUnitKind` (the core
-    decides a word is a word and a sentence, line or paragraph a Verse); left and up mean a
-    negative offset in `position(from:in:offset:)` (UIKit's protocol); a tap clears a
-    selection before asking the core what it opens; `.header` when the core marks a heading;
+    the page colour, Page tone and Bible choices and their labels, Verse labels, location,
+    sheet text and counts are the core's; `UITextGranularity` is renamed 1:1 to the core's
+    `TextUnitKind` (the core decides, in `rangeEnclosingPosition`, that a word is a word and a
+    sentence, line or paragraph a Verse); a tap clears a selection before asking the core
+    what it opens; `.header` when the core marks a heading;
     the system's dark appearance and content size category are passed to the core, which
     resolves Auto and the Text size; Return in the reference field means Go; 44 pt hit areas
     and HIG spacing; and, as a test harness only, debug launch arguments, the
     `OBS_STUDY_SET_DIR` variable (Debug builds), the fling bench stopping when the core's
     location label starts with the book it was given, and frame-drop counting from
     `CADisplayLink`.
+  - Accepted S07 prototype gaps, where Swift decides more than presentation
+    (`docs/dev/mobile-text-view.md` "Decided in Swift"; S14a closes the first two):
+    - `CoreTokenizer` overrides only `rangeEnclosingPosition`; the tokenizer's boundary
+      answers are UIKit's `UITextInputStringTokenizer`, so word snapping during a handle drag
+      is UIKit's, not the core's.
+    - Text direction: `position(from:in:offset:)` maps left and up to a negative offset and
+      the writing direction answers are `.natural`, decided in Swift, not by the core's
+      `doc.direction()`, so they are wrong for right-to-left text (the TAHOT).
+    - Swift-authored labels ("Word", "Strong's", "Lemma", "Gloss", "Verse", "No Bible in the
+      library", the menu, placeholder and accessibility labels) and chrome colours (`.red`
+      for the reference error, `.secondarySystemBackground` for the reference field).
 - **Tests.** CI-run, over `obs_engine::testing` fixtures: `obs-render` `composite::tests`
   (a known glyph's pixels are its atlas coverage in the ink, nothing outside it; each role's
   colour; premultiplied; clipping and tiles lower down; tiles at fractional offsets stack

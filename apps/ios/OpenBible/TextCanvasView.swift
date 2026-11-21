@@ -38,7 +38,8 @@ final class TextSelectionBox: UITextSelectionRect {
 }
 
 /// Word, Verse and the other text units come from the core (`enclosingSpan`); the string
-/// tokenizer's other answers are built on them and on `text(in:)`.
+/// tokenizer's other answers (word boundaries while a handle is dragged) are UIKit's, over
+/// `text(in:)`: an accepted prototype gap (`docs/dev/mobile-text-view.md`, S14a).
 final class CoreTokenizer: UITextInputStringTokenizer {
     weak var canvas: TextCanvasView?
 

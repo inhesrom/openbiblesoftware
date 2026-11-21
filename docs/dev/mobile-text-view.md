@@ -5,7 +5,9 @@ in a hosted UIKit view, with native scrolling, selection, VoiceOver and Dynamic 
 `docs/plans/mobile-ios.md` A4 (option B, CPU tiles) and S07. It is throwaway-quality on
 purpose: the Rust surface is marked `S07 prototype` and S13 replaces it; the Swift is rough.
 What it must not be is a place where study rules live in Swift (ADR 0021 rule 3): every
-label, colour, word or Verse decision, reference and count the screen shows comes from Rust.
+reading-text colour, word or Verse decision, Verse label, reference and count the screen
+shows comes from Rust. The few things Swift still decides are listed under "Decided in
+Swift" below, accepted for the prototype.
 
 The owner judges it on a real iPhone in S08 (the script is at the end). The numbers here are
 simulator numbers and only indicative.
@@ -57,7 +59,9 @@ simulator numbers and only indicative.
 - **Navigation.** `go_to(reader, text)` reads a typed reference in the Bible's own numbering
   with the Current location as context (`Jn 3:16`, `3:16`); its error is the parser's.
   `books(reader)` lists the Bible books the Resource has with their chapter counts, and
-  `go_to_chapter(reader, book, chapter)` goes to one (the grid stub).
+  `go_to_chapter(reader, book, chapter)` goes to one (the grid stub). `open_reader` of a
+  Resource already open gives back its reader where it was, so switching Bibles back and
+  forth opens each once.
 - **Appearance.** `page_tones()` (choices and labels from `PageTone::ALL`) and
   `set_page_tone(id)`, kept for the run only; `set_content_size(category)` maps UIKit's
   content size category to a Text size with `text_size_for_content_size`, a table in Rust so
@@ -83,6 +87,26 @@ simulator numbers and only indicative.
 - `ReaderScreen`: a reference field, a book and chapter grid stub, a menu with the Bible
   and Page tone pickers (the core's choices), "Show measurements" and the S06 About sheet,
   the Current location, and the Study sheet stub on a tap.
+
+**Decided in Swift (accepted prototype gaps; the Shell audit lists them too):**
+
+- **Word snapping while a handle is dragged.** `CoreTokenizer` overrides only
+  `rangeEnclosingPosition`, which the core's `enclosing_span` answers.
+  `isPosition(_:atBoundary:inDirection:)`, `position(from:toBoundary:inDirection:)` and
+  `isPosition(_:withinTextUnit:inDirection:)` fall back to UIKit's
+  `UITextInputStringTokenizer`, so the snapping to word ends during a drag is UIKit's, over
+  `text(in:)`. S14a.
+- **Text direction.** `position(from:in:offset:)` maps left and up to a negative (earlier)
+  offset whatever the text's direction, and `baseWritingDirection` and
+  `TextSelectionBox.writingDirection` answer `.natural`. In the TAHOT (right to left),
+  visual left is logically forward, so these answers are wrong there; the core's
+  `doc.direction()` is not asked. S14a.
+- **Labels and chrome colours.** The sheet's section and field labels ("Word", "Strong's",
+  "Lemma", "Gloss", "Verse"), "No Bible in the library", "Starting…", "Could not start",
+  the reference field's placeholder, the menu's "Bible", "Page tone", "Show measurements"
+  and "About", "Books", and the accessibility labels "Books and chapters" and "Reading
+  options" are Swift strings; the reference error is `.red` and the reference field's
+  background `.secondarySystemBackground`. The page and ink colours are the core's.
 
 ## Data
 
@@ -126,11 +150,12 @@ More measurements:
 
 - **The faster fling.** At 30000 pt/s (500 pt a frame, beyond what a finger gives) 33 % of
   frames drop: the tile queue falls behind and tiles in view are drawn on the main thread.
-- **Swift's side of a tile:** 3.6–5 ms p50, 8–12 ms p95 (FFI call, image, preparation for
-  display), the same in Debug and Release. Most of it is UniFFI 0.32 lowering `Vec<u8>` one
-  byte at a time (`uniffi_core` `Lower for Vec<T>` writes each item), about 3.5 MB a tile.
-  Before the tile queue took the tiles drawn ahead off the main thread, 8000 pt/s dropped
-  3.0 % (Release) and 4.2 % (Debug) of frames.
+- **Swift's side of a tile:** 3.6–5 ms p50, 8–12 ms p95, timed as one span (the FFI call,
+  the image and its preparation for display), the same in Debug and Release. The split
+  between them is unmeasured. What is confirmed is that the Rust side lowers the pixels one
+  byte at a time: UniFFI 0.32's `uniffi_core` `Lower for Vec<T>` writes each item in a loop,
+  about 3.5 MB a tile. Before the tile queue took the tiles drawn ahead off the main thread,
+  8000 pt/s dropped 3.0 % (Release) and 4.2 % (Debug) of frames.
 - **A frame:** `reader_frame` 26–65 µs p50, under 0.2 ms p95, on the main thread.
 - **Cold start, in parts (Release):** process start → SwiftUI's `start()` 0.22–0.48 s; `boot`
   about 1.25–1.4 s; first tiles 60–90 ms later. On the host (release), `boot` is 0.73 s: opening
@@ -177,8 +202,8 @@ simulator in dark appearance, Auto → Dark), `s07-sepia.png` (`-OBSPageTone sep
 ## Known rough edges (prototype)
 
 - A selection handle at the very top of the text view sits under the header and is cut off.
-- Opening another Bible reads the whole Resource on the main thread (about a second for a
-  Bible), so the screen stops meanwhile.
+- Opening another Bible the first time reads the whole Resource on the main thread (about a
+  second for a Bible), so the screen stops meanwhile.
 - After blocks above the view are laid out at a new height, the selection's rectangles are a
   few points off until the selection changes; the selection is not redrawn on scroll
   corrections.
@@ -188,37 +213,77 @@ simulator in dark appearance, Auto → Dark), `s07-sepia.png` (`-OBSPageTone sep
 
 ## S08: the owner's test on a real iPhone
 
-Before: S05's leftovers (an Apple ID in Xcode → Settings → Accounts, the iPhone in Developer
-Mode and trusting this Mac). Then, from the repository root:
+**Before** (once; S05 left these for the owner):
 
-1. `cargo xtask ios bundled-set` (once) and `cargo xtask ios build` (both slices; about 2 min
-   the first time), then `cd apps/ios && xcodegen generate && open OpenBible.xcodeproj`.
+1. **Apple ID in Xcode.** Open Xcode → Settings (⌘,) → Accounts → the **+** at the bottom
+   left → Apple ID → sign in. A free "Personal Team" appears under your name. Do not enrol in
+   the paid Developer Program (S33 decides that).
+2. **Phone and Mac trust each other.** Plug the iPhone into the Mac with a cable and unlock it.
+   When the phone asks "Trust This Computer?", tap **Trust** and enter the phone's passcode.
+3. **Xcode sees the phone.** From the repository root run `cargo xtask ios bundled-set` (once),
+   then `cd apps/ios && xcodegen generate && open OpenBible.xcodeproj`. Keep the phone
+   plugged in and unlocked; Xcode's top bar may say it is "preparing" the phone for a few
+   minutes the first time.
+4. **Developer Mode on the phone.** Now that Xcode has seen it: on the phone, Settings →
+   Privacy & Security → Developer Mode (at the bottom) → turn it **On** → **Restart**. After
+   the restart, unlock the phone and confirm **Turn On** and your passcode.
+5. **Keychain prompt.** The first time Xcode signs the app (step 2 below), the Mac may ask
+   "codesign wants to access key … in your keychain". Type your Mac login password and click
+   **Always Allow** (it may ask more than once; answer the same each time).
+6. **Seven-day limit.** An app signed by a free Personal Team stops opening after 7 days. If
+   it will not open later, plug the phone in and press Run in Xcode again.
+
+Then, from the repository root:
+
+1. `cargo xtask ios build` (both slices; about 2 min the first time), then
+   `cd apps/ios && xcodegen generate && open OpenBible.xcodeproj` if it is not open.
 2. In Xcode: the `OpenBible` target → Signing & Capabilities → Team: your Personal Team. Keep
    the bundle id `io.github.inhesrom.openbible.dev`. Choose the iPhone as the run destination
    and press Run (the scheme runs **Release**, so this is the build that is measured). If the
    build stops with "the Rust core changed after Xcode had read it; build again", press Run
-   again. On the phone, trust the developer (Settings → General → VPN & Device Management)
-   and launch again.
-3. **Feel.** Fling through Genesis into Exodus, fast and slow; flick to stop; rubber-band at
-   the top. Note any blank band, hitch or jump of the text. In the Aa menu (Reading options), turn on
-   **Show measurements**: after a fling the strip shows frames dropped and tile times.
-4. **Input.** Long-press a word: it is selected, with handles; drag a handle (the loupe);
-   Copy and paste the result into Notes (it ends with the reference, "John 3:16 (BSB)"). Tap
-   the text to clear the selection. Type `Jn 3:16` in the field and press Go; try `Ps 23`,
-   `Rev 22:21`, a typo. Open the grid button, pick a book and chapter.
-5. **Study sheet stub.** Tap a word: the sheet names the Verse and its cross-reference count.
-   (No Strong's number on the phone: the Study set is not on it until S24's downloads; the
-   simulator showed it through the Debug-only override.)
-6. **Accessibility.** Turn on VoiceOver: swipe through Genesis 1; each Verse is read as its
-   reference then its text, headings as headings. Settings → Accessibility → Display & Text
-   Size → Larger Text at the largest accessibility size: the text grows (40 pt) and stays on
-   the same Verse. Dark Mode: the page goes dark. Menu → Page tone: Paper, Sepia, Dark.
-7. **Performance.** Read for ten minutes, scrolling now and then: is the phone warm?
-8. **Fling bench (optional).** In Xcode, Product → Scheme → Edit Scheme → Run → Arguments,
-   add `-OBSBenchUntil Leviticus` and `-OBSBenchSpeed 8000`, Run: the app scrolls Genesis and
-   Exodus on its own and shows the result at the bottom; read it off the screen. Remove the
-   arguments afterwards.
-9. **Cost.** Read the Evidence above (the measurements, the Swift line count).
+   again. The first time, the phone refuses to open the app ("Untrusted Developer"): on the
+   phone, Settings → General → VPN & Device Management → your Apple ID → **Trust**, then
+   press Run again.
+3. **Cold start (required: the one go criterion the simulator missed, 1.53–1.95 s against
+   1.5 s).** Force-quit the app (swipe up from the bottom edge and hold, then swipe the app's
+   card up). Open it from the Home Screen and judge the time from your tap to the Bible text
+   appearing: does it feel instant, or do you wait? Do it three times. Then run step 9 once
+   and write down the "cold start N ms" it shows (that launch comes from Xcode, with its
+   debugger attached, so it may read a little slower than a Home Screen launch).
+4. **Feel.** Fling through Genesis into Exodus, fast and slow; flick to stop; rubber-band at
+   the top. Note any blank band, hitch or jump of the text. In the Aa menu (Reading options),
+   turn on **Show measurements**: after a fling the strip shows frames dropped and tile times.
+5. **Input.** Long-press a word: it is selected, with handles; drag a handle (the loupe);
+   Copy and paste the result into Notes (it ends with its reference, such as "Genesis 1:1
+   (BSB)"). Tap the text to clear the selection. Type `Jn 3:16` in the field and press Go;
+   try `Ps 23`, `Rev 22:21`, a typo. Open the grid button, pick a book and chapter. If you
+   have the Hebrew keyboard (Settings → General → Keyboard → Keyboards → Add New Keyboard →
+   Hebrew), switch to it in the field with the globe key and type a few letters: they should
+   run right to left; Go then shows the parser's error (there are no Hebrew book names yet).
+6. **Study sheet stub.** Tap a word: the sheet names the Verse and its cross-reference count.
+   Does it come up as soon as you lift your finger (tap latency)? (No Strong's number on the
+   phone: the Study set is not on it until S24's downloads; the simulator showed it through
+   the Debug-only override.)
+7. **Accessibility.** Turn on VoiceOver: swipe through Genesis 1; each Verse is read as its
+   reference then its text, headings as headings. Larger Text: Settings → Accessibility →
+   Display & Text Size → Larger Text → turn on **Larger Accessibility Sizes** first (without
+   it the slider stops short), then drag the slider to the far right: the text grows (40 pt)
+   and stays on the same Verse. Dark Mode: the page goes dark. Menu → Page tone: Paper,
+   Sepia, Dark.
+8. **Performance.** Read for ten minutes, scrolling now and then: is the phone warm?
+9. **Fling bench (run once, for step 3).** In Xcode, Product → Scheme → Edit Scheme → Run →
+   Arguments, add `-OBSBenchUntil Leviticus` and `-OBSBenchSpeed 8000`, Run: the app scrolls
+   Genesis and Exodus on its own and shows the result at the bottom (frames dropped, tile
+   times, "cold start N ms", footprint); read it off the screen. Remove the arguments
+   afterwards.
+10. **iPad (if you have one).** Repeat the Before steps 2 and 4 and steps 2–9 with the iPad as
+    the run destination.
+11. **Cost.** Read the Evidence above (the measurements, the Swift line count).
 
-Write the verdict (go or no-go, B or A, the Android half of #331, and performance notes) as a
-comment on the S07 PR or a note the S09 executor can quote.
+Not judged on the phone: **right-to-left Hebrew text**. The only Hebrew Resource (the TAHOT)
+is in the Study set, which a phone gets only with S24's downloads; the simulator showed it
+right-aligned through the Debug override (`s07-hebrew.png`).
+
+Write the verdict (go or no-go, B or A, the Android half of #331, and performance notes with
+step 3's cold-start judgement and number) as a comment on the S07 PR or a note the S09
+executor can quote.

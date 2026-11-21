@@ -42,7 +42,7 @@ to Claude Opus 5.5 later on".
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | done (PR #358) |
 | S05 | Install Xcode, simulators, iOS Rust targets, XcodeGen; Personal Team | HITL | y | — | owner checklist done; `xcodebuild -version` works | done (2026-11-20; Personal Team + device pending) |
 | S06 | iOS project scaffold under `apps/ios/` | AFK | y | S03, S05 | `project.yml`, local Swift package, XCFramework, app shows engine version, test targets | done (PR #364) |
-| S07 | #331 UI stack prototype: hosted text view on device | AFK | y | S04, S06 | prototype build + measurements + `docs/dev/mobile-text-view.md` | done (branch mobile/s07-text-view-prototype, PR pending) |
+| S07 | #331 UI stack prototype: hosted text view on device | AFK | y | S04, S06 | prototype build + measurements + `docs/dev/mobile-text-view.md` | done (branch mobile/s07-text-view-prototype, PR pending; cold start missed, see Outcome) |
 | S08 | #331 owner judgement on a real iPhone | HITL | y | S07 | go/no-go, Android-half decision | todo |
 | S09 | ADR 0023 (UI stack, hosting option, performance targets, accessibility bar) + #331 close + map line | AFK + HITL | n | S08 | `docs/adr/0023-*.md`, #324 Decisions line, #331 resolution | todo |
 | S09-F | Fallback branch: Flutter / Compose Multiplatform spike (only if S08 = no-go) | AFK | y | S08 | re-plan of M1–M7; ADR 0023 records the fallback | todo |
@@ -1020,7 +1020,8 @@ this in addition to its own lines):
       every block in `ReadingView::new` about 0.28 s. S13 should open the reader at its
       chapter before the whole Bible, or compute the estimates in parallel or lazily.
     - **UniFFI 0.32 lowers `Vec<u8>` one byte at a time** (`uniffi_core` `Lower for
-      Vec<T>`). A 3.5 MB tile costs 3.6–5 ms on the Swift side against 0.2 ms to draw it.
+      Vec<T>`). A 3.5 MB tile costs 3.6–5 ms on the Swift side against 0.2 ms to draw it
+      (the call, the image and its preparation timed together; the split is unmeasured).
       The designed surface needs a bulk byte path, or tiles that cross the FFI another way,
       without hand-written `unsafe`.
   - **Surprise, fixed here.** `xcodebuild -create-xcframework` lists the slices in its
@@ -1037,7 +1038,13 @@ this in addition to its own lines):
   - **Measured but not a criterion.** Memory footprint is 72–109 MB. The unsigned Release
     device app is 59 MB (43.1 MB of it the Bundled set).
   - **Not verified (owner, S08).** No device was signed or run here: S05's Apple ID and
-    Developer Mode are still pending.
+    Developer Mode are still pending. The S08 script has a required cold-start step.
+  - **After review.** `open_reader` gives back the reader of a Resource already open (no
+    reader leaked per Bible switch); `reader_tile` refuses a scale not above zero
+    (`TileSize`); `move_offset` handles a document with no text; `mirror` ignores line order
+    in the XCFramework's root `Info.plist` only. The Swift-side gaps (tokenizer, text
+    direction, Swift labels and chrome colours) are listed as accepted in
+    `mobile-text-view.md` and `mobile-core.md`, and recorded in S14a.
 
 #### S08 — #331 owner judgement on a real iPhone (HITL)
 
@@ -1211,12 +1218,23 @@ this in addition to its own lines):
   Verify). Extend the design-token lint scan to `crates/mobile/src` (A5).
   S03 deferrals: Auto Page tone takes the shell's system appearance as an input to
   `tile`/`frame`; a tile pixel-size cap (S03 added 8192); Note-marker room in tiles; FFI calls
-  that are infallible in the spike (`problems`, `resource_ids`, `reader_resource`) become
-  fallible so a poisoned lock is visible.
-  **From S07's Outcome:** cold start missed 1.5 s in the simulator (opening the whole BSB
-  and estimating every block's height dominate `boot`), and UniFFI lowers `Vec<u8>` a byte at
-  a time (a 3× tile costs 3.6–5 ms to cross); the designed `frame`/`tile` surface addresses
-  both. `obs_mobile::text_view` is the prototype it replaces.
+  that are infallible in the spike (`problems`, `resource_ids`, `reader_resource`) and in
+  S07's prototype (`books`, `page_tones`, `set_page_tone`, `set_content_size`, `bibles`)
+  become fallible so a poisoned lock is visible.
+  **From S07's Outcome: two hotspots.** Neither is fixed by the `frame`/`tile` surface's shape
+  alone; `obs_mobile::text_view` is the prototype it replaces.
+  - **Cold start is `boot`.** Cold start to first text missed 1.5 s in the simulator (Release
+    1.53–1.95 s; `boot` about 1.3–1.4 s of it). On the host (release) `boot` is 0.73 s:
+    `ReadingDoc::open` of the whole BSB about 0.45 s, plus `ReadingView::new`'s height
+    estimate of every block about 0.28 s; the rest under 60 ms. Remedy options: open the
+    reader at its chapter first and the rest of the Resource after; compute the estimates
+    lazily or in parallel.
+  - **Tiles cross the FFI a byte at a time.** UniFFI 0.32 lowers `Vec<u8>` per byte
+    (`uniffi_core` `Lower for Vec<T>` writes each item in a loop), about 3.5 MB per 3× tile.
+    Swift's side of a tile is 3.6–5 ms p50 against 0.2 ms to draw it (the call, the image
+    and its preparation timed as one span; the split is unmeasured). Remedy: a bulk byte
+    path for tile pixels, with no hand-written `unsafe` (`unsafe_code = "forbid"`).
+  - The device re-measure of cold start falls to S14a (S13 has no Xcode).
   **From the S06 review:** `Paths` comes from one root. `obs-mobile` names `library`, `user.db`,
   `search`, `aliases` (`obs_engine::aliases::ALIAS_DIR`), `logs` and `downloads`; Swift passes only
   `Application Support/OpenBible`, and `HelloModel.paths(in:)` goes. There is one core per process,
@@ -1233,7 +1251,10 @@ this in addition to its own lines):
   OSes) cover: first launch installs a bundle and opens the Bible's first chapter; relaunch restores
   the reader; `Jn 3:16` and
   `1 Co 13` parse; back/forward; Hebrew Resource starts RTL; Dynamic Type map bounds; the
-  `#[ignore]`d test does the same against the real Bundled set.
+  `#[ignore]`d test does the same against the real Bundled set; an `#[ignore]`d host timing
+  of `boot` plus the first `frame` over the Bundled set meets a target written in the test
+  (from ADR 0023's cold-start target); a test shows a 3× tile crosses the FFI as bulk bytes,
+  not through the per-item `Lower for Vec<T>`.
 - **Verify:** `cargo xtask ci`; `cargo xtask ios bindgen`; `cargo xtask ios smoke`;
   `cargo test -p obs-mobile -- --ignored` (after `cargo xtask ios bundled-set`).
 - **Stop-and-ask:** reusing `Workspace` needs a change to desktop-visible behaviour; `Effect`
@@ -1255,6 +1276,13 @@ this in addition to its own lines):
   `ResourceNavigation` through S13's `navigate(reader, Key)`), typed reference
   field with Rust validation and suggestions, Back + History list, Last session restore, save
   session on background. Previews on iPhone and iPad.
+  **From S07 (accepted prototype gaps, `docs/dev/mobile-text-view.md` "Decided in Swift"):**
+  the prototype's `CoreTokenizer` overrides only `rangeEnclosingPosition`, so word snapping
+  during a handle drag is UIKit's `UITextInputStringTokenizer`; the boundary answers come
+  from the core here. Text direction is decided in Swift (`.natural`; left and up are a
+  negative offset), wrong for right-to-left text; the direction comes from the core here.
+  Re-measure cold start to first text on the device after S13's `boot` changes (S07 missed
+  1.5 s in the simulator).
 - **Don't:** footnotes, Settings, Study sheet, Split view, Annotations (next steps); any book-name
   table, versification, key ordering or reference grammar in Swift; a Swift colour literal for
   page/ink.
