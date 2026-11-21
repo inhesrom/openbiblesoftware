@@ -98,10 +98,7 @@ impl UserStore {
             migrate(&mut conn, found, USER_SCHEMA_VERSION)?;
         }
         check_whole(&conn).map_err(|why| not_a_backup(&why))?;
-        let store = UserStore {
-            conn,
-            path: path.to_path_buf(),
-        };
+        let store = UserStore::from_parts(conn, path.to_path_buf());
         store.ensure_default_notebook()?;
         store
             .read_everything()
@@ -118,10 +115,7 @@ impl UserStore {
             .map_err(sql)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(sql)?;
-        Ok(UserStore {
-            conn,
-            path: self.path.clone(),
-        })
+        Ok(UserStore::from_parts(conn, self.path.clone()))
     }
 
     /// Run `statement` on the database with no checks, to write rows the app never would

@@ -13,7 +13,10 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::annotation::{Change, Row};
 use crate::error::StoreError;
+use crate::synced::SyncedLayout;
+use crate::synced_store;
 
 /// `PRAGMA application_id` of a User database ("OBSU").
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
@@ -82,9 +85,21 @@ pub struct OpenReport {
 pub struct UserStore {
     pub(crate) conn: Connection,
     pub(crate) path: PathBuf,
+    /// Every Change applied, for tests (`take_applied_changes`).
+    #[cfg(feature = "test-support")]
+    pub(crate) recorded: std::cell::RefCell<Vec<crate::annotation::Change>>,
 }
 
 impl UserStore {
+    pub(crate) fn from_parts(conn: Connection, path: PathBuf) -> Self {
+        Self {
+            conn,
+            path,
+            #[cfg(feature = "test-support")]
+            recorded: Default::default(),
+        }
+    }
+
     /// Open (creating if needed) the User database at `path`, migrate it, and write this
     /// launch's rolling backup into `path`'s folder under `backups/`.
     pub fn open(path: &Path) -> Result<(Self, OpenReport), StoreError> {
@@ -125,10 +140,7 @@ impl UserStore {
             .map_err(sql)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(sql)?;
-        let mut store = Self {
-            conn,
-            path: path.to_path_buf(),
-        };
+        let mut store = Self::from_parts(conn, path.to_path_buf());
         let mut report = OpenReport {
             found_version: found,
             ..OpenReport::default()
@@ -211,15 +223,19 @@ impl UserStore {
             .map_err(sql)
     }
 
+    /// Set preference `key`. A synced one (`SYNCED_PREFERENCES`) is written as [`Change`]s:
+    /// item by item for a list preference (`preference_items.rs`), else whole.
+    ///
+    /// [`Change`]: crate::annotation::Change
     pub fn set_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
-        self.conn
-            .execute(
-                "INSERT INTO preference (key, value) VALUES (?1, ?2)
-                 ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                params![key, value],
-            )
-            .map(drop)
-            .map_err(sql)
+        if !crate::sync_schema::is_synced_preference(key) {
+            return synced_store::write_preference(&self.conn, key, value);
+        }
+        let changes = synced_store::preference_changes(&self.conn, key, value)?;
+        if changes.is_empty() {
+            return Ok(());
+        }
+        self.apply_changes(&changes)
     }
 
     // ---------------------------------------------------------------- Last session
@@ -269,36 +285,44 @@ impl UserStore {
     /// Save a Layout, replacing one of the same name (names ignore case). A new Layout gets
     /// an id; one replaced keeps its own.
     pub fn save_layout(&self, name: &str, snapshot: &str) -> Result<(), StoreError> {
-        self.conn
-            .execute(
-                "INSERT INTO layout (id, name, snapshot, saved_at) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT (name) DO UPDATE SET name = excluded.name,
-                     snapshot = excluded.snapshot, saved_at = excluded.saved_at",
-                params![crate::annotation::new_id(), name, snapshot, now()],
-            )
-            .map(drop)
-            .map_err(sql)
+        let before = synced_store::read_layout_by_name(&self.conn, name)?;
+        let after = SyncedLayout {
+            id: before
+                .as_ref()
+                .map_or_else(crate::annotation::new_id, |l| l.id.clone()),
+            name: name.to_string(),
+            snapshot: snapshot.to_string(),
+            saved_at: now(),
+        };
+        self.apply_changes(&[Change {
+            before: before.map(Row::Layout),
+            after: Some(Row::Layout(after)),
+        }])
     }
 
     /// Rename a Layout. Fails if `to` is taken by another Layout; returns false if `from`
     /// does not exist.
     pub fn rename_layout(&self, from: &str, to: &str) -> Result<bool, StoreError> {
-        let n = self
-            .conn
-            .execute(
-                "UPDATE layout SET name = ?2 WHERE name = ?1",
-                params![from, to],
-            )
-            .map_err(sql)?;
-        Ok(n > 0)
+        let Some(before) = synced_store::read_layout_by_name(&self.conn, from)? else {
+            return Ok(false);
+        };
+        if before.name == to {
+            return Ok(true);
+        }
+        let after = SyncedLayout {
+            name: to.to_string(),
+            ..before.clone()
+        };
+        self.apply_changes(&[Change::update(Row::Layout(before), Row::Layout(after))])?;
+        Ok(true)
     }
 
     pub fn delete_layout(&self, name: &str) -> Result<bool, StoreError> {
-        let n = self
-            .conn
-            .execute("DELETE FROM layout WHERE name = ?1", [name])
-            .map_err(sql)?;
-        Ok(n > 0)
+        let Some(before) = synced_store::read_layout_by_name(&self.conn, name)? else {
+            return Ok(false);
+        };
+        self.apply_changes(&[Change::delete(Row::Layout(before))])?;
+        Ok(true)
     }
 }
 
@@ -307,30 +331,21 @@ impl UserStore {
 
     /// The saved Preferred order: resource ids, best first.
     pub fn preferred_order(&self) -> Result<Vec<String>, StoreError> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT resource_id FROM preferred_order ORDER BY rank, resource_id")
-            .map_err(sql)?;
-        let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
-        rows.collect::<Result<Vec<String>, _>>().map_err(sql)
+        Ok(synced_store::read_preferred_order(&self.conn)?.resource_ids)
     }
 
-    /// Replace the saved Preferred order with `ids`, best first.
+    /// Replace the saved Preferred order with `ids`, best first (an id given twice keeps its
+    /// first place). It is one row (ADR 0022 rule 3).
     pub fn save_preferred_order(&self, ids: &[String]) -> Result<(), StoreError> {
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
-        tx.execute("DELETE FROM preferred_order", []).map_err(sql)?;
-        {
-            let mut stmt = tx
-                .prepare_cached(
-                    "INSERT OR IGNORE INTO preferred_order (resource_id, rank) VALUES (?1, ?2)",
-                )
-                .map_err(sql)?;
-            for (rank, id) in ids.iter().enumerate() {
-                let rank = i64::try_from(rank).unwrap_or(i64::MAX);
-                stmt.execute(params![id, rank]).map_err(sql)?;
-            }
+        let before = synced_store::read_preferred_order(&self.conn)?;
+        let after = synced_store::preferred_order_of(ids);
+        if before == after {
+            return Ok(());
         }
-        tx.commit().map_err(sql)
+        self.apply_changes(&[Change::update(
+            Row::PreferredOrder(before),
+            Row::PreferredOrder(after),
+        )])
     }
 
     /// The last known `(resource_id, abbreviation, title)` of every Resource seen (#65): how

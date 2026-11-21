@@ -2,10 +2,11 @@
 //! preferences are Synced data, the clock column each synced row carries, tombstones, this
 //! Synced device's id and how far each other device's ops are applied.
 //!
-//! Migration 13 only adds the schema. Nothing writes a clock, a tombstone or `applied_up_to`
-//! yet (S27b moves the synced writes onto `apply_changes`, S28a writes the clocks); the only
-//! values it fills in are ids: each Layout, Favorite and Reading plan gets a UUIDv7 and the
-//! device gets its id.
+//! Migration 13 only adds the schema; the only values it fills in are ids: each Layout,
+//! Favorite and Reading plan gets a UUIDv7 and the device gets its id. Every write of Synced
+//! data is a `Change` through `UserStore::apply_changes` (`synced.rs`), which leaves a
+//! tombstone for each row it deletes, its clock empty (`synced_store::NO_CLOCK`) until Sync
+//! writes clocks (S28a); nothing writes a row's `clock` or `applied_up_to` yet.
 
 use rusqlite::{Connection, params};
 
@@ -53,9 +54,9 @@ pub const SYNCED_PREFERENCES: &[&str] = &[
 /// history and Recent searches, the Command box's recent entries, Removed Starter Resources,
 /// what belongs to the Resources installed here (Import reports, confirmed Attributions), the
 /// app's own settings (updates, Log level, the tour), the Copy verses options last used, the
-/// last Notebook used and the Visual filters (they need ids that are the same on every device
-/// before they can sync, S27b). Entries ending in `/` or `.` are prefixes, as in
-/// [`SYNCED_PREFERENCES`].
+/// last Notebook used and the Visual filters (ADR 0022 rule 4 does not list them, and their
+/// numeric ids, which Layouts switch them by, would collide across devices; syncing them is a
+/// later step's). Entries ending in `/` or `.` are prefixes, as in [`SYNCED_PREFERENCES`].
 pub const DEVICE_PREFERENCES: &[&str] = &[
     "view",
     "view.resource_text_sizes",

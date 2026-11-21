@@ -1,9 +1,9 @@
 //! Annotation records of the User database (#17, #61): Notebooks, Notes and Highlights with
 //! their Anchors, Highlight styles and palettes (#181), and the row-level [`Change`]s that
-//! edit them.
+//! edit them and every other row of Synced data (`synced.rs`, ADR 0022).
 //!
 //! These types compile everywhere (wasm included); only the SQLite code that stores them is
-//! desktop-only. Every edit of the annotation tables is a list of [`Change`]s applied in one
+//! desktop-only. Every edit of Synced data is a list of [`Change`]s applied in one
 //! transaction, so undo is the same list inverted ([`Change::inverse`]).
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,6 +13,10 @@ use obs_scripture::Passage;
 use serde::{Deserialize, Serialize};
 
 use crate::highlight_style::{HighlightPalette, HighlightStyle};
+use crate::synced::{
+    SyncedFavorite, SyncedGuideSection, SyncedLayout, SyncedListItem, SyncedPreference,
+    SyncedPreferredOrder, SyncedReading, SyncedReadingPlan, SyncedResourceTags,
+};
 
 /// Characters of context kept on each side of a quote (ADR 0006: "about 32").
 pub const CONTEXT_CHARS: usize = 32;
@@ -177,7 +181,8 @@ impl Annotation {
     }
 }
 
-/// One row of the annotation tables: a Notebook, or an Annotation with its Anchor.
+/// One row of Synced data: a Notebook, an Annotation with its Anchor, a Highlight style or
+/// palette, or one of the rows of `synced.rs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "row", rename_all = "snake_case")]
 // Rows are few and short-lived (one undo step's worth); boxing would only add noise.
@@ -187,6 +192,17 @@ pub enum Row {
     Annotation(Annotation),
     HighlightStyle(HighlightStyle),
     HighlightPalette(HighlightPalette),
+    Favorite(SyncedFavorite),
+    ReadingPlan(SyncedReadingPlan),
+    Reading(SyncedReading),
+    Layout(SyncedLayout),
+    PreferredOrder(SyncedPreferredOrder),
+    Preference(SyncedPreference),
+    Collection(SyncedListItem),
+    CopyPreset(SyncedListItem),
+    SavedSearch(SyncedListItem),
+    GuideSection(SyncedGuideSection),
+    ResourceTags(SyncedResourceTags),
 }
 
 /// Which row a [`Row`] is.
@@ -196,6 +212,28 @@ pub enum RowKey {
     Annotation(String),
     HighlightStyle(String),
     HighlightPalette(String),
+    /// A Favorite's `uid`.
+    Favorite(String),
+    /// A Reading plan's `uid`.
+    ReadingPlan(String),
+    /// A Reading: its plan's `uid` and its position.
+    Reading(String, u32),
+    /// A Layout's `id`.
+    Layout(String),
+    /// There is one Preferred order.
+    PreferredOrder,
+    /// A preference's key.
+    Preference(String),
+    /// A Collection's name.
+    Collection(String),
+    /// A Copy preset's name.
+    CopyPreset(String),
+    /// A Saved search's name.
+    SavedSearch(String),
+    /// A Guide arrangement's section: the kind of Guide and the section's id.
+    GuideSection(String, String),
+    /// The Resource id whose Resource tags it is.
+    ResourceTags(String),
 }
 
 impl Row {
@@ -205,6 +243,65 @@ impl Row {
             Row::Annotation(a) => RowKey::Annotation(a.id.clone()),
             Row::HighlightStyle(s) => RowKey::HighlightStyle(s.id.clone()),
             Row::HighlightPalette(p) => RowKey::HighlightPalette(p.id.clone()),
+            Row::Favorite(f) => RowKey::Favorite(f.uid.clone()),
+            Row::ReadingPlan(p) => RowKey::ReadingPlan(p.uid.clone()),
+            Row::Reading(r) => RowKey::Reading(r.plan_uid.clone(), r.position),
+            Row::Layout(l) => RowKey::Layout(l.id.clone()),
+            Row::PreferredOrder(_) => RowKey::PreferredOrder,
+            Row::Preference(p) => RowKey::Preference(p.key.clone()),
+            Row::Collection(i) => RowKey::Collection(i.name.clone()),
+            Row::CopyPreset(i) => RowKey::CopyPreset(i.name.clone()),
+            Row::SavedSearch(i) => RowKey::SavedSearch(i.name.clone()),
+            Row::GuideSection(s) => RowKey::GuideSection(s.guide.clone(), s.section.clone()),
+            Row::ResourceTags(t) => RowKey::ResourceTags(t.resource_id.clone()),
+        }
+    }
+}
+
+impl RowKey {
+    /// The row as its tombstone names it: its kind (the `row` tag of a serialized [`Row`])
+    /// and its id. A Reading's id is `<plan uid>/<position>`, a Guide section's
+    /// `<guide>/<section>`.
+    pub fn tombstone(&self) -> (&'static str, String) {
+        match self {
+            RowKey::Notebook(id) => ("notebook", id.clone()),
+            RowKey::Annotation(id) => ("annotation", id.clone()),
+            RowKey::HighlightStyle(id) => ("highlight_style", id.clone()),
+            RowKey::HighlightPalette(id) => ("highlight_palette", id.clone()),
+            RowKey::Favorite(uid) => ("favorite", uid.clone()),
+            RowKey::ReadingPlan(uid) => ("reading_plan", uid.clone()),
+            RowKey::Reading(plan, position) => ("reading", format!("{plan}/{position}")),
+            RowKey::Layout(id) => ("layout", id.clone()),
+            RowKey::PreferredOrder => ("preferred_order", String::new()),
+            RowKey::Preference(key) => ("preference", key.clone()),
+            RowKey::Collection(name) => ("collection", name.clone()),
+            RowKey::CopyPreset(name) => ("copy_preset", name.clone()),
+            RowKey::SavedSearch(name) => ("saved_search", name.clone()),
+            RowKey::GuideSection(guide, section) => ("guide_section", format!("{guide}/{section}")),
+            RowKey::ResourceTags(id) => ("resource_tags", id.clone()),
+        }
+    }
+
+    /// The row in words, for an error about it.
+    pub fn describe(&self) -> String {
+        match self {
+            RowKey::Notebook(id) => format!("Notebook {id}"),
+            RowKey::Annotation(id) => format!("Annotation {id}"),
+            RowKey::HighlightStyle(id) => format!("Highlight style {id}"),
+            RowKey::HighlightPalette(id) => format!("Highlight palette {id}"),
+            RowKey::Favorite(uid) => format!("Favorite {uid}"),
+            RowKey::ReadingPlan(uid) => format!("Reading plan {uid}"),
+            RowKey::Reading(plan, position) => format!("Reading {position} of plan {plan}"),
+            RowKey::Layout(id) => format!("Layout {id}"),
+            RowKey::PreferredOrder => "The Preferred order".into(),
+            RowKey::Preference(key) => format!("Preference {key}"),
+            RowKey::Collection(name) => format!("Collection “{name}”"),
+            RowKey::CopyPreset(name) => format!("Copy preset “{name}”"),
+            RowKey::SavedSearch(name) => format!("Saved search “{name}”"),
+            RowKey::GuideSection(guide, section) => {
+                format!("Guide arrangement {guide}, section {section}")
+            }
+            RowKey::ResourceTags(id) => format!("Resource tags of {id}"),
         }
     }
 }
