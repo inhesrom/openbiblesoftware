@@ -455,3 +455,17 @@ impl Session {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Session;
+
+    fn assert_send<T: Send>() {}
+
+    /// The Mobile app's FFI moves the Session behind a `Mutex` shared across threads
+    /// (`docs/dev/mobile-core.md`), so it must stay `Send`.
+    #[test]
+    fn session_is_send() {
+        assert_send::<Session>();
+    }
+}

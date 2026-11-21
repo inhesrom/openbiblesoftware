@@ -23,6 +23,7 @@ obs-render = { path = "crates/render" }
 obs-engine = { path = "crates/engine" }
 obs-reading = { path = "crates/reading" }
 obs-ui-egui = { path = "crates/ui-egui" }
+obs-mobile = { path = "crates/mobile" }
 
 # Shared third-party crates.
 serde = { version = "1", features = ["derive"] }
@@ -48,6 +49,9 @@ egui = "0.37"
 eframe = { version = "0.37", default-features = false }
 egui_tiles = "0.18"
 
+# FFI (apps only; enforced by `cargo xtask layers`). MPL-2.0, accepted for the iOS binary (D21).
+uniffi = { version = "0.32", default-features = false }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
@@ -62,3 +66,12 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# The iOS staticlibs (`cargo xtask ios build`): small and fast. `panic` stays "unwind": the job
+# queue catches a panicking job (`crates/engine/src/jobs.rs`), which "abort" would make a crash.
+[profile.ios]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = "debuginfo"

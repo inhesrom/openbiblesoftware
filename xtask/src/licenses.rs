@@ -5,9 +5,11 @@
 //! for the targets in `about.toml` and finds each crate's licence texts. This task keeps what
 //! the Credits view needs (crate, version, declared licence, repository; each distinct licence
 //! text and the crates under it), sorts it, and writes [`OUTPUT`], which the engine embeds.
+//! It writes a second listing, [`IOS_OUTPUT`], over the Mobile app's FFI crate for the iOS
+//! targets, for the iOS app's Credits (`docs/dev/mobile-core.md`).
 //!
-//! The `licenses` gate regenerates the listing and fails when the committed file differs, so it
-//! cannot go stale when a dependency changes. cargo-about runs with `--frozen` after
+//! The `licenses` gate regenerates both listings and fails when a committed file differs, so
+//! neither can go stale when a dependency changes. cargo-about runs with `--frozen` after
 //! `cargo fetch`: it reads only the licence files packaged in each crate and never the network,
 //! so every host produces the same bytes.
 
@@ -20,16 +22,44 @@ use serde::{Deserialize, Serialize};
 
 /// The committed listing, embedded by `obs-engine`.
 pub const OUTPUT: &str = "crates/engine/data/third-party-licenses.json";
+/// The committed listing of the iOS app's crates.
+pub const IOS_OUTPUT: &str = "crates/engine/data/third-party-licenses-ios.json";
 const CONFIG: &str = "about.toml";
 /// The app whose dependency graph is listed (`obs-cli`'s is a subset of it).
 const APP_MANIFEST: &str = "apps/openbible/Cargo.toml";
+/// The crate the iOS app links, and the targets it is built for.
+const IOS_MANIFEST: &str = "apps/obs-ffi/Cargo.toml";
+const IOS_TARGETS: &[&str] = &["aarch64-apple-ios", "aarch64-apple-ios-sim"];
+
+/// One committed listing: which graph, for which targets, into which file.
+#[derive(Debug, Clone, Copy)]
+struct Listed {
+    output: &'static str,
+    manifest: &'static str,
+    /// Empty: the targets in `about.toml`.
+    targets: &'static [&'static str],
+}
+
+const LISTINGS: &[Listed] = &[
+    Listed {
+        output: OUTPUT,
+        manifest: APP_MANIFEST,
+        targets: &[],
+    },
+    Listed {
+        output: IOS_OUTPUT,
+        manifest: IOS_MANIFEST,
+        targets: IOS_TARGETS,
+    },
+];
 /// Output can change between cargo-about releases, so the gate insists on this one.
 pub const CARGO_ABOUT_VERSION: &str = "0.9.3";
 
 const USAGE: &str = "usage: cargo xtask licenses [--check]
 
-  (no option)  regenerate crates/engine/data/third-party-licenses.json with cargo-about
-  --check      fail if the committed listing differs from a fresh one (the CI gate)
+  (no option)  regenerate crates/engine/data/third-party-licenses.json (desktop) and
+               third-party-licenses-ios.json (apps/obs-ffi for iOS) with cargo-about
+  --check      fail if a committed listing differs from a fresh one (the CI gate)
 
 needs cargo-about 0.9.3: cargo install cargo-about --locked --features cli --version 0.9.3";
 
@@ -100,10 +130,13 @@ pub struct LicenseText {
 pub fn run(root: &Path, args: &[String]) -> Result<()> {
     match args.first().map(String::as_str) {
         None => {
-            let json = generate(root)?;
-            std::fs::write(root.join(OUTPUT), json)
-                .with_context(|| format!("cannot write {OUTPUT}"))?;
-            eprintln!("licenses: wrote {OUTPUT}");
+            prepare(root)?;
+            for listed in LISTINGS {
+                let json = generate(root, listed)?;
+                std::fs::write(root.join(listed.output), json)
+                    .with_context(|| format!("cannot write {}", listed.output))?;
+                eprintln!("licenses: wrote {}", listed.output);
+            }
             Ok(())
         }
         Some("--check") => check(root, true),
@@ -129,9 +162,18 @@ fn check(root: &Path, required: bool) -> Result<()> {
         );
         return Ok(());
     }
-    let fresh = generate(root)?;
-    let committed = std::fs::read_to_string(root.join(OUTPUT))
-        .with_context(|| format!("cannot read {OUTPUT}; run `cargo xtask licenses`"))?
+    prepare(root)?;
+    for listed in LISTINGS {
+        check_one(root, listed)?;
+    }
+    Ok(())
+}
+
+fn check_one(root: &Path, listed: &Listed) -> Result<()> {
+    let output = listed.output;
+    let fresh = generate(root, listed)?;
+    let committed = std::fs::read_to_string(root.join(output))
+        .with_context(|| format!("cannot read {output}; run `cargo xtask licenses`"))?
         .replace("\r\n", "\n");
     if committed != fresh {
         let summary = match (
@@ -142,13 +184,13 @@ fn check(root: &Path, required: bool) -> Result<()> {
             _ => String::new(),
         };
         bail!(
-            "{OUTPUT} is stale (the dependency graph or a licence text changed){summary}\n\
+            "{output} is stale (the dependency graph or a licence text changed){summary}\n\
              run `cargo xtask licenses` and commit the result"
         );
     }
     let listing: Listing = serde_json::from_str(&fresh)?;
     eprintln!(
-        "licenses: {} crate(s), {} licence text(s), up to date",
+        "licenses: {output}: {} crate(s), {} licence text(s), up to date",
         listing.crates.len(),
         listing.licenses.len()
     );
@@ -169,8 +211,9 @@ fn cargo_bin() -> String {
     std::env::var("CARGO").unwrap_or_else(|_| "cargo".into())
 }
 
-/// Run cargo-about and return the listing as committed (pretty JSON, LF, trailing newline).
-fn generate(root: &Path) -> Result<String> {
+/// Check the cargo-about version and put every target's crates on disk: cargo-about runs
+/// offline.
+fn prepare(root: &Path) -> Result<()> {
     let version =
         installed_version().with_context(|| format!("cargo-about is not installed\n\n{USAGE}"))?;
     if version != format!("cargo-about {CARGO_ABOUT_VERSION}") {
@@ -178,29 +221,36 @@ fn generate(root: &Path) -> Result<String> {
             "found {version}; the listing is made with cargo-about {CARGO_ABOUT_VERSION}\n\n{USAGE}"
         );
     }
-    // Every target's crates must be on disk: cargo-about runs offline.
-    crate::cargo(root, &["fetch", "--locked"])?;
+    crate::cargo(root, &["fetch", "--locked"])
+}
+
+/// Run cargo-about and return the listing as committed (pretty JSON, LF, trailing newline).
+fn generate(root: &Path, listed: &Listed) -> Result<String> {
     // To a file, not stdout: cargo-about refuses to have its output redirected under
     // PowerShell (the Windows CI shell), for fear of re-encoding.
     let json_path = root.join("target/xtask-licenses/cargo-about.json");
     if let Some(dir) = json_path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     }
-    let out = Command::new(cargo_bin())
-        .args([
-            "about",
-            "-L",
-            "error",
-            "generate",
-            "--frozen",
-            "--format",
-            "json",
-            "-c",
-            CONFIG,
-            "-m",
-            APP_MANIFEST,
-            "-o",
-        ])
+    let mut cmd = Command::new(cargo_bin());
+    cmd.args([
+        "about",
+        "-L",
+        "error",
+        "generate",
+        "--frozen",
+        "--format",
+        "json",
+        "-c",
+        CONFIG,
+        "-m",
+        listed.manifest,
+    ]);
+    for target in listed.targets {
+        cmd.args(["--target", target]);
+    }
+    let out = cmd
+        .arg("-o")
         .arg(&json_path)
         .current_dir(root)
         .output()
@@ -216,13 +266,13 @@ fn generate(root: &Path) -> Result<String> {
         .with_context(|| format!("cargo-about wrote no {}", json_path.display()))?;
     let about: About =
         serde_json::from_slice(&bytes).context("cargo-about wrote unexpected JSON")?;
-    let listing = listing(about);
+    let listing = listing(about, listed);
     let mut json = serde_json::to_string_pretty(&listing)?;
     json.push('\n');
     Ok(json)
 }
 
-fn listing(about: About) -> Listing {
+fn listing(about: About, listed: &Listed) -> Listing {
     let mut crates: Vec<CrateRow> = about
         .crates
         .into_iter()
@@ -264,10 +314,16 @@ fn listing(about: About) -> Listing {
         .collect();
     // By licence, then by the first crate using the text: stable and easy to browse.
     licenses.sort_by(|a, b| (&a.id, &a.used_by, &a.text).cmp(&(&b.id, &b.used_by, &b.text)));
+    let targets = if listed.targets.is_empty() {
+        String::new()
+    } else {
+        format!(" for {}", listed.targets.join(", "))
+    };
     Listing {
         generator: format!(
-            "cargo-about {CARGO_ABOUT_VERSION} with {CONFIG} over {APP_MANIFEST}; \
-             regenerate with `cargo xtask licenses`"
+            "cargo-about {CARGO_ABOUT_VERSION} with {CONFIG} over {}{targets}; \
+             regenerate with `cargo xtask licenses`",
+            listed.manifest
         ),
         crates,
         licenses,
@@ -361,7 +417,7 @@ mod tests {
                 },
             ],
         };
-        let l = listing(about);
+        let l = listing(about, &LISTINGS[0]);
         assert_eq!(
             l.crates.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             ["alpha", "zeta"]
@@ -402,16 +458,22 @@ mod tests {
         assert!(d.contains("- b 1.0.0"), "{d}");
     }
 
-    /// The committed listing parses, lists real crates and gives each a licence text.
-    #[test]
-    fn the_committed_listing_is_complete() {
+    fn committed(output: &str) -> Listing {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let text = std::fs::read_to_string(root.join(OUTPUT)).unwrap();
-        let listing: Listing = serde_json::from_str(&text).unwrap();
-        assert!(listing.crates.len() > 100, "{}", listing.crates.len());
-        for name in ["egui", "eframe", "rusqlite", "serde", "harfrust"] {
+        let text = std::fs::read_to_string(root.join(output)).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// The listing names these crates, none of ours, and gives each crate a licence text.
+    fn assert_complete(listing: &Listing, min_crates: usize, names: &[&str]) {
+        assert!(
+            listing.crates.len() > min_crates,
+            "{}",
+            listing.crates.len()
+        );
+        for name in names {
             assert!(
-                listing.crates.iter().any(|c| c.name == name),
+                listing.crates.iter().any(|c| c.name == *name),
                 "{name} missing"
             );
         }
@@ -427,5 +489,49 @@ mod tests {
                 "{id} has no licence text"
             );
         }
+    }
+
+    /// The committed listing parses, lists real crates and gives each a licence text.
+    #[test]
+    fn the_committed_listing_is_complete() {
+        assert_complete(
+            &committed(OUTPUT),
+            100,
+            &["egui", "eframe", "rusqlite", "serde", "harfrust"],
+        );
+    }
+
+    /// The iOS listing covers the FFI crate's graph, UniFFI's runtime included, and not its
+    /// bindings generator.
+    #[test]
+    fn the_committed_ios_listing_is_complete() {
+        let listing = committed(IOS_OUTPUT);
+        assert_complete(
+            &listing,
+            50,
+            &["uniffi", "uniffi_core", "rusqlite", "harfrust"],
+        );
+        for name in ["uniffi_bindgen", "clap", "egui"] {
+            assert!(
+                !listing.crates.iter().any(|c| c.name == name),
+                "{name} is not in the iOS app"
+            );
+        }
+    }
+
+    /// D21: MPL-2.0 is accepted for UniFFI's runtime in the iOS app only.
+    #[test]
+    fn only_uniffi_is_taken_under_mpl_2_0_and_only_on_ios() {
+        let mpl = |l: &Listing| -> Vec<String> {
+            l.licenses
+                .iter()
+                .filter(|t| t.id == "MPL-2.0")
+                .flat_map(|t| t.used_by.clone())
+                .collect()
+        };
+        assert_eq!(mpl(&committed(OUTPUT)), Vec::<String>::new());
+        let ios = mpl(&committed(IOS_OUTPUT));
+        assert!(ios.iter().any(|c| c.starts_with("uniffi ")), "{ios:?}");
+        assert!(ios.iter().all(|c| c.starts_with("uniffi")), "{ios:?}");
     }
 }
