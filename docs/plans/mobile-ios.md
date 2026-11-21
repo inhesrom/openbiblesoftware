@@ -1509,8 +1509,16 @@ this in addition to its own lines):
 - **Added by S28a:** an op's `before` (kept in `op_outbox` and in each op line) is the base
   conflict detection compares with. `apply_changes` stamps every Change with a new local clock;
   applying another device's ops must keep the op's clock instead (a variant that takes the
-  clocks given), and the generator observes them through its seed (`MAX(clock)`). A whole-value
-  `Row::Preference` on a list key leaves that list's `item_clock` rows as they were.
+  clocks given), and the merge must advance the generator with each one through
+  `UserStore::observe_clock` (HLC receive rule, `last = max(last, remote)`): the seed
+  (`MAX(clock)`) runs only once per open or restore, so it does not see clocks merged in during
+  a session. A whole-value `Row::Preference` on a list key leaves that list's `item_clock` rows
+  as they were.
+- **Added by the S28a review:** a clock taken in from a merge whose `wall_ms` is more than
+  `MAX_FORWARD_SKEW_MS` (24 h, `obs_store::hlc`) ahead of this device's wall clock is not
+  observed (`observe_clock` returns `false`), as the seed ignores such clocks in the database;
+  its row and data merge as any other's and are never dropped (ADR 0006). The Preferred order's
+  clock is its `item_clock` row (`preferred_order`, `''`), which an empty order keeps.
 
 #### S28c — Sync 2c (Rust): snapshots, trimming, versioning, device-id rules, restore, scheduling
 
@@ -1542,7 +1550,9 @@ this in addition to its own lines):
   it the device records no ops). A restore (rule 7, new device id) must re-home or clear the
   `op_outbox` rows written under the old id, and the `applied_up_to` row of the old own id (it
   is the last own op file written, `docs/dev/sync.md` "Recording ops"); that row is also the
-  copied-database check (op files under this id above its `seq` were not written here).
+  copied-database check: op files under this id above `max(own seq, MAX(op_outbox.file_seq))`
+  were not written here (after a stop between writing a file and noting it written, the file
+  is above the own `seq` but still reserved).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 
