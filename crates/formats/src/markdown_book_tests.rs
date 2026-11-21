@@ -445,3 +445,27 @@ fn link_targets_are_dropped_and_never_read() {
     assert!(!r.units[0].text.contains("etc"));
     assert_eq!(report.source_files, ["x.md"]);
 }
+
+/// #344: `[p. N]` on a line of its own is a printed page, as `<!-- p. N -->` is; `[p. 5]` in
+/// the middle of prose is text.
+#[test]
+fn bracketed_page_lines_are_printed_pages() {
+    let main = file(
+        "bco.md",
+        "---\ntitle: Book of Church Order\n---\n\n## Chapter 1\n\n[p. 19]\n\nThose who fill this office.\n\n\
+         [p. xx]\n\nAs on [p. 5] here.\n",
+    );
+    let (r, _) = import(Some(&main), &[]);
+    let u = &r.units[0];
+    let pages: Vec<&str> = u
+        .spans
+        .iter()
+        .filter_map(|s| match &s.kind {
+            SpanKind::Page { label } => Some(label.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pages, ["19", "xx"]);
+    assert!(u.text.contains("As on [p. 5] here."), "{}", u.text);
+    assert!(!u.text.contains("[p. 19]"));
+}
