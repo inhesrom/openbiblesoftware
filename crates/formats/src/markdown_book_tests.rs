@@ -431,3 +431,17 @@ fn hostile_input_neither_panics_nor_hangs() {
         let _ = import_markdown_book(Some(&f), &[], &options(), |_, _| true);
     }
 }
+
+/// Hostile input (#344): a link's target is never followed or read, wherever it points.
+#[test]
+fn link_targets_are_dropped_and_never_read() {
+    let main = file(
+        "x.md",
+        "---\ntitle: X\n---\n\n[the passwords](../../../../etc/passwd) and \
+         [a part](<../Other — Part 1.md>) and ![img](/etc/shadow)\n",
+    );
+    let (r, report) = import(Some(&main), &[]);
+    assert_eq!(r.units[0].text, "the passwords and a part and");
+    assert!(!r.units[0].text.contains("etc"));
+    assert_eq!(report.source_files, ["x.md"]);
+}

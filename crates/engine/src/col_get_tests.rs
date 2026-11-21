@@ -256,3 +256,139 @@ fn search_christian_open_library_opens_the_website_and_sends_nothing() {
     s.col = Default::default();
     assert!(!s.col_search_link(), "read back from the User database");
 }
+
+// ----------------------------------------------------------------------------------------
+// Acceptance checks of #347, as its ticket words them.
+
+/// "Choose 5 works and download them, ending with 5 Book Resources (Part files joined) and
+/// one Import report."
+#[test]
+fn five_chosen_works_become_five_books_under_one_report() {
+    let (mut s, _col, _lab) = session("five");
+    s.run("col.connect_token", &json!({ "token": TOKEN }))
+        .unwrap();
+    settle(&mut s);
+    let out = s.run("col.select", &json!({})).unwrap();
+    assert_eq!(out["selected"], 5);
+    let out = s
+        .run("col.download", &json!({ "scope": "selected" }))
+        .unwrap();
+    let batch = out["id"].as_str().unwrap().to_string();
+    settle(&mut s);
+    assert_eq!(books(&s).len(), 5);
+    let reports: Vec<_> = s.imports.records().filter(|r| r.books.is_some()).collect();
+    assert_eq!(reports.len(), 1, "one Import report");
+    let report = s.imports.report(&batch).unwrap();
+    assert_eq!(report.books.as_ref().unwrap().imported.len(), 5);
+    let owen = crate::col::col_resource_id("EEBO-TCP/John Owen/Owen - Mortification.md");
+    let owen = s.imports.report(&owen).unwrap();
+    assert_eq!(
+        owen.report.as_ref().unwrap().source_files.len(),
+        3,
+        "the main file and its two Parts are one Book"
+    );
+}
+
+/// "Check for new books lists only changed files (2 change, 1 is added, 1 is removed)."
+#[test]
+fn check_for_new_books_lists_two_changed_one_added_one_removed() {
+    let (mut s, col, _lab) = session("two-changed");
+    s.run("col.connect_token", &json!({ "token": TOKEN }))
+        .unwrap();
+    settle(&mut s);
+    s.run("col.download", &json!({ "scope": "everything" }))
+        .unwrap();
+    settle(&mut s);
+    col.put(
+        "EEBO-TCP/John Owen/Owen - Mortification — Part 2.md",
+        "## Chapter II\n\nCorrected.\n",
+    );
+    col.put(
+        "Creeds/Westminster Confession.md",
+        "---\ntitle: The Westminster Confession of Faith\n---\n\n## Chapter I\n\nCorrected.\n",
+    );
+    col.put(
+        "Sermons/New.md",
+        "---\ntitle: New\n---\n\n## One\n\nText.\n",
+    );
+    col.remove("Sermons/Edwards - Sinners.md");
+    s.run("col.refresh", &json!({})).unwrap();
+    settle(&mut s);
+    let c = s.col.changes().unwrap().clone();
+    let mut changed: Vec<&str> = c.changed.iter().map(|(_, p)| p.as_str()).collect();
+    changed.sort_unstable();
+    assert_eq!(
+        changed,
+        [
+            "Creeds/Westminster Confession.md",
+            "EEBO-TCP/John Owen/Owen - Mortification.md"
+        ]
+    );
+    assert_eq!(c.new, ["Sermons/New.md"]);
+    assert_eq!(c.removed.len(), 1);
+    assert_eq!(c.current, 2);
+    let before: Vec<u32> = c
+        .changed
+        .iter()
+        .map(|(id, _)| s.library.get(id).unwrap().manifest.revision)
+        .collect();
+    s.run("col.update", &json!({})).unwrap();
+    settle(&mut s);
+    for ((id, _), rev) in c.changed.iter().zip(before) {
+        assert_eq!(
+            s.library.get(id).unwrap().manifest.revision,
+            rev + 1,
+            "{id}"
+        );
+    }
+    assert_eq!(books(&s).len(), 5, "updated in place, the removed one kept");
+}
+
+/// "Nothing half-imported is left" when the connection fails during a download.
+#[test]
+fn a_download_cut_off_midway_leaves_nothing_half_imported() {
+    let (mut s, col, lab) = session("cut-off");
+    s.run("col.connect_token", &json!({ "token": TOKEN }))
+        .unwrap();
+    settle(&mut s);
+    *col.refuse.lock().unwrap() = Some(FetchError::Network("connection reset".into()));
+    let out = s
+        .run(
+            "col.download",
+            &json!({ "paths": "EEBO-TCP/John Owen/Owen - Mortification.md" }),
+        )
+        .unwrap();
+    let batch = out["id"].as_str().unwrap().to_string();
+    settle(&mut s);
+    let report = s.imports.report(&batch).unwrap();
+    assert_eq!(report.phase, ImportPhase::Failed);
+    assert!(
+        report
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("Could not reach GitHub"),
+        "{:?}",
+        report.error
+    );
+    assert!(books(&s).is_empty());
+    let left: Vec<_> = std::fs::read_dir(lab.0.join("library"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+/// "The token is in the keychain only": the Session never shows it, in its state, errors or
+/// what it saves.
+#[test]
+fn the_token_never_shows_in_the_sessions_state_or_saved_preferences() {
+    let (mut s, _col, _lab) = session("token");
+    s.run("col.connect_token", &json!({ "token": TOKEN }))
+        .unwrap();
+    settle(&mut s);
+    assert!(!format!("{:?}", s.col).contains(TOKEN));
+    assert!(!format!("{:?}", s.col.access()).contains(TOKEN));
+    let prefs = s.user.as_ref().unwrap().preferences().unwrap();
+    assert!(!prefs.iter().any(|(_, v)| v.contains(TOKEN)), "{prefs:?}");
+}
