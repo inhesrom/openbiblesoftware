@@ -5,18 +5,21 @@
 //! Migration 13 only adds the schema; the only values it fills in are ids: each Layout,
 //! Favorite and Reading plan gets a UUIDv7 and the device gets its id. Every write of Synced
 //! data is a `Change` through `UserStore::apply_changes` (`synced.rs`), which leaves a
-//! tombstone for each row it deletes, its clock empty (`synced_store::NO_CLOCK`) until Sync
-//! writes clocks (S28a); nothing writes a row's `clock` or `applied_up_to` yet.
+//! tombstone for each row it deletes. Migration 13 → 14 adds the clocks of list-preference
+//! items and the outbox of ops not yet written to the Sync folder; from schema 14
+//! `apply_changes` stamps every row, item and tombstone it writes with a hybrid logical clock
+//! (`hlc.rs`, `sync_clock.rs`).
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::annotation::new_id;
+use crate::annotation::{is_valid_id, new_id};
 use crate::error::StoreError;
 use crate::user::sql;
 
 /// The tables of Synced data. Each has a nullable `clock` column: the hybrid logical clock of
-/// the row's last change, as text whose encoding Sync defines (S28a). `NULL` means the row
-/// was last changed before this device recorded clocks, which is older than any clock.
+/// the row's last change, as text (`hlc.rs`, `docs/dev/sync.md`). `NULL` means the row was
+/// last changed before this device recorded clocks (schema 14), which is older than any
+/// clock.
 ///
 /// `anchors` has none: an Anchor is part of its Annotation's row and goes with its clock.
 /// In `preference` only the rows [`is_synced_preference`] names are Synced data; the clock of
@@ -139,7 +142,8 @@ pub(crate) fn give_rows_ids(c: &Connection) -> Result<(), StoreError> {
 /// - `tombstone`: a deleted synced row's table, id and the clock of its delete, kept for good.
 /// - `device`: this Synced device's id (a UUIDv7, made by [`make_device`]) and the name the
 ///   user gives it (empty until then).
-/// - `applied_up_to`: for each other Synced device, the last of its op files applied here.
+/// - `applied_up_to`: for each other Synced device, the last of its op files applied here
+///   (from schema 14, for this device's own id the last of its own op files written).
 pub(crate) const SCHEMA_13: &str = "
 ALTER TABLE preference ADD COLUMN clock TEXT;
 ALTER TABLE preferred_order ADD COLUMN clock TEXT;
@@ -180,10 +184,59 @@ CREATE TABLE applied_up_to (
 );
 ";
 
+/// Migration 13 → 14 (ADR 0022 rule 2, S28a).
+///
+/// - `item_clock`: the clock of each item of a list preference (a Collection, Copy preset,
+///   Saved search, Guide section or Resource tags row), keyed as its tombstone is
+///   (`row_table` the `Row` kind, `row_id` its id), since `preference.clock` is one per key.
+///   A deleted item's row goes; its tombstone keeps the clock. The Preferred order's clock
+///   is here too (`preferred_order`, `''`), so an empty order still has one.
+/// - `op_outbox`: while this device records ops (`applied_up_to` has a row for its own id),
+///   every `Change` applied, with its clock, in order, until it is written to an op file.
+///   `file_seq` is the op file it was reserved for (`NULL`: not yet), so a write that stopped
+///   half way writes the same file again.
+pub(crate) const SCHEMA_14: &str = "
+CREATE TABLE item_clock (
+    row_table TEXT NOT NULL,
+    row_id    TEXT NOT NULL,
+    clock     TEXT NOT NULL,
+    PRIMARY KEY (row_table, row_id)
+);
+CREATE TABLE op_outbox (
+    id       INTEGER PRIMARY KEY,
+    clock    TEXT NOT NULL,
+    change   TEXT NOT NULL,
+    file_seq INTEGER
+);
+";
+
 /// Migration 12 → 13, after [`SCHEMA_13`]: this device's id.
 pub(crate) fn make_device(c: &Connection) -> Result<(), StoreError> {
     c.execute(
         "INSERT INTO device (id, device_id) VALUES (1, ?1)",
+        [new_id()],
+    )
+    .map(drop)
+    .map_err(sql)
+}
+
+/// Give the database this device's id if it has none, or a new one in place of one that is
+/// not a UUID: a v13 database or Backup can lack the `device` row (only migration 12 → 13
+/// makes it), a damaged one can hold anything, and every clock names the device (a clock
+/// naming a device that is not a UUID never parses).
+pub(crate) fn ensure_device(c: &Connection) -> Result<(), StoreError> {
+    let id: Option<String> = c
+        .query_row("SELECT device_id FROM device WHERE id = 1", [], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(sql)?;
+    if id.as_deref().is_some_and(is_valid_id) {
+        return Ok(());
+    }
+    c.execute(
+        "INSERT INTO device (id, device_id) VALUES (1, ?1)
+         ON CONFLICT (id) DO UPDATE SET device_id = excluded.device_id",
         [new_id()],
     )
     .map(drop)

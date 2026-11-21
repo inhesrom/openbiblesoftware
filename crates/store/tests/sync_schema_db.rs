@@ -158,7 +158,7 @@ fn migration_13_keeps_every_row_of_a_v12_database_and_copies_it_first() {
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 12);
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    assert_eq!(USER_SCHEMA_VERSION, 13);
+    assert_eq!(USER_SCHEMA_VERSION, 14);
     // The copy taken before migrating is the v12 database as it was.
     let copy = report.migration_backup.unwrap();
     assert!(
@@ -209,7 +209,7 @@ fn migration_13_keeps_every_row_of_a_v12_database_and_copies_it_first() {
     // A second launch migrates nothing and copies nothing.
     drop(c);
     let (_db, report) = UserStore::open(&dir.db()).unwrap();
-    assert_eq!(report.found_version, 13);
+    assert_eq!(report.found_version, USER_SCHEMA_VERSION);
     assert!(report.migration_backup.is_none());
 }
 
@@ -235,6 +235,8 @@ fn migration_13_gives_every_synced_table_a_clock() {
         "tombstone",
         "device",
         "applied_up_to",
+        "item_clock",
+        "op_outbox",
     ];
     for table in &all {
         let known = SYNCED_TABLES.contains(&table.as_str())
@@ -249,7 +251,8 @@ fn migration_13_gives_every_synced_table_a_clock() {
     }
     for table in riding.iter().chain(&device) {
         assert!(
-            !columns(&c, table).iter().any(|c| c == "clock") || *table == "tombstone",
+            !columns(&c, table).iter().any(|c| c == "clock")
+                || ["tombstone", "item_clock", "op_outbox"].contains(table),
             "`{table}` is not synced but has a clock"
         );
     }

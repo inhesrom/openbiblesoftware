@@ -66,7 +66,7 @@ to Claude Opus 5.5 later on".
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | todo |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | done (PR #361) |
-| S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | todo |
+| S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | done (PR #362) |
 | S28b | Sync 2b (Rust): merge rules + property tests | AFK | n | S28a | merge module, 10k-case property tests | todo |
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | todo |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
@@ -1438,6 +1438,48 @@ this in addition to its own lines):
 - **Verify:** `cargo xtask ci`; `cargo test -p obs-engine sync`.
 - **Stop-and-ask:** the trailing hash line conflicts with a provider's partial-write behaviour the
   research documents.
+- **Outcome (2026-11-21, branch `mobile/s28a-sync-files`):** `USER_SCHEMA_VERSION` 14.
+  **Owner decisions (via supervisor):** D1 the clock's one text form is
+  `{wall_ms:012x}-{counter:04x}-{device_id}` (fixed-width lowercase hex, then the UUIDv7), so
+  SQLite's text order is (wall, counter, device) order; `NULL` and `''` both mean "no clock" and
+  sort first, and stay where they are. D2 `Hlc` and its generator live in `obs-store`
+  (`crates/store/src/hlc.rs`), because the store's own writes plan their Changes and so the
+  store must stamp them; **deviation from the deliverables list:** `crates/engine/src/sync/clock.rs`
+  only re-exports it. D3 migration 13 → 14 (S27a's 13 untouched): `item_clock` (list-preference
+  items' clocks, keyed like `tombstone`) and `op_outbox` (`clock`, `change` JSON, `file_seq`).
+  D4 a durable outbox written in `apply_changes`' own transaction, only while this device records
+  ops: recording = `applied_up_to` has a row for its own id, whose `seq` is the last own op file
+  written; clocks are stamped always, so a desktop user who never syncs gets no outbox rows.
+  D5 op file format as in `docs/dev/sync.md`: `ops/<seq>.jsonl` (decimal from 1, no padding;
+  every other name ignored), op lines `{"device","clock","before","after"}`, trailer
+  `{"format":1,"ops","bytes","sha256"}` as the last line; a newer `format` is left alone
+  (`OpsStop::Newer`, `needs_newer_app()`); `device.json` is the only file a device rewrites, its
+  own. D6 `ensure_device()` at `UserStore::open` and `open_backup`. **Shipped:** `sync_clock.rs`
+  (seed from `MAX(clock)` of every clocked table at the first change after open or restore,
+  never below a clock handed out; each Change its own clock into its row, `item_clock` + the
+  list's `preference.clock`, or its tombstone; `device_id`, `start_recording_ops`,
+  `records_ops`, `reserve_op_files`, `op_file_written`); `crates/engine/src/sync/{mod,folder,clock,ops}.rs`
+  (`SyncFolder`, `FsSyncFolder` with temp + `fsync` + rename and path checks, `MemSyncFolder`
+  behind `test-support` with placeholders, `encode_op_file`/`decode_op_file`, `read_ops_after`
+  stopping at the first file not whole, missing, still downloading or newer, `write_pending_ops`
+  rewriting a reserved file byte for byte, `ensure_sync_json`, `write_device_json`,
+  `read_devices`); `docs/dev/sync.md` draft; `docs/dev/backups.md` on schema 14. Not done
+  (fenced): merging, snapshots, join, scheduling, UI. The stop-and-ask did not trigger: the
+  research documents only temp + rename (Syncthing) and placeholders, both of which the trailer
+  and `ensure_available` handle. **Tests:** store `hlc.rs` (3 unit), `tests/sync_clock_db.rs`
+  (7: v13 database and v13 Backup → 14 losing nothing, a Backup carrying both new tables,
+  `ensure_device` at `open`/`open_backup`, the clock after a reopen with the wall clock stepped
+  back and after restores of a Backup ahead and behind, the outbox), `synced_writes_db.rs`
+  `every_write_of_synced_data_stamps_its_rows_with_clocks_and_records_its_ops` (every `Row`
+  variant and its undo); engine `sync::tests` (11, incl. the two Done-when tests). S27a/S27b
+  tests changed where they pinned "no clock yet": `annotation_dump` and the synced dump leave
+  out `clock` columns (an undo is a change of its own, with a later clock), the tombstone test
+  checks a real clock, the schema-13 test knows the two new tables. **Measured:**
+  `cargo xtask ci` green (15 m 4 s, 2356 tests); `cargo test -p obs-store` 147 passed;
+  `cargo test -p obs-engine sync` 12 passed; `cargo xtask gallery` unchanged on two runs
+  (≈2 m each) after one run where `notes-in-a-side-panel-sepia-2x` drew its Note card without
+  its text (passed in the `ci` test gate and both reruns; looks like a timing flake unrelated to
+  clocks, not blessed). S28b's and S28c's entries gained "Added by S28a" bullets.
 
 #### S28b — Sync 2b (Rust): merge rules and property tests
 
@@ -1464,6 +1506,19 @@ this in addition to its own lines):
 - **Verify:** `cargo xtask ci`; `cargo test -p obs-engine sync -- --include-ignored` (long cases
   may be `#[ignore]`d with a smaller CI case count; record both).
 - **Stop-and-ask:** a merge rule in ADR 0022 is ambiguous for a real case (write the case down).
+- **Added by S28a:** an op's `before` (kept in `op_outbox` and in each op line) is the base
+  conflict detection compares with. `apply_changes` stamps every Change with a new local clock;
+  applying another device's ops must keep the op's clock instead (a variant that takes the
+  clocks given), and the merge must advance the generator with each one through
+  `UserStore::observe_clock` (HLC receive rule, `last = max(last, remote)`): the seed
+  (`MAX(clock)`) runs only once per open or restore, so it does not see clocks merged in during
+  a session. A whole-value `Row::Preference` on a list key leaves that list's `item_clock` rows
+  as they were.
+- **Added by the S28a review:** a clock taken in from a merge whose `wall_ms` is more than
+  `MAX_FORWARD_SKEW_MS` (24 h, `obs_store::hlc`) ahead of this device's wall clock is not
+  observed (`observe_clock` returns `false`), as the seed ignores such clocks in the database;
+  its row and data merge as any other's and are never dropped (ADR 0006). The Preferred order's
+  clock is its `item_clock` row (`preferred_order`, `''`), which an empty order keeps.
 
 #### S28c — Sync 2c (Rust): snapshots, trimming, versioning, device-id rules, restore, scheduling
 
@@ -1491,6 +1546,13 @@ this in addition to its own lines):
   known device has not applied.
 - **Verify:** `cargo xtask ci`; `cargo test -p obs-engine sync`.
 - **Stop-and-ask:** a "replace" case where ADR 0006 and rule 7 disagree on what survives.
+- **Added by S28a:** join = write the snapshot, then `UserStore::start_recording_ops()` (before
+  it the device records no ops). A restore (rule 7, new device id) must re-home or clear the
+  `op_outbox` rows written under the old id, and the `applied_up_to` row of the old own id (it
+  is the last own op file written, `docs/dev/sync.md` "Recording ops"); that row is also the
+  copied-database check: op files under this id above `max(own seq, MAX(op_outbox.file_seq))`
+  were not written here (after a stop between writing a file and noting it written, the file
+  is above the own `seq` but still reserved).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 

@@ -2,7 +2,8 @@
 //! user makes: preferences, the Last session, named Layouts, the Preferred order, the
 //! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61),
 //! Favorites and History (#155), Reading plans (#147), and Highlight styles and palettes
-//! (#181), and the clocks, tombstones and device id Sync needs (ADR 0022, `sync_schema.rs`).
+//! (#181), and the clocks, tombstones, device id and outbox Sync needs (ADR 0022,
+//! `sync_schema.rs`, `sync_clock.rs`).
 //! Backups the user makes and restores are `backup_store.rs` (#217).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
@@ -22,7 +23,7 @@ use crate::synced_store;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 13;
+pub const USER_SCHEMA_VERSION: u32 = 14;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -59,6 +60,9 @@ const MIGRATIONS: &[&str] = &[
     // 12 → 13: what Sync needs (ADR 0022): clocks, tombstones, the device id, how far other
     // devices' ops are applied, and ids for Layouts, Favorites and Reading plans.
     crate::sync_schema::SCHEMA_13,
+    // 13 → 14: the clocks of list-preference items and the outbox of ops for the Sync folder
+    // (ADR 0022 rule 2).
+    crate::sync_schema::SCHEMA_14,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
@@ -88,6 +92,8 @@ pub struct UserStore {
     /// Every Change applied, for tests (`take_applied_changes`).
     #[cfg(feature = "test-support")]
     pub(crate) recorded: std::cell::RefCell<Vec<Change>>,
+    /// The clock `apply_changes` stamps Changes with (`sync_clock.rs`).
+    pub(crate) clock: std::cell::RefCell<crate::sync_clock::ClockState>,
 }
 
 impl UserStore {
@@ -97,6 +103,7 @@ impl UserStore {
             path,
             #[cfg(feature = "test-support")]
             recorded: Default::default(),
+            clock: Default::default(),
         }
     }
 
@@ -153,11 +160,19 @@ impl UserStore {
             }
             store.migrate(found, target)?;
         }
+        if store.schema_version()? >= 13 {
+            store.ensure_device()?;
+        }
         if store.schema_version()? >= 4 {
             store.ensure_default_notebook()?;
         }
         report.launch_backup = Some(store.rolling_backup()?);
         Ok((store, report))
+    }
+
+    /// Give the database this device's id if it has none (`sync_schema::ensure_device`).
+    pub(crate) fn ensure_device(&self) -> Result<(), StoreError> {
+        crate::sync_schema::ensure_device(&self.conn)
     }
 
     fn migrate(&mut self, from: u32, to: u32) -> Result<(), StoreError> {

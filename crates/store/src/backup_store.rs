@@ -100,6 +100,7 @@ impl UserStore {
         }
         check_whole(&conn).map_err(|why| not_a_backup(&why))?;
         let store = UserStore::from_parts(conn, path.to_path_buf());
+        store.ensure_device()?;
         store.ensure_default_notebook()?;
         store
             .read_everything()
@@ -272,6 +273,7 @@ impl UserStore {
         rusqlite::backup::Backup::new(source, &mut self.conn)
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
             .map_err(sql)?;
+        self.reseed_clock();
         Ok(safety)
     }
 

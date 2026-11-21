@@ -161,6 +161,7 @@ pub mod starter;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod starter_tests;
 pub mod strongs_index;
+pub mod sync;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;

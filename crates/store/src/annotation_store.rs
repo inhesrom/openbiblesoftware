@@ -18,9 +18,10 @@ use crate::error::StoreError;
 use crate::highlight_style_store::{
     read_palette, read_style, style_exists, write_palette, write_style,
 };
+use crate::sync_clock::{CLOCK_SCHEMA, read_device_id, record_op, records_ops, stamp_row};
 use crate::sync_schema::is_synced_preference;
 use crate::synced_store::{
-    ListItems, has_table, mark_tombstone, read_synced_row, write_synced_row,
+    ListItems, NO_CLOCK, has_table, mark_tombstone, read_synced_row, write_synced_row,
 };
 use crate::user::{UserStore, sql};
 
@@ -559,7 +560,7 @@ impl UserStore {
         }
         let now = crate::annotation::now_ms();
         let id = crate::annotation::new_id_at(now);
-        if self.schema_version()? >= crate::user::USER_SCHEMA_VERSION {
+        if self.schema_version()? >= 13 {
             return self.apply_changes(&[Change::insert(Row::Notebook(Notebook {
                 id,
                 name: DEFAULT_NOTEBOOK_NAME.into(),
@@ -659,11 +660,16 @@ impl UserStore {
     /// [`StoreError::Conflict`] and nothing is written), then becomes its `after`. The default
     /// Notebook cannot be deleted or stop being the default. Every write of Synced data goes
     /// through here (ADR 0022): a row deleted leaves a tombstone, and one made again takes
-    /// its tombstone away.
+    /// its tombstone away. Each Change gets the next clock (`sync_clock.rs`), written into
+    /// its row (or its tombstone), and while this device records ops it waits in the outbox
+    /// for the Sync folder.
     pub fn apply_changes(&self, changes: &[Change]) -> Result<(), StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
-        // A database opened at an older schema (migration tests) has no tombstones.
+        // A database opened at an older schema (migration tests) has no tombstones, and
+        // before schema 14 no clocks.
         let tombstones = has_table(&tx, "tombstone")?;
+        let clocks = self.schema_version()? >= CLOCK_SCHEMA;
+        let recording = clocks && records_ops(&tx, &read_device_id(&tx)?)?;
         let mut lists = ListItems::default();
         for change in changes {
             let key = change
@@ -720,8 +726,18 @@ impl UserStore {
                 }
                 (key, _, after) => write_synced_row(&tx, &mut lists, key, after.as_ref())?,
             }
+            let clock = if clocks {
+                let clock = self.next_clock(&tx)?;
+                stamp_row(&tx, &key, change, &clock)?;
+                if recording {
+                    record_op(&tx, &clock, change)?;
+                }
+                Some(clock.encode()?)
+            } else {
+                None
+            };
             if tombstones {
-                mark_tombstone(&tx, change, &key)?;
+                mark_tombstone(&tx, change, &key, clock.as_deref().unwrap_or(NO_CLOCK))?;
             }
         }
         tx.commit().map_err(sql)?;
@@ -739,7 +755,8 @@ impl UserStore {
 
     /// Every row of `notebooks`, the Highlight styles and palettes, `annotations`, `anchors`
     /// and `notes_fts` as text, after checking the FTS index against its rows; tests compare
-    /// these to prove undo and redo restore the same database.
+    /// these to prove undo and redo restore the same database. The rows' clocks are left out:
+    /// an undo is a change of its own, with a later clock.
     #[cfg(feature = "test-support")]
     pub fn annotation_dump(&self) -> Result<String, StoreError> {
         self.conn
@@ -779,7 +796,21 @@ impl UserStore {
                 continue;
             }
             let _ = writeln!(out, "[{table}]");
-            let mut stmt = self.conn.prepare(query).map_err(sql)?;
+            let columns: Vec<String> = self
+                .conn
+                .prepare("SELECT name FROM pragma_table_info(?1) WHERE name <> 'clock'")
+                .map_err(sql)?
+                .query_map([table], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            // `notes_fts` (a virtual table) names its columns in its query.
+            let query = if query.starts_with("SELECT * ") && !columns.is_empty() {
+                query.replacen('*', &columns.join(", "), 1)
+            } else {
+                query.to_string()
+            };
+            let mut stmt = self.conn.prepare(&query).map_err(sql)?;
             let n = stmt.column_count();
             let mut rows = stmt.query([]).map_err(sql)?;
             while let Some(r) = rows.next().map_err(sql)? {

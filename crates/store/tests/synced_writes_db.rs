@@ -79,7 +79,8 @@ const EVERY_ROW: &[&str] = &[
     "resource_tags",
 ];
 
-/// Every row of every synced table, and of `anchors` and `notes_fts`, as text.
+/// Every row of every synced table, and of `anchors` and `notes_fts`, as text, without the
+/// clocks (an undo is a change of its own, with a later clock).
 fn synced_dump(db: &std::path::Path) -> String {
     let c = Connection::open(db).unwrap();
     let mut out = String::new();
@@ -89,7 +90,21 @@ fn synced_dump(db: &std::path::Path) -> String {
         .chain(["anchors", "notes_fts"])
     {
         out.push_str(&format!("[{table}]\n"));
-        let mut stmt = c.prepare(&format!("SELECT * FROM {table}")).unwrap();
+        let columns: Vec<String> = c
+            .prepare("SELECT name FROM pragma_table_info(?1) WHERE name <> 'clock'")
+            .unwrap()
+            .query_map([table], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let columns = if columns.is_empty() {
+            "*".to_string()
+        } else {
+            columns.join(", ")
+        };
+        let mut stmt = c
+            .prepare(&format!("SELECT {columns} FROM {table}"))
+            .unwrap();
         let n = stmt.column_count();
         let mut rows: Vec<String> = stmt
             .query_map([], |r| {
@@ -335,6 +350,11 @@ const WRITES: &[(&str, Write, &[&str])] = &[
         &["preferred_order"],
     ),
     (
+        "empty the Preferred order",
+        |db| db.save_preferred_order(&[]).unwrap(),
+        &["preferred_order"],
+    ),
+    (
         "choose the active Highlight palette",
         |db| db.set_preference("highlights.palette", "mine").unwrap(),
         &["preference"],
@@ -427,6 +447,147 @@ fn every_write_of_synced_data_emits_changes_and_they_are_the_whole_write() {
     assert_eq!(covered, every, "every kind of Row has a write above");
 }
 
+/// The clock stored for the row `key` names: its row's `clock`, its item's (or the Preferred
+/// order's) `item_clock` or, once deleted, its tombstone's.
+fn stored_clock(c: &Connection, key: &RowKey, deleted: bool) -> Option<String> {
+    let (kind, id) = key.tombstone();
+    let one = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Option<String> {
+        c.query_row(sql, params, |r| r.get::<_, Option<String>>(0))
+            .ok()
+            .flatten()
+    };
+    if deleted {
+        return one(
+            "SELECT clock FROM tombstone WHERE row_table = ?1 AND row_id = ?2",
+            &[&kind, &id],
+        );
+    }
+    let by = |table: &str, column: &str, id: &str| {
+        one(
+            &format!("SELECT clock FROM {table} WHERE {column} = ?1"),
+            &[&id],
+        )
+    };
+    match key {
+        RowKey::Notebook(id) => by("notebooks", "id", id),
+        RowKey::Annotation(id) => by("annotations", "id", id),
+        RowKey::HighlightStyle(id) => by("highlight_styles", "id", id),
+        RowKey::HighlightPalette(id) => by("highlight_palettes", "id", id),
+        RowKey::Favorite(uid) => by("favorite", "uid", uid),
+        RowKey::ReadingPlan(uid) => by("reading_plan", "uid", uid),
+        RowKey::Layout(id) => by("layout", "id", id),
+        RowKey::Preference(key) => by("preference", "key", key),
+        RowKey::Reading(plan, position) => one(
+            "SELECT r.clock FROM plan_reading r JOIN reading_plan p ON p.id = r.plan_id
+             WHERE p.uid = ?1 AND r.position = ?2",
+            &[plan, position],
+        ),
+        RowKey::PreferredOrder => {
+            // Its `item_clock` row, kept when the order is empty, and every row of the order
+            // the same clock.
+            let clock = one(
+                "SELECT clock FROM item_clock WHERE row_table = ?1 AND row_id = ?2",
+                &[&kind, &id],
+            );
+            let rows: BTreeSet<Option<String>> = c
+                .prepare("SELECT clock FROM preferred_order")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert!(
+                rows.iter().all(|r| *r == clock),
+                "one clock for the whole order: {rows:?}, {clock:?}"
+            );
+            clock
+        }
+        RowKey::Collection(_)
+        | RowKey::CopyPreset(_)
+        | RowKey::SavedSearch(_)
+        | RowKey::GuideSection(..)
+        | RowKey::ResourceTags(_) => one(
+            "SELECT clock FROM item_clock WHERE row_table = ?1 AND row_id = ?2",
+            &[&kind, &id],
+        ),
+    }
+}
+
+/// The preference a list item is kept in.
+fn list_key(key: &RowKey) -> Option<String> {
+    Some(match key {
+        RowKey::Collection(_) => "library.collections".into(),
+        RowKey::CopyPreset(_) => "copy.presets".into(),
+        RowKey::SavedSearch(_) => "search.saved".into(),
+        RowKey::ResourceTags(_) => "library.tags".into(),
+        RowKey::GuideSection(guide, _) => format!("guide-arrangement/{guide}"),
+        _ => return None,
+    })
+}
+
+#[test]
+fn every_write_of_synced_data_stamps_its_rows_with_clocks_and_records_its_ops() {
+    for (i, (what, write, _)) in WRITES.iter().enumerate() {
+        let dir = Dir::new(&format!("clock-{i}"));
+        let (db, _) = UserStore::open(&dir.db()).unwrap();
+        let device = db.device_id().unwrap();
+        fill(&db);
+        assert!(!db.records_ops().unwrap());
+        assert_eq!(db.reserve_op_files().unwrap(), Vec::new(), "{what}");
+        db.start_recording_ops().unwrap();
+        assert!(db.records_ops().unwrap());
+        db.take_applied_changes();
+        write(&db);
+        let changes = db.take_applied_changes();
+        // Undone, the inverse is a change of its own, with later clocks.
+        db.apply_changes(&inverse(&changes)).unwrap();
+        let undo = db.take_applied_changes();
+        let files = db.reserve_op_files().unwrap();
+        assert_eq!(files.len(), 1, "{what}");
+        assert_eq!(files[0].seq, 1, "{what}");
+        let ops = &files[0].ops;
+        let recorded: Vec<Change> = ops.iter().map(|o| o.change.clone()).collect();
+        assert_eq!(
+            recorded,
+            [changes, undo].concat(),
+            "{what}: the outbox is the stream"
+        );
+        for pair in ops.windows(2) {
+            assert!(pair[0].clock < pair[1].clock, "{what}: clocks count on");
+        }
+        assert!(ops.iter().all(|o| o.clock.device_id == device), "{what}");
+        // The row (item, tombstone) each Change wrote holds its clock; the last wins.
+        let c = Connection::open(dir.db()).unwrap();
+        let mut last = std::collections::HashMap::new();
+        for op in ops {
+            last.insert(op.change.key().unwrap(), op);
+        }
+        for (key, op) in &last {
+            let deleted = op.change.after.is_none();
+            assert_eq!(
+                stored_clock(&c, key, deleted),
+                Some(op.clock.encode().unwrap()),
+                "{what}: {}",
+                key.describe()
+            );
+            if let Some(list) = list_key(key) {
+                let newest = ops
+                    .iter()
+                    .filter(|o| list_key(&o.change.key().unwrap()).as_ref() == Some(&list))
+                    .map(|o| o.clock.encode().unwrap())
+                    .max();
+                assert_eq!(
+                    stored_clock(&c, &RowKey::Preference(list.clone()), false),
+                    newest,
+                    "{what}: {list} has its newest item's clock"
+                );
+            }
+        }
+        db.op_file_written(1).unwrap();
+        assert_eq!(db.reserve_op_files().unwrap(), Vec::new(), "{what}");
+    }
+}
+
 #[test]
 fn a_write_that_changes_nothing_emits_no_change_and_a_device_preference_none() {
     let dir = Dir::new("unchanged");
@@ -513,11 +674,11 @@ fn a_delete_leaves_a_tombstone_and_undoing_it_takes_the_tombstone_away() {
         .unwrap();
     db.take_applied_changes();
     assert!(db.remove_favorite(favorite.id).unwrap());
-    assert_eq!(
-        tombstones(&dir.db()),
-        vec![("favorite".into(), uid.clone(), String::new())],
-        "the delete's clock is empty until Sync writes clocks"
-    );
+    let stones = tombstones(&dir.db());
+    assert_eq!(stones.len(), 1);
+    assert_eq!((stones[0].0.as_str(), &stones[0].1), ("favorite", &uid));
+    let clock = obs_store::Hlc::parse(&stones[0].2).expect("the delete's clock");
+    assert_eq!(clock.device_id, db.device_id().unwrap());
     db.apply_changes(&inverse(&db.take_applied_changes()))
         .unwrap();
     assert_eq!(tombstones(&dir.db()), Vec::new());
@@ -526,10 +687,13 @@ fn a_delete_leaves_a_tombstone_and_undoing_it_takes_the_tombstone_away() {
     // A Collection deleted is an item's tombstone; replacing the Preferred order leaves none.
     db.set_preference("library.collections", "[]").unwrap();
     db.save_preferred_order(&["web".into()]).unwrap();
+    let stones = tombstones(&dir.db());
+    assert_eq!(stones.len(), 1);
     assert_eq!(
-        tombstones(&dir.db()),
-        vec![("collection".into(), "Greek".into(), String::new())]
+        (stones[0].0.as_str(), stones[0].1.as_str()),
+        ("collection", "Greek")
     );
+    assert!(obs_store::Hlc::parse(&stones[0].2).unwrap() > clock);
 }
 
 #[test]
