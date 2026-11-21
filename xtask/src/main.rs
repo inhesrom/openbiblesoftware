@@ -7,6 +7,7 @@ mod gallery;
 mod language_names;
 mod layers;
 mod licenses;
+mod pg_books;
 mod release;
 mod starter;
 mod strongs_index;
@@ -55,6 +56,8 @@ maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules
   tcp-books [--add ids.txt] [--refresh] [--cache DIR]
                       pin the Text Creation Partnership collection of the Open catalogue
+  pg-books [--add numbers.txt] [--refresh] [--cache DIR] [--catalog pg_catalog.csv]
+                      pin the Project Gutenberg collection of the Open catalogue
   atlas-basemap       regenerate the Atlas's built-in base map from Natural Earth (`--help`)
   strongs-index       regenerate the built-in Strong's index from STEPBible TBESH/TBESG (`--help`)
   language-names      regenerate the built-in language names from CLDR and ISO 639-3 (`--help`)";
@@ -125,6 +128,10 @@ fn run() -> Result<()> {
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             tvtms::run(&root, &rest)
+        }
+        "pg-books" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            pg_books::run(&root, &rest)
         }
         "tcp-books" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

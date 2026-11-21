@@ -9,6 +9,7 @@ mod dataset;
 mod error;
 #[cfg(test)]
 mod hostile_input;
+mod html_book;
 mod lexicon;
 mod markdown_book;
 mod openbible;
@@ -32,6 +33,9 @@ pub use commentary::{
 };
 pub use dataset::{DatasetError, DatasetOptions};
 pub use error::ImportError;
+pub use html_book::{
+    HtmlBookOptions, MAX_HTML_BYTES, PG_HTML_FORMAT, decode_html_bytes, import_pg_html,
+};
 pub use lexicon::{
     LexiconError, LexiconOptions, import_abbott_smith, import_bdb, import_strongs_greek,
     import_strongs_hebrew, import_tbes,

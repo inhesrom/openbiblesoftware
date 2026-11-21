@@ -28,11 +28,13 @@ use crate::licence::{LicenceClass, licence_class};
 
 const OPEN_CATALOGUE_TOML: &str = include_str!("../data/open-catalogue.toml");
 const TCP_BOOKS_TSV: &str = include_str!("../data/collections/tcp-books.tsv");
+const PG_BOOKS_TSV: &str = include_str!("../data/collections/pg-books.tsv");
 
 /// The importers an Open catalogue entry may name. `usfm-zip`: a publisher's zip of USFM
 /// books (eBible.org's `<id>_usfm.zip`) → a Bible. `tcp-tei`: one TEI text of the Text
-/// Creation Partnership (EEBO-TCP, Evans-TCP, ECCO-TCP) → a Book (#345).
-pub const OPEN_IMPORTERS: &[&str] = &["usfm-zip", "tcp-tei"];
+/// Creation Partnership (EEBO-TCP, Evans-TCP, ECCO-TCP) → a Book (#345). `pg-html`: one
+/// Project Gutenberg eBook's posted HTML → a Book, PG's licence and name removed (#345).
+pub const OPEN_IMPORTERS: &[&str] = &["usfm-zip", "tcp-tei", "pg-html"];
 
 /// The Open catalogue section's title in Get Resources.
 pub const OPEN_CATALOGUE: &str = "Open catalogue";
@@ -134,8 +136,207 @@ pub fn open_sources() -> &'static [OpenSource] {
                 .filter(|b| !listed.contains(&b.id))
                 .map(TcpBook::source),
         );
+        out.extend(pg_books().iter().map(PgBook::source));
         out
     })
+}
+
+/// Project Gutenberg's own mirror, run by the Project Gutenberg Literary Archive Foundation:
+/// PG asks programs to download from a mirror, not from www.gutenberg.org.
+pub const PG_MIRROR: &str = "https://gutenberg.pglaf.org/";
+
+/// The latest year a Project Gutenberg book's author, translator or other contributor may
+/// have died in: 70 years after it, the book is out of copyright in life-plus-70 countries as
+/// well as in the United States, where PG has checked it. Moved on as the years pass.
+pub const PG_LAST_DEATH_YEAR: u16 = 1955;
+
+/// PG's licence page, archived: a text stripped of PG's licence and every reference to PG is
+/// unrestricted (open-evidence/gutenberg.md).
+pub const PG_EVIDENCE_URL: &str =
+    "https://web.archive.org/web/20261116094507/https://www.gutenberg.org/policy/license.html";
+
+/// "Changes we made" for every Project Gutenberg Book.
+pub const PG_CHANGES: &str = "Converted from the HTML edition on download: Project Gutenberg's \
+    header, footer and licence and every paragraph naming Project Gutenberg removed; chapters \
+    from its headings, printed pages from its page numbers, footnotes as notes, Bible \
+    references as links; images left out. The text is otherwise unchanged.";
+
+/// The header line of `data/collections/pg-books.tsv`.
+pub const PG_BOOKS_HEADER: &str = "# number\tpath\tsha256\tbytes\tlanguage\tauthors\tdied\ttitle\n";
+
+/// One row of `data/collections/pg-books.tsv`: a Project Gutenberg eBook's posted HTML on
+/// PG's mirror, pinned by its sha256 (ADR 0024).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PgBook {
+    /// The eBook number.
+    pub number: u32,
+    /// The HTML file under [`PG_MIRROR`] (`3/0/4/4/30449/30449-h/30449-h.htm`).
+    pub path: String,
+    /// Lowercase hex sha256 of the file.
+    pub sha256: String,
+    pub bytes: u64,
+    /// BCP 47.
+    pub language: String,
+    /// PG's catalogue authors, as it gives them ("Spurgeon, C. H. (Charles Haddon),
+    /// 1834-1892; …"), translators and other contributors with their roles.
+    pub authors: String,
+    /// The latest year any of them died in.
+    pub died: u16,
+    /// The title, cut at its first colon or semicolon.
+    pub title: String,
+}
+
+/// Fields of a `pg-books.tsv` row.
+const PG_FIELDS: usize = 8;
+
+impl PgBook {
+    /// The folder PG keeps eBook `number` in on its mirror: its digits but the last, one per
+    /// folder, then the number (`30449` → `3/0/4/4/30449`; `7` → `0/7`).
+    pub fn folder(number: u32) -> String {
+        let n = number.to_string();
+        if n.len() == 1 {
+            return format!("0/{n}");
+        }
+        let mut parts: Vec<String> = n[..n.len() - 1].chars().map(String::from).collect();
+        parts.push(n);
+        parts.join("/")
+    }
+
+    /// Its Open catalogue entry id.
+    pub fn entry_id(&self) -> String {
+        format!("pg-{}", self.number)
+    }
+
+    /// The first author that is not a translator or other contributor, as a name.
+    pub fn author(&self) -> String {
+        let entries: Vec<&str> = self.authors.split(';').map(str::trim).collect();
+        let first = entries
+            .iter()
+            .find(|a| !a.contains('['))
+            .or_else(|| entries.first())
+            .copied()
+            .unwrap_or_default();
+        let without_role = first.split('[').next().unwrap_or(first);
+        display_author(without_role)
+    }
+
+    /// The row as a TSV line (no newline); tabs and line breaks in a field become spaces.
+    pub fn to_tsv(&self) -> String {
+        let clean = |s: &str| s.replace(['\t', '\n', '\r'], " ");
+        [
+            self.number.to_string(),
+            clean(&self.path),
+            clean(&self.sha256),
+            self.bytes.to_string(),
+            clean(&self.language),
+            clean(&self.authors),
+            self.died.to_string(),
+            clean(&self.title),
+        ]
+        .join("\t")
+    }
+
+    /// A row from its TSV line.
+    pub fn from_tsv(line: &str) -> Result<Self, String> {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() != PG_FIELDS {
+            return Err(format!("{} fields, not {PG_FIELDS}: {line:?}", f.len()));
+        }
+        Ok(Self {
+            number: f[0].parse().map_err(|_| format!("number {:?}", f[0]))?,
+            path: f[1].into(),
+            sha256: f[2].into(),
+            bytes: f[3].parse().map_err(|_| format!("bytes {:?}", f[3]))?,
+            language: f[4].into(),
+            authors: f[5].into(),
+            died: f[6].parse().map_err(|_| format!("died {:?}", f[6]))?,
+            title: f[7].into(),
+        })
+    }
+
+    /// What is wrong with the row: a path that is not the eBook's posted HTML in its
+    /// folder, a malformed sha256, a contributor who died after [`PG_LAST_DEATH_YEAR`], no
+    /// title, author or language.
+    pub fn problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut bad = |why: &str| out.push(format!("pg {}: {why}", self.number));
+        let n = self.number;
+        let folder = Self::folder(n);
+        let posted = [
+            format!("{folder}/{n}-h/{n}-h.htm"),
+            format!("{folder}/{n}-h/{n}-h.html"),
+        ];
+        if n == 0 || !posted.contains(&self.path) {
+            bad("the path is not the eBook's posted HTML");
+        }
+        let hex64 = self.sha256.len() == 64
+            && self
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !hex64 {
+            bad("sha256 must be 64 lowercase hex digits");
+        }
+        if self.died > PG_LAST_DEATH_YEAR || self.died == 0 {
+            bad("a contributor died after the last year allowed");
+        }
+        if self.title.trim().is_empty() || self.author().is_empty() || self.language.is_empty() {
+            bad("no title, author or language");
+        }
+        out
+    }
+
+    /// Its Open catalogue entry.
+    pub fn source(&self) -> OpenSource {
+        let author = self.author();
+        let n = self.number;
+        let homepage = format!("https://www.gutenberg.org/ebooks/{n}");
+        OpenSource {
+            id: self.entry_id(),
+            importer: "pg-html".into(),
+            kind: "book".into(),
+            url: format!("{PG_MIRROR}{}", self.path),
+            sha256: Some(self.sha256.clone()),
+            licence_file: None,
+            licence_notice_sha256: None,
+            title: self.title.clone(),
+            abbreviation: format!("PG{n}"),
+            language: self.language.clone(),
+            edition: format!("{author}; Project Gutenberg eBook #{n}"),
+            publisher: "Project Gutenberg".into(),
+            homepage: homepage.clone(),
+            licence: "Public domain".into(),
+            spdx: "LicenseRef-PublicDomain".into(),
+            licence_class: LicenceClass::FreeToShare,
+            attribution: format!(
+                "{}, by {author}. Transcribed by Project Gutenberg volunteers ({homepage}); \
+                 Project Gutenberg's licence and name are removed from this text.",
+                self.title
+            ),
+            changes: PG_CHANGES.into(),
+            evidence: "open-evidence/gutenberg.md".into(),
+            evidence_url: PG_EVIDENCE_URL.into(),
+            skip_books: Vec::new(),
+            author,
+            date: String::new(),
+            collection: true,
+        }
+    }
+}
+
+/// Parse `pg-books.tsv`: lines starting `#` are comments.
+pub fn parse_pg_books(text: &str) -> Result<Vec<PgBook>, String> {
+    text.lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .map(|l| PgBook::from_tsv(l).map_err(|e| format!("pg-books.tsv: {e}")))
+        .collect()
+}
+
+/// The compiled-in Project Gutenberg collection (empty if it does not parse; a test checks it
+/// does).
+pub fn pg_books() -> &'static [PgBook] {
+    static ROWS: OnceLock<Vec<PgBook>> = OnceLock::new();
+    ROWS.get_or_init(|| parse_pg_books(PG_BOOKS_TSV).unwrap_or_default())
 }
 
 /// The header line of `data/collections/tcp-books.tsv`.
@@ -525,8 +726,11 @@ impl OpenSource {
             ("usfm-zip", Some(t)) if t != ResourceType::Bible => {
                 bad(format!("the usfm-zip importer makes Bibles, not {t:?}"));
             }
-            ("tcp-tei", Some(t)) if t != ResourceType::Book => {
-                bad(format!("the tcp-tei importer makes Books, not {t:?}"));
+            ("tcp-tei" | "pg-html", Some(t)) if t != ResourceType::Book => {
+                bad(format!(
+                    "the {} importer makes Books, not {t:?}",
+                    self.importer
+                ));
             }
             _ => {}
         }
@@ -622,6 +826,7 @@ impl OpenSource {
         let (mut resource, mut report) = match self.importer.as_str() {
             "usfm-zip" => self.import_usfm_zip(bytes, resource_id, tool_version, progress)?,
             "tcp-tei" => self.import_tcp_tei(bytes, resource_id, tool_version, progress)?,
+            "pg-html" => self.import_pg_html(bytes, resource_id, tool_version, progress)?,
             other => return Err(format!("unknown importer `{other}`")),
         };
         let m = &mut resource.manifest;
@@ -656,6 +861,26 @@ impl OpenSource {
             tool_version: tool_version.into(),
         };
         obs_formats::import_tcp_tei(xml, &options, progress).map_err(|e| e.to_string())
+    }
+
+    fn import_pg_html(
+        &self,
+        bytes: &[u8],
+        resource_id: &str,
+        tool_version: &str,
+        progress: impl FnMut(usize, usize) -> bool,
+    ) -> Result<(Resource, obs_formats::ImportReport), String> {
+        let html = obs_formats::decode_html_bytes(bytes);
+        let file = self.url.rsplit('/').next().unwrap_or(&self.url).to_string();
+        let options = obs_formats::HtmlBookOptions {
+            resource_id: resource_id.into(),
+            title: self.title.clone(),
+            abbreviation: self.abbreviation.clone(),
+            language: self.language.clone(),
+            source_file: file,
+            tool_version: tool_version.into(),
+        };
+        obs_formats::import_pg_html(&html, &options, progress).map_err(|e| e.to_string())
     }
 
     fn import_usfm_zip(
@@ -872,7 +1097,10 @@ mod tests {
             assert_eq!(TcpBook::from_tsv(&row.to_tsv()).as_ref(), Ok(row));
         }
         let all = open_sources();
-        assert_eq!(all.len(), open_catalogue_toml_sources().len() + rows.len());
+        assert_eq!(
+            all.len(),
+            open_catalogue_toml_sources().len() + rows.len() + pg_books().len()
+        );
         let mut entry_ids: Vec<&str> = all.iter().map(|s| s.id.as_str()).collect();
         entry_ids.sort_unstable();
         let n = entry_ids.len();
@@ -936,6 +1164,73 @@ mod tests {
         assert_eq!(part.entry_id(), "tcp-k070362-001");
         assert_eq!(part.collection_name(), "ECCO-TCP");
         assert_eq!(TcpBook::id_of_url("https://example.org/A1/x/A1.xml"), None);
+    }
+
+    /// #345: every row of the Project Gutenberg collection is the posted HTML of its eBook on
+    /// PG's mirror, pinned, by contributors all dead by [`PG_LAST_DEATH_YEAR`]; the evidence
+    /// names the rule and PG's licence page; each makes a sound entry.
+    #[test]
+    fn pg_collection_rows_are_sound() {
+        let rows = parse_pg_books(PG_BOOKS_TSV).unwrap();
+        assert_eq!(pg_books(), rows.as_slice());
+        assert!(PG_BOOKS_TSV.starts_with(PG_BOOKS_HEADER));
+        let problems: Vec<String> = rows.iter().flat_map(PgBook::problems).collect();
+        assert!(problems.is_empty(), "{problems:#?}");
+        assert!(
+            rows.windows(2).all(|w| w[0].number < w[1].number),
+            "sorted by number, no repeats"
+        );
+        let evidence =
+            std::fs::read_to_string(data_dir().join("open-evidence/gutenberg.md")).unwrap();
+        assert!(evidence.contains(PG_EVIDENCE_URL));
+        assert!(evidence.contains("pg-books.tsv"));
+        assert!(evidence.contains(&PG_LAST_DEATH_YEAR.to_string()));
+        assert!(evidence.contains(PG_MIRROR));
+        for row in &rows {
+            let source = row.source();
+            assert_eq!(source.problems(), Vec::<String>::new(), "{}", row.number);
+            assert!(source.url.starts_with(PG_MIRROR));
+            assert!(source.collection);
+            assert_eq!(PgBook::from_tsv(&row.to_tsv()).as_ref(), Ok(row));
+        }
+    }
+
+    #[test]
+    fn a_pg_row_makes_an_entry_and_reads_back() {
+        assert_eq!(PgBook::folder(30449), "3/0/4/4/30449");
+        assert_eq!(PgBook::folder(7), "0/7");
+        assert_eq!(PgBook::folder(12), "1/12");
+        let row = PgBook {
+            number: 30449,
+            path: "3/0/4/4/30449/30449-h/30449-h.htm".into(),
+            sha256: "a".repeat(64),
+            bytes: 230_931,
+            language: "en".into(),
+            authors: "Moody, Dwight Lyman, 1837-1899".into(),
+            died: 1899,
+            title: "The Way to God and How to Find It".into(),
+        };
+        assert!(row.problems().is_empty(), "{:?}", row.problems());
+        let s = row.source();
+        assert_eq!(s.id, "pg-30449");
+        assert_eq!(s.author, "Dwight Lyman Moody");
+        assert_eq!(
+            s.url,
+            "https://gutenberg.pglaf.org/3/0/4/4/30449/30449-h/30449-h.htm"
+        );
+        assert_eq!(s.resource_type(), Some(ResourceType::Book));
+        assert_eq!(s.licence_class, LicenceClass::FreeToShare);
+        assert_eq!(PgBook::from_tsv(&row.to_tsv()), Ok(row.clone()));
+        // A translator is not the author; one who died too late refuses the row.
+        let mut t = row.clone();
+        t.authors = "Augustine, Saint, Bishop of Hippo, 354-430; Pusey, E. B. (Edward Bouverie), \
+                     1800-1882 [Translator]"
+            .into();
+        assert_eq!(t.author(), "Saint Augustine");
+        let mut late = row.clone();
+        late.died = 1960;
+        late.path = "3/0/4/4/30449/other.htm".into();
+        assert_eq!(late.problems().len(), 2, "{:?}", late.problems());
     }
 
     #[test]

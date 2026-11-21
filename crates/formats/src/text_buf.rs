@@ -80,6 +80,26 @@ impl TextBuf {
         self.spans.push((range, kind));
     }
 
+    /// Drop everything from `start` (a block's start, as [`Self::start_block`] returned it)
+    /// to the end, with the line break before it and the spans starting in it; the next text
+    /// starts a block.
+    pub fn truncate_to(&mut self, start: usize) {
+        let start = start.min(self.text.len());
+        let cut = if start > 0 && self.text.as_bytes()[start - 1] == b'\n' {
+            start - 1
+        } else {
+            start
+        };
+        self.text.truncate(cut);
+        self.spans.retain(|(r, _)| r.start < start);
+        for (r, _) in &mut self.spans {
+            r.end = r.end.min(self.text.len());
+        }
+        self.pending_space = false;
+        self.at_block_start = true;
+        self.tracked_end = self.tracked_end.min(self.text.len());
+    }
+
     /// Put the text in NFC where pieces pushed apart left it otherwise (a combining mark in
     /// an element of its own after its letter: TCP's `<g ref="char:cmbAbbrStroke">̄</g>`), and
     /// move the spans with it. Each letter is recomposed with the marks after it; an offset
