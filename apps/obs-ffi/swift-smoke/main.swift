@@ -19,7 +19,7 @@ print("engine \(engineVersion())")
 do {
     let paths = Paths(
         library: at("library"), userDb: at("user.db"), searchCache: at("search"),
-        aliasCache: at("aliases"), logs: at("logs"), downloads: at("downloads"))
+        aliasCache: at("aliases"), logs: at("logs"), downloads: at("downloads"), studySet: nil)
     let app = try MobileApp.boot(paths: paths, bundle: bundle)
     for problem in app.problems() {
         print("problem: \(problem)")

@@ -13,7 +13,14 @@ use obs_engine::Session;
 use obs_reading::{ReadingView, TonePalette};
 use obs_render::GlyphAtlas;
 
-pub use obs_reading::Tile;
+pub use obs_reading::{DocPos, Tile};
+
+mod text_view;
+pub use text_view::{
+    AROUND, AccessibilityItem, BAND, BookChapters, Choice, ContentRect, ReaderFrame,
+    StudySheetStub, TextSpan, TextUnitKind, TileKey, TilePlace, TimedTile,
+    text_size_for_content_size,
+};
 
 /// Where the Mobile app keeps its files. The shell picks them (on iOS, under Application
 /// Support) because the engine's desktop defaults (`obs_engine::default_library_dir`) do not
@@ -32,6 +39,10 @@ pub struct Paths {
     pub logs: PathBuf,
     /// Where finished downloads wait to be installed.
     pub downloads: PathBuf,
+    /// Prototype (plan S07), debug builds only: a Starter library folder (`dist/starter`)
+    /// whose Study set Resources are read in place, so the prototype has Hebrew and Strong's
+    /// tagging without the downloads S24 adds.
+    pub study_set: Option<PathBuf>,
 }
 
 /// The most device pixels a tile may have on a side. A tile is `width × height × 4` bytes
@@ -93,6 +104,12 @@ pub struct MobileApp {
     paths: Paths,
     session: Session,
     readers: Vec<ReadingView>,
+    /// What the text view keeps for each reader, by the same index (S07 prototype).
+    states: Vec<text_view::ReaderState>,
+    /// Bumped when every tile must be drawn again (S07 prototype).
+    epoch: u32,
+    /// Whether the system appearance is dark, for the Auto Page tone (S07 prototype).
+    dark: bool,
     atlas: GlyphAtlas,
     problems: Vec<String>,
 }
@@ -135,10 +152,16 @@ impl MobileApp {
             Err(e) => problems.push(format!("User database {}: {e}", paths.user_db.display())),
         }
         problems.extend(session.sync_starter_library(bundle).problems);
+        if let Some(dir) = &paths.study_set {
+            problems.extend(add_study_set(&mut session, dir));
+        }
         let mut app = Self {
             paths,
             session,
             readers: Vec::new(),
+            states: Vec::new(),
+            epoch: 0,
+            dark: false,
             atlas: GlyphAtlas::new(),
             problems,
         };
@@ -216,6 +239,7 @@ impl MobileApp {
         }
         let id = ReaderId(self.readers.len() as u32);
         self.readers.push(view);
+        self.states.push(text_view::ReaderState::new());
         Ok(id)
     }
 
@@ -259,6 +283,33 @@ impl MobileApp {
     }
 }
 
+/// Add the Study set Resources that `dir`'s `starter-manifest.json` lists to the library, read
+/// in place (S07 prototype: the debug Study set override). Returns what went wrong.
+#[cfg(not(target_arch = "wasm32"))]
+fn add_study_set(session: &mut Session, dir: &std::path::Path) -> Vec<String> {
+    let manifest = match std::fs::read_to_string(dir.join("starter-manifest.json")) {
+        Ok(json) => obs_engine::starter::StarterManifest::parse(&json),
+        Err(e) => Err(e.to_string()),
+    };
+    let manifest = match manifest {
+        Ok(m) => m,
+        Err(e) => return vec![format!("Study set {}: {e}", dir.display())],
+    };
+    let mut problems = Vec::new();
+    for item in &manifest.resources {
+        if item.mobile_set.as_deref() != Some("study")
+            || session.library.get(&item.resource_id).is_some()
+        {
+            continue;
+        }
+        let file = dir.join(format!("{}.obr", item.resource_id));
+        if let Err(e) = session.library.add_file(&file) {
+            problems.push(format!("{}: {e}", file.display()));
+        }
+    }
+    problems
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -276,6 +327,7 @@ mod tests {
             alias_cache: root.join("aliases"),
             logs: root.join("logs"),
             downloads: root.join("downloads"),
+            study_set: None,
         }
     }
 

@@ -26,6 +26,7 @@ fn paths(name: &str) -> (PathBuf, Paths) {
         alias_cache: at("aliases"),
         logs: at("logs"),
         downloads: at("downloads"),
+        study_set: None,
     };
     (root, paths)
 }

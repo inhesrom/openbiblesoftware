@@ -48,25 +48,92 @@ pub fn compose_tile(
     let visible = [top, top + height];
     for block in view.visible(top + height) {
         let origin = [left, block.top];
-        let (mut from, mut fresh) = (0, false);
-        loop {
-            let placed = atlas.quads_from(&block.laid, origin, scale, visible, from);
-            composite_over(&mut rgba, &placed.quads, atlas, &colours, rect, scale);
-            match placed.resume {
-                // An empty atlas that cannot take the next glyph never will: leave it out.
-                Some(next) if !(fresh && next == from) => {
-                    atlas.start_over();
-                    (from, fresh) = (next, true);
-                }
-                _ => break,
-            }
-        }
+        draw_block(
+            &mut rgba,
+            atlas,
+            &colours,
+            &block.laid,
+            origin,
+            visible,
+            rect,
+            scale,
+        );
     }
     let (w, h) = tile_size(rect, scale);
     Tile {
         width: w as u32,
         height: h as u32,
         rgba,
+    }
+}
+
+/// The band `[band_top, band_top + height)` (points below the block's top) of block `index`
+/// of `view`'s page, `page_width` points wide, at `scale` device px per point, in `palette`'s
+/// colours. A shell's tile cache keys tiles by block and band (plan S07), so a tile costs one
+/// block's layout and the band's pixels wherever the block is in the document, where
+/// [`compose_tile`] lays out everything from the view's top down. `None`: no such block.
+#[allow(clippy::too_many_arguments)]
+pub fn compose_block_tile(
+    view: &mut ReadingView,
+    atlas: &mut GlyphAtlas,
+    palette: &TonePalette,
+    page_width: f32,
+    index: usize,
+    band_top: f32,
+    height: f32,
+    scale: f32,
+) -> Option<Tile> {
+    let (left, measure) = text_column(view, page_width);
+    view.set_width(measure);
+    let laid = view.laid(index)?;
+    let rect = [0.0, band_top, page_width, band_top + height];
+    let colours = palette.role_colours();
+    let mut rgba = composite(&[], atlas, &colours, rect, scale);
+    let visible = [band_top, band_top + height];
+    draw_block(
+        &mut rgba,
+        atlas,
+        &colours,
+        &laid,
+        [left, 0.0],
+        visible,
+        rect,
+        scale,
+    );
+    let (w, h) = tile_size(rect, scale);
+    Some(Tile {
+        width: w as u32,
+        height: h as u32,
+        rgba,
+    })
+}
+
+/// Draw the glyphs of `laid` (its top-left at `origin`) on the lines reaching into `visible`
+/// over the tile `rect`'s pixels. When the atlas fills, it starts over between parts, so
+/// every glyph is drawn.
+#[allow(clippy::too_many_arguments)]
+fn draw_block(
+    rgba: &mut [u8],
+    atlas: &mut GlyphAtlas,
+    colours: &obs_render::RoleColours,
+    laid: &obs_layout::LaidBlock,
+    origin: [f32; 2],
+    visible: [f32; 2],
+    rect: [f32; 4],
+    scale: f32,
+) {
+    let (mut from, mut fresh) = (0, false);
+    loop {
+        let placed = atlas.quads_from(laid, origin, scale, visible, from);
+        composite_over(rgba, &placed.quads, atlas, colours, rect, scale);
+        match placed.resume {
+            // An empty atlas that cannot take the next glyph never will: leave it out.
+            Some(next) if !(fresh && next == from) => {
+                atlas.start_over();
+                (from, fresh) = (next, true);
+            }
+            _ => break,
+        }
     }
 }
 
@@ -166,6 +233,45 @@ mod tests {
         let row = (tall.width * 4) as usize;
         assert_eq!(&tall.rgba[..200 * row], &upper.rgba[..]);
         assert_eq!(&tall.rgba[200 * row..], &lower.rgba[..]);
+    }
+
+    #[test]
+    fn a_block_tile_costs_one_blocks_layout_wherever_the_block_is() {
+        let mut view = john_1();
+        let mut atlas = GlyphAtlas::new();
+        let p = TonePalette::PAPER;
+        let last = view.doc.blocks.len() - 1;
+        // At the page's width already (a new width lays the view's top out again).
+        compose_block_tile(&mut view, &mut atlas, &p, 390.0, 0, 0.0, 10.0, 3.0).unwrap();
+        let before = view.layouts;
+        let tile = compose_block_tile(&mut view, &mut atlas, &p, 390.0, last, 0.0, 64.0, 3.0)
+            .expect("the last block");
+        assert_eq!(view.layouts - before, 1, "only the last block is laid out");
+        assert_eq!((tile.width, tile.height), (1170, 192));
+        let block = view.laid(0).expect("the first block");
+        // Bands of one block stack into the whole block.
+        let whole = compose_block_tile(&mut view, &mut atlas, &p, 390.0, 0, 0.0, block.height, 2.0)
+            .unwrap();
+        let mut stacked = Vec::new();
+        let mut top = 0.0;
+        while top < block.height {
+            let h = (block.height - top).min(25.0);
+            let band =
+                compose_block_tile(&mut view, &mut atlas, &p, 390.0, 0, top, h, 2.0).unwrap();
+            stacked.extend(band.rgba);
+            top += h;
+        }
+        assert!(
+            stacked == whole.rgba,
+            "the bands differ from the whole block"
+        );
+        assert!(
+            whole.rgba.as_chunks::<4>().0.iter().any(|c| *c != page(&p)),
+            "no text"
+        );
+        assert!(
+            compose_block_tile(&mut view, &mut atlas, &p, 390.0, last + 1, 0.0, 9.0, 1.0).is_none()
+        );
     }
 
     #[test]
