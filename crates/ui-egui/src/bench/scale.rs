@@ -913,7 +913,7 @@ fn get_resources(b: &mut ShellBench, cfg: &BenchConfig) -> Result<(Vec<f64>, Sam
         &json!({ "type": "all", "split": true }),
     )?;
     b.time_tab(tab);
-    let hint = "Search by name or abbreviation";
+    let hint = "Search by name, author or abbreviation";
     b.wait("the catalog", |b| {
         b.shell.session().get_bibles.catalog().is_some() && b.has_text(hint)
     })?;

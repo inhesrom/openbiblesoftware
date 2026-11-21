@@ -119,6 +119,14 @@ fn get_resources_books(h: &mut Harness) {
     h.frames(4);
 }
 
+/// Get Resources' Books searched by author (#345, ADR 0024): the TCP collection's rows, each
+/// with its author and date.
+fn get_resources_books_by_author(h: &mut Harness) {
+    run_split(h, "library.get_resources", json!({ "type": "books" }));
+    h.shell.st.get_bibles_ui.query = "Richard Sibbes".into();
+    h.frames(4);
+}
+
 /// Get Resources with every Resource listed, longer than its Panel, the pointer over the list
 /// so its scroll bar shows.
 fn get_resources_all(h: &mut Harness) {
@@ -171,6 +179,11 @@ pub(super) fn library_wording() -> Vec<Overlay> {
                 .iter()
                 .any(|t| t.starts_with("OPEN CATALOGUE · 10"))
         }),
+        (
+            "Get Resources: Books by an author",
+            get_resources_books_by_author,
+            |h| h.texts().iter().any(|t| t.starts_with("ALL BOOKS ·")),
+        ),
         (
             "Get Resources: rows beside the scroll bar",
             get_resources_all,

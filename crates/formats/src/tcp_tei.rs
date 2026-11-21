@@ -55,7 +55,7 @@ pub struct TeiBookOptions {
     pub title: String,
     /// Empty: the TCP id.
     pub abbreviation: String,
-    /// BCP 47; empty: `en`.
+    /// BCP 47; empty: the header's (`langUsage`), else `en`.
     pub language: String,
     /// File name shown in About and the report.
     pub source_file: String,
@@ -70,10 +70,41 @@ pub struct TeiHeader {
     pub author: String,
     /// The source edition's date ("1668").
     pub date: String,
-    /// The TCP id (`A53715`).
+    /// The TCP id (`A53715`, `K027775.000`): `idno type="TCP"`, else `type="DLPS"`.
     pub id: String,
     /// The file's `<availability>` statement, whitespace collapsed.
     pub availability: String,
+    /// BCP 47, from `profileDesc/langUsage/language/@ident` (`eng` → `en`, `wel` → `cy`,
+    /// `lat` → `la`); `en` when the header names none.
+    pub language: String,
+}
+
+/// A TEI header's language code (ISO 639-2, as TCP writes it) as BCP 47.
+fn bcp47(code: &str) -> String {
+    let code = code.trim().to_ascii_lowercase();
+    let mapped = match code.as_str() {
+        "eng" => "en",
+        "wel" | "cym" => "cy",
+        "lat" => "la",
+        "fre" | "fra" => "fr",
+        "ger" | "deu" => "de",
+        "dut" | "nld" => "nl",
+        "ita" => "it",
+        "spa" => "es",
+        "gle" => "ga",
+        "gla" => "gd",
+        // TCP's Greek is ancient.
+        "gre" | "grc" => "grc",
+        "heb" => "he",
+        _ => "",
+    };
+    if !mapped.is_empty() {
+        mapped.to_string()
+    } else if (2..=3).contains(&code.len()) && code.bytes().all(|b| b.is_ascii_lowercase()) {
+        code
+    } else {
+        "en".to_string()
+    }
 }
 
 fn child<'a, 'i>(node: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
@@ -124,31 +155,141 @@ pub fn tei_header(doc: &Document<'_>) -> TeiHeader {
             .unwrap_or_default()
     };
     let own_publication = file_desc.and_then(|f| child(f, "publicationStmt"));
-    let id = own_publication
-        .and_then(|p| {
+    // ECCO-TCP texts name their TCP id in `idno type="TCP"` (their DLPS id is a number).
+    let idno = |kind: &str| {
+        own_publication.and_then(|p| {
             p.children()
-                .find(|c| is_element(c, "idno") && c.attribute("type") == Some("DLPS"))
+                .find(|c| is_element(c, "idno") && c.attribute("type") == Some(kind))
         })
+    };
+    let id = idno("TCP")
+        .or_else(|| idno("DLPS"))
         .map(plain)
         .unwrap_or_default();
+    let language = child(header, "profileDesc")
+        .and_then(|p| child(p, "langUsage"))
+        .and_then(|l| child(l, "language"))
+        .and_then(|l| l.attribute("ident"))
+        .map_or_else(|| "en".to_string(), bcp47);
     TeiHeader {
         title: pick(title_stmt, "title"),
         author: pick(title_stmt, "author"),
         date: pick(bibl.and_then(|b| child(b, "publicationStmt")), "date"),
         id,
         availability: pick(own_publication, "availability"),
+        language,
     }
 }
 
-/// A TCP title cut at its first colon or semicolon ("Of the mortification of sin in believers:
-/// the 1. Necessity, …" → "Of the mortification of sin in believers").
+/// Parse `xml` as [`import_tcp_tei`] does (no DTD, the same limits).
+fn parse_tei(xml: &str) -> Result<Document<'_>, ImportError> {
+    if xml.len() > MAX_TEI_BYTES {
+        return Err(ImportError::TooLarge("TEI text".into()));
+    }
+    Document::parse_with_options(
+        xml,
+        ParsingOptions {
+            allow_dtd: false,
+            nodes_limit: MAX_NODES,
+            ..ParsingOptions::default()
+        },
+    )
+    .map_err(|e| ImportError::Xml(e.to_string()))
+}
+
+/// The header of the TCP text `xml`, read as an import reads it.
+pub fn read_tei_header(xml: &str) -> Result<TeiHeader, ImportError> {
+    Ok(tei_header(&parse_tei(xml)?))
+}
+
+/// Words that start a title page's subtitle or statement of responsibility, in the spellings
+/// of the time ("… contayning meditations", "… preached at Paul's Cross", "… by Richard
+/// Sibbes"). A title is cut at the first, when it is at least [`MIN_SHORT_TITLE`] bytes in.
+const TITLE_CUTS: &[&str] = &[
+    " / ",
+    " by ",
+    " wherein ",
+    " wherin ",
+    " whereunto ",
+    " whereby ",
+    " together with ",
+    " preached ",
+    " delivered ",
+    " deliuered ",
+    " published ",
+    " written ",
+    " being ",
+    " with an ",
+    " to which ",
+    " in which ",
+    " as it was ",
+    " set forth ",
+    " made by ",
+    " composed ",
+    " collected ",
+    " translated ",
+    " containing ",
+    " contayning ",
+    " conteining ",
+    " conteyning ",
+    " shewing ",
+    " shewinge ",
+    " declaring ",
+    " discouering ",
+    " discovering ",
+    " concerning ",
+    " touching ",
+    " opened ",
+    " explained ",
+    " handled ",
+    " in two ",
+    " in three ",
+    " in several ",
+    " in sundry ",
+    " divided into ",
+];
+/// A title keeps at least this many bytes before a cut.
+const MIN_SHORT_TITLE: usize = 20;
+/// A short title is cut, at a word, to about this many characters.
+const MAX_SHORT_TITLE: usize = 100;
+
+/// A TCP title as a short title. TCP transcribes the whole title page ("The bruised reede, and
+/// smoaking flax Some sermons contracted out of the 12. of Matth. 20. At the desire, and for
+/// the good of weaker Christians. By R. Sibbes"); it is cut at its first colon or semicolon,
+/// at the first of [`TITLE_CUTS`], or at a sentence's end (a full stop after a word of four or
+/// more letters and before a capital, so "Mr. Cotton" and "Matth. 20" go on), whichever comes
+/// first, then at a word to
+/// about [`MAX_SHORT_TITLE`] characters.
 pub fn short_title(full: &str) -> String {
-    let short = full
-        .find([':', ';'])
-        .map_or(full, |i| &full[..i])
+    let full = full.trim();
+    // ASCII lowercase keeps byte offsets.
+    let lower = full.to_ascii_lowercase();
+    let mut end = full.find([':', ';']).unwrap_or(full.len());
+    let from = (MIN_SHORT_TITLE..=full.len())
+        .find(|&i| full.is_char_boundary(i))
+        .unwrap_or(full.len());
+    for cut in TITLE_CUTS {
+        if let Some(i) = lower[from..].find(cut) {
+            end = end.min(from + i);
+        }
+    }
+    for (i, _) in full.match_indices(". ") {
+        let word = full[..i]
+            .rsplit(|c: char| !c.is_alphabetic())
+            .next()
+            .unwrap_or("");
+        let next = full[i + 2..].chars().next();
+        if word.chars().count() >= 4 && next.is_some_and(char::is_uppercase) {
+            end = end.min(i);
+            break;
+        }
+    }
+    let short = full[..end]
         .trim()
-        .trim_end_matches([',', '.']);
-    cut_at_word(short, MAX_TITLE_CHARS)
+        .trim_end_matches([',', '.', ';', ':'])
+        .trim();
+    let short = if short.is_empty() { full } else { short };
+    cut_at_word(short, MAX_SHORT_TITLE)
 }
 
 /// One Division: its title and the TEI nodes it is made of.
@@ -200,10 +341,29 @@ fn cut_at_word(text: &str, max: usize) -> String {
 /// inside them. Text outside any `div` is a Division named for where it is.
 fn divisions<'a, 'i>(text: Node<'a, 'i>) -> Vec<DivisionSource<'a, 'i>> {
     let mut out = Vec::new();
-    for part in text
-        .children()
-        .filter(|c| c.is_element() && matches!(c.tag_name().name(), "front" | "body" | "back"))
-    {
+    text_divisions(text, 0, &mut out);
+    out
+}
+
+/// The Divisions of one `<text>`. A `<group>` (several works printed together, each its own
+/// `<text>`), where a `<text>` or its `<front>`, `<body>` or `<back>` holds one, gives each
+/// of its texts' Divisions in turn.
+fn text_divisions<'a, 'i>(text: Node<'a, 'i>, depth: usize, out: &mut Vec<DivisionSource<'a, 'i>>) {
+    if depth > MAX_DEPTH {
+        return;
+    }
+    let group = |g: Node<'a, 'i>, out: &mut Vec<DivisionSource<'a, 'i>>| {
+        for t in g.children().filter(|c| is_element(c, "text")) {
+            text_divisions(t, depth + 1, out);
+        }
+    };
+    for part in text.children().filter(|c| {
+        c.is_element() && matches!(c.tag_name().name(), "front" | "body" | "back" | "group")
+    }) {
+        if is_element(&part, "group") {
+            group(part, out);
+            continue;
+        }
         let loose_title = match part.tag_name().name() {
             "front" => "Front matter",
             "back" => "Back matter",
@@ -211,6 +371,16 @@ fn divisions<'a, 'i>(text: Node<'a, 'i>) -> Vec<DivisionSource<'a, 'i>> {
         };
         let mut loose: Vec<Node<'a, 'i>> = Vec::new();
         for node in part.children().filter(Node::is_element) {
+            if is_element(&node, "group") {
+                if !loose.is_empty() {
+                    out.push(DivisionSource {
+                        title: loose_title.into(),
+                        nodes: std::mem::take(&mut loose),
+                    });
+                }
+                group(node, out);
+                continue;
+            }
             if !is_element(&node, "div") {
                 loose.push(node);
                 continue;
@@ -221,7 +391,7 @@ fn divisions<'a, 'i>(text: Node<'a, 'i>) -> Vec<DivisionSource<'a, 'i>> {
                     nodes: std::mem::take(&mut loose),
                 });
             }
-            split_div(node, &mut out);
+            split_div(node, out);
         }
         if !loose.is_empty() {
             out.push(DivisionSource {
@@ -230,7 +400,6 @@ fn divisions<'a, 'i>(text: Node<'a, 'i>) -> Vec<DivisionSource<'a, 'i>> {
             });
         }
     }
-    out
 }
 
 fn split_div<'a, 'i>(div: Node<'a, 'i>, out: &mut Vec<DivisionSource<'a, 'i>>) {
@@ -584,15 +753,7 @@ pub fn import_tcp_tei(
     if xml.len() > MAX_TEI_BYTES {
         return Err(ImportError::TooLarge(options.source_file.clone()));
     }
-    let doc = Document::parse_with_options(
-        xml,
-        ParsingOptions {
-            allow_dtd: false,
-            nodes_limit: MAX_NODES,
-            ..ParsingOptions::default()
-        },
-    )
-    .map_err(|e| ImportError::Xml(e.to_string()))?;
+    let doc = parse_tei(xml)?;
     let header = tei_header(&doc);
     let text = doc
         .root_element()
@@ -612,11 +773,11 @@ pub fn import_tcp_tei(
         .find(|a| !a.is_empty())
         .unwrap_or("TCP")
         .to_string();
-    let language = if options.language.is_empty() {
-        "en".to_string()
-    } else {
-        options.language.clone()
-    };
+    let language = [options.language.as_str(), header.language.as_str(), "en"]
+        .into_iter()
+        .find(|l| !l.is_empty())
+        .unwrap_or("en")
+        .to_string();
     let mut manifest = Manifest::new(
         &resource_id,
         &title,

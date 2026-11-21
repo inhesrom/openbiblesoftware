@@ -261,7 +261,11 @@ fn the_open_catalogue_lists_while_the_sword_catalog_is_not_loaded() {
         .unwrap();
     h.frames(3);
     assert!(h.shell.st.session.get_bibles.catalog().is_none());
-    let n = obs_engine::open_catalogue::open_sources().len();
+    // The hand-written entries; a source collection's rows are in All (ADR 0024).
+    let n = obs_engine::open_catalogue::open_sources()
+        .iter()
+        .filter(|o| !o.collection)
+        .count();
     assert!(
         h.find(&format!("OPEN CATALOGUE · {n}")).is_some(),
         "{:?}",

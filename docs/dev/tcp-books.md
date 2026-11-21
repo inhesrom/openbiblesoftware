@@ -8,7 +8,7 @@ file says so in its `<availability>`, and TCP's FAQ dates the releases (Evans 20
 Phase I 2015, Phase II 2020). They are the first source of historic Books in the Open
 catalogue: the originals, from their publisher, as #345 plans.
 
-## The pilot
+## Hand-written entries
 
 Ten texts, listed as Open catalogue entries with `type = "book"` and `importer = "tcp-tei"`
 (`crates/engine/data/open-catalogue.toml`), one shared evidence file
@@ -34,16 +34,43 @@ entry's: TCP's own titles are the title pages, a paragraph long. Get Resources' 
 (`ResourceFilter::Type(ResourceType::Book)`, `books` in commands) shows them in the Open
 catalogue section.
 
-To add one: find it in TCP's catalogue (`TCP.csv` in
-<https://github.com/textcreationpartnership/Texts>; its `Status` column predates the Phase II
-release and can still say "Restricted"), take the commit of its repository's default branch,
-download the file, check its `<availability>` is one of the two CC0 statements in the
-evidence file, and add the entry and a row of the evidence file's table. The
-`open_catalogue` tests check the entry; the live test below checks the download.
+The hand-written entries have curated titles (TCP's own are title pages, a paragraph long),
+author and date, and are the Open catalogue section of Get Resources' Books filter.
 
-At scale (thousands of texts chosen by their subject headings) a hand-written entry per text
-does not fit: that is #345's next step, a source collection with its own ADR and a generated
-manifest.
+## The TCP collection
+
+Every other TCP text the app offers is a row of `crates/engine/data/collections/tcp-books.tsv`,
+a source collection ([ADR 0024](../adr/0024-a-source-collection-is-a-generated-pinned-list-checked-when-a-text-is-added.md)):
+
+```text
+# id	commit	sha256	bytes	language	date	author	title	statement
+A00001	<40 hex>	<64 hex>	123456	en	1641.	Owen, John, 1616-1683.	A short title	cc0-phase1
+```
+
+`cargo xtask tcp-books` writes it (`xtask/src/tcp_books.rs`):
+
+- `--add ids.txt` adds TCP ids (one per line, `#` comments), each pinned at its repository's
+  current commit (`git ls-remote`, then the raw file with `curl`, cached under `--cache`,
+  default `target/tcp-books`, as `<id>-<commit>.xml`);
+- `--refresh` re-pins every row at its repository's current commit;
+- with neither, it checks every row again.
+
+A text is added only when its `<availability>`, read by `obs_formats::read_tei_header`, is one of
+`TCP_CC0_STATEMENTS` whitespace aside (`tcp_statement`), its header names the same id, and
+it imports as a Book with at least one Division; the rest are listed as left out. Rows are
+sorted by id, and a text a hand-written entry lists is skipped.
+
+The engine reads the file at build time (`open_catalogue::tcp_books`) and makes each row an
+entry (`TcpBook::source`): id `tcp-<id>` lowercased, its title, the author as a name
+(`display_author`: "Owen, John, 1616-1683." → "John Owen"), the date, the language, the TCP
+id as abbreviation, "Text Creation Partnership" as publisher, CC0 1.0, `open-evidence/tcp.md`
+as evidence and TCP's archived FAQ as `evidence_url`. Its rows are marked `collection`: Get
+Resources lists them in All Books, not in the Open catalogue section, and its search matches
+the author as well as the title.
+
+To find texts by subject, TCP's catalogue (`TCP.csv` in
+<https://github.com/textcreationpartnership/Texts>) has Library of Congress subject headings
+(`Terms`); its `Status` column predates the Phase II release and can still say "Restricted".
 
 ## The importer
 
@@ -80,5 +107,8 @@ Attribution and changes.
 - `open_catalogue_tests::a_tcp_book_downloads_by_its_pin_and_imports_as_a_book`: the Books
   filter, the download checked against the real pin, the Book in the Library, a changed file
   refused.
+- `open_catalogue::tests::tcp_collection_rows_are_sound` and `tcp_statements_match_the_files`:
+  every row of the collection, and the statements against real files.
 - Live, by hand: `cargo test -p openbible --release -- --ignored --nocapture
-  live_every_open_catalogue_entry` downloads every entry, the ten TCP texts among them.
+  live_every_open_catalogue_entry` downloads every hand-written entry and every 100th
+  collection row (all of them with `OBS_LIVE_ALL_COLLECTIONS=1`).

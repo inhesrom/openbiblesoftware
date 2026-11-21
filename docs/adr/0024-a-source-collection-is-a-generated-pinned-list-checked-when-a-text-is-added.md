@@ -1,0 +1,17 @@
+# A source collection is a generated list of one publisher's texts, each pinned and its licence checked when it is added
+
+The Open catalogue's hand-written entries (ADR 0008) suit a few dozen Resources, each with its own evidence file. The historic Books of #345 come in thousands: the Text Creation Partnership (TCP) alone has published some 60,000 early printed books, each in its own GitHub repository and each released under CC0. A **source collection** lists one publisher's texts in a generated data file instead, `crates/engine/data/collections/<name>.tsv`, one row per text, written by an xtask (`cargo xtask tcp-books` for TCP). A row pins the text exactly as an entry does: the publisher's own URL at a fixed commit and the file's sha256, so a download is refused unless it is the very file that was checked. The xtask adds a text only when the licence statement inside it is, whitespace aside, one of a short list of whole statements (`TCP_CC0_STATEMENTS`) that one evidence file quotes with its archived source, and when the text imports. A text with any other statement is left out; free text is never read for its meaning (ADR 0008). The engine turns each row into an ordinary entry ([`TcpBook::source`]), so download, check, import, the manifest's licence and Attribution, and Help → Credits work as for a hand-written entry. Get Resources lists a collection's rows in All, where the search (title, author) finds them, not in the Open catalogue section, which keeps the hand-written entries.
+
+## Considered Options
+
+- **Hand-write each text as an entry in `open-catalogue.toml`:** reviewable one at a time, but thousands of near-identical entries, each restating the same licence, Attribution and evidence, would bury the hand-written ones. An evidence file listing every text would run to thousands of lines and say nothing per text that the pin does not.
+- **List each repository's latest file, unpinned:** always current, but the app would import whatever is there, unchecked.
+- **One archive of all the texts, pinned once:** one check, but the download is no longer the publisher's file, and a single correction re-pins everything.
+- **A generated, pinned list per publisher, the licence statement checked whole when a text is added (chosen):** each download is still the publisher's file and still pinned. The licence is checked against the file itself, and one evidence file covers the statements the whole collection may carry.
+
+## Consequences
+
+- Adding texts is an xtask run and a reviewed data-file diff (`--add ids.txt`); `--refresh` re-pins every row at its repository's current commit. Rows are sorted by id, so a diff shows exactly what changed.
+- The `open_catalogue` tests check every row: a well-formed id, commit and sha256, a known statement code, a title, a valid Resource id, and that each row makes a sound entry. They also check that the evidence file quotes every statement and that no row repeats a hand-written entry.
+- Which texts a collection lists is a choice made when running the xtask; the repository records only the texts and their pins.
+- Another publisher becomes another collection with its own file, xtask, statements and evidence, once its files can be pinned and its licence read as whole statements.

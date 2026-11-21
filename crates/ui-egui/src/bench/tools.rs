@@ -752,9 +752,9 @@ pub(crate) fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
     b.time_tab(tab);
     b.wait("the catalog", |b| {
         b.shell.session().get_bibles.catalog().is_some()
-            && b.has_text("Search by name or abbreviation")
+            && b.has_text("Search by name, author or abbreviation")
     })?;
-    b.click_text("Search by name or abbreviation")?;
+    b.click_text("Search by name, author or abbreviation")?;
     let pane = b.pane(tab).ok_or("Get Resources is not drawn")?;
     let over = pos2(pane.center().x, pane.top() + pane.height() * 0.7);
     let mut s = Samples::default();
@@ -786,7 +786,7 @@ pub(crate) fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
             &mut s,
             ActionWork::Budgeted,
             |_| {},
-            |b| b.has_text("Search by name or abbreviation"),
+            |b| b.has_text("Search by name, author or abbreviation"),
         );
         s.settle.push(frames);
     }
