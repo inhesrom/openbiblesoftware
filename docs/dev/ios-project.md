@@ -105,12 +105,15 @@ a Bundled set that does not match the lock.
 (`workflow_dispatch`). `ci.yml` and `cargo xtask ci` are unchanged: nothing there needs macOS
 or Xcode. No device build, signing or upload (S33, S35). Its steps:
 
-1. **Select Xcode.** The workflow's `XCODE_VERSION` (`27.2`, S05's version) is matched against
-   the `CFBundleShortVersionString` of every `/Applications/Xcode*.app` the runner has (`27.2`
-   or `27.2.x`, the newest wins), and `DEVELOPER_DIR` is set to it for every later step and for
-   the run-script phase. The step lists what it found, and fails with "this runner image has no
-   Xcode 27.2" when none matches. **To bump Xcode:** change `XCODE_VERSION` and S05's Outcome
-   in `docs/plans/mobile-ios.md` together.
+1. **Select Xcode.** The workflow's `XCODE_VERSION` is matched against the
+   `CFBundleShortVersionString` of every `/Applications/Xcode*.app` the runner has (the version
+   itself or any `version.x`; the newest wins), and `DEVELOPER_DIR` is set to it for every later
+   step and for the run-script phase. The step lists what it found, and fails with "this runner
+   image has no Xcode …" when none matches. **It is `26`, not S05's 27.2:** GitHub has no macOS 27
+   image yet (`macos-latest` was `macos-26-arm64` with Xcode 26.0–26.6 on 2026-11-21), so CI
+   builds and tests with the newest Xcode 26.x, the previous SDK. Local work and release archives
+   (S34) stay on 27.2. **When a macOS 27 image ships,** set `runs-on` to it and `XCODE_VERSION`
+   to `27`.
 2. **Toolchain:** `rust-toolchain.toml`'s, plus `aarch64-apple-ios-sim` (CI builds the simulator
    slice only); `Swatinem/rust-cache`; `brew install xcodegen`.
 3. **Starter library, then the Bundled set.** It downloads the `starter-library` artifact of

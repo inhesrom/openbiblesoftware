@@ -35,9 +35,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The Xcode S05 recorded (docs/plans/mobile-ios.md, S05 Outcome). Bump it together with
-  # that Outcome; any 27.2.x on the runner matches.
-  XCODE_VERSION: "27.2"
+  # The owner's Mac and release builds use Xcode 27.2 (S05 Outcome), but GitHub has no macOS 27
+  # image yet: macos-latest is macos-26-arm64 with Xcode 26.x (checked 2026-11-21). CI therefore
+  # builds and tests with the newest Xcode 26.x, which also proves the app still builds with the
+  # previous SDK (it targets iOS 17). Move this to "27" when a macOS 27 image ships.
+  XCODE_VERSION: "26"
   # The simulator S06 and S07 tested on; another iPhone on the same iOS is used, with a
   # warning, when the image has no device of this name.
   SIMULATOR: iPhone 17
