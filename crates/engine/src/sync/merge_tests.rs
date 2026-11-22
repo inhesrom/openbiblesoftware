@@ -1805,6 +1805,60 @@ fn an_own_items_re_add_comes_after_the_version_it_keeps_so_a_later_base_keeps_it
     converged(&[&z, &b]);
 }
 
+/// A delete with no `before` (a snapshot's tombstone, merged by key) that covers this device's
+/// own item's clock had seen it, so it deletes it; one covering another version keeps the own
+/// item, recorded again (D6's unseen delete). The root of the merge property test's seed
+/// 3146456: a restored device met such a delete in a snapshot before its old id's files, kept
+/// the item the old id had deleted, at a new clock, and that beat the old id's later item of
+/// its name (a restore now merges the old id's files first, so the shrunk sequence,
+/// `lifecycle_tests::a_snapshots_delete_covering_this_devices_own_item_deletes_it`, no longer
+/// reaches this check).
+#[test]
+fn a_delete_with_no_before_covering_this_devices_own_item_deletes_it() {
+    let dir = Dir::new("delete-no-before");
+    let a = device(&dir, "a");
+    let key = "library.collections";
+    a.user
+        .set_preference(key, r#"[{"name":"Greek","n":1},{"name":"Read","n":2}]"#)
+        .unwrap();
+    let (greek, read) = (
+        RowKey::Collection("Greek".into()),
+        RowKey::Collection("Read".into()),
+    );
+    let (g, r) = (a.clock(&greek).unwrap(), a.clock(&read).unwrap());
+    let other = new_id();
+    let delete = |covers: Hlc| Op {
+        device: other.clone(),
+        clock: Hlc {
+            wall_ms: covers.wall_ms + 10,
+            counter: 0,
+            device_id: other.clone(),
+        },
+        before: None,
+        after: None,
+        before_clock: Some(covers),
+        absent: Vec::new(),
+    };
+    let another = Hlc {
+        wall_ms: r.wall_ms + 1,
+        counter: 0,
+        device_id: other.clone(),
+    };
+    let mut recorded = super::merge::Recorded::default();
+    a.user
+        .merge_held(|tx| {
+            super::merge::merge_keyed(tx, &delete(g), &greek, &[], &mut recorded)?;
+            super::merge::merge_keyed(tx, &delete(another), &read, &[], &mut recorded)?;
+            Ok::<(), super::merge::MergeError>(())
+        })
+        .unwrap();
+    assert_eq!(recorded.items_kept, 1, "{recorded:?}");
+    assert_eq!(
+        a.user.preference(key).unwrap().as_deref(),
+        Some(r#"[{"name":"Read","n":2}]"#)
+    );
+}
+
 #[test]
 fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
     let dir = Dir::new("held");
