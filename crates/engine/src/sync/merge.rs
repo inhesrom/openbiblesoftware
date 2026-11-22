@@ -273,7 +273,7 @@ fn retry_one(
 
 /// Try every held op again, in one transaction (nothing when none is held).
 fn retry_held(user: &UserStore, report: &mut MergeReport) -> Result<(), SyncError> {
-    if user.sync_held()?.is_empty() {
+    if !user.has_sync_held()? {
         return Ok(());
     }
     let mut recorded = Recorded::default();

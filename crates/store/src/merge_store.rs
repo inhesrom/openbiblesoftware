@@ -431,9 +431,26 @@ impl MergeTx<'_> {
     }
 
     /// Keep `op` in `sync_held`, to be tried again at the next sync (an op held again
-    /// replaces itself).
+    /// replaces itself). Of a row's held writes only the newest is kept: it supersedes the
+    /// older by last writer wins once it applies, so a row a later app keeps writing holds one
+    /// op, not one per write. A held delete is always kept (it notes its tombstone when it
+    /// applies), and so is a write whose op line lacked fields (the older write may hold them).
     pub fn hold(&mut self, op: &HeldOp) -> Result<(), StoreError> {
         let (kind, id) = held_key(&op.change);
+        if op.change.after.is_some() && op.absent.is_empty() {
+            for other in read_held_of(self.tx, kind, &id)? {
+                if other.change.after.is_none() || other.clock == op.clock {
+                    continue;
+                }
+                if other.clock > op.clock {
+                    if other.absent.is_empty() {
+                        return Ok(());
+                    }
+                } else {
+                    self.unhold(&other)?;
+                }
+            }
+        }
         let change = serde_json::to_string(&HeldChange {
             before: op.change.before.clone(),
             after: op.change.after.clone(),
@@ -645,6 +662,40 @@ impl MergeTx<'_> {
     }
 }
 
+/// The ops held in `sync_held` for the row `kind` / `id` names, by clock.
+fn read_held_of(c: &Connection, kind: &str, id: &str) -> Result<Vec<HeldOp>, StoreError> {
+    let rows: Vec<(String, String)> = c
+        .prepare_cached(
+            "SELECT clock, change FROM sync_held WHERE row_table = ?1 AND row_id = ?2
+             ORDER BY clock",
+        )
+        .and_then(|mut s| {
+            s.query_map(params![kind, id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect()
+        })
+        .map_err(sql)?;
+    rows.into_iter()
+        .map(|(clock, change)| held_from(&clock, &change))
+        .collect()
+}
+
+/// A `sync_held` row's op, from its `clock` and `change` columns.
+fn held_from(clock: &str, change: &str) -> Result<HeldOp, StoreError> {
+    let held: HeldChange =
+        serde_json::from_str(change).map_err(|e| StoreError::Corrupt(format!("a held op: {e}")))?;
+    Ok(HeldOp {
+        clock: Hlc::parse(clock)
+            .ok_or_else(|| StoreError::Corrupt(format!("held clock `{clock}`")))?,
+        change: Change {
+            before: held.before,
+            after: held.after,
+        },
+        before_clock: held.before_clock,
+        absent: held.absent,
+        why: held.why,
+    })
+}
+
 /// The ops held in `sync_held`, by clock: all, or those of list preference `list`'s items.
 fn read_held(c: &Connection, list: Option<&str>) -> Result<Vec<HeldOp>, StoreError> {
     let (kind, prefix) = match list.map(ListPreference::of_key) {
@@ -667,21 +718,7 @@ fn read_held(c: &Connection, list: Option<&str>) -> Result<Vec<HeldOp>, StoreErr
         })
         .map_err(sql)?;
     rows.into_iter()
-        .map(|(clock, change)| {
-            let held: HeldChange = serde_json::from_str(&change)
-                .map_err(|e| StoreError::Corrupt(format!("a held op: {e}")))?;
-            Ok(HeldOp {
-                clock: Hlc::parse(&clock)
-                    .ok_or_else(|| StoreError::Corrupt(format!("held clock `{clock}`")))?,
-                change: Change {
-                    before: held.before,
-                    after: held.after,
-                },
-                before_clock: held.before_clock,
-                absent: held.absent,
-                why: held.why,
-            })
-        })
+        .map(|(clock, change)| held_from(&clock, &change))
         .collect()
 }
 
@@ -714,6 +751,16 @@ impl UserStore {
             return Ok(Vec::new());
         }
         read_held(&self.conn, None)
+    }
+
+    /// Whether any op of another device is held here (`sync_held` is not empty).
+    pub fn has_sync_held(&self) -> Result<bool, StoreError> {
+        if self.schema_version()? < HELD_SCHEMA {
+            return Ok(false);
+        }
+        self.conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM sync_held)", [], |r| r.get(0))
+            .map_err(sql)
     }
 
     /// Try the held ops again with `merge` ([`MergeTx::held`], [`MergeTx::unhold`]), in one

@@ -414,7 +414,12 @@ parent first: `merge_tests::a_child_of_a_held_parent_is_held_too_and_applies_aft
 any other op this build refuses (`StoreError::Rejected` or `Conflict`).
 `merge_folder` tries every held op again at its start and end, and a whole value that puts a
 list in shape tries that list's at once; one that applies, or that a later write supersedes
-(it lost by last writer wins), leaves `sync_held`. `UserStore::sync_held()` lists them for
+(it lost by last writer wins), leaves `sync_held`. Of a row's held writes only the newest is
+kept (`MergeTx::hold`: it supersedes the older once it applies, so a later app writing its own
+setting again and again holds one op, not one per write); held deletes are all kept, and so is a
+write whose line lacked fields
+(`merge_tests::of_a_rows_held_writes_only_the_newest_is_kept`). `merge_folder` skips the
+retries when nothing is held (`UserStore::has_sync_held`, one `EXISTS`). `UserStore::sync_held()` lists them for
 Needs attention (S29, S30). The held ops are this device's own record, not Synced data: two
 devices can hold different ops for the same state (one that merged an item before a damaged
 base and one after hold the same; one that merged a delete of it too holds none). Their clocks

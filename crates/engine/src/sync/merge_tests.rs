@@ -1596,6 +1596,80 @@ fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
     );
 }
 
+/// A later app writing its own synced preference again and again: only its newest held
+/// write is kept (it supersedes the older once it applies), in either order of holding; a
+/// held delete is kept beside it (the S28b-2 review's P2-5).
+#[test]
+fn of_a_rows_held_writes_only_the_newest_is_kept() {
+    let dir = Dir::new("held-newest");
+    let later = new_id();
+    let now = u64::try_from(obs_store::clock::now_ms()).unwrap();
+    let key = "study.later_app_setting";
+    let value = |v: &str| {
+        Some(Row::Preference(obs_store::SyncedPreference {
+            key: key.into(),
+            value: v.into(),
+        }))
+    };
+    let op = |counter, before, after| Op {
+        device: later.clone(),
+        clock: Hlc {
+            wall_ms: now,
+            counter,
+            device_id: later.clone(),
+        },
+        before,
+        after,
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    let ops = [
+        op(0, None, value("1")),
+        op(1, value("1"), value("2")),
+        op(2, value("2"), None),
+        op(3, None, value("3")),
+    ];
+    let b = device(&dir, "b");
+    let cloud = MemSyncFolder::new();
+    cloud.put(&op_file_path(&later, 1), &encode_op_file(&ops).unwrap());
+    let report = b.sync(&cloud);
+    // The delete of a row not here is only noted in its tombstone.
+    assert_eq!(report.outcomes.get(&Outcome::Held), Some(&3), "{report:?}");
+    let held: Vec<(u16, bool)> = b
+        .user
+        .sync_held()
+        .unwrap()
+        .iter()
+        .map(|h| (h.clock.counter, h.change.after.is_some()))
+        .collect();
+    assert_eq!(held, [(3, true)], "the newest write");
+    // Held in the other order (as a device holds them that met another's files first): an
+    // older write is not kept beside a newer one, and a held delete is kept.
+    let c = device(&dir, "c");
+    c.user
+        .merge_held(|tx| {
+            for op in ops.iter().rev() {
+                tx.hold(&obs_store::HeldOp {
+                    clock: op.clock.clone(),
+                    change: op.change(),
+                    before_clock: None,
+                    absent: Vec::new(),
+                    why: "held".into(),
+                })?;
+            }
+            Ok::<(), obs_store::StoreError>(())
+        })
+        .unwrap();
+    let held: Vec<u16> = c
+        .user
+        .sync_held()
+        .unwrap()
+        .iter()
+        .map(|h| h.clock.counter)
+        .collect();
+    assert_eq!(held, [2, 3]);
+}
+
 #[test]
 fn an_own_op_file_or_one_out_of_order_is_not_merged() {
     let dir = Dir::new("refuse");
