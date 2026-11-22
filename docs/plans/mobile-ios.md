@@ -71,7 +71,7 @@ to Claude Opus 5.5 later on".
 | S28b-2 | Sync 2b-2 (Rust): Note-text Sync conflicts, deleted parents, list items of one name, a list's whole value | AFK | n | S28b-1 | `conflict_of`, parent rows in tombstones, `sync_held`, wider property tests | done (PR #402) |
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | done (PR #404) |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | done (PR #407) |
-| S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | done (branch mobile/s29b-sync-off-ui, PR pending) |
+| S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | done (PR #408) |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 (ships after S29b) | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S30 | test report, folder list for onboarding | todo |
 | S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
@@ -2162,7 +2162,7 @@ under the half they belong to.
   or the snapshot, so an edit made during that first join waits that long on the UI thread
   (over the supervisor's ~100 ms line: a follow-up note in `sync.md` "For later steps",
   "Split the largest merge transactions"); the result's frame 4.5–7.6 ms. **Tests:** store
-  4 (two connections on two threads with the wall clock still hand out 400 clocks once each,
+  5 (two connections on two threads with the wall clock still hand out 400 clocks once each,
   increasing, the UI's next passing one the worker observed, failing without the shared
   clock or with deferred transactions; a new id taken on the worker is the UI's next clock's;
   a second connection refused at another schema or with no database; refused writes commit
@@ -2184,6 +2184,51 @@ under the half they belong to.
   gallery` green with no golden changed; `cargo xtask ci` green (10 m 23 s; 2,467 tests passed, 44 ignored; fmt, layers, assets,
   licenses, clippy, a11y, test, wasm). S30's entry now says how
   iOS plugs in ("Added by S29b").
+- **Review fixes (S29b review, 2026-11-22):** **Fixed:** a Stop syncing or Choose folder
+  waiting for a sync when a restore starts is no longer undone or lost: `sync_before_restore`
+  reads the Sync folder after its waits, runs no sync first once that stopped syncing, and
+  carries an action still waiting for an abandoned sync across the restore, applying it after
+  `attach_user` (or after a failed restore); an edit made while a snapshot is due (`sync_now`
+  between `snapshot_due` and the write) skips the snapshot rather than failing the sync with
+  "Could not reach the Sync folder" (`write_snapshot_unless_edited`, which checks the outbox
+  again after its copy too); **Stop syncing no longer waits on a worker that does not finish**
+  (supervisor decision): after `STOP_SYNC_WAIT` (10 s) it abandons the worker (its writes
+  refused, its folder refusing) and stops; `RESTORE_SYNC_UNFINISHED` moved into `sync::texts`,
+  and a restore that fails after abandoning its sync says `RESTORE_FAILED_SYNC_UNFINISHED`
+  rather than "the restore went ahead"; a worker keeps the fixed clock of the thread that
+  starts it, so the gallery's "just now" reads the gallery's time, not the worker's real
+  clock rounded up; the frame's sync comments in `sync_ui.rs` and `shell.rs`. `sync.md`: an
+  edit made during a sync is never lost, and is refused (to be redone) only when the same row
+  changed on another device meanwhile, the Note editor turning that into a Sync conflict's
+  copy; a Backup taken during a sync restarts at each of the worker's commits, and the
+  worker's snapshot copy at each edit; Stop syncing's bound; "Split the largest merge
+  transactions" names the `BUSY_TIMEOUT` refusal risk ("database is locked" past 10 s, also
+  for the restore's copy behind an abandoned worker's transaction) as well as the stall.
+  **User-visible changes, for the PR's `ui-review` (ADR 0020; gallery goldens unchanged):**
+  the restore prompt is hidden while Catch up or Replace runs, "Syncing…" in its place, and
+  comes back when the choice could not reach the folder; Settings → Sync and the indicator
+  show "Syncing…" while Stop syncing or Choose folder waits for a sync (Stop syncing at most
+  10 s); new Details texts `texts::RESTORE_SYNC_UNFINISHED` ("The sync before the restore did
+  not finish in time, so the restore went ahead without it; the Safety backup holds the edits
+  it had not written.") and `texts::RESTORE_FAILED_SYNC_UNFINISHED` ("The sync before the
+  restore did not finish in time and was stopped."); a restore choice that fails shows in
+  Settings → Sync's status (and the prompt returns) instead of a command error. **Measured**
+  (three runs, as above): the frame after the result's, where the views read again what moved
+  `annotations_revision` (`MarkCache`'s reads, the Notes Tool's cards, Needs attention's
+  count), 0.9–1.2 ms after the 1,000-file catch-up but **17–24 ms after a 10,000-Note join**
+  (the same reads as after any Annotation edit there; a note in `sync.md` "For later steps");
+  the rest as above (10,000-Note join edits 0.74–0.85 s). **Tests:** engine 5 more (a waiting
+  Stop syncing stays applied across a restore, whether the held sync ends in the wait or is
+  abandoned; the same for Choose folder; Stop syncing abandons a held sync after its wait and
+  stops, the sync let go writing nothing; an edit made while `snapshot_due` reads the
+  device's snapshot skips the snapshot, not the sync; a worker syncs on the Session thread's
+  fixed clock), each failing without its fix. **Verified:** `cargo test -p obs-store
+  --all-features`; `cargo test -p obs-engine --lib sync` (99 passed); `cargo test -p
+  obs-ui-egui sync` (6 passed); the merge property tests at the default seed, 1,000 and 10,000
+  cases, green (245 s); `cargo xtask sync-e2e` green; `cargo xtask gallery` green, no golden
+  changed; `cargo xtask ci` green (8 m 28 s; 2,472 tests passed, 44 ignored; fmt, layers,
+  assets, licenses, clippy, a11y, test, wasm).
+
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
 - **Goal:** the iPhone joins a Sync folder through the document picker; every rule stays in Rust.

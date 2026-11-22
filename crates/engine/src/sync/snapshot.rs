@@ -118,23 +118,47 @@ pub struct SnapshotFile {
     pub bytes: Vec<u8>,
 }
 
+/// Write a snapshot as [`write_snapshot`] does, unless an edit made since the sync wrote its
+/// op files put an op in the outbox (the user edits while the sync runs on its worker, plan
+/// S29b): then none is written (`None`), and it is due at a later sync.
+pub fn write_snapshot_unless_edited(
+    user: &UserStore,
+    folder: &dyn SyncFolder,
+) -> Result<Option<u64>, SyncError> {
+    let Some(file) = snapshot_file_unless_edited(user)? else {
+        return Ok(None);
+    };
+    put_snapshot(folder, &user.device_id()?, &file)?;
+    Ok(Some(file.seq))
+}
+
 /// This device's snapshot now ([`write_snapshot`] writes it): it must record ops and have
 /// nothing in its outbox.
 pub fn snapshot_file(user: &UserStore) -> Result<SnapshotFile, SyncError> {
+    snapshot_file_unless_edited(user)?.ok_or_else(|| {
+        StoreError::Rejected("a snapshot is written only once every op is in an op file".into())
+            .into()
+    })
+}
+
+/// This device's snapshot now, or `None` when its outbox has ops.
+fn snapshot_file_unless_edited(user: &UserStore) -> Result<Option<SnapshotFile>, SyncError> {
     let device = user.device_id()?;
     if !user.records_ops()? {
         return Err(StoreError::Rejected("this device does not record ops".into()).into());
     }
     if user.has_pending_ops()? {
-        return Err(StoreError::Rejected(
-            "a snapshot is written only once every op is in an op file".into(),
-        )
-        .into());
+        return Ok(None);
     }
     let seq = user.applied_up_to(&device)?;
     let bytes = user.snapshot_bytes()?;
+    // An edit committed while the copy was made may be in it, its op not in an op file. Only
+    // the sync running empties the outbox, so one empty now was empty at the copy.
+    if user.has_pending_ops()? {
+        return Ok(None);
+    }
     let name = snapshot_file_name(seq, &crate::starter::sha256_hex(&bytes));
-    Ok(SnapshotFile { seq, name, bytes })
+    Ok(Some(SnapshotFile { seq, name, bytes }))
 }
 
 /// Write `device`'s snapshot `file` to `folder` (unless it is there with its bytes: one of

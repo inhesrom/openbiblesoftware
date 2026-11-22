@@ -30,7 +30,7 @@ use crate::session::Session;
 use crate::sync::SyncSchedule;
 use crate::sync::texts;
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::sync_worker::RESTORE_SYNC_WAIT;
+pub use crate::sync_worker::{RESTORE_SYNC_WAIT, STOP_SYNC_WAIT};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::sync_worker::{SyncOutcome, SyncTask, SyncWorker};
 
@@ -40,10 +40,6 @@ pub const SYNC_FOLDER_PREF: &str = "sync.folder";
 
 /// The platform this build is for, as `device.json` names it.
 pub const PLATFORM: &str = std::env::consts::OS;
-
-/// Why the last sync failed when a restore did not wait for it (its Details).
-const RESTORE_SYNC_UNFINISHED: &str = "The sync before the restore did not finish in time, so \
-     the restore went ahead without it; the Safety backup holds the edits it had not written.";
 
 /// How often, in milliseconds, the frames look for the result of a sync running on its worker.
 pub(crate) const SYNC_POLL_MS: i64 = 50;
@@ -63,7 +59,21 @@ enum Phase {
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 enum Deferred {
     ChooseFolder(PathBuf),
-    StopSyncing,
+    /// Pressed then: after [`STOP_SYNC_WAIT`] the sync is abandoned and it stops.
+    StopSyncing(std::time::Instant),
+}
+
+/// What a restore keeps of the sync before it ([`Session::sync_before_restore`]) and gives
+/// back after it ([`Session::after_restore_sync`]).
+#[derive(Debug)]
+pub(crate) struct SyncBeforeRestore {
+    /// This device's Sync folder preference as the sync left it, which the restore puts back.
+    pub(crate) folder: String,
+    /// The sync was still running when the restore stopped waiting, and was abandoned.
+    unfinished: bool,
+    /// Choose folder or Stop syncing, waiting for that abandoned sync: it applies after the
+    /// restore.
+    deferred: Option<Deferred>,
 }
 
 /// How the last sync ended (none syncs on wasm).
@@ -117,6 +127,9 @@ pub struct SessionSync {
     /// less).
     #[cfg(not(target_arch = "wasm32"))]
     restore_wait: std::time::Duration,
+    /// How long Stop syncing waits for the sync running ([`STOP_SYNC_WAIT`]; tests wait less).
+    #[cfg(not(target_arch = "wasm32"))]
+    stop_wait: std::time::Duration,
     /// The Sync folder tests give the worker instead of the one at [`SessionSync::folder`].
     #[cfg(all(test, not(target_arch = "wasm32")))]
     test_folder: Option<TestFolder>,
@@ -156,6 +169,8 @@ impl Default for SessionSync {
             deferred: None,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: RESTORE_SYNC_WAIT,
+            #[cfg(not(target_arch = "wasm32"))]
+            stop_wait: STOP_SYNC_WAIT,
             #[cfg(all(test, not(target_arch = "wasm32")))]
             test_folder: None,
         }
@@ -291,6 +306,12 @@ impl Session {
         self.sync.restore_wait = wait;
     }
 
+    /// Have Stop syncing wait `wait` for the sync running rather than [`STOP_SYNC_WAIT`].
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn set_stop_sync_wait(&mut self, wait: std::time::Duration) {
+        self.sync.stop_wait = wait;
+    }
+
     /// Read the Sync folder and the restore's question from the User database just attached
     /// (at launch, and after a restore): a sync is due now, as at launch.
     pub(crate) fn load_sync(&mut self) {
@@ -309,6 +330,8 @@ impl Session {
             folder,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: old.restore_wait,
+            #[cfg(not(target_arch = "wasm32"))]
+            stop_wait: old.stop_wait,
             #[cfg(all(test, not(target_arch = "wasm32")))]
             test_folder: old.test_folder,
             ..SessionSync::default()
@@ -416,13 +439,28 @@ impl Session {
         Ok(())
     }
 
-    /// Take the running sync's result when it is there; whether no sync runs now.
+    /// Take the running sync's result when it is there; whether no sync runs now. A sync
+    /// Stop syncing has waited for [`STOP_SYNC_WAIT`] (a folder call that does not return) is
+    /// abandoned, and it stops.
     #[cfg(not(target_arch = "wasm32"))]
     fn take_sync_result(&mut self) -> bool {
         let Phase::Running(worker) = &self.sync.phase else {
             return true;
         };
         let Some(outcome) = worker.take() else {
+            if let Some(Deferred::StopSyncing(pressed)) = self.sync.deferred
+                && pressed.elapsed() >= self.sync.stop_wait
+            {
+                if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
+                    log::warn!("the sync running did not end in time: Stop syncing stopped it");
+                    worker.abandon();
+                }
+                self.sync.deferred = None;
+                if let Err(e) = self.stop_syncing() {
+                    self.sync.last = Some(LastSync::Failed(e));
+                }
+                return true;
+            }
             return false;
         };
         self.finish_sync(outcome);
@@ -440,18 +478,19 @@ impl Session {
             // A choice that could not reach the folder is asked again.
             self.sync.restore_pending = self.read_restore_pending();
         }
-        match self.sync.deferred.take() {
-            Some(Deferred::ChooseFolder(folder)) => {
-                if let Err(e) = self.choose_sync_folder(&folder) {
-                    self.sync.last = Some(LastSync::Failed(e));
-                }
-            }
-            Some(Deferred::StopSyncing) => {
-                if let Err(e) = self.stop_syncing() {
-                    self.sync.last = Some(LastSync::Failed(e));
-                }
-            }
-            None => {}
+        if let Some(deferred) = self.sync.deferred.take() {
+            self.apply_deferred(deferred);
+        }
+    }
+
+    /// Choose the folder or stop syncing, as the user asked while a sync ran.
+    fn apply_deferred(&mut self, deferred: Deferred) {
+        let applied = match deferred {
+            Deferred::ChooseFolder(folder) => self.choose_sync_folder(&folder),
+            Deferred::StopSyncing(_) => self.stop_syncing(),
+        };
+        if let Err(e) = applied {
+            self.sync.last = Some(LastSync::Failed(e));
         }
     }
 
@@ -595,11 +634,13 @@ impl Session {
     /// restore's question dropped), then forgets the folder; its files stay in the folder. The
     /// new id comes first, so a failure leaves the device syncing as before rather than
     /// recording into an outbox nothing reads. While a sync runs, it stops once that sync
-    /// ends.
+    /// ends, or after [`STOP_SYNC_WAIT`], the sync abandoned (it writes nothing more).
     pub fn stop_syncing(&mut self) -> Result<(), String> {
         if self.sync.syncing() {
             self.user_data()?;
-            self.sync.deferred = Some(Deferred::StopSyncing);
+            if !matches!(self.sync.deferred, Some(Deferred::StopSyncing(_))) {
+                self.sync.deferred = Some(Deferred::StopSyncing(std::time::Instant::now()));
+            }
             return Ok(());
         }
         let user = self.user_data()?;
@@ -657,20 +698,21 @@ impl Session {
 
     /// Before a restore (or its undo) replaces the User database: sync first when the folder
     /// is reachable, so edits not yet written reach it (a failure does not hold the restore
-    /// back: the Safety backup has them). A sync running is waited for, then this one runs on
-    /// its worker (the folder is never read on the UI thread); the restore waits for both at
-    /// most [`RESTORE_SYNC_WAIT`], then goes ahead, the sync left running abandoned (it
-    /// writes nothing more). Returns this device's Sync folder preference, which the restore
-    /// puts back, and whether the sync was left unfinished
-    /// ([`Session::after_restore_sync_unfinished`]).
-    pub(crate) fn sync_before_restore(&mut self) -> (String, bool) {
-        let kept = (self.user.as_ref())
-            .and_then(|u| u.preference(SYNC_FOLDER_PREF).ok().flatten())
-            .unwrap_or_default();
+    /// back: the Safety backup has them). A sync running is waited for (and Choose folder or
+    /// Stop syncing waiting for it applies), then this one runs on its worker, unless that
+    /// stopped syncing (the folder is never read on the UI thread); the restore waits for
+    /// both at most [`RESTORE_SYNC_WAIT`], then goes ahead, the sync left running abandoned
+    /// (it writes nothing more) and what waited for it kept for
+    /// [`Session::after_restore_sync`]. Returns the Sync folder preference as the syncs left
+    /// it, which the restore puts back.
+    pub(crate) fn sync_before_restore(&mut self) -> SyncBeforeRestore {
+        // Nothing syncs on wasm.
+        #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+        let (mut unfinished, mut deferred) = (false, None);
         #[cfg(not(target_arch = "wasm32"))]
         if self.sync.folder.is_some() {
             let deadline = std::time::Instant::now() + self.sync.restore_wait;
-            if self.wait_for_sync(deadline) {
+            if self.wait_for_sync(deadline) && self.sync.folder.is_some() {
                 self.start_sync(obs_store::clock::now_ms());
                 if self.wait_for_sync(deadline)
                     && let Some(LastSync::Failed(e)) = &self.sync.last
@@ -681,17 +723,37 @@ impl Session {
             if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
                 worker.abandon();
                 log::warn!("the sync before the restore did not finish in time");
-                return (kept, true);
+                unfinished = true;
+                deferred = self.sync.deferred.take();
             }
         }
-        (kept, false)
+        let folder = (self.user.as_ref())
+            .and_then(|u| u.preference(SYNC_FOLDER_PREF).ok().flatten())
+            .unwrap_or_default();
+        SyncBeforeRestore {
+            folder,
+            unfinished,
+            deferred,
+        }
     }
 
-    /// After a restore whose sync first did not finish in time: say so (Settings → Sync's
-    /// status and Details), and try again as after a failed sync.
-    pub(crate) fn after_restore_sync_unfinished(&mut self) {
-        self.sync.schedule.sync_failed(obs_store::clock::now_ms());
-        self.sync.last = Some(LastSync::Failed(RESTORE_SYNC_UNFINISHED.into()));
+    /// After a restore (`replaced`: the User database was replaced; else the restore failed
+    /// and nothing changed): when its sync first did not finish in time, say so (Settings →
+    /// Sync's status and Details) and try again as after a failed sync; then apply Choose
+    /// folder or Stop syncing that waited for that sync.
+    pub(crate) fn after_restore_sync(&mut self, before: SyncBeforeRestore, replaced: bool) {
+        if before.unfinished {
+            self.sync.schedule.sync_failed(obs_store::clock::now_ms());
+            let why = if replaced {
+                texts::RESTORE_SYNC_UNFINISHED
+            } else {
+                texts::RESTORE_FAILED_SYNC_UNFINISHED
+            };
+            self.sync.last = Some(LastSync::Failed(why.into()));
+        }
+        if let Some(deferred) = before.deferred {
+            self.apply_deferred(deferred);
+        }
     }
 
     /// What Settings → Sync shows, at `now_ms`.

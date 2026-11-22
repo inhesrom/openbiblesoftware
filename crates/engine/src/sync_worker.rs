@@ -9,8 +9,9 @@
 //! One sync runs at a time. A user's edit made meanwhile waits at most for the merge
 //! transaction in progress (`obs_store::BUSY_TIMEOUT`), is stamped after every clock merged
 //! so far and goes in the outbox for the next sync. A sync left running when the User
-//! database is about to be replaced (a restore that waited [`RESTORE_SYNC_WAIT`] for it) is
-//! [`SyncWorker::abandon`]ed: it commits nothing more and touches the folder no more.
+//! database is about to be replaced (a restore that waited [`RESTORE_SYNC_WAIT`] for it) or
+//! when Stop syncing has waited [`STOP_SYNC_WAIT`] for it is [`SyncWorker::abandon`]ed: it
+//! commits nothing more and touches the folder no more.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -27,6 +28,10 @@ use crate::sync::{
 /// How long a restore waits for the sync it runs first (and one already running) before it
 /// goes ahead without it: the Safety backup holds the edits that sync would have written.
 pub const RESTORE_SYNC_WAIT: Duration = Duration::from_secs(30);
+
+/// How long Stop syncing waits for the sync running (a folder call that does not return: a
+/// hung network disk, an iCloud download) before it abandons it and stops.
+pub const STOP_SYNC_WAIT: Duration = Duration::from_secs(10);
 
 /// Makes the Sync folder a worker syncs through, on its thread (the desktop's: [`reachable`]).
 pub(crate) type FolderMaker = Box<dyn FnOnce() -> Result<Arc<dyn SyncFolder>, SyncError> + Send>;
@@ -70,9 +75,14 @@ impl SyncWorker {
         let connection = user.second_connection()?;
         let (send, outcome) = channel();
         let worker = connection.clone();
+        // A fixed clock (the gallery's, tests') stays fixed on the worker.
+        #[cfg(any(test, feature = "test-support"))]
+        let fixed = obs_store::clock::fixed();
         std::thread::Builder::new()
             .name("sync".into())
             .spawn(move || {
+                #[cfg(any(test, feature = "test-support"))]
+                obs_store::clock::fix(fixed);
                 // The Session may have stopped waiting; then no one reads it.
                 let _ = send.send(run(&worker, folder, platform, task));
             })
@@ -106,7 +116,8 @@ impl SyncWorker {
     }
 
     /// Leave it running, harmless: it commits nothing more to the User database and reads or
-    /// writes nothing more in the Sync folder (the database is about to be replaced).
+    /// writes nothing more in the Sync folder (the database is about to be replaced, or this
+    /// device stops syncing).
     pub(crate) fn abandon(self) {
         self.connection.refuse_writes();
     }
@@ -183,7 +194,7 @@ impl UnlessAbandoned<'_> {
     fn check(&self) -> Result<(), FolderError> {
         if self.connection.writes_refused() {
             return Err(FolderError::Io(
-                "the sync was stopped: the User database is being replaced".into(),
+                "the sync was abandoned: a restore or Stop syncing went ahead without it".into(),
             ));
         }
         Ok(())
