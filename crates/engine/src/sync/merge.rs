@@ -190,9 +190,10 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
     ids.sort();
     let mut report = MergeReport::default();
     retry_held(user, &mut report)?;
-    // Snapshots first (ADR 0022 rule 5): a device not met yet, or whose op files after the
-    // last merged here are gone, is merged from its newest snapshot, which also says how far
-    // it covers the other devices' files.
+    // Snapshots before other devices' op files (ADR 0022 rule 5): a device not met yet, or
+    // whose op files after the last merged here are gone, is merged from its newest
+    // snapshot, which also says how far it covers the other devices' files.
+    let own_ids = user.own_device_ids()?;
     let mut ready = Vec::new();
     let mut snapshots = Vec::new();
     let mut no_snapshot = Vec::new();
@@ -205,6 +206,18 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             SnapshotStep::Merge(seq, contents) => snapshots.push((id, seq, contents)),
         }
     }
+    // This device's former ids first (a restore or a copy gave it a new id), before any
+    // snapshot too: their op files are its own history, so their versions are here as its
+    // own before another device's replace them, and the own checks see them (ADR 0022 rule
+    // 7). A snapshot merged first could make the merge record again, at a new clock, a row
+    // its old id made and later edited (a Sync conflict's copy, an item kept), and that
+    // record would beat the old id's later edit.
+    let mut pending = Vec::new();
+    for id in ready.iter().filter(|id| own_ids.contains(id)) {
+        pending.push(pending_of(user, folder, id, &mut report)?);
+    }
+    ready.retain(|id| !own_ids.contains(id));
+    merge_pending(user, &mut pending, &mut report)?;
     // A snapshot that waits (for a row another device's file brings) is tried again after
     // the others.
     let mut waits: Vec<Option<String>> = vec![None; snapshots.len()];
@@ -249,24 +262,47 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             report.stopped.push((id, 0, OpsStop::NoSnapshot));
         }
     }
-    // This device's former ids first (a restore or a copy gave it a new id): their op files
-    // are its own history, so their versions are here as its own before another device's
-    // replace them, and the own checks see them (ADR 0022 rule 7).
-    let own_ids = user.own_device_ids()?;
+    // Former ids met through a snapshot (theirs, their files trimmed) go first again.
     ready.sort_by_key(|id| (!own_ids.contains(id), id.clone()));
-    let mut pending: Vec<Pending> = Vec::new();
     for id in ready {
-        let ops = read_ops_after(folder, &id, user.applied_up_to(&id)?)?;
-        if let Some((seq, stop)) = ops.stopped {
-            report.stopped.push((id.clone(), seq, stop));
-        }
-        pending.push((id, ops.files.into(), None));
+        pending.push(pending_of(user, folder, &id, &mut report)?);
     }
+    merge_pending(user, &mut pending, &mut report)?;
+    for (device, files, waits) in pending {
+        if let (Some((seq, _)), Some(why)) = (files.front(), waits) {
+            report.waiting.push((device, *seq, why));
+        }
+    }
+    retry_held(user, &mut report)?;
+    Ok(report)
+}
+
+/// The op files of `device` after the last merged here, to merge.
+fn pending_of(
+    user: &UserStore,
+    folder: &dyn SyncFolder,
+    device: &str,
+    report: &mut MergeReport,
+) -> Result<Pending, SyncError> {
+    let ops = read_ops_after(folder, device, user.applied_up_to(device)?)?;
+    if let Some((seq, stop)) = ops.stopped {
+        report.stopped.push((device.to_string(), seq, stop));
+    }
+    Ok((device.to_string(), ops.files.into(), None))
+}
+
+/// Merge the `pending` op files, each device's in order, pass after pass while any merges: a
+/// file that waits for another device's rows is tried again after the others.
+fn merge_pending(
+    user: &UserStore,
+    pending: &mut [Pending],
+    report: &mut MergeReport,
+) -> Result<(), SyncError> {
     loop {
         let mut progress = false;
-        for (device, files, waits) in &mut pending {
+        for (device, files, waits) in pending.iter_mut() {
             while let Some((seq, ops)) = files.front() {
-                match merge_file(user, device, *seq, ops, &mut report) {
+                match merge_file(user, device, *seq, ops, report) {
                     Ok(()) => {
                         report.merged.push((device.clone(), *seq));
                         files.pop_front();
@@ -292,16 +328,9 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             }
         }
         if !progress {
-            break;
+            return Ok(());
         }
     }
-    for (device, files, waits) in pending {
-        if let (Some((seq, _)), Some(why)) = (files.front(), waits) {
-            report.waiting.push((device, *seq, why));
-        }
-    }
-    retry_held(user, &mut report)?;
-    Ok(report)
 }
 
 /// What a merge does first about another device's files.
