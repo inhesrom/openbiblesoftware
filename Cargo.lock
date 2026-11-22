@@ -2798,6 +2798,8 @@ dependencies = [
  "obs-render",
  "obs-scripture",
  "obs-store",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

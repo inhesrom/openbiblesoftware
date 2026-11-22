@@ -8,6 +8,9 @@
 //! - No library crate may depend, even transitively, on an FFI crate; only apps may (the
 //!   Mobile app's one UniFFI crate is `apps/obs-ffi`, `docs/dev/mobile-core.md`).
 //! - Every workspace crate outside `apps/` and `xtask` must be listed in [`LAYERS`].
+//! - Every crate forbids `unsafe_code` but `apps/obs-ffi`, which denies it and allows it on
+//!   one `unsafe impl` (its tiles' bulk byte path, ADR 0021, plan S13); no other `unsafe` may
+//!   appear in that crate.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -111,10 +114,88 @@ pub fn wasm_crates(metadata: &Metadata) -> Vec<String> {
         .collect()
 }
 
+/// The crate allowed one `unsafe impl` (ADR 0021, plan S13), and that impl's first line.
+const UNSAFE_CRATE: &str = "apps/obs-ffi";
+const UNSAFE_IMPL: &str = "unsafe impl<UT> uniffi::FfiConverter<UT> for TilePixels {";
+
+/// Every other `unsafe` in [`UNSAFE_CRATE`]'s Rust files, and any `allow(unsafe_code)` but the
+/// one just above [`UNSAFE_IMPL`]: the exception cannot grow silently.
+fn unsafe_exception(root: &Path) -> Result<Vec<String>> {
+    let mut files = Vec::new();
+    let mut dirs = vec![root.join(UNSAFE_CRATE)];
+    while let Some(dir) = dirs.pop() {
+        for entry in
+            std::fs::read_dir(&dir).with_context(|| format!("reading {}", dir.display()))?
+        {
+            let path = entry?.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let mut out = Vec::new();
+    let mut impls = 0;
+    for file in files {
+        let text = std::fs::read_to_string(&file)?;
+        let name = file
+            .strip_prefix(root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        let (found, bad) = unsafe_violations(&name, &text);
+        impls += found;
+        out.extend(bad);
+    }
+    if impls > 1 {
+        out.push(format!(
+            "{UNSAFE_CRATE}: `{UNSAFE_IMPL}` appears {impls} times"
+        ));
+    }
+    Ok(out)
+}
+
+/// In one file: how many times [`UNSAFE_IMPL`] appears (with `#[allow(unsafe_code)]` on the
+/// line before), and every other line with the keyword `unsafe` or an `allow(unsafe_code)`.
+/// Comments are not code.
+fn unsafe_violations(file: &str, text: &str) -> (usize, Vec<String>) {
+    let code: Vec<&str> = (text.lines())
+        .map(|l| l.split("//").next().unwrap_or_default().trim())
+        .collect();
+    let keyword = |line: &str| {
+        line.match_indices("unsafe").any(|(i, _)| {
+            let before = line[..i].chars().next_back();
+            let after = line[i + "unsafe".len()..].chars().next();
+            let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+            !word(before) && !word(after)
+        })
+    };
+    let mut found = 0;
+    let mut bad = Vec::new();
+    for (i, line) in code.iter().enumerate() {
+        let allowed = *line == UNSAFE_IMPL && i > 0 && code[i - 1] == "#[allow(unsafe_code)]";
+        let allow_for_it =
+            *line == "#[allow(unsafe_code)]" && code.get(i + 1) == Some(&UNSAFE_IMPL);
+        if allowed {
+            found += 1;
+        } else if allow_for_it {
+        } else if keyword(line) || line.contains("allow(unsafe_code)") {
+            bad.push(format!(
+                "{file}:{}: `unsafe` outside the one allowed impl (ADR 0021): {line}",
+                i + 1
+            ));
+        }
+    }
+    (found, bad)
+}
+
 pub fn run(root: &Path) -> Result<()> {
     let metadata = metadata(root)?;
     let pkgs = packages(&metadata);
-    let violations = check(&pkgs);
+    let mut violations = check(&pkgs);
+    violations.extend(unsafe_exception(root)?);
     if violations.is_empty() {
         eprintln!("layers: {} crates OK", pkgs.len());
         return Ok(());
@@ -347,6 +428,28 @@ mod tests {
     #[test]
     fn real_layout_passes() {
         assert_eq!(check(&good()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_real_ffi_crate_has_only_the_one_unsafe_impl() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        assert_eq!(unsafe_exception(&root).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn unsafe_outside_the_one_impl_fails() {
+        let ok = "// unsafe in a comment\n#[allow(unsafe_code)]\nunsafe impl<UT> uniffi::FfiConverter<UT> for TilePixels {\n}\nlet unsafe_code = 1;\n";
+        assert_eq!(unsafe_violations("a.rs", ok), (1, Vec::new()));
+        let block = "fn f() { unsafe { g() } }\n";
+        assert_eq!(unsafe_violations("a.rs", block).1.len(), 1);
+        let no_allow = "unsafe impl<UT> uniffi::FfiConverter<UT> for TilePixels {\n";
+        assert_eq!(unsafe_violations("a.rs", no_allow), (0, vec![
+            "a.rs:1: `unsafe` outside the one allowed impl (ADR 0021): unsafe impl<UT> uniffi::FfiConverter<UT> for TilePixels {".to_string()
+        ]));
+        let crate_wide = "#![allow(unsafe_code)]\n";
+        assert_eq!(unsafe_violations("a.rs", crate_wide).1.len(), 1);
+        let other_impl = "#[allow(unsafe_code)]\nunsafe impl Send for X {}\n";
+        assert_eq!(unsafe_violations("a.rs", other_impl).1.len(), 2);
     }
 
     #[test]

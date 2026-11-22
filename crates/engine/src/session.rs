@@ -326,7 +326,10 @@ impl Session {
             .push_effect(crate::workspace::Effect::Message(message));
     }
 
-    pub(crate) fn save_view_preferences(&self) -> Result<(), String> {
+    /// Save the View preferences (Theme, Page tone, Text settings, fonts) to the User
+    /// database, as the View menu's commands do (the Mobile app's Text size, which has no
+    /// command of its own there).
+    pub fn save_view_preferences(&self) -> Result<(), String> {
         let Some(user) = &self.user else {
             return Ok(());
         };
