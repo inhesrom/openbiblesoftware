@@ -840,7 +840,7 @@ fn a_restore_keeps_the_backups_id_as_a_former_one_only_when_it_is_this_devices_o
     // Its own Backup, twice: the Backup's id is the one it had, then one of its former ones.
     a.restore(&own_backup).unwrap();
     let second = a.device_id().unwrap();
-    assert_eq!(former_ids(&a), [first.clone()]);
+    assert_eq!(former_ids(&a), std::slice::from_ref(&first));
     a.restore(&own_backup).unwrap();
     let mut expected = vec![first.clone(), second.clone()];
     expected.sort();
@@ -852,7 +852,7 @@ fn a_restore_keeps_the_backups_id_as_a_former_one_only_when_it_is_this_devices_o
     let b_backup = dir.0.join("b.obsbackup");
     b.back_up(&b_backup).unwrap();
     b.restore(&b_backup).unwrap();
-    assert_eq!(former_ids(&b), [b_first.clone()]);
+    assert_eq!(former_ids(&b), std::slice::from_ref(&b_first));
     let b_backup = dir.0.join("b-restored.obsbackup");
     b.back_up(&b_backup).unwrap();
     let third = a.device_id().unwrap();
