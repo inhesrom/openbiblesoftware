@@ -339,9 +339,11 @@ which `ensure_available` downloads; any other part file fails its length or hash
 
 ### Merging
 
-`merge_folder(user, folder)` first merges the [snapshots](#snapshots) it needs (of a device
-not met yet, or whose op files after the last merged here are gone), then every other
-device's op files after its `applied_up_to`, in order (`read_ops_after`). Each file is merged by
+`merge_folder(user, folder)` first merges this device's former ids' op files (its own
+history, the id it gave up last first: [restores and copies](#restores-and-copies-new-device-ids)),
+then the [snapshots](#snapshots) it needs (of a device not met yet, or whose op files after the
+last merged here are gone), then every other device's op files after its `applied_up_to`, in
+order (`read_ops_after`). Each file is merged by
 `UserStore::merge_op_file` in one transaction that also moves `applied_up_to` on: all of it
 or none. A file with an op that needs a row not here yet (another device's file brings it:
 an Annotation's Notebook, a Highlight's new style, a style's palette, a Reading's plan)
@@ -377,9 +379,9 @@ Per op, against the row's state here (`MergeTx::state`: the row, its clock, its 
 | Write | A child (an Annotation, a Reading, a style, a Highlight's new style) whose parent is deleted here | The parent restored from its tombstone's row and recorded, then the child as above ([deleted parents](#deleted-parents)) |
 | Write or delete | This device's own Note (its clock is this device's), whose text the op had not seen (its `before` text is another, or it has none) and would lose | A [Sync conflict](#sync-conflicts)'s copy recorded first, then the op as above |
 | Write (an add, or an edit of another version) | This device's own Collection, Copy preset or Saved search of that name, other JSON, older, which the op had not seen | The op's as above; this device's recorded again as "`name` (2)" ([list items of one name](#two-list-items-of-one-name)) |
-| Delete (of another version of that name) | This device's own Collection, Copy preset or Saved search, which the delete had not seen (its `before_clock` is not this row's clock, its `before` JSON another) | Kept: the delete noted, this device's item recorded again under its own name, after what the tombstone covers (edit beats delete, [list items of one name](#two-list-items-of-one-name)) (`EditKept`) |
+| Delete (of another version of that name) | This device's own Collection, Copy preset or Saved search, which the delete had not seen (its `before_clock` is not this row's clock, its `before` JSON another; a delete with no `before`, a snapshot's tombstone, only by its `before_clock`) | Kept: the delete noted, this device's item recorded again under its own name, after what the tombstone covers (edit beats delete, [list items of one name](#two-list-items-of-one-name)) (`EditKept`) |
 | Write | A list item at or before its list's base (its newest whole-value write) | Nothing (`Superseded`) ([a list's whole value](#a-lists-whole-value)) |
-| Write, losing (`Superseded`, `Covered`) | An op of this device's former id, against a version not this device's own | Its Note text recorded as a copy, its list item as "`name` (2)" or again under its name ([restores and copies](#restores-and-copies-new-device-ids)) |
+| Write, losing (`Superseded`, `Covered`) | An op of this device's former id, against a version that did not come after it in this device's own history (not of its id now, the op's id, or a former id given up after the op's) | Its Note text recorded as a copy, its list item as "`name` (2)" or again under its name ([restores and copies](#restores-and-copies-new-device-ids)) |
 | Write | A list item of a list whose value here is not in its list's shape | Held (`Held`) ([held ops](#ops-held-back)) |
 | Any | An op this build refuses (a synced preference a later app added …) | Held (`Held`); the rest of its file merges |
 
@@ -442,7 +444,10 @@ so it can overwrite a re-save of that Layout made at the same time on another de
 conflict's copy, a restored parent (and the rows deleted with it) and a list item renamed for
 a clash are applied with `MergeTx::record` like any local edit: a new clock, after every clock
 merged and after the version it replaces (a far-ahead one included, as above, and a list
-item's list base), and into the outbox while recording, written at the next sync. Each op is
+item's list base), and into the outbox while recording, written at the next sync. An own list
+item recorded again (as "`name` (2)", or under its own name against a delete) is also stamped
+after the version it keeps (`MergeTx::record_after`), so a list base later than the re-add is
+later than that version too ([below](#two-list-items-of-one-name)). Each op is
 merged in a savepoint (`MergeTx::begin_op`, `end_op`), so one that fails leaves nothing of
 itself behind; what an op recorded is counted in `MergeReport::recorded` only when its
 savepoint is kept.
@@ -526,7 +531,11 @@ an add, with no `before`, or a write whose `before_clock` is not this row's cloc
 "`name` (2)", "`name` (3)" … among the list's items here and the items held here (one held
 while its list was damaged comes back under its own name; S28c's property runs found a
 "(2)" taking the name of an own "(2)" held then, which lost it), at its old position, every
-other field of its JSON as it was (`preference_items::renamed_item`). The device whose item won does
+other field of its JSON as it was (`preference_items::renamed_item`), stamped after the clock
+of the version it keeps as well as the list's base (`MergeTx::record_after`; the sync merge
+fix: with only the next clock, a far-ahead edit's "(2)" got an ordinary clock, and a whole value
+merged afterwards, later than that clock but earlier than the edit, superseded it, so the edit,
+written after that base, was lost on every device). The device whose item won does
 nothing. The edit case: G adds "Greek", D adds its own "Greek" later, and G then edits its own
 before either syncs; G's edit replaces D's item having seen only G's, and D's would be lost on
 every device (`merge_tests::an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both`).
@@ -544,7 +553,12 @@ other order, Y's add renames X's item first, as above
 (`merge_tests::a_delete_that_never_saw_this_devices_list_item_of_its_name_keeps_it`, both
 orders). As with D2's three-device chain, a copy no one needed can come of it: a device whose
 own item the re-record replaces before it meets the delete of that item keeps it as
-"`name` (2)"; safe, and every device converges on it.
+"`name` (2)"; safe, and every device converges on it. A delete with no `before` (a snapshot's
+tombstone, merged by key) is unseen only when its `before_clock` is not this row's clock: one
+that covers exactly this version had it, and deletes it (the sync merge fix: counted unseen, a
+restored device met such a delete in a snapshot, recorded the item its old id had deleted
+again at a new clock, and that beat the old id's later item of its name;
+`merge_tests::a_delete_with_no_before_covering_this_devices_own_item_deletes_it`).
 
 #### A list's whole value
 
@@ -591,7 +605,13 @@ list in shape tries that list's at once; one that applies, or that a later write
 kept (`MergeTx::hold`: it supersedes the older once it applies, so a later app writing its own
 setting again and again holds one op, not one per write); held deletes are all kept, and so is a
 write whose line lacked fields
-(`merge_tests::of_a_rows_held_writes_only_the_newest_is_kept`). `merge_folder` skips the
+(`merge_tests::of_a_rows_held_writes_only_the_newest_is_kept`), and so is this device's own
+write (by any of its ids): tried again in clock order, it applies before the newer one, which
+then finds it here, so the own checks keep it (the sync merge fix: an own Collection held when
+the device merged a damaged base older than it, then another device's later item of its name
+held too, was dropped by that hold, and when a value in shape came the other's applied with no
+own item to rename "`name` (2)": lost on every device;
+`merge_tests::an_own_list_item_held_while_its_list_is_damaged_survives_a_later_item_of_its_name`). `merge_folder` skips the
 retries when nothing is held (`UserStore::has_sync_held`, one `EXISTS`). `UserStore::sync_held()` lists them for
 Needs attention (S29, S30). The held ops are this device's own record, not Synced data: two
 devices can hold different ops for the same state (one that merged an item before a damaged
@@ -692,7 +712,7 @@ Files are in time order, so trimming stops at the first one too young.
 ### Restores and copies: new device ids
 
 ADR 0022 rule 7. A Synced device's id changes when its database stops being the one that
-wrote its files (`sync_device.rs`, migration 17):
+wrote its files (`sync_device.rs`, migrations 17 and 18):
 
 - **A restore** (`UserStore::restore_from`, so also Undo restore and every restore the app
   does) always gives the device a new UUIDv7, in one step: the Backup is staged in a copy, given
@@ -715,13 +735,27 @@ wrote its files (`sync_device.rs`, migration 17):
   device's own (`own_device_ids`, `MergeTx::is_own`): a text written under the old id that a
   remote edit never saw is still kept as a copy. Two devices claiming one id (another device's
   Backup restored, a copy) make the same copy (its id is derived) and the same "(2)", which
-  converge. A former id's op files are this device's own history, so `merge_folder` merges them
-  before every other device's; and **an op of a former id that loses here** (superseded by a
-  version that is not this device's own, or covered by a delete of another version) keeps its
-  Note text as a copy (`conflict_id` of the Note and the op's clock) or its list item as
-  "Name (2)", or under its own name against the delete (`merge::former_own_lost`): the device
-  that wrote it would have when that version replaced it, and that device is this one now. The
-  cost: a copy no one needed when the other device had in fact seen it (safe).
+  converge. `former_device.seq` (migration 18) keeps the order the database gave its former
+  ids up, from 1: a restore numbers them oldest first (the Backup's this device no longer has,
+  then its own former ones, then the id it had), and a copy detection gives the id it gives up
+  the next number; migration 18 numbers a v17 database's in id order, and a Backup carries the
+  column (`own_device_ids` lists the former ids the last given up first). A former id's op
+  files are this device's own history, so `merge_folder` merges them before every snapshot
+  and every other device's, the last given up first (the sync merge fix: a snapshot merged
+  first, or an older former id's later files, which after a copy are the other copy's, made
+  the merge record again at a new clock a Sync conflict's copy its last id had made and then
+  edited, and that record beat the edit; a former id met only through its snapshot still
+  comes after the snapshots). **An op of a former id that loses here** (superseded by a
+  version that did not come after it in this device's own history, or covered by a delete of
+  another version) keeps its Note text as a copy (`conflict_id` of the Note and the op's clock)
+  or its list item as "Name (2)", or under its own name against the delete
+  (`merge::former_own_lost`): the device that wrote it would have when that version replaced
+  it, and that device is this one now. A version came after the op when it is of this device's
+  id now, of the op's own id, or of a former id given up after the op's (`MergeTx::is_own_after`,
+  by `seq`; the sync merge fix): an older former id's version can be another device's, as a
+  copied database's original keeps the id the copy gave up. The cost: a copy no one needed when
+  the other device had in fact seen it, or when an older former id's version did come after
+  (only with a clock running ahead): safe.
 - **`applied_up_to` stays**: the other devices' rows are what the restored data has merged of
   them, so catching up replays their files after those; the old own id's row (the last of its
   own files written) is now what it has merged of that id, another device's from now on.
@@ -764,8 +798,8 @@ wrote its files (`sync_device.rs`, migration 17):
 3. A copied database takes a new id, before it joins ([above](#restores-and-copies-new-device-ids)).
 4. A device not recording ops joins ([above](#joining)).
 5. Its pending ops are written (`write_pending_ops`), then its snapshot if one is due.
-6. `merge_folder`: held ops tried again, snapshots, every other device's op files, held ops
-   again. What the merge recorded (copies, renames, demotions, restored parents, items kept or
+6. `merge_folder`: held ops tried again, the former ids' op files (the last given up first),
+   snapshots, every other device's op files, held ops again. What the merge recorded (copies, renames, demotions, restored parents, items kept or
    renamed) is in the outbox and is written at once.
 7. A snapshot if one is now due; its own op files that may go are trimmed; its `device.json`
    (name, platform, app version, `applied`, `synced_at`) is written.
@@ -905,7 +939,7 @@ Mobile app has no period (`at_launch(false)`).
   empties the outbox and asks no question on a device that did not sync; on a syncing device
   the new id, former ids, empty outbox and pending choice arrive together, and a restore whose
   new-id step fails leaves the database as it was; the Backup's id is a former one only when it
-  is this device's own; a v16 Backup restores into 17; a name held for a damaged list is not
+  is this device's own; a v16 Backup restores into 17 (now 18); a name held for a damaged list is not
   free for a clash rename; migration 17 adds empty `former_device`.
 - `crates/engine/src/sync/lifecycle_tests.rs`: two devices with `FsSyncFolder` on one disk
   converge end to end through `sync_now`, each with what it made before joining, and a third
@@ -961,6 +995,34 @@ Mobile app has no period (`at_launch(false)`).
   load; the copies add devices, and each `sync_now` reads its own newest snapshot), 10,000
   about 145–190 s.
 
+- **The sync merge fix** (after S29b; the merge property test lost a Collection at
+  `OBS_MERGE_SEED=20266453`, there since S28c): six distinct losses of user data, each shrunk
+  to a test that failed before its fix. `merge_tests`:
+  `an_own_list_item_held_while_its_list_is_damaged_survives_a_later_item_of_its_name` (20266453:
+  `hold` dropped an own held write for a newer one),
+  `an_own_items_re_add_comes_after_the_version_it_keeps_so_a_later_base_keeps_it` (126745: a
+  far-ahead edit's "(2)" stamped below a base merged later),
+  `a_delete_with_no_before_covering_this_devices_own_item_deletes_it` (3146456: a snapshot's
+  delete counted unseen). `lifecycle_tests`:
+  `a_snapshots_delete_covering_this_devices_own_item_deletes_it` (3146456 whole, a restore),
+  `a_conflict_copy_edited_before_a_restore_keeps_its_edit_when_catching_up` (5007792: a snapshot
+  merged before the former id's files re-made a copy that beat its edit),
+  `a_copys_edited_conflict_copy_survives_a_restore_catching_up` and
+  `…_when_the_originals_id_sorts_last` (7744: an older former id's files, a copy's original's,
+  merged first; the second holds the order by `seq`, not by id),
+  `a_copys_text_survives_a_restore_when_the_original_wrote_over_it` (891: an older former id's
+  version counted as after the op). `sync_clock_db.rs`:
+  `former_ids_keep_the_order_they_were_given_up_through_migration_18_restores_and_backups`.
+  `merge_props.rs` runs the first four sequences now and then
+  (`held_own_item_step`, `far_base_after_re_add_step`, `snapshot_delete_step`,
+  `edited_copy_step`; per 1,000 cases about 196, 194, 86 and 48) and must reach each. Mutation
+  checks: undoing the held-write fix, the re-add's stamp or the former-ids-first order fails the
+  1,000-case run; the delete with no `before` is caught by its unit test only (former ids first
+  now keeps the restore sequence from reaching it). After the fixes 10,000-case runs from 20
+  seeds in a row (1, 7, 42, 99, 777, 1234, 4321, 65536, 100000, 2000000, 3000000, 7000000,
+  8000000, 9000000, 10000000, 11111111, 22222222, 33333333, 44444444, 20261122) found nothing;
+  1,000 cases take about 19 s, 10,000 about 250 s on the owner's Mac with four runs at once.
+
 - `crates/engine/src/sync_session_tests.rs` (S29): without a Sync folder nothing syncs, shows
   or is recorded, and a restore leaves it so; two Sessions converge through one folder and list
   each other; an edit makes a sync due 30 seconds on, else the period; a restore on a syncing
@@ -1007,10 +1069,6 @@ Mobile app has no period (`at_launch(false)`).
   meanwhile waits for it on the UI thread. Merging them in bounded transactions keeps edits
   under a frame, but touches the merge's all-or-none contract (`merge_snapshot`,
   `merge_op_file` with its `applied_up_to`).
-- **Known issue (found by S29b, there before it):** the merge property test fails at
-  `OBS_MERGE_SEED=20266453` (case 0 of a run from that seed; case 5331 of a 10k run from
-  20261122): "the Collection {"n":5} added at 01a3189b1d7d-0000-… was lost". It fails the same
-  at S29 (`d468f1b`), on one connection. A fix-up step on the sync stack takes it.
 - **S30:** Needs attention lists the Sync conflicts and held ops as the desktop does
   (`texts`, `Session::sync_held_lines`, `resolve_sync_conflict`); render `SyncState`
   (`needs_newer_app` per device, `FolderNewer`, `NeedsRestoreChoice` with Catch up as the
