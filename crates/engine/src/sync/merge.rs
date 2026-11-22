@@ -495,7 +495,7 @@ fn merge_write(
 
 /// The id of the Sync conflict's copy of Note `note` holding its text at `lost` (the clock of
 /// the version that lost): a UUID-shaped hash of both, so it is the same wherever it is made.
-fn conflict_id(note: &str, lost: &Hlc) -> String {
+pub(crate) fn conflict_id(note: &str, lost: &Hlc) -> String {
     let hex = crate::starter::sha256_hex(format!("{note} {lost}").as_bytes());
     let h = hex.as_bytes();
     let part = |r: std::ops::Range<usize>| String::from_utf8_lossy(&h[r]).into_owned();

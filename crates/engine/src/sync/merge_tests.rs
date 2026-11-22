@@ -4,8 +4,14 @@
 //! delete covering the newest edit deletes it; fields an op does not carry are left as they
 //! are; Reading done-marks merge per Reading; a Collection renamed on one device and edited on
 //! another keeps both; the Preferred order is one value; two default Notebooks keep the older;
-//! two Layouts of one name both stay; a file needing another device's row waits for it; a
-//! parent delete meeting live children is skipped.
+//! two Layouts of one name both stay; a file needing another device's row waits for it.
+//! S28b-2: a Note's text edited on two devices keeps both (D2), also when the losing text
+//! meets a delete; an older app's op keeps `conflict_of`; a deleted parent comes back for a
+//! child added meanwhile, in either order and when the child's maker moved or deleted it,
+//! for Notebooks, Reading plans and palettes (D3), and a child of one deleted before schema
+//! 16 is held; two list items of one name both stay (D6); a damaged whole list value holds
+//! the later items on every device (D7); an op this build rejects is held, and its file and
+//! the next merge.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -757,38 +763,554 @@ fn a_file_needing_another_devices_notebook_waits_and_merges_after_it() {
     assert_eq!(c.user.synced_dump().unwrap(), b.user.synced_dump().unwrap());
 }
 
-#[test]
-fn a_parent_delete_meeting_live_children_is_skipped_so_nothing_is_lost() {
-    let dir = Dir::new("children");
-    let cloud = MemSyncFolder::new();
-    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
-    let nb = notebook("Romans");
-    a.apply(&[Change::insert(Row::Notebook(nb.clone()))]);
-    a.sync(&cloud);
-    b.sync(&cloud);
-    // A deletes the empty Notebook; B, not having seen that, adds a Note to it.
-    a.apply(&[Change::delete(Row::Notebook(nb.clone()))]);
-    let note = Annotation {
+fn note_in(notebook: &str, body: &str) -> Annotation {
+    Annotation {
         id: new_id(),
-        notebook_id: nb.id.clone(),
-        content: Content::Note {
-            body: "Mine".into(),
-        },
+        notebook_id: notebook.into(),
+        content: Content::Note { body: body.into() },
         anchor: None,
         created_at: 1,
         modified_at: 1,
         conflict_of: None,
+    }
+}
+
+fn with_text(a: &Annotation, body: &str) -> Annotation {
+    Annotation {
+        content: Content::Note { body: body.into() },
+        modified_at: a.modified_at + 1,
+        ..a.clone()
+    }
+}
+
+fn annotation_of(d: &Device, id: &str) -> Option<Annotation> {
+    d.user.annotation(id).unwrap()
+}
+
+/// Every device holds the same Synced data.
+fn converged(devices: &[&Device]) {
+    let first = devices[0].user.synced_dump().unwrap();
+    for d in &devices[1..] {
+        assert_eq!(d.user.synced_dump().unwrap(), first);
+    }
+}
+
+#[test]
+fn a_note_edited_on_two_devices_keeps_both_texts_the_loser_as_a_conflict_copy() {
+    let dir = Dir::new("conflict");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let default = a.user.notebooks().unwrap().remove(0).id;
+    let note = Annotation {
+        anchor: Some(obs_store::Anchor::Passage {
+            passage: obs_scripture::Passage::verse(obs_scripture::Verse::new(
+                obs_scripture::Book::Romans,
+                8,
+                28,
+            )),
+            origin: None,
+        }),
+        ..note_in(&default, "V0")
     };
-    b.apply(&[Change::insert(Row::Annotation(note.clone()))]);
+    a.apply(&[Change::insert(Row::Annotation(note.clone()))]);
+    Device::settle(&[&a, &b], &cloud);
+    // Both edit its text before seeing the other's: B's is later.
+    a.apply(&[Change::update(
+        Row::Annotation(note.clone()),
+        Row::Annotation(with_text(&note, "by A")),
+    )]);
+    b.apply(&[Change::update(
+        Row::Annotation(note.clone()),
+        Row::Annotation(with_text(&note, "by B")),
+    )]);
+    let lost = a.clock(&Row::Annotation(note.clone()).key()).unwrap();
+    b.push(&cloud);
+    let report = a.sync(&cloud);
+    assert_eq!(report.recorded.conflicts, 1, "{report:?}");
+    // B, whose edit won, makes none.
+    let report = b.sync(&cloud);
+    assert_eq!(report.recorded.conflicts, 0, "{report:?}");
+    Device::settle(&[&a, &b], &cloud);
+    for d in [&a, &b] {
+        assert_eq!(annotation_of(d, &note.id).unwrap().body(), "by B");
+        let copies = d.user.sync_conflicts().unwrap();
+        assert_eq!(copies.len(), 1, "{copies:?}");
+        let copy = &copies[0];
+        assert_eq!(copy.body(), "by A");
+        assert_eq!(copy.conflict_of.as_deref(), Some(note.id.as_str()));
+        assert_eq!(copy.anchor, note.anchor, "the same Anchor");
+        assert_eq!(copy.notebook_id, note.notebook_id, "the same Notebook");
+        assert_eq!(copy.id, super::merge::conflict_id(&note.id, &lost));
+    }
+    converged(&[&a, &b]);
+    // An edit that had seen the text makes no copy.
+    let now = annotation_of(&a, &note.id).unwrap();
+    a.apply(&[Change::update(
+        Row::Annotation(now.clone()),
+        Row::Annotation(with_text(&now, "by A again")),
+    )]);
+    Device::settle(&[&a, &b], &cloud);
+    assert_eq!(b.user.sync_conflicts().unwrap().len(), 1);
+}
+
+#[test]
+fn an_older_apps_op_without_conflict_of_keeps_it_here() {
+    let dir = Dir::new("conflict-absent");
+    let cloud = MemSyncFolder::new();
+    let b = device(&dir, "b");
+    let default = b.user.notebooks().unwrap().remove(0).id;
+    let copy = Annotation {
+        conflict_of: Some(new_id()),
+        ..note_in(&default, "a copy")
+    };
+    b.apply(&[Change::insert(Row::Annotation(copy.clone()))]);
+    let older = new_id();
+    let edited = with_text(&copy, "edited by an older app");
+    let mut line = serde_json::to_value(Op {
+        device: older.clone(),
+        clock: Hlc {
+            wall_ms: u64::try_from(obs_store::clock::now_ms()).unwrap() + 1_000,
+            counter: 0,
+            device_id: older.clone(),
+        },
+        before: Some(Row::Annotation(copy.clone())),
+        after: Some(Row::Annotation(edited.clone())),
+        before_clock: None,
+        absent: Vec::new(),
+    })
+    .unwrap();
+    // This build always writes it, null or not.
+    assert!(line["after"].get("conflict_of").is_some());
+    for side in ["before", "after"] {
+        line[side].as_object_mut().unwrap().remove("conflict_of");
+    }
+    cloud.put(&op_file_path(&older, 1), &raw_op_file(&[line]));
+    b.sync(&cloud);
+    assert_eq!(annotation_of(&b, &copy.id), Some(edited), "still a copy");
+}
+
+/// D edits a Note to T; G edits it to V' (later, never seeing T); X, having V', deletes the
+/// Note with its Notebook. D gets X's delete before G's edit, or G's edit first: T survives
+/// as a Sync conflict's copy either way.
+#[test]
+fn a_delete_that_never_saw_this_devices_note_text_keeps_it_as_a_conflict_copy() {
+    for delete_first in [true, false] {
+        let dir = Dir::new(&format!("conflict-delete-{delete_first}"));
+        let cloud = MemSyncFolder::new();
+        let (d, g, x) = (device(&dir, "d"), device(&dir, "g"), device(&dir, "x"));
+        let nb = notebook("Romans");
+        let note = note_in(&nb.id, "V0");
+        d.apply(&[
+            Change::insert(Row::Notebook(nb.clone())),
+            Change::insert(Row::Annotation(note.clone())),
+        ]);
+        Device::settle(&[&d, &g, &x], &cloud);
+        d.apply(&[Change::update(
+            Row::Annotation(note.clone()),
+            Row::Annotation(with_text(&note, "T")),
+        )]);
+        let v1 = with_text(&note, "V'");
+        g.apply(&[Change::update(
+            Row::Annotation(note.clone()),
+            Row::Annotation(v1.clone()),
+        )]);
+        g.push(&cloud);
+        x.sync(&cloud);
+        x.apply(&[
+            Change::delete(Row::Annotation(v1.clone())),
+            Change::delete(Row::Notebook(nb.clone())),
+        ]);
+        x.push(&cloud);
+        fn only<'a>(cloud: &MemSyncFolder, dev: &'a Device) -> Vec<(&'a str, u64)> {
+            files_of(cloud, &dev.id)
+                .into_iter()
+                .map(|s| (dev.id.as_str(), s))
+                .collect()
+        }
+        let (first, second) = if delete_first { (&x, &g) } else { (&g, &x) };
+        merge_folder(&d.user, &view(&cloud, &only(&cloud, first))).unwrap();
+        let all: Vec<(&str, u64)> = only(&cloud, first)
+            .into_iter()
+            .chain(only(&cloud, second))
+            .collect();
+        let report = merge_folder(&d.user, &view(&cloud, &all)).unwrap();
+        assert!(report.waiting.is_empty(), "{report:?}");
+        Device::settle(&[&d, &g, &x], &cloud);
+        for dev in [&d, &g, &x] {
+            let copies = dev.user.sync_conflicts().unwrap();
+            assert_eq!(copies.len(), 1, "delete first: {delete_first}: {copies:?}");
+            assert_eq!(copies[0].body(), "T");
+            assert_eq!(copies[0].conflict_of.as_deref(), Some(note.id.as_str()));
+        }
+        converged(&[&d, &g, &x]);
+    }
+}
+
+/// A deletes Notebook N with its Notes; B, not having seen that, adds a Note to it. Every
+/// device ends with N, A's Notes and B's: B keeps N when A's delete meets its Note, and A
+/// (and a third device) restore N from its tombstone when B's Note arrives, recording it, so
+/// nothing waits for good.
+#[test]
+fn a_deleted_notebook_comes_back_with_its_notes_when_another_device_added_to_it() {
+    let dir = Dir::new("parent");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let nb = notebook("Romans");
+    let old = note_in(&nb.id, "old note");
+    a.apply(&[
+        Change::insert(Row::Notebook(nb.clone())),
+        Change::insert(Row::Annotation(old.clone())),
+    ]);
+    Device::settle(&[&a, &b], &cloud);
+    a.apply(&[
+        Change::delete(Row::Annotation(old.clone())),
+        Change::delete(Row::Notebook(nb.clone())),
+    ]);
+    let added = note_in(&nb.id, "added on B");
+    b.apply(&[Change::insert(Row::Annotation(added.clone()))]);
     a.push(&cloud);
+    b.push(&cloud);
+    // A meets B's Note at its deleted Notebook: restored, not waiting.
+    let report = a.sync(&cloud);
+    assert!(report.waiting.is_empty(), "{report:?}");
+    assert_eq!(report.recorded.parents_restored, 1, "{report:?}");
+    // B meets A's delete with its Note there: kept, with A's Note deleted with it.
     let report = b.sync(&cloud);
     assert_eq!(
         report.outcomes.get(&Outcome::ParentKept),
         Some(&1),
         "{report:?}"
     );
-    assert!(b.row(&Row::Notebook(nb).key()).is_some());
-    assert!(b.row(&Row::Annotation(note).key()).is_some());
+    assert_eq!(report.recorded.children_restored, 1, "{report:?}");
+    let c = device(&dir, "c");
+    Device::settle(&[&a, &b, &c], &cloud);
+    for d in [&a, &b, &c] {
+        assert!(d.row(&Row::Notebook(nb.clone()).key()).is_some());
+        assert!(annotation_of(d, &added.id).is_some());
+        assert!(
+            annotation_of(d, &old.id).is_some(),
+            "deleted with it, back with it"
+        );
+    }
+    converged(&[&a, &b, &c]);
+}
+
+/// B adds a Note to N, then moves it (or deletes it) before it meets A's delete of N: B has
+/// no child of N then and deletes it, but A restored N for B's Note and recorded that, so
+/// every device ends the same.
+#[test]
+fn a_parent_restored_for_a_child_its_maker_then_moved_or_deleted_still_converges() {
+    for delete in [false, true] {
+        let dir = Dir::new(&format!("parent-moved-{delete}"));
+        let cloud = MemSyncFolder::new();
+        let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+        let default = b.user.notebooks().unwrap().remove(0).id;
+        let nb = notebook("Romans");
+        a.apply(&[Change::insert(Row::Notebook(nb.clone()))]);
+        Device::settle(&[&a, &b], &cloud);
+        a.apply(&[Change::delete(Row::Notebook(nb.clone()))]);
+        let added = note_in(&nb.id, "added on B");
+        b.apply(&[Change::insert(Row::Annotation(added.clone()))]);
+        b.push(&cloud);
+        if delete {
+            b.apply(&[Change::delete(Row::Annotation(added.clone()))]);
+        } else {
+            b.apply(&[Change::update(
+                Row::Annotation(added.clone()),
+                Row::Annotation(Annotation {
+                    notebook_id: default.clone(),
+                    ..added.clone()
+                }),
+            )]);
+        }
+        b.push(&cloud);
+        a.push(&cloud);
+        // A reads B's file with the Note in N before the one moving or deleting it.
+        let mut seen: Vec<(&str, u64)> = files_of(&cloud, &b.id)
+            .into_iter()
+            .map(|s| (b.id.as_str(), s))
+            .collect();
+        seen.pop();
+        let report = merge_folder(&a.user, &view(&cloud, &seen)).unwrap();
+        assert!(report.waiting.is_empty(), "{report:?}");
+        assert_eq!(report.recorded.parents_restored, 1, "{report:?}");
+        Device::settle(&[&a, &b], &cloud);
+        for d in [&a, &b] {
+            assert!(
+                d.row(&Row::Notebook(nb.clone()).key()).is_some(),
+                "delete: {delete}"
+            );
+        }
+        converged(&[&a, &b]);
+    }
+}
+
+/// The same rule for a Reading plan's Readings and a palette's styles.
+#[test]
+fn a_deleted_reading_plan_or_palette_comes_back_for_a_reading_or_style_added_meanwhile() {
+    let dir = Dir::new("parent-plan");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let plan = ReadingPlanRow {
+        id: 0,
+        name: "NT".into(),
+        template: "nt90".into(),
+        bible_id: "bsb".into(),
+        start_day: "2026-01-01".into(),
+        weekdays: 0x7f,
+        created_at: 0,
+    };
+    let readings: Vec<PlanReadingRow> = (0..2)
+        .map(|i| PlanReadingRow {
+            position: i,
+            passages: format!("Matt {}", i + 1),
+            day: format!("2026-01-0{}", i + 1),
+            read_at: None,
+        })
+        .collect();
+    let plan_a = a.user.add_reading_plan(&plan, &readings).unwrap();
+    let palette = obs_store::HighlightPalette {
+        id: new_id(),
+        name: "Mine".into(),
+        position: 1,
+        created_at: 1,
+        modified_at: 1,
+    };
+    a.apply(&[Change::insert(Row::HighlightPalette(palette.clone()))]);
+    Device::settle(&[&a, &b], &cloud);
+    // A deletes both; B marks a Reading read and adds a style to the palette.
+    assert!(a.user.remove_reading_plan(plan_a).unwrap());
+    a.apply(&[Change::delete(Row::HighlightPalette(palette.clone()))]);
+    let plan_b = b.user.reading_plans().unwrap()[0].id;
+    assert!(b.user.set_reading_read(plan_b, 1, true).unwrap());
+    let style = obs_store::HighlightStyle {
+        id: new_id(),
+        palette_id: palette.id.clone(),
+        position: 0,
+        name: "Promise".into(),
+        appearance: obs_store::StyleAppearance::new(
+            obs_store::HighlightLook::Underline,
+            obs_store::Rgb::new(1, 2, 3),
+        ),
+        created_at: 1,
+        modified_at: 1,
+    };
+    b.apply(&[Change::insert(Row::HighlightStyle(style.clone()))]);
+    Device::settle(&[&a, &b], &cloud);
+    for d in [&a, &b] {
+        let plans = d.user.reading_plans().unwrap();
+        assert_eq!(plans.len(), 1);
+        let read: Vec<bool> = d
+            .user
+            .plan_readings(plans[0].id)
+            .unwrap()
+            .iter()
+            .map(|r| r.read_at.is_some())
+            .collect();
+        assert_eq!(read, [false, true], "both Readings back, B's mark kept");
+        assert!(
+            d.row(&Row::HighlightPalette(palette.clone()).key())
+                .is_some()
+        );
+        assert!(d.row(&Row::HighlightStyle(style.clone()).key()).is_some());
+    }
+    converged(&[&a, &b]);
+}
+
+/// A child arriving at a parent deleted before schema 16 (its tombstone keeps no row) is
+/// held, not waited for, and applies once another device brings the parent back.
+#[test]
+fn a_child_of_a_parent_deleted_before_schema_16_is_held_until_the_parent_comes_back() {
+    let dir = Dir::new("parent-pre16");
+    let cloud = MemSyncFolder::new();
+    let (a, b, c) = (device(&dir, "a"), device(&dir, "b"), device(&dir, "c"));
+    let nb = notebook("Romans");
+    b.apply(&[Change::insert(Row::Notebook(nb.clone()))]);
+    Device::settle(&[&a, &b, &c], &cloud);
+    a.apply(&[Change::delete(Row::Notebook(nb.clone()))]);
+    // As a tombstone from before schema 16 is.
+    a.user
+        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .unwrap();
+    let added = note_in(&nb.id, "added on B");
+    b.apply(&[Change::insert(Row::Annotation(added.clone()))]);
+    b.push(&cloud);
+    let report = a.sync(&cloud);
+    assert!(report.waiting.is_empty(), "{report:?}");
+    assert_eq!(report.outcomes.get(&Outcome::Held), Some(&1), "{report:?}");
+    let held = a.user.sync_held().unwrap();
+    assert_eq!(held.len(), 1);
+    assert!(held[0].why.contains("held until"), "{held:?}");
+    // B meets A's delete with its Note there: it keeps N and records it, which brings N
+    // back on A, and A's held Note applies.
+    Device::settle(&[&a, &b, &c], &cloud);
+    assert!(a.user.sync_held().unwrap().is_empty());
+    assert!(annotation_of(&a, &added.id).is_some());
+    converged(&[&b, &c]);
+    // The one difference: A's own tombstone, from before schema 16, still keeps no row.
+    a.user
+        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .unwrap();
+    b.user
+        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .unwrap();
+    converged(&[&a, &b]);
+}
+
+#[test]
+fn two_collections_of_one_name_added_on_two_devices_both_stay_the_loser_renamed() {
+    let dir = Dir::new("items-one-name");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let key = "library.collections";
+    a.user
+        .set_preference(key, r#"[{"name":"Greek","ids":["sblgnt"]}]"#)
+        .unwrap();
+    b.user
+        .set_preference(key, r#"[{"name":"Greek","ids":["lxx"]}]"#)
+        .unwrap();
+    a.push(&cloud);
+    let report = b.sync(&cloud);
+    // A's add is the earlier: B keeps its own, and A, whose own lost, renames it.
+    assert_eq!(report.recorded.items_renamed, 0, "{report:?}");
+    let report = a.sync(&cloud);
+    assert_eq!(report.recorded.items_renamed, 1, "{report:?}");
+    Device::settle(&[&a, &b], &cloud);
+    let both = r#"[{"name":"Greek","ids":["lxx"]},{"name":"Greek (2)","ids":["sblgnt"]}]"#;
+    for d in [&a, &b] {
+        assert_eq!(d.user.preference(key).unwrap().as_deref(), Some(both));
+    }
+    converged(&[&a, &b]);
+}
+
+/// A writes a value of the Collections that is not a list (damaged, D7) at w; B adds an item
+/// at x after w. Both hold the damaged value with B's item held, whatever order they meet;
+/// a value in shape written after that (before x) gets B's item on top, on both.
+#[test]
+fn a_damaged_whole_list_value_holds_later_items_on_every_device_until_it_is_in_shape() {
+    let dir = Dir::new("whole-value");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let key = "library.collections";
+    a.user
+        .set_preference(key, r#"[{"name":"Greek","ids":[]}]"#)
+        .unwrap();
+    Device::settle(&[&a, &b], &cloud);
+    a.user.set_preference(key, "not a list").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    b.user
+        .set_preference(
+            key,
+            r#"[{"name":"Greek","ids":[]},{"name":"Hebrew","ids":["wlc"]}]"#,
+        )
+        .unwrap();
+    a.push(&cloud);
+    b.push(&cloud);
+    Device::settle(&[&a, &b], &cloud);
+    for d in [&a, &b] {
+        assert_eq!(
+            d.user.preference(key).unwrap().as_deref(),
+            Some("not a list")
+        );
+        let held = d.user.sync_held().unwrap();
+        assert_eq!(held.len(), 1, "{held:?}");
+        assert_eq!(
+            held[0].change.after.as_ref().unwrap().key(),
+            RowKey::Collection("Hebrew".into())
+        );
+    }
+    converged(&[&a, &b]);
+    // A value in shape written over it, at a clock before B's item: B's item goes on top.
+    let fix = r#"[{"name":"Fixed","ids":[]}]"#;
+    let b_item = b.user.sync_held().unwrap()[0].clock.clone();
+    let older = new_id();
+    let fixed = Op {
+        device: older.clone(),
+        clock: Hlc {
+            wall_ms: b_item.wall_ms - 1,
+            counter: 0,
+            device_id: older.clone(),
+        },
+        before: Some(Row::Preference(obs_store::SyncedPreference {
+            key: key.into(),
+            value: "not a list".into(),
+        })),
+        after: Some(Row::Preference(obs_store::SyncedPreference {
+            key: key.into(),
+            value: fix.into(),
+        })),
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    cloud.put(
+        &op_file_path(&older, 1),
+        &encode_op_file(std::slice::from_ref(&fixed)).unwrap(),
+    );
+    Device::settle(&[&a, &b], &cloud);
+    let on_top = r#"[{"name":"Fixed","ids":[]},{"name":"Hebrew","ids":["wlc"]}]"#;
+    for d in [&a, &b] {
+        assert_eq!(d.user.preference(key).unwrap().as_deref(), Some(on_top));
+        assert!(d.user.sync_held().unwrap().is_empty());
+    }
+    converged(&[&a, &b]);
+}
+
+#[test]
+fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
+    let dir = Dir::new("held");
+    let cloud = MemSyncFolder::new();
+    let b = device(&dir, "b");
+    let later = new_id();
+    let (f1, f2) = (favorite("Gen 1:1"), favorite("Ex 3:14"));
+    let now = u64::try_from(obs_store::clock::now_ms()).unwrap();
+    let op = |counter, row| Op {
+        device: later.clone(),
+        clock: Hlc {
+            wall_ms: now,
+            counter,
+            device_id: later.clone(),
+        },
+        before: None,
+        after: Some(row),
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    // A synced preference a later app added, between two good ops.
+    let unknown = Row::Preference(obs_store::SyncedPreference {
+        key: "study.later_app_setting".into(),
+        value: "1".into(),
+    });
+    cloud.put(
+        &op_file_path(&later, 1),
+        &encode_op_file(&[
+            op(0, Row::Favorite(f1.clone())),
+            op(1, unknown.clone()),
+            op(2, Row::Favorite(f2.clone())),
+        ])
+        .unwrap(),
+    );
+    let report = b.sync(&cloud);
+    assert!(report.waiting.is_empty(), "{report:?}");
+    assert_eq!(report.merged, [(later.clone(), 1)]);
+    assert_eq!(report.outcomes.get(&Outcome::Held), Some(&1), "{report:?}");
+    assert!(b.row(&Row::Favorite(f1).key()).is_some());
+    assert!(b.row(&Row::Favorite(f2).key()).is_some());
+    let held = b.user.sync_held().unwrap();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].change.after, Some(unknown));
+    assert!(held[0].why.contains("not Synced data"), "{held:?}");
+    // The stream goes on: the device's next file merges too.
+    cloud.put(
+        &op_file_path(&later, 2),
+        &encode_op_file(&[op(3, Row::Favorite(favorite("Lev 19:2")))]).unwrap(),
+    );
+    let report = b.sync(&cloud);
+    assert_eq!(report.merged, [(later, 2)]);
+    assert_eq!(
+        b.user.sync_held().unwrap().len(),
+        1,
+        "still held, tried again"
+    );
 }
 
 #[test]
