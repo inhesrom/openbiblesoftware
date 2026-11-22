@@ -734,6 +734,7 @@ fn a_file_needing_another_devices_notebook_waits_and_merges_after_it() {
         anchor: None,
         created_at: 1,
         modified_at: 1,
+        conflict_of: None,
     };
     b.apply(&[Change::insert(Row::Annotation(note.clone()))]);
     b.push(&cloud);
@@ -776,12 +777,13 @@ fn a_parent_delete_meeting_live_children_is_skipped_so_nothing_is_lost() {
         anchor: None,
         created_at: 1,
         modified_at: 1,
+        conflict_of: None,
     };
     b.apply(&[Change::insert(Row::Annotation(note.clone()))]);
     a.push(&cloud);
     let report = b.sync(&cloud);
     assert_eq!(
-        report.outcomes.get(&Outcome::ChildrenKept),
+        report.outcomes.get(&Outcome::ParentKept),
         Some(&1),
         "{report:?}"
     );

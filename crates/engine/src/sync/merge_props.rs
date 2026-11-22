@@ -336,6 +336,7 @@ impl World {
                         anchor: None,
                         created_at: 7,
                         modified_at: 7,
+                        conflict_of: None,
                     }
                 } else {
                     let verse = Verse::new(Book::from_index(rng.below(66)).unwrap(), 1, 1);
@@ -351,6 +352,7 @@ impl World {
                         }),
                         created_at: 7,
                         modified_at: 7,
+                        conflict_of: None,
                     }
                 };
                 user.apply_changes(&[Change::insert(Row::Annotation(a))])

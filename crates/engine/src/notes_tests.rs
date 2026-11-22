@@ -331,6 +331,7 @@ fn following_a_text_range_anchor_reveals_it_in_its_resource() {
         anchor: Some(Anchor::TextRange { range }),
         created_at: now,
         modified_at: now,
+        conflict_of: None,
     };
     s.user
         .as_ref()

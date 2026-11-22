@@ -959,6 +959,7 @@ mod tests {
             }),
             created_at: 0,
             modified_at: 0,
+            conflict_of: None,
         };
         assert!(is_stale(&a, "r", "sha256:new"));
         assert!(!is_stale(&a, "r", "sha256:old"));

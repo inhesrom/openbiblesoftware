@@ -25,13 +25,30 @@
 //!   names clash.
 //! - **Two Layouts of one name** both stay: the later (the larger id, a UUIDv7) is renamed
 //!   "Name (2)" by the device that finds the clash, recorded as its own edit.
+//! - **A Note's text edited on two devices** (plan S28b-2, D2): the later text stays in place;
+//!   the device whose own text lost (its own row replaced or deleted by another device's op
+//!   that had not seen its text) records that text as a second Note on the same Anchor in
+//!   the same Notebook, its `conflict_of` naming the Note ([`conflict_copy`]).
+//! - **Deleted parents** (D3): a child arriving at a deleted Notebook, Reading plan, Highlight
+//!   palette or style restores it from its tombstone's row, and a parent's delete meeting a
+//!   live child here keeps it, with the rows its op file deleted with it; either way this
+//!   device records the restore, so every device takes it.
+//! - **Two list items of one name** (D6): the later stays under the name; the device whose own
+//!   item lost to another's add records it again as "Name (2)".
+//! - **A list's whole value** (D7) is its base: item ops at or before it are superseded, later
+//!   ones go on top of it, or are held while it is not in its list's shape.
+//! - **An op this build cannot apply** (a synced preference a later app added …) is held in
+//!   `sync_held`, so the rest of its file merges; held ops are tried again at every sync.
 //!
 //! Every op's clock is observed (`UserStore::observe_clock`), so an edit made here after a
 //! merge is later than what it merged. `docs/dev/sync.md` has the merge table.
 
 use std::collections::{BTreeMap, VecDeque};
 
-use obs_store::{Change, Content, MergeTx, Notebook, Row, RowKey, RowState, StoreError, UserStore};
+use obs_store::{
+    Annotation, Change, Content, HeldOp, Hlc, MergeTx, Notebook, Row, RowKey, RowState, StoreError,
+    UserStore, list_key_of,
+};
 
 use super::ops::{Op, OpsStop, read_ops_after};
 use super::{DEVICES_DIR, SyncError, SyncFolder};
@@ -75,9 +92,39 @@ pub enum Outcome {
     EditKept,
     /// A delete of a row not here: its tombstone remembers what it covers.
     DeleteNoted,
-    /// A delete of a row that rows here still need (a Notebook with Annotations …): it stays,
-    /// so nothing is lost (plan S28b-2 settles these).
-    ChildrenKept,
+    /// A delete of a parent that rows here still need (a Notebook with Annotations, a palette
+    /// with styles, a style with Highlights, a plan with Readings): it stays, and this device
+    /// records it again with the rows its op file deleted with it (D3).
+    ParentKept,
+    /// An op this device cannot apply (a synced preference a later app added, an item of a
+    /// list whose value is not in its shape): held in `sync_held` and tried again later.
+    Held,
+}
+
+/// What a merge recorded or held beside the ops' outcomes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Recorded {
+    /// Sync conflicts' copies recorded: this device's own Note text lost (D2).
+    pub conflicts: usize,
+    /// Deleted parents restored for a child arriving from another device (D3).
+    pub parents_restored: usize,
+    /// Rows deleted with a parent recorded again, the parent kept for a live child (D3).
+    pub children_restored: usize,
+    /// List items of this device's recorded again under a free name, another device's add of
+    /// that name having won (D6).
+    pub items_renamed: usize,
+    /// Held ops applied or superseded on a later try.
+    pub unheld: usize,
+}
+
+impl Recorded {
+    fn add(&mut self, other: &Recorded) {
+        self.conflicts += other.conflicts;
+        self.parents_restored += other.parents_restored;
+        self.children_restored += other.children_restored;
+        self.items_renamed += other.items_renamed;
+        self.unheld += other.unheld;
+    }
 }
 
 /// What a merge did.
@@ -97,6 +144,8 @@ pub struct MergeReport {
     pub retried: usize,
     /// Devices whose op files could not all be read, where and why (`read_ops_after`).
     pub stopped: Vec<(String, u64, OpsStop)>,
+    /// What the merge recorded as this device's own edits, and held ops that applied.
+    pub recorded: Recorded,
 }
 
 /// A device's op files still to merge, by number, and why the first waits (if it does).
@@ -114,6 +163,7 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
         .collect();
     ids.sort();
     let mut report = MergeReport::default();
+    retry_held(user, &mut report)?;
     let mut pending: Vec<Pending> = Vec::new();
     for id in ids {
         let ops = read_ops_after(folder, &id, user.applied_up_to(&id)?)?;
@@ -160,7 +210,84 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             report.waiting.push((device, *seq, why));
         }
     }
+    retry_held(user, &mut report)?;
     Ok(report)
+}
+
+/// The op `op` held as.
+fn held_of(op: &Op, why: String) -> HeldOp {
+    HeldOp {
+        clock: op.clock.clone(),
+        change: op.change(),
+        before_clock: op.before_clock.clone(),
+        absent: op.absent.clone(),
+        why,
+    }
+}
+
+/// The op a held one was.
+fn op_of(held: &HeldOp) -> Op {
+    Op {
+        device: held.clock.device_id.clone(),
+        clock: held.clock.clone(),
+        before: held.change.before.clone(),
+        after: held.change.after.clone(),
+        before_clock: held.before_clock.clone(),
+        absent: held.absent.clone(),
+    }
+}
+
+/// Try a held op again, in a savepoint: whether it applied (or a later write superseded it),
+/// so it leaves `sync_held`.
+fn retry_one(
+    tx: &mut MergeTx<'_>,
+    held: &HeldOp,
+    recorded: &mut Recorded,
+) -> Result<bool, MergeError> {
+    tx.begin_op()?;
+    match merge_op(tx, &op_of(held), &[], recorded) {
+        Ok(Outcome::Held) => {
+            tx.end_op(false)?;
+            Ok(false)
+        }
+        Ok(_) => {
+            tx.end_op(true)?;
+            tx.unhold(held)?;
+            recorded.unheld += 1;
+            Ok(true)
+        }
+        Err(
+            MergeError::Waits(_)
+            | MergeError::Store(StoreError::Rejected(_) | StoreError::Conflict(_)),
+        ) => {
+            tx.end_op(false)?;
+            Ok(false)
+        }
+        Err(e) => {
+            tx.end_op(false)?;
+            Err(e)
+        }
+    }
+}
+
+/// Try every held op again, in one transaction (nothing when none is held).
+fn retry_held(user: &UserStore, report: &mut MergeReport) -> Result<(), SyncError> {
+    if user.sync_held()?.is_empty() {
+        return Ok(());
+    }
+    let mut recorded = Recorded::default();
+    user.merge_held(|tx| {
+        for held in tx.held(None)? {
+            retry_one(tx, &held, &mut recorded)?;
+        }
+        Ok::<(), MergeError>(())
+    })
+    .map_err(|e| match e {
+        MergeError::Store(e) => SyncError::from(e),
+        MergeError::Waits(why) => SyncError::Damaged(why),
+    })?;
+    report.recorded.add(&recorded);
+    Ok(())
 }
 
 /// Merge op file `seq` of `device` (its `ops`, in order) in one transaction.
@@ -173,12 +300,30 @@ fn merge_file(
 ) -> Result<(), MergeError> {
     let mut outcomes = Vec::with_capacity(ops.len());
     let mut not_observed = 0;
+    let mut recorded = Recorded::default();
     user.merge_op_file(device, seq, |tx| {
         for op in ops {
             if !user.observe_clock(&op.clock) {
                 not_observed += 1;
             }
-            outcomes.push(merge_op(tx, op)?);
+            // Each op in a savepoint: one this build cannot apply is held, leaving nothing of
+            // itself, and the rest of the file merges.
+            tx.begin_op()?;
+            match merge_op(tx, op, ops, &mut recorded) {
+                Ok(outcome) => {
+                    tx.end_op(true)?;
+                    outcomes.push(outcome);
+                }
+                Err(MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why))) => {
+                    tx.end_op(false)?;
+                    tx.hold(&held_of(op, why))?;
+                    outcomes.push(Outcome::Held);
+                }
+                Err(e) => {
+                    tx.end_op(false)?;
+                    return Err(e);
+                }
+            }
         }
         Ok::<(), MergeError>(())
     })?;
@@ -186,24 +331,93 @@ fn merge_file(
         *report.outcomes.entry(outcome).or_default() += 1;
     }
     report.not_observed += not_observed;
+    report.recorded.add(&recorded);
     Ok(())
 }
 
-/// Merge one op of another device (its clock already observed).
-pub fn merge_op(tx: &mut MergeTx<'_>, op: &Op) -> Result<Outcome, MergeError> {
+/// Merge one op of another device (its clock already observed), one of the ops of `file` (the
+/// op file it is in: a parent's delete keeps the rows deleted with it, D3). What it records
+/// is counted in `recorded`.
+pub fn merge_op(
+    tx: &mut MergeTx<'_>,
+    op: &Op,
+    file: &[Op],
+    recorded: &mut Recorded,
+) -> Result<Outcome, MergeError> {
     let key = op.change().key().ok_or_else(|| {
         StoreError::Rejected(format!(
             "the op at {} of {} is not about one row",
             op.clock, op.device
         ))
     })?;
+    if let Some(list) = list_key_of(&key) {
+        if let RowKey::Preference(_) = key {
+            return merge_list_base(tx, op, &key, &list, recorded);
+        }
+        // An item: its list's base (a whole-value write) supersedes every write before it.
+        if op.after.is_some() && tx.list_base(&list)?.as_ref() >= Some(&op.clock) {
+            tx.note_item_op(&key, &op.clock)?;
+            return Ok(Outcome::Superseded);
+        }
+        if !tx.list_in_shape(&list)? {
+            tx.note_item_op(&key, &op.clock)?;
+            if op.after.is_none() {
+                // Its tombstone says what it covers, which the value in shape to come obeys.
+                tx.note_delete(&key, &op.clock, op.before_clock.as_ref(), None)?;
+                return Ok(Outcome::DeleteNoted);
+            }
+            tx.hold(&held_of(
+                op,
+                format!("the value of {list} is not a list this app reads"),
+            ))?;
+            return Ok(Outcome::Held);
+        }
+    }
     let state = tx.state(&key)?;
     let outcome = match &op.after {
-        Some(after) => merge_write(tx, op, &state, after)?,
-        None => merge_delete(tx, op, &key, &state)?,
+        Some(after) => merge_write(tx, op, &state, after, recorded)?,
+        None => merge_delete(tx, op, &key, &state, file, recorded)?,
     };
     tx.note_item_op(&key, &op.clock)?;
     Ok(outcome)
+}
+
+/// A list preference's whole value (or its delete): later than the list's base here, it is
+/// the new base, with the items written after it on top ([`MergeTx::write_list_base`]); the
+/// items held for the list are then tried again, or dropped when it supersedes them.
+fn merge_list_base(
+    tx: &mut MergeTx<'_>,
+    op: &Op,
+    key: &RowKey,
+    list: &str,
+    recorded: &mut Recorded,
+) -> Result<Outcome, MergeError> {
+    if tx.list_base(list)?.as_ref() >= Some(&op.clock) {
+        if op.after.is_none() {
+            tx.note_delete(key, &op.clock, op.before_clock.as_ref(), None)?;
+        }
+        tx.note_list_op(list, &op.clock)?;
+        return Ok(Outcome::Superseded);
+    }
+    let here = tx.state(key)?.row;
+    tx.write_list_base(
+        &Change {
+            before: here,
+            after: op.after.clone(),
+        },
+        &op.clock,
+        op.before_clock.as_ref(),
+    )?;
+    let in_shape = tx.list_in_shape(list)?;
+    for held in tx.held(Some(list))? {
+        if held.clock <= op.clock {
+            tx.unhold(&held)?;
+            recorded.unheld += 1;
+        } else if in_shape {
+            retry_one(tx, &held, recorded)?;
+        }
+    }
+    Ok(Outcome::Written)
 }
 
 /// A write: last writer wins, unless a delete here covers it.
@@ -212,6 +426,7 @@ fn merge_write(
     op: &Op,
     state: &RowState,
     after: &Row,
+    recorded: &mut Recorded,
 ) -> Result<Outcome, MergeError> {
     let clock = Some(&op.clock);
     if state.row.is_some() {
@@ -224,7 +439,9 @@ fn merge_write(
         return Ok(Outcome::Covered);
     }
     let mut row = with_fields_here(after, state.row.as_ref(), &op.absent)?;
-    needs_parents(tx, &row, state.row.as_ref())?;
+    ensure_parents(tx, &row, state.row.as_ref(), recorded)?;
+    let copy = conflict_copy(tx, op, state, Some(&row))?;
+    let lost_item = own_item_lost(tx, op, state, &row);
     match &mut row {
         Row::Notebook(nb) => settle_default(tx, nb, state)?,
         Row::Layout(layout) => {
@@ -263,7 +480,102 @@ fn merge_write(
         &op.clock,
         None,
     )?;
+    if let Some(copy) = copy {
+        tx.record(&[Change::insert(Row::Annotation(copy))])?;
+        recorded.conflicts += 1;
+    }
+    if let Some(item) = lost_item
+        && let Some(renamed) = tx.renamed_for_clash(&item)?
+    {
+        tx.record(&[Change::insert(renamed)])?;
+        recorded.items_renamed += 1;
+    }
     Ok(Outcome::Written)
+}
+
+/// The id of the Sync conflict's copy of Note `note` holding its text at `lost` (the clock of
+/// the version that lost): a UUID-shaped hash of both, so it is the same wherever it is made.
+fn conflict_id(note: &str, lost: &Hlc) -> String {
+    let hex = crate::starter::sha256_hex(format!("{note} {lost}").as_bytes());
+    let h = hex.as_bytes();
+    let part = |r: std::ops::Range<usize>| String::from_utf8_lossy(&h[r]).into_owned();
+    // RFC 9562 version 8 (custom), variant 10.
+    let variant = ["8", "9", "a", "b"][usize::from(h[16] % 4)];
+    format!(
+        "{}-{}-8{}-{variant}{}-{}",
+        part(0..8),
+        part(8..12),
+        part(13..16),
+        part(17..20),
+        part(20..32)
+    )
+}
+
+/// The Sync conflict's copy to record when `op` replaces (`winner`, the row it writes) or
+/// deletes (`None`) this device's own Note whose text it had not seen (its `before` text is
+/// another, or it has none: an insert) and that text would be lost (D2): the text that lost,
+/// on the Anchor and in the Notebook of the Note in place (or of the Note here, when it is
+/// deleted), `conflict_of` naming it. None when the copy is here already, or was deleted.
+fn conflict_copy(
+    tx: &mut MergeTx<'_>,
+    op: &Op,
+    state: &RowState,
+    winner: Option<&Row>,
+) -> Result<Option<Annotation>, MergeError> {
+    let (Some(Row::Annotation(ours)), Some(lost)) = (&state.row, &state.clock) else {
+        return Ok(None);
+    };
+    let Content::Note { body: mine } = &ours.content else {
+        return Ok(None);
+    };
+    if lost.device_id != tx.device_id() {
+        return Ok(None);
+    }
+    let note_text = |row: Option<&Row>| match row {
+        Some(Row::Annotation(a)) if a.is_note() => Some(a.body().to_string()),
+        _ => None,
+    };
+    if note_text(op.before.as_ref()).as_ref() == Some(mine)
+        || note_text(winner).as_ref() == Some(mine)
+    {
+        return Ok(None);
+    }
+    let id = conflict_id(&ours.id, lost);
+    let there = tx.state(&RowKey::Annotation(id.clone()))?;
+    if there.row.is_some() || there.tombstone.is_some() {
+        return Ok(None);
+    }
+    let place = match winner {
+        Some(Row::Annotation(a)) => a,
+        _ => ours,
+    };
+    Ok(Some(Annotation {
+        id,
+        notebook_id: place.notebook_id.clone(),
+        content: Content::Note { body: mine.clone() },
+        anchor: place.anchor.clone(),
+        created_at: ours.created_at,
+        modified_at: ours.modified_at,
+        conflict_of: Some(ours.id.clone()),
+    }))
+}
+
+/// This device's own list item (a Collection, Copy preset or Saved search) that `op`, another
+/// device's add of an item of that name with other JSON, replaces (D6): it is recorded again
+/// under a free name.
+fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> Option<Row> {
+    let ours = state.row.as_ref()?;
+    let own = state.clock.as_ref()?.device_id == tx.device_id();
+    match (ours, winner) {
+        (Row::Collection(o), Row::Collection(w))
+        | (Row::CopyPreset(o), Row::CopyPreset(w))
+        | (Row::SavedSearch(o), Row::SavedSearch(w))
+            if own && op.before.is_none() && o.json != w.json =>
+        {
+            Some(ours.clone())
+        }
+        _ => None,
+    }
 }
 
 /// A delete: it removes the row here only if it covers the row's version.
@@ -272,18 +584,18 @@ fn merge_delete(
     op: &Op,
     key: &RowKey,
     state: &RowState,
+    file: &[Op],
+    recorded: &mut Recorded,
 ) -> Result<Outcome, MergeError> {
     let covers = op.before_clock.as_ref();
+    let deleted = op.before.as_ref();
     let Some(here) = &state.row else {
-        tx.note_delete(key, &op.clock, covers)?;
+        tx.note_delete(key, &op.clock, covers, deleted)?;
         return Ok(Outcome::DeleteNoted);
     };
     if state.clock.as_ref() > covers {
-        tx.note_delete(key, &op.clock, covers)?;
+        tx.note_delete(key, &op.clock, covers, deleted)?;
         return Ok(Outcome::EditKept);
-    }
-    if tx.has_children(key)? {
-        return Ok(Outcome::ChildrenKept);
     }
     if let Row::Notebook(nb) = here
         && nb.is_default
@@ -295,8 +607,61 @@ fn merge_delete(
             nb.id
         )));
     }
+    if tx.has_children(key)? {
+        // D3: a child here the delete had not seen keeps its parent. The delete is noted, and
+        // this device records the parent again (after what the tombstone covers) with the
+        // rows its op file deleted with it, so every device keeps them.
+        tx.note_delete(key, &op.clock, covers, deleted)?;
+        tx.record(&[Change::update(here.clone(), here.clone())])?;
+        restore_deleted_with(tx, key, file, recorded)?;
+        return Ok(Outcome::ParentKept);
+    }
+    if let Some(copy) = conflict_copy(tx, op, state, None)? {
+        tx.record(&[Change::insert(Row::Annotation(copy))])?;
+        recorded.conflicts += 1;
+    }
     tx.write_merged(&Change::delete(here.clone()), &op.clock, covers)?;
     Ok(Outcome::Written)
+}
+
+/// Whether `child` is a row that needs the parent `parent` names.
+fn is_child_of(child: &Row, parent: &RowKey) -> bool {
+    match (child, parent) {
+        (Row::Annotation(a), RowKey::Notebook(id)) => a.notebook_id == *id,
+        (Row::Annotation(a), RowKey::HighlightStyle(id)) => {
+            matches!(&a.content, Content::Highlight { style } if style == id)
+        }
+        (Row::HighlightStyle(s), RowKey::HighlightPalette(id)) => s.palette_id == *id,
+        (Row::Reading(r), RowKey::ReadingPlan(uid)) => r.plan_uid == *uid,
+        _ => false,
+    }
+}
+
+/// Record again the children of `parent` that the op file `file` deleted and that are not
+/// here (D3: "a deleted Notebook and its Annotations" come back). One whose other parent is
+/// gone for good is left deleted.
+fn restore_deleted_with(
+    tx: &mut MergeTx<'_>,
+    parent: &RowKey,
+    file: &[Op],
+    recorded: &mut Recorded,
+) -> Result<(), MergeError> {
+    for op in file {
+        let (Some(child), None) = (&op.before, &op.after) else {
+            continue;
+        };
+        if !is_child_of(child, parent) || tx.state(&child.key())?.row.is_some() {
+            continue;
+        }
+        match ensure_parents(tx, child, None, recorded) {
+            Ok(()) => {}
+            Err(MergeError::Waits(_) | MergeError::Store(StoreError::Rejected(_))) => continue,
+            Err(e) => return Err(e),
+        }
+        tx.record(&[Change::insert(child.clone())])?;
+        recorded.children_restored += 1;
+    }
+    Ok(())
 }
 
 /// `after` with the top-level fields it did not carry (`absent`) taken from the row `here`,
@@ -326,39 +691,65 @@ fn with_fields_here(after: &Row, here: Option<&Row>, absent: &[String]) -> Resul
     serde_json::from_value(serde_json::Value::Object(merged)).map_err(json)
 }
 
-/// The rows `row` needs that are not here yet: another device's op file brings them, so this
-/// file waits.
-fn needs_parents(tx: &mut MergeTx<'_>, row: &Row, here: Option<&Row>) -> Result<(), MergeError> {
-    let mut missing = |key: RowKey| -> Result<Option<String>, MergeError> {
-        Ok(tx.state(&key)?.row.is_none().then(|| key.describe()))
-    };
-    let need = match row {
+/// Make sure the rows `row` needs are here: a deleted one is restored from its tombstone's
+/// row and recorded (D3; its own parents first: a style's palette); one not here yet waits
+/// for another device's op file to bring it; one deleted before schema 16 (its tombstone has
+/// no row) is refused, so the op is held until another device brings it back.
+fn ensure_parents(
+    tx: &mut MergeTx<'_>,
+    row: &Row,
+    here: Option<&Row>,
+    recorded: &mut Recorded,
+) -> Result<(), MergeError> {
+    let mut needs = Vec::new();
+    match row {
         Row::Annotation(a) => {
-            let notebook = missing(RowKey::Notebook(a.notebook_id.clone()))?;
+            needs.push(RowKey::Notebook(a.notebook_id.clone()));
             match (&a.content, here) {
-                _ if notebook.is_some() => notebook,
                 // A Highlight not changing style is not checked again, as `apply_changes`
                 // does not: its style may be gone here, and the Highlight still moves.
                 (Content::Highlight { .. }, Some(Row::Annotation(h))) if h.content == a.content => {
-                    None
                 }
                 (Content::Highlight { style }, _) => {
-                    missing(RowKey::HighlightStyle(style.clone()))?
+                    needs.push(RowKey::HighlightStyle(style.clone()))
                 }
-                (Content::Note { .. }, _) => None,
+                (Content::Note { .. }, _) => {}
             }
         }
-        Row::HighlightStyle(s) => missing(RowKey::HighlightPalette(s.palette_id.clone()))?,
-        Row::Reading(r) => missing(RowKey::ReadingPlan(r.plan_uid.clone()))?,
-        _ => None,
-    };
-    match need {
-        Some(what) => Err(MergeError::Waits(format!(
-            "{} needs {what}, which another device's op file brings",
-            row.key().describe()
-        ))),
-        None => Ok(()),
+        Row::HighlightStyle(s) => needs.push(RowKey::HighlightPalette(s.palette_id.clone())),
+        Row::Reading(r) => needs.push(RowKey::ReadingPlan(r.plan_uid.clone())),
+        _ => {}
     }
+    for parent in needs {
+        let state = tx.state(&parent)?;
+        if state.row.is_some() {
+            continue;
+        }
+        match tx.tombstone_row(&parent)? {
+            Some(restored) => {
+                ensure_parents(tx, &restored, None, recorded)?;
+                tx.record(&[Change::insert(restored)])?;
+                recorded.parents_restored += 1;
+            }
+            None if state.tombstone.is_some() => {
+                return Err(StoreError::Rejected(format!(
+                    "{} needs {}, deleted here before this app kept deleted rows: it is held \
+                     until another device brings it back",
+                    row.key().describe(),
+                    parent.describe()
+                ))
+                .into());
+            }
+            None => {
+                return Err(MergeError::Waits(format!(
+                    "{} needs {}, which another device's op file brings",
+                    row.key().describe(),
+                    parent.describe()
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Whether Notebook `a` is older than `b` (`created_at`, then id): of two default Notebooks,

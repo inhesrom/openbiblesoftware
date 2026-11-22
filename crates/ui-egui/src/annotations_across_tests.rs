@@ -672,6 +672,7 @@ fn text_range_anchors_show_only_in_their_resource() {
         anchor: Some(Anchor::TextRange { range }),
         created_at: 1,
         modified_at: 1,
+        conflict_of: None,
     };
     assert_eq!(
         crate::marks_for(

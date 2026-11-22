@@ -63,15 +63,22 @@ fn range(quote: &str) -> TextRange {
 }
 
 /// Run `write` (today's code writing rows) on a User database left at an older schema: the
-/// anchor columns added since (`checked_hash`, schema 12) are there while it runs and are
-/// dropped after, so the file is as that schema had it.
+/// annotation columns added since (`anchors.checked_hash`, schema 12;
+/// `annotations.conflict_of`, schema 16) are there while it runs and are dropped after, so
+/// the file is as that schema had it.
 fn with_todays_anchor_columns<T>(db: &std::path::Path, write: impl FnOnce() -> T) -> T {
     let raw = rusqlite::Connection::open(db).unwrap();
-    raw.execute_batch("ALTER TABLE anchors ADD COLUMN checked_hash TEXT")
-        .unwrap();
+    raw.execute_batch(
+        "ALTER TABLE anchors ADD COLUMN checked_hash TEXT;
+         ALTER TABLE annotations ADD COLUMN conflict_of TEXT;",
+    )
+    .unwrap();
     let out = write();
-    raw.execute_batch("ALTER TABLE anchors DROP COLUMN checked_hash")
-        .unwrap();
+    raw.execute_batch(
+        "ALTER TABLE anchors DROP COLUMN checked_hash;
+         ALTER TABLE annotations DROP COLUMN conflict_of;",
+    )
+    .unwrap();
     out
 }
 
@@ -87,6 +94,7 @@ fn note(notebook: &str, body: &str, anchor: Option<Anchor>) -> Annotation {
         anchor,
         created_at: 20,
         modified_at: 20,
+        conflict_of: None,
     }
 }
 
@@ -100,6 +108,7 @@ fn highlight(notebook: &str, anchor: Anchor) -> Annotation {
         anchor: Some(anchor),
         created_at: 30,
         modified_at: 30,
+        conflict_of: None,
     }
 }
 

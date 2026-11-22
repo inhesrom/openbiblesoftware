@@ -96,6 +96,31 @@ impl ListPreference {
         }
     }
 
+    /// How its items' tombstones and item clocks are named: their `row_table`, and the
+    /// start every `row_id` of its items has (a Guide arrangement's `<guide>/`).
+    pub(crate) fn item_rows(&self) -> (&'static str, String) {
+        match self {
+            Self::Collections => ("collection", String::new()),
+            Self::CopyPresets => ("copy_preset", String::new()),
+            Self::SavedSearches => ("saved_search", String::new()),
+            Self::ResourceTags => ("resource_tags", String::new()),
+            Self::GuideArrangement(guide) => ("guide_section", format!("{guide}/")),
+        }
+    }
+
+    /// The key of its item that `row_id` (an item's tombstone or item-clock id) names.
+    pub(crate) fn item_key(&self, row_id: &str) -> Option<RowKey> {
+        let (_, prefix) = self.item_rows();
+        let id = row_id.strip_prefix(&prefix)?.to_string();
+        Some(match self {
+            Self::Collections => RowKey::Collection(id),
+            Self::CopyPresets => RowKey::CopyPreset(id),
+            Self::SavedSearches => RowKey::SavedSearch(id),
+            Self::ResourceTags => RowKey::ResourceTags(id),
+            Self::GuideArrangement(guide) => RowKey::GuideSection(guide.clone(), id),
+        })
+    }
+
     fn named(&self, item: SyncedListItem) -> Row {
         match self {
             Self::CopyPresets => Row::CopyPreset(item),
@@ -193,6 +218,65 @@ impl ListPreference {
     }
 }
 
+/// The named list item `row` (a Collection, Copy preset or Saved search) under the name
+/// `name`: its JSON with its `name` field replaced, every other field as it was, in its
+/// order. `None` for another kind of row or JSON that is not an object with a name.
+pub(crate) fn renamed_item(row: &Row, name: &str) -> Option<Row> {
+    let (Row::Collection(item) | Row::CopyPreset(item) | Row::SavedSearch(item)) = row else {
+        return None;
+    };
+    let fields = ordered_fields(&item.json)?;
+    let mut found = false;
+    let mut parts = Vec::with_capacity(fields.len());
+    for (field, value) in fields {
+        let value = if field == "name" {
+            found = true;
+            serde_json::to_string(name).ok()?
+        } else {
+            value.get().to_string()
+        };
+        parts.push(format!("{}:{value}", serde_json::to_string(&field).ok()?));
+    }
+    if !found {
+        return None;
+    }
+    let renamed = SyncedListItem {
+        name: name.to_string(),
+        position: item.position,
+        json: format!("{{{}}}", parts.join(",")),
+    };
+    Some(match row {
+        Row::CopyPreset(_) => Row::CopyPreset(renamed),
+        Row::SavedSearch(_) => Row::SavedSearch(renamed),
+        _ => Row::Collection(renamed),
+    })
+}
+
+/// The fields of the JSON object `json`, in their order, each value as written.
+fn ordered_fields(json: &str) -> Option<Vec<(String, Box<RawValue>)>> {
+    struct Fields;
+    impl<'de> serde::de::Visitor<'de> for Fields {
+        type Value = Vec<(String, Box<RawValue>)>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a JSON object")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut out = Vec::new();
+            while let Some(entry) = map.next_entry::<String, Box<RawValue>>()? {
+                out.push(entry);
+            }
+            Ok(out)
+        }
+    }
+    let mut de = serde_json::Deserializer::from_str(json);
+    let fields = serde::Deserializer::deserialize_map(&mut de, Fields).ok()?;
+    de.end().ok()?;
+    Some(fields)
+}
+
 /// The Changes that turn the items `before` into `after`: deletes first, then updates and
 /// inserts in the order of `after`. Items that did not change have none.
 pub(crate) fn diff(before: &[Row], after: &[Row]) -> Vec<Change> {
@@ -276,6 +360,37 @@ mod tests {
         }
         assert!(ListPreference::of_key("guide-arrangement/").is_none());
         assert!(ListPreference::of_key("highlights.palette").is_none());
+    }
+
+    #[test]
+    fn a_renamed_item_keeps_every_other_field_in_its_order() {
+        let list = ListPreference::Collections;
+        let items = list
+            .items(Some(r#"[{"rules":[{"a":1}],"name":"Greek","ids":["x"]}]"#))
+            .unwrap();
+        let renamed = renamed_item(&items[0], "Greek (2)").unwrap();
+        let Row::Collection(item) = &renamed else {
+            panic!("{renamed:?}")
+        };
+        assert_eq!(item.name, "Greek (2)");
+        assert_eq!(
+            item.json,
+            r#"{"rules":[{"a":1}],"name":"Greek (2)","ids":["x"]}"#
+        );
+        assert_eq!(
+            list.items(Some(&list.compose(&[renamed.clone()]))),
+            Some(vec![renamed])
+        );
+        assert!(
+            renamed_item(
+                &Row::ResourceTags(SyncedResourceTags {
+                    resource_id: "kjv".into(),
+                    json: "[]".into()
+                }),
+                "x"
+            )
+            .is_none()
+        );
     }
 
     #[test]

@@ -172,6 +172,7 @@ fn note(notebook_id: &str, body: &str) -> Annotation {
         }),
         created_at: 20,
         modified_at: 20,
+        conflict_of: None,
     }
 }
 

@@ -59,6 +59,7 @@ fn note(notebook: &str, body: &str, v: u16) -> Annotation {
         anchor: Some(passage(v)),
         created_at: 20,
         modified_at: 20,
+        conflict_of: None,
     }
 }
 
@@ -72,6 +73,7 @@ fn highlight(notebook: &str, v: u16) -> Annotation {
         anchor: Some(passage(v)),
         created_at: 30,
         modified_at: 30,
+        conflict_of: None,
     }
 }
 
