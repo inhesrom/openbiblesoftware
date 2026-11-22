@@ -434,6 +434,11 @@ impl StarterLibrary {
         self.needs_app_update
     }
 
+    /// The released manifest, once fetched.
+    pub fn released(&self) -> Option<&StarterManifest> {
+        self.released.as_ref()
+    }
+
     /// The bundle's manifest, when there is a bundle.
     pub fn bundled(&self) -> Option<&StarterManifest> {
         self.bundled.as_ref()

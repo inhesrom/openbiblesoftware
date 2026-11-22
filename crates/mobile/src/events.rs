@@ -30,6 +30,9 @@ pub enum Changed {
     History,
     /// A short message for the user, in the engine's words (a toast).
     Message(String),
+    /// Library → Starter library, Get Resources or a download changed (the released manifest
+    /// came in, a download moved on, a Resource was removed): ask for them again.
+    Downloads,
 }
 
 /// What the pump has reported so far.
@@ -41,6 +44,8 @@ pub(crate) struct EventState {
     pub(crate) seen_library: Vec<String>,
     /// The newest Visit last reported.
     pub(crate) seen_history: Option<i64>,
+    /// The Starter library's check, error and row count last reported.
+    pub(crate) seen_starter: (bool, Option<String>, usize),
 }
 
 impl EventState {
@@ -76,6 +81,12 @@ impl MobileApp {
             self.events.seen_history = newest;
             self.events.push(Changed::History);
         }
+        self.advance_downloads();
+        let seen = self.starter_seen();
+        if seen != self.events.seen_starter {
+            self.events.seen_starter = seen;
+            self.events.push(Changed::Downloads);
+        }
         let order = self.session.library.preferred_order();
         if order != self.events.seen_library {
             self.events.seen_library = order;
@@ -92,6 +103,16 @@ impl MobileApp {
             }
         }
         std::mem::take(&mut self.events.pending)
+    }
+
+    /// The Starter library's check, error and row count, to tell when they change.
+    pub(crate) fn starter_seen(&self) -> (bool, Option<String>, usize) {
+        let starter = &self.session.starter;
+        (
+            starter.is_checking(),
+            starter.error().map(str::to_string),
+            starter.manifest().map_or(0, |m| m.resources.len()),
+        )
     }
 
     /// Whether background jobs are running (the pump polls more often meanwhile).

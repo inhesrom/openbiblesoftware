@@ -15,11 +15,14 @@
 //!   and accessibility answers;
 //! - `session`: the Mobile Last session;
 //! - `settings`: Theme, Page tone, Text size and Dynamic Type, fonts, Reduce motion;
+//! - [`library`]: Library → Starter library, the Open catalogue, downloads and their states,
+//!   Remove and Add back, Library → Storage;
 //! - `events`: the pump and its [`Changed`] events.
 
 mod app;
 mod events;
 mod frame;
+pub mod library;
 mod navigation;
 pub mod paths;
 mod readers;
@@ -34,7 +37,14 @@ pub use frame::{
     AROUND, BAND, Footnote, FootnoteMarkerHit, Hit, HitVerse, HitWord, MAX_TILE_PX, ReaderFrame,
     SystemAppearance, TileKey, TilePlace, TimedTile, Viewport,
 };
+pub use library::{
+    DownloadOrigin, DownloadPlan, DownloadRequest, DownloadRow, DownloadState, Network, OpenRow,
+    RemoveAnswer, SetSummary, StarterChoice, StarterLibraryView, StarterRow, StarterRowStatus,
+    StorageRow, StorageView,
+};
 pub use navigation::{BookChapters, HistoryDay, HistoryVisit, ParsedReference};
+pub use obs_engine::licence::{LicenceClass, LicenceFilter};
+pub use obs_engine::starter::MobileSet;
 pub use obs_model::ResourceType;
 pub use obs_reading::{DocPos, Tile};
 pub use paths::Paths;
@@ -42,5 +52,7 @@ pub use readers::{MAX_READERS, ReaderId, ReaderSnapshot};
 pub use settings::{Choice, Choices, ReadingFont, Settings, text_size_for_content_size};
 pub use text_input::{AccessibilityItem, ContentRect, TextSpan, TextUnitKind};
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod library_tests;
 #[cfg(test)]
 mod tests;

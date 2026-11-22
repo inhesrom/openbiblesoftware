@@ -2,7 +2,9 @@
 //! Remove frees it) and whether a download fits in the free space the shell reports (#333:
 //! "a download that won't fit says so before it starts").
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::BTreeSet;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 
 use crate::session::Session;
@@ -46,6 +48,7 @@ pub fn fits(bytes: u64, free: u64) -> bool {
     space_needed(bytes) <= free
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Whether an alias cache file name has `resource_id` as one side
 /// (`<index>.<hash>--<dictionary>.<hash>.v<N>.aliases.json`).
 fn alias_cache_of(name: &str, resource_id: &str) -> bool {
@@ -54,6 +57,7 @@ fn alias_cache_of(name: &str, resource_id: &str) -> bool {
             || name.contains(&format!("--{resource_id}.")))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn files_in(dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -65,12 +69,21 @@ fn files_in(dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn size_of(path: &Path) -> u64 {
     std::fs::metadata(path).map_or(0, |m| m.len())
 }
 
 impl Session {
+    /// What each Resource of the library takes on disk, in Preferred order (nothing without
+    /// files: the browser build).
+    #[cfg(target_arch = "wasm32")]
+    pub fn library_storage(&self) -> LibraryStorage {
+        LibraryStorage::default()
+    }
+
     /// What each Resource of the library takes on disk, in Preferred order.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn library_storage(&self) -> LibraryStorage {
         let search_cache = self.search.cache_dir().map(Path::to_path_buf);
         let alias_cache = self.guides.aliases().dir();
