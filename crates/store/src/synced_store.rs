@@ -34,31 +34,42 @@ pub(crate) fn has_table(c: &Connection, name: &str) -> Result<bool, StoreError> 
     .map_err(sql)
 }
 
-/// A delete leaves a tombstone of the row with the delete's `clock`; a row made again (an
-/// undone delete) takes its tombstone away. An update changes neither.
+/// A delete leaves a tombstone of the row with the delete's `clock` and, from schema 15, what
+/// it `covers` (the clock of the version deleted, `NO_CLOCK` for one from before clocks).
+/// From schema 15 a tombstone is kept for good (ADR 0022 rule 3): a row made again (an undone
+/// delete, another device's edit the delete did not see) lives beside it, since its clock is
+/// later than what the tombstone covers, and a later delete keeps the newer clock and the
+/// newer of what they cover, so every device ends with the same tombstone whatever order its
+/// deletes and writes arrived in. Before schema 15 a row made again took its tombstone away.
+/// An update changes neither.
 pub(crate) fn mark_tombstone(
     c: &Connection,
     change: &Change,
     key: &RowKey,
     clock: &str,
+    covers: Option<&str>,
 ) -> Result<(), StoreError> {
     let (kind, id) = key.tombstone();
-    match (&change.before, &change.after) {
-        (Some(_), None) => c
-            .execute(
-                "INSERT INTO tombstone (row_table, row_id, clock) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock",
-                params![kind, id, clock],
-            )
-            .map(drop),
-        (None, Some(_)) => c
-            .execute(
-                "DELETE FROM tombstone WHERE row_table = ?1 AND row_id = ?2",
-                params![kind, id],
-            )
-            .map(drop),
-        _ => Ok(()),
+    match (&change.before, &change.after, covers) {
+        (Some(_), None, Some(covers)) => c.execute(
+            "INSERT INTO tombstone (row_table, row_id, clock, covers) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (row_table, row_id) DO UPDATE SET
+                 clock = max(clock, excluded.clock),
+                 covers = max(coalesce(covers, clock), excluded.covers)",
+            params![kind, id, clock, covers],
+        ),
+        (Some(_), None, None) => c.execute(
+            "INSERT INTO tombstone (row_table, row_id, clock) VALUES (?1, ?2, ?3)
+             ON CONFLICT (row_table, row_id) DO UPDATE SET clock = excluded.clock",
+            params![kind, id, clock],
+        ),
+        (None, Some(_), None) => c.execute(
+            "DELETE FROM tombstone WHERE row_table = ?1 AND row_id = ?2",
+            params![kind, id],
+        ),
+        _ => Ok(0),
     }
+    .map(drop)
     .map_err(sql)
 }
 
@@ -252,17 +263,84 @@ impl ListItems {
         let key = list.key();
         if !self.0.contains_key(&key) {
             let value = read_preference(c, &key)?;
-            let items = list.items(value.as_deref()).ok_or_else(|| {
+            let mut items = list.items(value.as_deref()).ok_or_else(|| {
                 StoreError::Rejected(format!(
                     "the preference {key} is not a list the app wrote, so it is changed only whole"
                 ))
             })?;
+            stored_positions(c, &mut items)?;
             self.0.insert(key.clone(), items);
         }
         self.0
             .get_mut(&key)
             .ok_or_else(|| StoreError::Rejected(format!("no items of {key}")))
     }
+}
+
+/// Whether table `table` has column `column` (one opened at an older schema may not).
+pub(crate) fn has_column(c: &Connection, table: &str, column: &str) -> Result<bool, StoreError> {
+    c.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
+        params![table, column],
+        |r| r.get(0),
+    )
+    .map_err(sql)
+}
+
+/// Give each list item the position its last write gave it, which `item_clock` keeps (from
+/// schema 15), in place of its index in the stored value. A list is composed by (position,
+/// name), so two devices holding the same last writes of its items compose the same order,
+/// whatever order they merged them in. An item with none (written before schema 15, or the
+/// list last written whole) keeps its index.
+pub(crate) fn stored_positions(c: &Connection, items: &mut [Row]) -> Result<(), StoreError> {
+    if items.is_empty() || !has_column(c, "item_clock", "position")? {
+        return Ok(());
+    }
+    let mut stmt = c
+        .prepare_cached("SELECT position FROM item_clock WHERE row_table = ?1 AND row_id = ?2")
+        .map_err(sql)?;
+    for item in items {
+        let (kind, id) = item.key().tombstone();
+        let position = match item {
+            Row::Collection(i) | Row::CopyPreset(i) | Row::SavedSearch(i) => &mut i.position,
+            Row::GuideSection(s) => &mut s.position,
+            _ => continue,
+        };
+        let stored: Option<i64> = stmt
+            .query_row(params![kind, id], |r| r.get(0))
+            .optional()
+            .map_err(sql)?
+            .flatten();
+        if let Some(p) = stored.and_then(|p| u32::try_from(p).ok()) {
+            *position = p;
+        }
+    }
+    Ok(())
+}
+
+/// A list preference written whole: its items' stored positions no longer say where they
+/// are, so they go back to their index in the value.
+fn forget_positions(c: &Connection, key: &str) -> Result<(), StoreError> {
+    let Some(list) = ListPreference::of_key(key) else {
+        return Ok(());
+    };
+    if !has_column(c, "item_clock", "position")? {
+        return Ok(());
+    }
+    let (kind, prefix) = match &list {
+        ListPreference::Collections => ("collection", String::new()),
+        ListPreference::CopyPresets => ("copy_preset", String::new()),
+        ListPreference::SavedSearches => ("saved_search", String::new()),
+        ListPreference::GuideArrangement(guide) => ("guide_section", format!("{guide}/")),
+        ListPreference::ResourceTags => return Ok(()),
+    };
+    c.execute(
+        "UPDATE item_clock SET position = NULL
+         WHERE row_table = ?1 AND substr(row_id, 1, length(?2)) = ?2",
+        params![kind, prefix],
+    )
+    .map(drop)
+    .map_err(sql)
 }
 
 /// The row `key` names, of a kind `synced.rs` holds.
@@ -429,12 +507,14 @@ pub(crate) fn write_synced_row(
         }
         (RowKey::Preference(key), None) => {
             lists.0.remove(key);
+            forget_positions(c, key)?;
             c.execute("DELETE FROM preference WHERE key = ?1", [key])
                 .map(drop)
                 .map_err(sql)
         }
         (RowKey::Preference(_), Some(Row::Preference(p))) => {
             lists.0.remove(&p.key);
+            forget_positions(c, &p.key)?;
             write_preference(c, &p.key, &p.value)
         }
         (
@@ -485,8 +565,13 @@ pub(crate) fn preference_changes(
         return Ok(Vec::new());
     }
     if let Some(list) = ListPreference::of_key(key)
-        && let (Some(before), Some(after)) = (list.items(old.as_deref()), list.items(Some(value)))
+        && let (Some(mut before), Some(after)) =
+            (list.items(old.as_deref()), list.items(Some(value)))
     {
+        // The items as `apply_changes` reads them, at their stored positions; an item the
+        // new value puts elsewhere (or whose stored position a merge tied with another's) gets
+        // its index.
+        stored_positions(c, &mut before)?;
         let changes = diff(&before, &after);
         // An empty list written where there was no value has no items to add: it is
         // written whole, so the value is there as the engine wrote it.

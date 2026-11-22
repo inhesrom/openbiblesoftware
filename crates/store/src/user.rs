@@ -23,7 +23,7 @@ use crate::synced_store;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 14;
+pub const USER_SCHEMA_VERSION: u32 = 15;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -63,6 +63,9 @@ const MIGRATIONS: &[&str] = &[
     // 13 → 14: the clocks of list-preference items and the outbox of ops for the Sync folder
     // (ADR 0022 rule 2).
     crate::sync_schema::SCHEMA_14,
+    // 14 → 15: what each delete of Synced data covers, so an edit it did not see beats it
+    // (ADR 0022 rule 3, S28b).
+    crate::sync_schema::SCHEMA_15,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {

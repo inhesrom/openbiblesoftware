@@ -8,7 +8,8 @@
 //! tombstone for each row it deletes. Migration 13 → 14 adds the clocks of list-preference
 //! items and the outbox of ops not yet written to the Sync folder; from schema 14
 //! `apply_changes` stamps every row, item and tombstone it writes with a hybrid logical clock
-//! (`hlc.rs`, `sync_clock.rs`).
+//! (`hlc.rs`, `sync_clock.rs`). Migration 14 → 15 adds what each tombstone's delete covers, so
+//! the merge (`merge_store.rs`) lets an edit the delete did not see bring the row back.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -208,6 +209,23 @@ CREATE TABLE op_outbox (
     change   TEXT NOT NULL,
     file_seq INTEGER
 );
+";
+
+/// Migration 14 → 15 (ADR 0022 rule 3, S28b): `tombstone.covers`, the clock of the row's
+/// version the delete removed (what the deleting device had seen of it). A delete removes
+/// only what it covers: a row comes back when another device wrote it with a later clock than
+/// that, even if the delete itself is later ("edit beats delete"). `''` (`NO_CLOCK`) covers
+/// only a version from before clocks; `NULL` (every tombstone written before schema 15)
+/// covers up to its own `clock`, since the delete was made after every version its device
+/// had seen.
+///
+/// `item_clock.position`: a list item's position as its last write gave it, so a list is
+/// composed in the same order on every device from the same last writes of its items (its
+/// stored value holds only their order, which depends on the order they were merged in).
+/// `NULL` (every item written before schema 15, or a list last written whole): its index.
+pub(crate) const SCHEMA_15: &str = "
+ALTER TABLE tombstone ADD COLUMN covers TEXT;
+ALTER TABLE item_clock ADD COLUMN position INTEGER;
 ";
 
 /// Migration 12 → 13, after [`SCHEMA_13`]: this device's id.

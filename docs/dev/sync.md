@@ -1,8 +1,9 @@
-# Sync: the Sync folder's files (ADR 0022) — draft
+# Sync: the Sync folder's files and the merge (ADR 0022) — draft
 
-Draft from plan step S28a: the file layer only. Merging other devices' ops (S28b),
-snapshots, trimming, device-id rules, restore and scheduling (S28c), and the Settings → Sync
-screens (S29, S30) come later and finish this page. Terms are in
+Draft from plan steps S28a (the file layer) and S28b-1 (the merge, [below](#merging)). Sync
+conflicts of Note text and the rules for deleted parents (S28b-2), snapshots, trimming,
+device-id rules, restore and scheduling (S28c), and the Settings → Sync screens (S29, S30)
+come later and finish this page. Terms are in
 [CONTEXT.md](../../CONTEXT.md): **Sync folder**, **Synced device**, **Synced data**,
 **Sync conflict**.
 
@@ -10,10 +11,12 @@ screens (S29, S30) come later and finish this page. Terms are in
 |---|---|---|
 | `obs-store` | `hlc.rs` | `Hlc`: the hybrid logical clock, its text form, `Hlc::next`, `MAX_FORWARD_SKEW_MS`. Compiles everywhere. |
 | `obs-store` | `sync_clock.rs` | From schema 14, `apply_changes` gives each `Change` the next clock and writes it into the row, item or tombstone; while this device records ops, keeps each `Change` with its clock in `op_outbox`. `device_id`, `observe_clock`, `start_recording_ops`, `records_ops`, `reserve_op_files`, `op_file_written`. |
-| `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
+| `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`) and 14 → 15 (`tombstone.covers`, `item_clock.position`); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
+| `obs-store` | `merge_store.rs` | `UserStore::merge_op_file`: one op file merged in one transaction with its `applied_up_to`; `MergeTx` (`state`, `write_merged`, `note_delete`, `note_item_op`, `write_kept`, `record`); `row_state`, `applied_up_to`. |
 | `obs-engine` | `sync/folder.rs` | `SyncFolder` (`list`, `read`, `write_new`, `remove`, `ensure_available`), `FsSyncFolder` (`std::fs`, the desktop's), `MemSyncFolder` (tests, feature `test-support`). The Mobile app implements `SyncFolder` in Swift (S30). |
 | `obs-engine` | `sync/clock.rs` | Re-exports `obs_store::Hlc`: the store stamps rows itself (its own writes, such as `save_layout`, plan their Changes), so the clock lives there. |
 | `obs-engine` | `sync/ops.rs` | `Op`, `encode_op_file`, `decode_op_file`, `read_ops_after`, `write_pending_ops`. |
+| `obs-engine` | `sync/merge.rs` | The merge rules (`merge_op`) and `merge_folder`, which merges every other device's op files not merged yet. |
 | `obs-engine` | `sync/mod.rs` | Paths, `sync.json` (`ensure_sync_json`), `device.json` (`write_device_json`, `read_devices`), `SyncError`. |
 
 ## The folder
@@ -105,15 +108,16 @@ keeps that clock all the same.
 |---|---|
 | Notebook, Annotation (its Anchor goes with it), Highlight style, Highlight palette, Favorite, Reading plan, Reading, Layout, Preference | The row's `clock` column |
 | Preferred order | `item_clock ('preferred_order', '')`, kept when the order is empty (it has no rows then, and is never deleted, so no tombstone); every `preferred_order` row's `clock` takes the same clock |
-| Collection, Copy preset, Saved search, Guide section, Resource tags (list-preference items) | `item_clock (row_table, row_id)`, keyed as the item's tombstone; the list's `preference.clock` takes the same clock |
-| Any of them deleted | `tombstone.clock` (an item's `item_clock` row goes) |
+| Collection, Copy preset, Saved search, Guide section, Resource tags (list-preference items) | `item_clock (row_table, row_id)`, keyed as the item's tombstone, with the item's `position` (schema 15; none for Resource tags); the list's `preference.clock` is the newest clock of any op on its items |
+| Any of them deleted | `tombstone.clock`, and `tombstone.covers` the clock of the version deleted (an item's `item_clock` row goes) |
 
 ## Recording ops
 
 A device records ops while `applied_up_to` has a row for its own device id; that row's `seq`
 is the last of its own op files written. `start_recording_ops` adds it with `seq` 0 (S28c's
 join calls it after writing its snapshot). While recording, `apply_changes` writes each
-`Change`, with its clock, into `op_outbox` in its own transaction, so an edit made just before
+`Change`, with its clock and the clock its `before` row had (`before_clock`, inside the
+`change` JSON), into `op_outbox` in its own transaction, so an edit made just before
 the app stops is not lost. A device that does not sync records nothing (its clocks are still
 stamped), so its User database and Backups do not grow.
 
@@ -143,12 +147,12 @@ other name in `ops/` (temporary files, `02.jsonl`, a provider's conflict copy, a
 
 | Line | Fields, in this order |
 |---|---|
-| Each op | `device` (the device whose file it is), `clock` (text form above), `before`, `after`: a `Change`, each side a serialized `Row` (tagged by `row`) or `null` |
+| Each op | `device` (the device whose file it is), `clock` (text form above), `before`, `after`: a `Change`, each side a serialized `Row` (tagged by `row`) or `null`; then `before_clock`, the clock `before` had on that device (left out when there is no `before` or it had no clock; S28b-1 added it within format 1, and readers ignore fields they do not know) |
 | Last: the trailer | `format` (1, `OP_FORMAT`), `ops` (how many op lines), `bytes` (the byte length of everything before the trailer), `sha256` (of those bytes, lowercase hex) |
 
 ```text
 {"device":"0193…0001","clock":"0193a1b2c3d4-0000-0193…0001","before":null,"after":{"row":"notebook","id":"…","name":"Romans",…}}
-{"device":"0193…0001","clock":"0193a1b2c3d4-0001-0193…0001","before":{…},"after":{…}}
+{"device":"0193…0001","clock":"0193a1b2c3d4-0001-0193…0001","before":{…},"after":{…},"before_clock":"0193a1b2c3d4-0000-0193…0001"}
 {"format":1,"ops":2,"bytes":412,"sha256":"9f2c…"}
 ```
 
@@ -174,6 +178,103 @@ This fits what the providers do (#326 research §2–3): Syncthing writes to a t
 renames, so a reader sees no part file at all; Dropbox, OneDrive and iCloud keep placeholders,
 which `ensure_available` downloads; any other part file fails its length or hash.
 
+## Merging
+
+`merge_folder(user, folder)` merges every other device's op files after its
+`applied_up_to`, in order (`read_ops_after`). Each file is merged by
+`UserStore::merge_op_file` in one transaction that also moves `applied_up_to` on: all of it
+or none. A file with an op that needs a row not here yet (another device's file brings it:
+an Annotation's Notebook, a Highlight's new style, a style's palette, a Reading's plan)
+**waits**: it is rolled back, the other devices' files are merged, and it is tried again, pass
+after pass while any file merges, then at the next sync (`MergeReport::waiting`, `retried`).
+No two files can wait for each other: a file only needs rows from files written before it.
+Every op's clock is observed (`observe_clock`), so an edit made here afterwards is later than
+anything merged; one more than a day ahead is not observed (`MergeReport::not_observed`) and
+its row merges as any other. A local edit of such a row (or a row made again whose tombstone
+covers such a clock) would then get a clock before the one it replaces, and every other
+device would keep the far version (`Superseded`) while this one kept the edit, for good. So a
+local write is stamped after what it replaces: the next clock, or, when the row's clock (or
+what its tombstone covers) is at or after that, the clock just after it
+(`UserStore::next_clock_after`). The device's own clock does not follow it: only that write
+passes the far clock, and the next write of another row gets an ordinary clock again
+(`merge_tests::a_clock_more_than_a_day_ahead_is_not_observed_but_its_row_merges`: a device
+edits the far row and renames a far Layout for a clash, and a third device holds the same
+rows and clocks).
+
+Per op, against the row's state here (`MergeTx::state`: the row, its clock, its tombstone):
+
+| Op | Here | Result (`Outcome`) |
+|---|---|---|
+| Write | The row, with a clock at or after the op's | Nothing: last writer wins (`Superseded`) |
+| Write | The row, older | The op's row, **with the op's clock**, not a new one; fields the op does not carry kept from the row here (`Written`) |
+| Write | No row; a tombstone covering at or after the op's clock | Nothing: the delete saw this version or a later one (`Covered`) |
+| Write | No row; no tombstone, or one covering less | The op's row, with its clock: an edit the delete had not seen brings the row back (`Written`) |
+| Delete | The row, at or before what the delete covers | Deleted, its tombstone the op's clock and covers (`Written`) |
+| Delete | The row, later than what the delete covers | Kept (**edit beats delete**); the tombstone notes the delete (`EditKept`) |
+| Delete | No row | The tombstone notes the delete (`DeleteNoted`) |
+| Delete | A Notebook with Annotations, a palette with styles, a style with Highlights, a plan with Readings | Kept, so nothing is lost (`ChildrenKept`); S28b-2 settles these (D3) |
+| Delete | This device's default Notebook | Waits for the older default Notebook that replaces it |
+
+**What a delete covers.** A delete's op carries `before_clock`, the clock of the version it
+removed; its tombstone keeps the newest delete clock (`clock`) and the newest version any
+delete of the row covered (`covers`, migration 15). A row is there exactly when its newest
+write is later than `covers`, whatever order the writes and deletes arrive in: a phone's edit
+made offline at 10:00 beats the laptop's delete at 10:05 that never saw it, and a delete made
+after seeing the newest edit deletes it even on a device that gets the delete first
+(`merge_tests::edit_beats_delete_in_every_arrival_order`,
+`a_delete_that_saw_the_newest_edit_deletes_it_in_every_arrival_order`). From schema 15 a
+tombstone is **kept for good**: a row made again (an undo, a later edit from elsewhere) lives
+beside it, later than what it covers; before schema 15 an undo took the tombstone away. A
+tombstone from before schema 15 has no `covers` (`NULL`): it covers up to its own clock. `''`
+covers only a version from before clocks.
+
+**Fields an op does not carry** (an older app's, which does not know a field a later one
+added) are taken from the row here: `decode_op_file` notes the top-level fields of `after` a
+line lacks (`Op::absent`), and the merge fills them in. Nested fields (a Text range's) are not
+compared: they are left out when empty in every version. This is per arrival: two versions of
+the app editing one row at once converge only on the fields both know.
+
+**Reading done-marks** are a row per Reading and the **Preferred order** one row
+(`item_clock ('preferred_order', '')`), so both merge by the rules above: two devices marking
+two Readings keep both marks; two orders do not mix.
+
+**List-preference items** (Collections, Copy presets, Saved searches, Guide sections,
+Resource tags) merge item by item as above. A list's stored value holds only its items'
+order, which would depend on the order their ops were merged in, so `item_clock.position`
+(migration 15) keeps each item's position as its last write gave it, and the list is composed
+by (stored position, name): every device builds the same order from the same last writes
+(`synced_store::stored_positions`). `NULL` (an item written before schema 15, or a list last
+written whole) is its index. The cost: after a merge two items can share a position, and the
+next local edit of the list renumbers them, so it writes a few more item ops than it changed.
+The list's `preference.clock` is the newest clock of any op on its items, and once any op on
+an item is merged the list has a value (empty if none of its items is here), so every device
+holds the same (`MergeTx::note_item_op`).
+
+**Two default Notebooks** (devices that joined separately): the older by (`created_at`, id)
+is the default everywhere. Whether a Notebook is the default is settled on each device, never
+taken from an op: a new Notebook its device made its default becomes ordinary here when this
+device's default is older, else this device's default becomes ordinary (`write_kept`: its
+clock stays, as every device rewrites it the same). When that default is this device's own
+(its clock is this device's, or it has none), the device also records the change as its own
+edit, renamed to the device's name (`device.name`) if the two Notebooks' names clash, or
+"`name` (2)" when the device has no name. A delete of this device's default Notebook (another
+device deleted it as an ordinary one) waits until the older default is here.
+
+**Two Layouts of one name** (names are unique ignoring case) both stay: the later, the one
+with the larger id (a UUIDv7, so the one made later, and it never changes), is renamed
+"`name` (2)" (or the first of (3), (4) … that is free) by the device that finds the clash, and
+that rename is recorded as the device's own edit, so it reaches every device by last writer
+wins, even one that never meets the clash itself
+(`merge_tests::a_layout_renamed_for_a_clash_its_owner_never_saw_still_converges`). Two devices
+recording the same rename converge on it. The cost: the recorded rename is a whole-row write,
+so it can overwrite a re-save of that Layout made at the same time on another device
+(rule 3's per-row last writer wins).
+
+**Edits the merge records.** The demotion of an own default Notebook and a Layout rename are
+applied with `MergeTx::record` like any local edit: a new clock, after every clock merged and
+after the version it replaces (a far-ahead one included, as above), and into the outbox while
+recording, written at the next sync.
+
 ## Evidence
 
 - `crates/store/src/hlc.rs` (unit tests): the text form round-trips and refuses near misses;
@@ -193,6 +294,40 @@ which `ensure_available` downloads; any other part file fails its length or hash
   (`every_write_of_synced_data_stamps_its_rows_with_clocks_and_records_its_ops`): every `Row`
   variant's write (an emptied Preferred order included) and its undo stamp the row, item or
   tombstone with the op's clock, and the outbox is exactly the stream of applied Changes.
+- `crates/store/tests/sync_clock_db.rs` (S28b-1): migration 15's item positions and what
+  each tombstone covers round-trip through a Backup; a v14 Backup restores with both unknown
+  (each item at its index, each tombstone covering up to its own clock).
+- `crates/store/tests/synced_writes_db.rs`
+  (`a_delete_leaves_a_tombstone_kept_for_good_and_undoing_it_brings_the_row_back`).
+- `crates/engine/src/sync/merge_tests.rs` (one per rule): last writer wins and keeps the op's
+  clock; every merged clock observed, so a later local edit wins; one two days ahead not
+  observed, its row kept, and a local edit of that row (and a Layout rename for a clash with
+  it) stamped just after its clock, so a third device holds the same rows and clocks; edit
+  beats delete in every arrival order (both ends and a third device each way); a delete that
+  saw the newest edit deletes it in every order; a delete's tombstone and op carry what it
+  covers; fields an op does not carry kept; Reading done-marks per Reading; a Collection
+  renamed on one device and edited on another keeps both, in one order and with one clock;
+  the Preferred order whole; two default Notebooks (named after the device, or "My Notebook
+  (2)"); two Layouts of one name; the four-device Layout sequence above; a file needing
+  another device's Notebook waits and merges after it; a parent delete meeting live children
+  is skipped; an own op file or one out of order is refused, and a failed merge notes
+  nothing.
+- `crates/engine/src/sync/merge_props.rs`: two or three in-memory devices make random edits
+  (Notebooks, Notes, Highlights, Favorites, Layouts with clashing names, the Preferred order,
+  Reading done-marks, a synced preference, Collections changed, added, removed and moved)
+  and deletes, undo their own last change (a deleted row back with its old id), and sync at
+  random. Each case runs under a fixed clock that moves on by random steps, each device's
+  offset from it by its own amount, sometimes more than a day ahead (`MAX_FORWARD_SKEW_MS`),
+  and with seeded ids, so a seed makes the same case on every run
+  (`a_seed_makes_the_same_case_on_every_run` compares two runs' `synced_dump`). Once settled:
+  every device holds the same `synced_dump` (rows, clocks, tombstones, item clocks, lists in
+  order); every row is there exactly when its newest op write is later than what its deletes
+  cover, holding that write; no row is there that no op wrote (or the devices began with);
+  every tombstone holds the op stream's newest delete clock and newest version covered; each
+  device has one default Notebook, the oldest (`created_at`, id) the devices began with. The
+  run must reach every outcome but `ChildrenKept`, a file retried, a Layout renamed, a default
+  demoted, a moved item, an undo and a clock not observed. 1,000 cases in CI (about 2.5 s),
+  10,000 under `--include-ignored` (about 25 s); the run prints how often each was reached.
 - `crates/engine/src/sync/tests.rs`: ops round-trip byte for byte through `FsSyncFolder`;
   a truncated op file is skipped and read whole next time; a damaged one fails its length or
   hash; a newer one is left alone and asks for an update; temporary and other names are
@@ -206,15 +341,26 @@ which `ensure_available` downloads; any other part file fails its length or hash
 
 ## For later steps
 
-- **S28b (merge):** an op's `before` is what conflict detection compares with; merged rows
-  keep the remote op's clock (not a new local one), so applying remote ops needs an
-  `apply_changes` that takes the clocks given, and must call `observe_clock` for each (the
-  seed sees them only at the next open); a clock more than `MAX_FORWARD_SKEW_MS` ahead is not
-  observed, but its row merges as any other; a whole-value `Row::Preference` of a list key
-  leaves that list's `item_clock` rows as they were; the Preferred order's clock is its
-  `item_clock ('preferred_order', '')` row.
+- **S28b-2:** Note-text Sync conflicts (D2: a `conflict_of` Note with a deterministic id, made
+  only by the device whose own edit lost, as an ordinary recorded Change; in a rare
+  three-device chain, where a device gets the third device's edit before the second's, it can
+  make a copy no one needed, which is safe: nothing is lost); deleted parents (D3, the deletes
+  `ChildrenKept` skips today must be settled so every device converges); two list items of
+  one name (D6); a list's whole value against its items (D7, `sync_held`). A whole-value
+  `Row::Preference` of a list key leaves that list's `item_clock` clocks as they were and
+  clears their positions.
+  An op this build rejects (a synced preference key a newer app added) waits for good today
+  and so stalls its device's stream: it must go to `sync_held` instead. A new top-level `Row`
+  field skipped when `None` would be wiped by an older app's op (`Op::absent` cannot see it):
+  keep new fields always serialized, or record which fields each format knows.
 - **S28c:** join = write the snapshot, then `start_recording_ops`; a restore gives the device a
   new id (rule 7), and the outbox rows written under the old id must be re-homed or cleared;
   `applied_up_to`'s own row is the copied-database check: op files under this id above
   `max(own seq, MAX(op_outbox.file_seq))` were not written here (a file above the own `seq`
-  but still reserved was written here and not yet noted written).
+  but still reserved was written here and not yet noted written). From S28b-1: `sync_now`
+  is `write_pending_ops`, then `merge_folder`; the merge can record edits of its own (a
+  default Notebook's demotion, a Layout rename), which go out at the next write, so a sync
+  that recorded any should write again. A snapshot (and merging one, rule 5) must carry
+  tombstones with `covers` and item clocks with `position`, and merge rows by the same table
+  as ops; a device's own default Notebook reaches the others through it (the property tests
+  stand in for it by writing each device's default as an op when it joins).

@@ -67,8 +67,9 @@ to Claude Opus 5.5 later on".
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | done (PR #361) |
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | done (PR #362) |
-| S28b | Sync 2b (Rust): merge rules + property tests | AFK | n | S28a | merge module, 10k-case property tests | todo |
-| S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | todo |
+| S28b-1 | Sync 2b-1 (Rust): merge rules (LWW, edit beats delete, absent fields, Readings, Preferred order, two defaults, Layout "(2)") + property tests | AFK | n | S28a | `sync/merge.rs`, migration 15, 10k-case property tests | done (PR #370) |
+| S28b-2 | Sync 2b-2 (Rust): Note-text Sync conflicts, deleted parents, list items of one name, a list's whole value | AFK | n | S28b-1 | `conflict_of`, parent rows in tombstones, `sync_held`, wider property tests | todo |
+| S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | todo |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S30 | test report, folder list for onboarding | todo |
@@ -1481,31 +1482,35 @@ this in addition to its own lines):
   its text (passed in the `ci` test gate and both reruns; looks like a timing flake unrelated to
   clocks, not blessed). S28b's and S28c's entries gained "Added by S28a" bullets.
 
-#### S28b — Sync 2b (Rust): merge rules and property tests
+#### S28b — Sync 2b (Rust): merge rules and property tests (split into S28b-1 and S28b-2)
 
-- **Goal:** ADR 0022's merge rules, proven by property tests.
+Split by the supervisor during S28b (2026-11-22): the step did not fit one session once rule 3's
+ambiguous cases were settled. S28b-1 is the merge and its property tests over flat rows plus
+Notebooks and Annotations; S28b-2 adds the rules that make new rows (Sync conflicts, restored
+parents, renamed list items) and the held ops. The original entry's "Added by" bullets are kept
+under the half they belong to.
+
+#### S28b-1 — Sync 2b-1 (Rust): merge rules and property tests
+
+- **Goal:** ADR 0022's merge rules for rows that merge in place, proven by property tests.
 - **Type:** AFK. **Xcode:** n. **Size:** L. **Depends on:** S28a.
 - **Read first:** ADR 0022 rule 3 (every sub-rule), ADR 0006; S28a's module.
-- **Added by the S27b review:** Collections, Copy presets and Saved searches are keyed by
-  name, so a rename is a delete plus an insert; a rename on one device racing an edit on
-  another must merge without losing either (the old name's tombstone stays). One stored value
-  has two row identities, a whole-value `Row::Preference(key)` (the fallback for a value not in
-  shape) and its item rows, and the merge must handle both arriving for one key. Layout
-  snapshots carry device-local Visual filter ids (`TabSnapshot.visual_filters`): the known D1
-  consequence, already in Out of scope.
-- **Do:** merge: LWW per row, Note-text Sync conflict → second Note + Needs attention, edit beats
-  delete (incl. Notebook resurrection), field-wise "absent field untouched", Reading done-marks per
-  Reading, Preferred order LWW, Layout name clash "(2)", two default Notebooks. Property tests: N
-  `MemSyncFolder` devices, random edit/delete interleavings, invariants "no user-made row
-  disappears" (ADR 0006) and convergence.
-- **Don't:** schedule or trim; UI.
-- **Deliverables:** `sync/merge.rs`, property tests (no property-test crate is in the workspace
-  today; adding `proptest` as a dev-dependency is a stop-and-ask — a seeded hand-rolled generator
-  over `rand` is the default), `docs/dev/sync.md` merge table.
-- **Done when:** property tests pass 10k cases; one unit test per ADR 0022 rule-3 bullet.
+- **Do:** merge: LWW per row, edit beats delete, field-wise "absent field untouched", Reading
+  done-marks per Reading, Preferred order LWW, Layout name clash "(2)", two default Notebooks.
+  Property tests: N `MemSyncFolder` devices, random edit/delete interleavings, invariants "no
+  user-made row disappears" (ADR 0006) and convergence.
+- **Don't:** schedule or trim; UI; S28b-2's rules.
+- **Deliverables:** `sync/merge.rs`, property tests (a seeded hand-rolled generator, no crate),
+  `docs/dev/sync.md` merge table.
+- **Done when:** property tests pass 10k cases; one unit test per rule-3 bullet in scope.
 - **Verify:** `cargo xtask ci`; `cargo test -p obs-engine sync -- --include-ignored` (long cases
   may be `#[ignore]`d with a smaller CI case count; record both).
 - **Stop-and-ask:** a merge rule in ADR 0022 is ambiguous for a real case (write the case down).
+- **Added by the S27b review (the half in scope):** Collections, Copy presets and Saved
+  searches are keyed by name, so a rename is a delete plus an insert; a rename on one device
+  racing an edit on another must merge without losing either (the old name's tombstone
+  stays). Layout snapshots carry device-local Visual filter ids (`TabSnapshot.visual_filters`):
+  the known D1 consequence, already in Out of scope.
 - **Added by S28a:** an op's `before` (kept in `op_outbox` and in each op line) is the base
   conflict detection compares with. `apply_changes` stamps every Change with a new local clock;
   applying another device's ops must keep the op's clock instead (a variant that takes the
@@ -1519,12 +1524,149 @@ this in addition to its own lines):
   observed (`observe_clock` returns `false`), as the seed ignores such clocks in the database;
   its row and data merge as any other's and are never dropped (ADR 0006). The Preferred order's
   clock is its `item_clock` row (`preferred_order`, `''`), which an empty order keeps.
+- **Owner decisions (via supervisor, 2026-11-22):** **D1** edit beats delete is decided by what a
+  delete covers: op lines gain an optional `before_clock` (the clock `before` had on the
+  writing device; `OP_FORMAT` stays 1, older readers ignore it; the outbox keeps it inside its
+  `change` JSON) and migration 14 → 15 adds `tombstone.covers` (`NULL` = its own clock); a row
+  exists iff its latest write's clock is later than the newest version any delete of it
+  covered (the 3-device arrival-order case: A edits V0→VA, B edits VA→VB and deletes it; a
+  third device deletes it whichever file it reads first). **D4** of two default Notebooks the
+  older by (`created_at`, id) stays the default; the newer default's owner records the
+  demotion, renamed after its device on a name clash, else "My Notebook (2)". **D5 as amended
+  by F1** "the later" Layout is the larger UUIDv7 id, and whichever device renames a Layout for
+  a clash records that rename as an ordinary Change (it can LWW-overwrite a concurrent re-save
+  of that Layout; documented). **D8** "fields an op does not carry" are top-level row fields,
+  per arrival. **D9** a seeded SplitMix64, no crate; a small CI count, 10k `#[ignore]`d.
+  **F2** each op file is merged in one transaction with its `applied_up_to` advance; one that
+  needs a parent row not here yet is rolled back and retried (multi-pass in the sync, else the
+  next sync); a parent delete meeting live local children is skipped in S28b-1 (the parent
+  stays). **Item order** (found by the property tests): migration 15 also adds
+  `item_clock.position` and a list is composed by (stored position, name); `preference.clock`
+  of a list is the newest of its items' ops.
+- **Outcome (2026-11-22, branch `mobile/s28b-sync-merge`):** `USER_SCHEMA_VERSION` 15.
+  **Shipped:** migration 14 → 15 (`tombstone.covers`, `item_clock.position`); `apply_changes`
+  split into `apply_one` with a `Stamp` (`Local`, `Merged` with the op's clock and covers,
+  `Kept`), so local and merged writes share one path; `crates/store/src/merge_store.rs`
+  (`UserStore::merge_op_file`, `MergeTx` with `state`, `write_merged`, `note_delete`,
+  `note_item_op`, `write_kept`, `record`, `default_notebook`, `layout_named`,
+  `has_children`; `UserStore::row_state`, `applied_up_to`, test-support `synced_dump`);
+  `Op::before_clock` and `Op::absent` (found by `decode_op_file`); `crates/engine/src/sync/merge.rs`
+  (`merge_folder`, `merge_op`, `MergeReport` with outcomes, waits, retries, stops and clocks
+  not observed). Every merged clock is observed. **Surprises (each fixed and documented in
+  `docs/dev/sync.md`):** list order did not converge (positions only existed as the stored
+  order) → `item_clock.position`; a tombstone taken away on resurrection lost a later delete's
+  clock on one device only → from schema 15 tombstones are kept for good beside a row made
+  again, each holding the newest delete clock and newest version covered (the S27b test that
+  pinned "undo takes the tombstone away" now pins "kept, row back"); a delete that removed
+  nothing here (edit kept) must still note its tombstone; a list's `preference.clock` and
+  even whether an emptied list has a value depended on arrival order → `note_item_op`.
+  **Tests:** engine `sync::merge_tests` (15: one per rule in scope, the D1 arrival orders on
+  both ends and on a third device each way, the F1 four-device Layout sequence, the F2
+  out-of-order arrival, refusals); `sync::merge_props` (1,000 cases in CI, 2.6 s; 10,000
+  `#[ignore]`d, 24.7 s for both; seeds reproduce the generator's choices, ids and clocks come
+  from the real clock, fixed by the review below). A 10k run reached: ops written 320,795, superseded 12,405, covered 309,
+  edit kept 1,454, delete noted 1,392; files retried after waiting 383; Layouts renamed for a
+  clash 1,793; default Notebooks demoted 14,971. Store `sync_clock_db.rs` (+2: migration 15
+  columns round-trip through a Backup; a v14 Backup restores with positions at their index and
+  tombstones covering their own clock); `synced_writes_db.rs` (tombstone kept for good).
+  Measured: `cargo xtask ci` green (11 m 32 s, 2,384 tests passed, 43 ignored);
+  `cargo test -p obs-store` 155 passed; `cargo test -p obs-engine sync` 32 passed, 1 ignored;
+  with `--include-ignored` 33 passed. **Not done (S28b-2):** Note-text Sync
+  conflicts (here the later edit wins), deleted parents, list items of one name, a list's whole
+  value; the generator never deletes a Notebook or plan that can hold rows. S28c's entry gained
+  an "Added by S28b-1" bullet and now depends on S28b-2.
+  **Review fixes (`/tmp/obs-ios-plan/review-s28b1.md`):** P1, a local edit of a row merged
+  from a device more than a day ahead got a clock below the one it replaced, so every other
+  device kept the far version for good: a local write (`Stamp::Local`, so `MergeTx::record`'s
+  Layout renames and default demotions too) is now stamped just after the row's clock, or what
+  its tombstone covers for a row made again, when that is at or after the next clock
+  (`UserStore::next_clock_after`); the device's own clock does not follow
+  (`docs/dev/sync.md` "Merging"). The skew test now has B edit the far row and rename a far
+  Layout, and a third device holds the same rows and clocks. The property tests now run each
+  case under the test-support fixed clock (`obs_store::clock::fix`), stepped by the seed, each
+  device offset from it by its own amount, sometimes more than `MAX_FORWARD_SKEW_MS` ahead,
+  with test-support seeded ids (`obs_store::annotation::seed_ids`), so a seed is the same case
+  on every run (`a_seed_makes_the_same_case_on_every_run` compares two runs' `synced_dump`);
+  they move Collection items (a whole-list write in a new order) and undo a device's last
+  change (`inverse`, a deleted row back with its old id); and they check that no live row
+  lacks an op or template row (test-support `UserStore::synced_keys`), every tombstone is the
+  op stream's newest delete clock and covers, and each device has one default, the oldest
+  (`created_at`, id). Both halves of the P1 fix (the row's clock, the tombstone's covers) are
+  each found by the widened generator when removed. The run must reach every outcome but
+  `ChildrenKept`, a retried file, a renamed Layout, a demoted default, a moved item, an undo
+  and a clock not observed. New unit test: a Collection renamed ("Greek" → "Greek NT") on one
+  device and edited on another keeps both, in one order, with one `preference.clock`. A 10k
+  run now reaches: written 313,931, superseded 10,859, covered 462, edit kept 1,666, delete
+  noted 1,227; files retried 306; Layouts renamed 1,497; defaults demoted 14,973; items moved
+  351; undos 19,075; clocks not observed 45,283 (three more 10k runs from other seeds green).
+  Measured after the fixes: `cargo xtask ci` green (7 m 28 s, 2,386 tests passed, 43
+  ignored); `cargo test -p obs-store` 155 passed; `cargo test -p obs-engine --lib sync` 34
+  passed, 1 ignored (3.1 s); with `--include-ignored` 35 passed (25.0 s).
+  The stalled-stream finding and the `skip_serializing_if` note went to S28b-2's entry.
+
+#### S28b-2 — Sync 2b-2 (Rust): Sync conflicts, deleted parents, list items of one name, whole values
+
+- **Goal:** the rule-3 cases that make or hold rows, so devices converge with nothing lost.
+- **Type:** AFK. **Xcode:** n. **Size:** M–L. **Depends on:** S28b-1.
+- **Read first:** ADR 0022 rule 3, ADR 0006; `docs/dev/sync.md` "Merging"; S28b-1's Outcome,
+  `crates/engine/src/sync/merge.rs`, `crates/store/src/merge_store.rs`.
+- **Do (owner decisions via supervisor, 2026-11-22):**
+  - **D2 Sync conflicts:** `Annotation.conflict_of: Option<String>` (serde default, skipped when
+    `None`, so other op lines are unchanged) and `annotations.conflict_of TEXT` (migration 16).
+    The copy has an id derived deterministically (UUID-shaped hash of the Note's id and the
+    losing clock), the same Anchor and Notebook as the Note in place, the losing text, and
+    `conflict_of` = that Note's id. It is made **only** by the device whose own edit lost (its
+    own row replaced by a remote update whose `before` text is not its text), as an ordinary
+    recorded Change; a store/engine query `sync_conflicts()`; no UI (labels and keep / combine
+    / keep both are S19/S29). Document in `docs/dev/sync.md` that a rare three-device chain can
+    make a spurious copy, which is safe.
+  - **D3 deleted parents:** tombstones of Notebooks, Reading plans, Highlight palettes and
+    styles keep their row (`tombstone.row`, migration 16), so a child arriving at a deleted
+    parent (or a parent's delete meeting a live, uncovered child) restores the parent; "its
+    Annotations" are the deletes in the same op file as the Notebook's; the device that made
+    the child re-sends the parent and those rows as recorded Changes. Same rule for
+    Reading → plan, style → palette, Highlight → style.
+  - **D6 list items of one name** (Collections, Copy presets, Saved searches) added on two
+    devices with different JSON: LWW keeps the later under the name; the device whose own item
+    lost re-adds it as "Name (2)", recorded.
+  - **D7 a list's whole value vs its items:** keep a damaged value as is, do not apply the item,
+    and hold the op: migration 16 adds `sync_held (row_table, row_id, clock, change TEXT)`;
+    held ops are retried whenever that key's value is in shape again, and a store query lists
+    them for S29/S30's Needs attention. The stream never stalls and nothing is lost.
+- **Added by S28b-1 (must do):** settle the parent deletes S28b-1 skips (`Outcome::ChildrenKept`:
+  a Notebook with Annotations, a palette with styles, a style with Highlights, a plan with
+  Readings) under D3, so every device converges (today the deleting device has the parent
+  gone, a file needing it waits there, and other devices keep it); widen the property generator
+  to delete parents that have children, to make Note-text conflicts, two list items of one
+  name and whole-value list writes, keeping its invariants (convergence of `synced_dump`, rows
+  exactly when not covered) and adding "every losing Note text is a `conflict_of` Note".
+  Tombstones are kept for good beside live rows (schema 15), so D3's restored parents live
+  beside theirs.
+- **Added by the S28b-1 review (must do):** an op this build rejects must not stall its
+  device's stream. Today `merge_folder` turns a `StoreError::Rejected` or `Conflict` from an op
+  into a wait for good, so that op file and every later one of that device never merge here;
+  one such op is a synced preference key added by a newer app, which `apply_one` refuses as
+  "not Synced data". Such an op goes to `sync_held` (D7's table) instead, the rest of its file
+  merges, and it is listed with the other held ops; a unit test has an op file with an unknown
+  synced preference key between two good ops.
+- **Added by the S28b-1 review (note):** absent-field detection (`ops.rs` `decode_op_line`,
+  `Op::absent`) only lists the fields serializing `after` emits, so a top-level `Row` field
+  skipped when `None` (`skip_serializing_if`, as D2 plans `conflict_of`) looks the same
+  whether an older app's line omitted it or the value is `None`, and the merge would write
+  `None` over it here. Keep new top-level `Row` fields always serialized, or record which
+  fields each op format knows.
+- **Don't:** schedule or trim; UI.
+- **Deliverables:** merge and store changes, migration 16, tests, `docs/dev/sync.md`.
+- **Done when:** one unit test per decision above; the widened property tests pass 10k cases;
+  `cargo xtask ci` green.
+- **Verify:** `cargo xtask ci`; `cargo test -p obs-engine sync -- --include-ignored`.
+- **Stop-and-ask:** a case the decisions above do not settle (write it down).
 
 #### S28c — Sync 2c (Rust): snapshots, trimming, versioning, device-id rules, restore, scheduling
 
 - **Goal:** the lifecycle rules: snapshots, 90-day trimming, format versioning, copied database,
   restore choice, when sync runs.
-- **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S28b.
+- **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S28b-2.
 - **Read first:** ADR 0022 rules 5–8 and Consequences ("catch up or replace"); ADR 0013;
   `crates/engine/src/backups.rs` (`restore_preview`, `RestorePreview`, the restore path).
 - **Added by S27a (ADR 0022 rule 7, first clause):** `restore_from` copies a v13 Backup's
@@ -1553,6 +1695,15 @@ this in addition to its own lines):
   copied-database check: op files under this id above `max(own seq, MAX(op_outbox.file_seq))`
   were not written here (after a stop between writing a file and noting it written, the file
   is above the own `seq` but still reserved).
+- **Added by S28b-1:** `sync_now` = `write_pending_ops`, then `sync::merge::merge_folder`; the
+  merge records edits of its own (a default Notebook's demotion, a Layout rename), which go out
+  at the next write, so a sync that recorded any should write again. A device's default
+  Notebook is made before it records ops, so the join's snapshot is what brings it to the
+  others (the S28b-1 tests write it as an op instead). Snapshots must carry `tombstone.covers`
+  and `item_clock.position` (schema 15) and be merged row by row by the same table as ops
+  (`docs/dev/sync.md` "Merging"); tombstones are kept for good beside live rows, so trimming
+  never removes one. A restore with a new id must keep the other devices' `applied_up_to`
+  rows' meaning (the last of their op files merged here).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 

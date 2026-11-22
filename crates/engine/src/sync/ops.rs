@@ -25,6 +25,16 @@ pub struct Op {
     pub clock: Hlc,
     pub before: Option<Row>,
     pub after: Option<Row>,
+    /// The clock `before` had on `device` (none: no `before`, or a row from before clocks):
+    /// what a delete covers, so an edit it did not see beats it (ADR 0022 rule 3). Op files
+    /// written before it was added have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_clock: Option<Hlc>,
+    /// The top-level fields of `after` its line did not carry (an older app's op): the merge
+    /// leaves them as they are here (ADR 0022 rule 3). Found by [`decode_op_file`], never
+    /// written.
+    #[serde(skip)]
+    pub absent: Vec<String>,
 }
 
 impl Op {
@@ -114,7 +124,7 @@ pub fn decode_op_file(bytes: &[u8]) -> OpFileRead {
     // `body` is empty or ends with the newline of its last op.
     if let Some(lines) = body.strip_suffix(b"\n") {
         for (i, line) in lines.split(|&b| b == b'\n').enumerate() {
-            match serde_json::from_slice::<Op>(line) {
+            match decode_op_line(line) {
                 Ok(op) => ops.push(op),
                 Err(e) => return OpFileRead::NotWhole(format!("op {} is not one: {e}", i + 1)),
             }
@@ -124,6 +134,23 @@ pub fn decode_op_file(bytes: &[u8]) -> OpFileRead {
         return not_whole("it holds another number of ops than its trailer says");
     }
     OpFileRead::Whole(ops)
+}
+
+/// One op line, with the fields of its `after` that it does not carry.
+fn decode_op_line(line: &[u8]) -> Result<Op, serde_json::Error> {
+    let value: serde_json::Value = serde_json::from_slice(line)?;
+    let mut op = Op::deserialize(&value)?;
+    if let (Some(serde_json::Value::Object(carried)), Some(after)) =
+        (value.get("after"), op.after.as_ref())
+        && let serde_json::Value::Object(known) = serde_json::to_value(after)?
+    {
+        op.absent = known
+            .keys()
+            .filter(|k| !carried.contains_key(*k))
+            .cloned()
+            .collect();
+    }
+    Ok(op)
 }
 
 /// The folder of `device`'s op files.
@@ -256,6 +283,8 @@ pub fn write_pending_ops(
                 clock: o.clock,
                 before: o.change.before,
                 after: o.change.after,
+                before_clock: o.before_clock,
+                absent: Vec::new(),
             })
             .collect();
         let path = op_file_path(&device, file.seq);

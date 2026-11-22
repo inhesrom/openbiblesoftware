@@ -1,5 +1,7 @@
 //! Sync's clocks and outbox in the User database (ADR 0022 rules 2–3, S28a): migration 13 → 14
-//! loses nothing, from a database or a Backup; every database has a device id, a damaged one
+//! loses nothing, from a database or a Backup; migration 15's item positions and what each
+//! tombstone covers round-trip through a Backup, and a v14 Backup restores with both unknown
+//! (an item at its index, a tombstone covering up to its own clock); every database has a device id, a damaged one
 //! replaced; the clock never hands out one at or below a clock the database holds or a merge
 //! observed, after a reopen, a restore or a wall clock stepping back, taking in no clock that
 //! does not parse or is more than a day ahead (whose rows stay); and the outbox keeps ops only
@@ -13,7 +15,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use obs_store::annotation::new_id;
-use obs_store::{Change, Hlc, Notebook, Row, SYNCED_TABLES, USER_SCHEMA_VERSION, UserStore};
+use obs_store::{
+    Change, Hlc, Notebook, Row, RowKey, SYNCED_TABLES, USER_SCHEMA_VERSION, UserStore,
+};
 use rusqlite::Connection;
 use rusqlite::types::Value;
 
@@ -58,7 +62,12 @@ fn everything(c: &Connection) -> Tables {
     tables
         .into_iter()
         .map(|t| {
-            let columns = strings(c, &format!("SELECT name FROM pragma_table_info('{t}')"));
+            // `tombstone.covers` (schema 15) is `NULL` on every tombstone written before it;
+            // the migration tests below check that on their own.
+            let columns = strings(
+                c,
+                &format!("SELECT name FROM pragma_table_info('{t}') WHERE name <> 'covers'"),
+            );
             let list = columns
                 .iter()
                 .map(|c| format!("\"{c}\""))
@@ -146,7 +155,7 @@ fn v13_fixture(path: &Path) {
 }
 
 #[test]
-fn migration_14_keeps_every_row_of_a_v13_database_and_copies_it_first() {
+fn migrations_14_and_15_keep_every_row_of_a_v13_database_and_copy_it_first() {
     let dir = Dir::new("v13");
     v13_fixture(&dir.db());
     let before = everything(&Connection::open(dir.db()).unwrap());
@@ -160,8 +169,8 @@ fn migration_14_keeps_every_row_of_a_v13_database_and_copies_it_first() {
 
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 13);
-    assert_eq!(USER_SCHEMA_VERSION, 14);
-    assert_eq!(db.schema_version().unwrap(), 14);
+    assert_eq!(USER_SCHEMA_VERSION, 15);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let copy = report.migration_backup.unwrap();
     assert!(copy.to_string_lossy().contains(".v13-"));
     assert_eq!(everything(&Connection::open(&copy).unwrap()), before);
@@ -174,10 +183,18 @@ fn migration_14_keeps_every_row_of_a_v13_database_and_copies_it_first() {
     for table in ["item_clock", "op_outbox"] {
         assert_eq!(after[table], Vec::<String>::new(), "{table}");
     }
+    // A tombstone from before schema 15 covers up to its own clock (`NULL`).
+    assert_eq!(
+        strings(
+            &Connection::open(dir.db()).unwrap(),
+            "SELECT coalesce(covers, 'NULL') FROM tombstone"
+        ),
+        ["NULL"]
+    );
 }
 
 #[test]
-fn a_v13_backup_restores_into_14_losing_nothing() {
+fn a_v13_backup_restores_into_15_losing_nothing() {
     let dir = Dir::new("v13-backup");
     let old = dir.0.join("old").join("user.db");
     v13_fixture(&old);
@@ -191,7 +208,7 @@ fn a_v13_backup_restores_into_14_losing_nothing() {
 
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
     db.restore(&backup).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 14);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let restored = everything(&Connection::open(db.path()).unwrap());
     for (table, rows) in &held {
         assert_eq!(&restored[table], rows, "{table}");
@@ -231,6 +248,96 @@ fn a_backup_carries_the_item_clocks_and_the_outbox() {
     ] {
         assert_eq!(restored[table], held[table], "{table}");
     }
+}
+
+/// `(row_id, position)` of every item clock and `(row_id, covers)` of every tombstone, with
+/// `NULL` as "NULL".
+fn positions_and_covers(c: &Connection) -> (Vec<String>, Vec<String>) {
+    (
+        strings(
+            c,
+            "SELECT row_id || '=' || coalesce(position, 'NULL') FROM item_clock ORDER BY row_id",
+        ),
+        strings(
+            c,
+            "SELECT row_id || '=' || coalesce(covers, 'NULL') FROM tombstone ORDER BY row_id",
+        ),
+    )
+}
+
+/// Two Collections, then a Favorite added and removed.
+fn list_and_delete(db: &UserStore) {
+    db.set_preference(
+        "library.collections",
+        r#"[{"name":"Greek","rules":[]},{"name":"Hebrew","rules":[]}]"#,
+    )
+    .unwrap();
+    let gone = db.add_favorite("", "Gen 1:1", "{}").unwrap();
+    assert!(db.remove_favorite(gone).unwrap());
+}
+
+#[test]
+fn item_positions_and_what_tombstones_cover_round_trip_through_a_backup() {
+    let dir = Dir::new("v15-backup");
+    let first = dir.0.join("first").join("user.db");
+    let (a, _) = UserStore::open(&first).unwrap();
+    list_and_delete(&a);
+    let held = positions_and_covers(&Connection::open(&first).unwrap());
+    assert_eq!(held.0, ["Greek=0", "Hebrew=1"]);
+    assert_eq!(held.1.len(), 1);
+    assert!(
+        Hlc::parse(held.1[0].split('=').nth(1).unwrap()).is_some(),
+        "{held:?}"
+    );
+    let backup = dir.0.join("a.obsbackup");
+    a.back_up(&backup).unwrap();
+
+    let (mut b, _) = UserStore::open(&dir.db()).unwrap();
+    b.restore(&backup).unwrap();
+    assert_eq!(
+        positions_and_covers(&Connection::open(b.path()).unwrap()),
+        held
+    );
+}
+
+#[test]
+fn a_v14_backup_restores_with_item_positions_at_their_index_and_tombstones_covering_their_clock() {
+    let dir = Dir::new("v14-backup");
+    let old = dir.0.join("old").join("user.db");
+    let (v14, _) = UserStore::open_to(&old, 14).unwrap();
+    list_and_delete(&v14);
+    let backup = dir.0.join("v14.obsbackup");
+    v14.back_up(&backup).unwrap();
+    drop(v14);
+    assert_eq!(UserStore::backup_contents(&backup).unwrap().version, 14);
+
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    db.restore(&backup).unwrap();
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    let (positions, covers) = positions_and_covers(&Connection::open(db.path()).unwrap());
+    assert_eq!(positions, ["Greek=NULL", "Hebrew=NULL"]);
+    assert_eq!(covers.len(), 1);
+    assert!(covers[0].ends_with("=NULL"), "{covers:?}");
+    // NULL: an item is at its index, a tombstone covers up to its own clock.
+    for (i, name) in ["Greek", "Hebrew"].into_iter().enumerate() {
+        let row = db
+            .row_state(&RowKey::Collection(name.into()))
+            .unwrap()
+            .row
+            .unwrap();
+        assert!(
+            matches!(&row, Row::Collection(item) if item.position == u32::try_from(i).unwrap()),
+            "{row:?}"
+        );
+    }
+    let uid = covers[0].split('=').next().unwrap();
+    let tombstone = db
+        .row_state(&RowKey::Favorite(uid.into()))
+        .unwrap()
+        .tombstone
+        .unwrap();
+    assert!(tombstone.clock.is_some());
+    assert_eq!(tombstone.covers, tombstone.clock);
 }
 
 #[test]

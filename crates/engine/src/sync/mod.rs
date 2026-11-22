@@ -7,11 +7,19 @@
 //! - `devices/<device-id>/ops/<seq>.jsonl`: its op files ([`ops`]), each written once.
 //!
 //! [`folder`] is how the engine reaches the folder, [`clock`] the hybrid logical clock every
-//! op carries. Merging other devices' ops, snapshots and when sync runs are later steps'
-//! (plan S28b, S28c). `docs/dev/sync.md` documents the files.
+//! op carries, [`merge`] how other devices' ops are merged here (ADR 0022 rule 3). Sync
+//! conflicts of Note text and the rules for deleted parents (plan S28b-2), snapshots and when
+//! sync runs (S28c) are later steps'. `docs/dev/sync.md` documents the files and the merge.
 
 pub mod clock;
 pub mod folder;
+// The merge writes the User database, which is SQLite: not on wasm (`obs-store`).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod merge;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod merge_props;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod merge_tests;
 pub mod ops;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
