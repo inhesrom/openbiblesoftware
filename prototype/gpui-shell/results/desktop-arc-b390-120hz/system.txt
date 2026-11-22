@@ -1,0 +1,9 @@
+date: 2026-11-21T11:18:40-10:00
+host: Linux 7.2.15-1-omarchy x86_64
+cpu: Intel(R) Core(TM) Ultra X7 358H
+gpu: VGA compatible controller: Intel Corporation Panther Lake [Arc B390] (rev 04)
+session: wayland DISPLAY=:0 WAYLAND_DISPLAY=wayland-1
+display_hz: 120
+gpui binary: 34M
+egui binary: 63M
+scenario: prototype/gpui-shell/scenario.json

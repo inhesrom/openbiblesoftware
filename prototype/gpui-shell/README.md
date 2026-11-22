@@ -40,7 +40,7 @@ RUNS=3 prototype/gpui-shell/bench.sh     # alternates gpui, egui, gpui, egui, �
 ```
 
 Both apps play the same frame-by-frame script ([scenario.json](scenario.json)) in a
-1400×900 window: jump to Genesis 1:1, a screenshot, 600 frames of steady scrolling, three
+1400×900 window (a tiling window manager may resize both alike): jump to Genesis 1:1, a screenshot, 600 frames of steady scrolling, three
 flings, eight jumps across the Bible, a screenshot at John 1:1, scrolling back. The
 leader Panel is scrolled (GPUI: `ListState::scroll_by`; egui: trackpad wheel events over the
 pane, applied in full the same frame) or jumped (`tab.go` in egui); linked Panels follow.
@@ -48,6 +48,11 @@ Each app writes a JSON report with frame intervals and frame work (p50/p95/p99/m
 frames against the display's refresh), startup times, process CPU time and peak RSS;
 `compare.py` puts them side by side in `summary.md`. Screenshots are taken from outside
 (X11 `import`, or `grim` on wlroots Wayland) while the app holds still.
+
+The display's refresh rate, which decides what counts as a missed frame, is read from
+Hyprland (`hyprctl`), wlroots compositors (`wlr-randr`) or X11 (`xrandr`); set
+`OBS_PROTO_HZ` to override it. Keep the benchmark windows visible until the run ends: a
+hidden window gets no frames, and the gap is reported as a stall, not timed.
 
 The egui side is a prototype-only mode of the real app (`OBS_PROTO_BENCH`,
 `crates/ui-egui/src/proto_bench.rs`), inert unless that variable is set. It opens only the
