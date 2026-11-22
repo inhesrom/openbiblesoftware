@@ -165,34 +165,52 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     Open, and `ReportSection`s in the desktop report's words and order: Summary (title,
     `source_line`, `summary_counts`, Unmapped and Absent verses), Licence
     (`LICENCE_MISSING`, a warning), then Warnings, Dropped markup and Source files and Bible
-    books, folded (`collapsed`). A `.obr`'s report: its title, type and abbreviation, and
-    "Added to your Library as it is." or "Replaced <abbr> in your Library with revision N.".
+    books, folded (`collapsed`); the Licence line is the desktop's (`LICENCE_MISSING`, a
+    warning, or `LICENCE_RECORDED`). A `.obr`'s report: its title, type and abbreviation, and
+    "Added to your Library as it is.", "Replaced <abbr> in your Library with revision N." or
+    "Your Library already has this file (<abbr> revision N), so nothing was changed."; a
+    refused one fails with `ObrRefused::message` ("Your Library already has <abbr> revision
+    N. …").
   - `cancel_import(n)`; `import_copy_failed(path, error)`.
   - The pump's `advance_imports` deletes a finished Import's copy (`picked-<n>/`) and reports
-    `Changed::Imports` when a report changed. Boot deletes `<library>/imports/` whole: no
-    Import outlives the run that started it.
+    `Changed::Imports` when a report changed. Once an Import's final report has been seen
+    (failed, or complete with its Search index built, failed or unavailable) it is skipped.
+    Boot deletes `<library>/imports/` whole: no Import outlives the run that started it.
 - **The engine's zips** (`obs_engine::import_zip`; the desktop never makes these sources,
   `ImportSource::detect` is unchanged):
   - `ImportSource::zip(path)`: a zip holding a `mods.d/*.conf` (resource forks aside) is
     `SwordZip`, anything else `UsfmZip` (a file that is not a zip then fails as one).
-  - `SwordZip`: every entry is checked before anything is written. An absolute path, a
-    drive letter, a backslash, a NUL or a `..` component, or a symbolic link refuses the
-    whole zip; more than `ZIP_IMPORT_ENTRIES` (10,000) entries, or more than
+  - `SwordZip`: every entry is checked before anything is written. An absolute path, a `:`
+    in any component (a drive letter), a backslash, a NUL or a `..` component, or a symbolic
+    link refuses the whole zip; more than `ZIP_IMPORT_ENTRIES` (10,000) entries, or more than
     `ZIP_IMPORT_LIMIT` (512 MiB) declared or actually decompressed, refuses it. `mods.d/`
     must be at the top of the zip or in one folder at its top (Files' Compress); deeper, or a
     zip of several modules, is refused (no module chooser on mobile). `__MACOSX/` and `._*`
-    files are left out. The zip unpacks into `<library>/imports/<id>.sword/`, is read as
-    `ImportSource::Sword`, and that folder is removed whatever the outcome. USFM files beside
+    files are left out. The zip unpacks into `<library>/imports/<id>.sword/`, its conf's
+    `DataPath` must be the module's own folder in `modules/`
+    (`sword_modules::install::module_data_dir`, through `SwordSource::check_data_paths`;
+    the reader would otherwise read `../…` or an absolute path from outside it), then it is
+    read as `ImportSource::Sword`; that folder is removed whatever the outcome, a panic too
+    (`TempFolder`, a drop guard). USFM files beside
     the module are not imported, and the report's warnings say so (`USFM_BESIDE_SWORD`).
   - `UsfmZip`: the file (at most `ZIP_IMPORT_LIMIT`, `ZIP_IMPORT_ENTRIES` entries) read by
     `usfm_zip_books` (`.usfm`/`.sfm` from any folder, its own per-file and total bounds) and
     imported as a USFM folder is; none: "This zip holds no USFM books…".
   - `failure_message` has plain words for each refusal (a file it will not unpack; too large;
-    several modules; not where the app looks; no books; not a zip).
-  - `Session::add_obr_copy(path)` moves a `.obr` into the library folder as the desktop's drop
-    adds one (Search index, remembered names, re-anchoring): the same Resource's file is
-    replaced (`Effect::Replaced` reloads its readers), a new one is `<id>.obr` or
-    `<id>-2.obr`; a file that is not a Resource is refused and left where it is.
+    several modules; not where the app looks; a `DataPath` outside the module's folder; no
+    books; not a zip). Each matches a phrase only `import_zip` writes: its not-a-zip error is
+    "this file is not a zip archive" (`NOT_A_ZIP`), so the desktop Open catalogue's "archive:
+    not a zip archive" (`obs_formats::usfm_zip`) keeps the generic words.
+  - `Session::add_obr_copy(path)` moves a `.obr` into the library folder for good (Search
+    index, remembered names, re-anchoring, as the desktop adds a dropped one). Unlike the
+    desktop's drop, which adds the dropped file where it is for the session, it changes the
+    library folder, so it follows the Starter sync's rule: a Resource already in the library
+    is replaced only by a greater revision (`ObrCopy::Replaced`; `Effect::Replaced` reloads
+    its readers). The same revision with the same content changes nothing
+    (`ObrCopy::AlreadyThere`); the same or a lower revision with other content is refused
+    (`ObrRefused::NotNewer`). A new one is `<id>.obr` or `<id>-2.obr`
+    (`ObrCopy::Added`); a file that is not a Resource is refused (`ObrRefused::Unreadable`).
+    A refused or already-there file is left where it is.
 
 ## Data
 
@@ -246,14 +264,21 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   SWORD zip with `mods.d/` at the top and in one wrapper folder (resource forks aside)
   imports and leaves no temp folder; too deep, several modules (also in two folders)
   refused in plain words; USFM files beside a module named in the report; a zip-slip, an
-  absolute, a backslash, a drive-letter and a symbolic-link entry each refuse the whole zip
-  with nothing written outside; the 512 MiB and 10,000-entry bounds (small bounds in the
-  test) for SWORD and USFM zips, and a cancelled unpack; a module the importer refuses fails
-  after unpacking and leaves no temp folder; a USFM zip from a folder; no books, not a zip;
-  a `.obr` moved in, a newer revision replacing it, a taken name, a non-Resource refused.
+  absolute, a backslash, a drive-letter (first or later component) and a symbolic-link entry
+  each refuse the whole zip with nothing written outside; a conf whose `DataPath` leaves the
+  temp folder (`../`, absolute) refused though the data is there; the 512 MiB and
+  10,000-entry bounds (small bounds in the test) for SWORD and USFM zips, a zip holding more
+  than its central directory declares refused as it is read (no temp folder left), and a
+  cancelled unpack; the temp folder removed after a panic; a module the importer refuses
+  fails after unpacking and leaves no temp folder; a USFM zip from a folder; no books, not a
+  zip, and the desktop Open catalogue's not-a-zip error keeping the generic words; a `.obr`
+  moved in, a greater revision replacing it, the same file changing nothing, the same
+  revision with other content and a lower revision refused, a taken name, a non-Resource
+  refused.
   `crates/mobile/src/import_tests.rs` (`cargo test -p obs-mobile import`): a USFM zip, a
-  SWORD zip (with USFM beside it), a USFM file and a `.obr` (and its next revision) through
-  the named file, with their reports; refusals and the copy deleted; a copy that failed; a
+  SWORD zip (with USFM beside it), a USFM file and a `.obr` (its next revision, the same
+  file again, a lower revision refused) through the named file, with their reports; a
+  finished Import skipped by the pump; refusals and the copy deleted; a copy that failed; a
   path not named; Cancel; boot sweeping `imports/`. `apps/obs-ffi/tests/import.rs`: zips and
   a refusal through the FFI with jobs on threads. `apps/ios/OpenBibleUITests/ImportTests`
   (with `apps/ios/scripts/place-import-files.sh`, `docs/dev/ios-project.md`): a USFM zip, a
