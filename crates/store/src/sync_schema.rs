@@ -51,7 +51,8 @@ pub const SYNCED_PREFERENCES: &[&str] = &[
 /// The preferences that stay on each device: display preferences (View settings and fonts,
 /// Own Text sizes, the Custom theme, the toolbar, Keyboard shortcuts, Home), the Search
 /// history and Recent searches, the Command box's recent entries, Removed Starter Resources,
-/// the released Starter library list last fetched (the Mobile app), what belongs to the
+/// the released Starter library list last fetched and the download settings (the Mobile
+/// app: Use cellular data, the Study set offer shown), what belongs to the
 /// Resources installed here (Import reports, confirmed Attributions), the app's own settings
 /// (updates, Log level, the tour), the Copy verses options last used, the last Notebook used
 /// and the Visual filters (they need ids that are the same on every device before they can
@@ -69,6 +70,7 @@ pub const DEVICE_PREFERENCES: &[&str] = &[
     "command-box.recent",
     "starter-library",
     "starter-library.released",
+    "mobile.downloads",
     "import-report/",
     "resource-attribution/",
     "updates",

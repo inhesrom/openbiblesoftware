@@ -77,6 +77,26 @@ impl DownloadState {
     }
 }
 
+/// A download's state in words, for its row ("Downloading · 12.0 MB of 26.0 MB").
+pub fn download_label(state: &DownloadState) -> String {
+    match state {
+        DownloadState::Queued => "Waiting to download".into(),
+        DownloadState::Downloading { done, total } if *total > 0 => {
+            format!(
+                "Downloading · {} of {}",
+                megabytes(*done),
+                megabytes(*total)
+            )
+        }
+        DownloadState::Downloading { done, .. } => format!("Downloading · {}", megabytes(*done)),
+        DownloadState::Verifying => "Checking the file…".into(),
+        DownloadState::Installing => "Adding it to your Library…".into(),
+        DownloadState::Indexing => "Building its Search index…".into(),
+        DownloadState::Done => "In your Library".into(),
+        DownloadState::Failed { message, .. } => message.clone(),
+    }
+}
+
 /// The device's network as the shell sees it, and the "Use cellular data" setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Network {

@@ -108,6 +108,10 @@ pub struct MobileApp {
     pub(crate) picked: Vec<crate::import::Picked>,
     /// The number of the next Import.
     pub(crate) next_import: u64,
+    /// "Use cellular data" and the Study set offer, as kept on this device.
+    pub(crate) download_settings: crate::download_settings::DownloadSettings,
+    /// The Study set offer was shown at an earlier launch.
+    pub(crate) offer_shown_before: bool,
 }
 
 impl MobileApp {
@@ -158,6 +162,8 @@ impl MobileApp {
         if let Some(dir) = &paths.study_set {
             problems.extend(add_study_set(&mut session, dir));
         }
+        let download_settings =
+            crate::download_settings::DownloadSettings::read(session.user.as_deref());
         let estimate_threads = std::thread::available_parallelism()
             .map_or(1, |n| n.get())
             .clamp(1, 4);
@@ -176,6 +182,8 @@ impl MobileApp {
             downloads: Vec::new(),
             picked: Vec::new(),
             next_import: 1,
+            download_settings,
+            offer_shown_before: download_settings.study_set_offered,
         };
         app.restore_readers();
         // What boot itself queued (a message from the User database, the readers' Visits)

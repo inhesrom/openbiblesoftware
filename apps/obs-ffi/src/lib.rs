@@ -24,9 +24,10 @@ pub use import::{ImportReport, ImportState, ReportSection};
 mod library;
 pub use library::{
     DownloadOrigin, DownloadPlan, DownloadRequest, DownloadRow, DownloadState, LicenceClass,
-    LicenceFilter, MobileSet, Network, OpenRow, RemoveAnswer, SetSummary, StarterChoice,
-    StarterLibraryView, StarterRow, StarterRowStatus, StorageRow, StorageView, Transport,
-    TransportError,
+    LicenceFilter, LicenceFilterChoice, LicenceFilters, MobileSet, Network, OpenRow, RemoveAnswer,
+    SetSummary, StarterChoice, StarterLibraryView, StarterRow, StarterRowStatus, StorageRow,
+    StorageView, StudySetOffer, Transport, TransportError, download_label, licence_class_label,
+    licence_filters,
 };
 
 /// The engine's version.
