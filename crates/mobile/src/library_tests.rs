@@ -15,7 +15,7 @@ use obs_engine::testing::{
     MOCK_OPEN_NOTICE, mobile_starter_library, mock_open_catalogue, write_mobile_starter_bundle,
 };
 
-use crate::library::download_rule;
+use crate::library::{download_rule, megabytes};
 use crate::*;
 
 const WIFI: Network = Network {
@@ -559,6 +559,10 @@ fn library_open_catalogue_rows_filter_by_licence_and_a_download_imports() {
 
 #[test]
 fn library_storage_lists_each_resource_with_its_files() {
+    assert_eq!(megabytes(26_049_999), "26.0 MB");
+    assert_eq!(megabytes(26_050_000), "26.1 MB");
+    assert_eq!(megabytes(647_168), "0.6 MB");
+    assert_eq!(megabytes(0), "0.0 MB");
     let (root, app) = app("storage");
     let storage = app.storage();
     let listed: Vec<String> = storage.rows.iter().map(|r| r.resource_id.clone()).collect();

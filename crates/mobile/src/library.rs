@@ -249,11 +249,10 @@ pub struct DownloadRow {
     pub state: DownloadState,
 }
 
-/// "26.0 MB", as the desktop writes sizes.
+/// "26.0 MB", as the desktop writes sizes (decimal megabytes, to the nearest tenth).
 pub fn megabytes(bytes: u64) -> String {
-    #[allow(clippy::cast_precision_loss)]
-    let mb = bytes as f64 / 1_000_000.0;
-    format!("{mb:.1} MB")
+    let tenths = bytes.saturating_add(50_000) / 100_000;
+    format!("{}.{} MB", tenths / 10, tenths % 10)
 }
 
 fn resources(n: usize) -> String {
