@@ -70,10 +70,17 @@ steps add methods (the Study sheet, Annotations, Search, Guides, the Library).
   - `download_settings` (S24): "Use cellular data" and the first-launch Study set offer,
     kept in the device-only preference `mobile.downloads`
     ([mobile-library](mobile-library.md)).
+  - `background` (S25): the work a background processing task carries on (Search index
+    builds, the alias caches, installs and Imports heading to an index),
+    `pending_background_work()` (the task's request, or none) and `step_background(deadline)`
+    ([mobile-library](mobile-library.md) § Storage and background work). The pump makes the
+    alias caches current whenever the library changes.
   - `events`: `pump()` lets the engine route finished jobs (`Session::poll_imports`, the
     job queue's one reader), applies the Workspace's effects to the readers, records
     History, moves the downloads on and returns each `Changed` once (`Library`, `Reader(id)`,
-    `History`, `Message`, `Downloads`); `busy()` says jobs are running. Effects that place
+    `History`, `Message`, `Downloads`, `Imports`, and `Indexes` when a Search index starts
+    or stops being built); `busy()` says jobs are running. Its work without taking the
+    changes is `advance()`, which `step_background` uses. Effects that place
     Tabs in Panels or open desktop windows and menus come from commands the Mobile app never
     runs and are dropped (the module docs list which mean something).
 - **`obs-ffi`** (`apps/obs-ffi`, an app). The one UniFFI crate Swift links, in proc-macro
@@ -92,7 +99,10 @@ steps add methods (the Study sheet, Annotations, Search, Guides, the Library).
   it never reads the job queue's events, and stops when the app or its observer goes.
   `poll_changed()` is the same poll by hand. `set_transport(Transport)` takes the shell's
   foreign `Transport { get(url) -> bytes }` for small JSON and hands it to the engine as its
-  `Fetch` (`src/library.rs`, [mobile-library](mobile-library.md)). Its `uniffi.toml` names the Swift module
+  `Fetch` (`src/library.rs`, [mobile-library](mobile-library.md)). `step_background()`
+  (`src/background.rs`) steps the background work for `obs_mobile::BACKGROUND_STEP` at most,
+  releasing the lock between rounds as the pump thread does; it blocks, so the shell calls
+  it off its main thread. Its `uniffi.toml` names the Swift module
   `ObsFFI`, so the bindings are `ObsFFI.swift`, with `ObsFFIFFI.h` and
   `ObsFFIFFI.modulemap` for UniFFI's C module `ObsFFIFFI`.
 - **Tile pixels: the bulk byte path.** UniFFI 0.32 lowers a `Vec<u8>` one byte at a time
@@ -277,6 +287,20 @@ it is under the ignored `/target`.
     foot, opening the Library. As a test harness only, the Debug variables
     `OBS_STARTER_MIRROR`, `OBS_TEST_NETWORK` and `OBS_TEST_NO_STUDY_SET_OFFER`, and the
     cancelling of an earlier test's transfers under `OBS_TEST_APP_FOLDER`.
+  - From S25 (the background task and Storage, `docs/dev/mobile-library.md` § Storage and
+    background work): `BackgroundIndexer` registers the task in `didFinishLaunching` (UIKit's
+    rule), submits a `BGProcessingTaskRequest` only while the core's
+    `pendingBackgroundWork()` returns one, copying its two flags, when the scene goes to the
+    background and when a run ends with work left; a run steps while the core says work is
+    left and the system's `expirationHandler` has not fired (the loop's length is the core's
+    step), asks again when work is left, and completes the task with `success` = no work
+    left; a refused submission (the simulator's `unavailable`) is logged and changes nothing.
+    `Changed.indexes` asks the Library's screens again, Storage included. Storage's row
+    shows the core's index `label` with a small spinner while its `state` is `building` (a
+    `switch` choosing a view); the row is one VoiceOver element (title, size, index) before
+    its Remove; sizes are in the primary colour (the grouped list's secondary text fails
+    the audit's contrast). As a test harness only, the Debug `OBS_TEST_OPEN_STORAGE`
+    variable opens Library → Storage at launch (`LibraryModel.path`).
   - Accepted S07 prototype gaps, where Swift decides more than presentation
     (`docs/dev/mobile-text-view.md` "Decided in Swift"; S14a closes the first two):
     - `CoreTokenizer` overrides only `rangeEnclosingPosition`; the tokenizer's boundary

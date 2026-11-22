@@ -43,16 +43,11 @@ final class StorageTests: XCTestCase {
         return copy
     }
 
-    private func shot(_ app: XCUIApplication, _ name: String) {
-        for dark in [false, true] {
-            XCUIDevice.shared.appearance = dark ? .dark : .light
-            sleep(1)
-            let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = dark ? name + "-dark" : name
-            shot.lifetime = .keepAlways
-            add(shot)
-        }
-        XCUIDevice.shared.appearance = .light
+    private func attach(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 
     /// The accessibility audit, filtering only what `LibraryTests.audit` filters (the system
@@ -72,15 +67,19 @@ final class StorageTests: XCTestCase {
         }
     }
 
-    /// The audit in Light, then in Dark (given time to settle: the navigation title read
-    /// mid-change fails contrast).
-    private func audits(_ app: XCUIApplication) throws {
-        try audit(app)
+    /// The previews in Light and Dark first, while the state is as the test found it, then
+    /// the audit in each (given time to settle: the navigation title read mid-change fails
+    /// contrast).
+    private func previewAndAudit(_ app: XCUIApplication, _ name: String) throws {
+        attach(app, name)
         XCUIDevice.shared.appearance = .dark
-        sleep(3)
+        sleep(1)
+        attach(app, name + "-dark")
+        sleep(2)
         try audit(app)
         XCUIDevice.shared.appearance = .light
-        sleep(2)
+        sleep(3)
+        try audit(app)
     }
 
     private func rows(_ app: XCUIApplication, saying text: String) -> XCUIElementQuery {
@@ -108,8 +107,7 @@ final class StorageTests: XCTestCase {
         XCTAssertTrue(building.label.hasSuffix("Still being indexed"), building.label)
         XCTAssertTrue(building.label.contains(" MB"), building.label)
         XCTAssertTrue(app.buttons["storage.remove.\(id)"].exists)
-        try audits(app)
-        shot(app, "s25-storage-indexing")
+        try previewAndAudit(app, "s25-storage-indexing")
 
         // Built: no row on screen is still being indexed, and the Bundled set's BSB reads ready.
         let none = NSPredicate(format: "count == 0")
@@ -118,7 +116,6 @@ final class StorageTests: XCTestCase {
         let bsb = app.descendants(matching: .any)["storage.row.bsb"].firstMatch
         XCTAssertTrue(bsb.waitForExistence(timeout: 10))
         XCTAssertTrue(bsb.label.hasSuffix("Search index ready"), bsb.label)
-        try audits(app)
-        shot(app, "s25-storage-ready")
+        try previewAndAudit(app, "s25-storage-ready")
     }
 }

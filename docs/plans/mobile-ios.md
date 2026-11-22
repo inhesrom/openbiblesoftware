@@ -62,7 +62,7 @@ to Claude Opus 5.5 later on".
 | S22 | Reading plans + optional local reminder | AFK | y | S14b | plans screens, `UNUserNotificationCenter` | todo |
 | S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (PR #405) |
 | S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | done (PR #409) |
-| S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
+| S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | done (branch mobile/s25-index-storage, PR pending; the task itself is device-only, see Outcome) |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | done (PR #406) |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | todo |
@@ -1541,7 +1541,9 @@ this in addition to its own lines):
   index status), `annotations.rs` (`annotation.search_notes`); `text.normalize` command.
 - **Do:** Rust: `search(query, mode: Bible|Notes, scope) -> results|error|indexing(resource)`,
   suggestions, open-hit → navigate. Swift: search screen with mode/scope pickers, results list,
-  "still being indexed" row; system keyboards for Hebrew/Greek (no custom keyboard; D16, decided in
+  "still being indexed" row (**from S25:** its words are `MobileApp::search_index_status(resource)`'s
+  `note`, and `searchable` says whether Search reads it meanwhile; `Changed::Indexes` says
+  when one changes; reuse them rather than wording it again); system keyboards for Hebrew/Greek (no custom keyboard; D16, decided in
   S12).
 - **Don't:** query parsing, scope rules or result ranking in Swift; Search Library mode (deferred).
 - **Deliverables:** Rust methods + tests, Swift Search screen, `docs/dev/mobile-search.md`,
@@ -2197,7 +2199,11 @@ this in addition to its own lines):
   iPhone; make Highlights/Notes on each; wait; confirm convergence and a deliberate conflict; note
   latency; then (per #332 "Validation") check whether Dropbox, OneDrive and Google Drive folders
   can be picked in the iOS picker at all. Report back; the executor updates the supported-folders
-  copy (Rust strings) and `docs/dev/sync.md`.
+  copy (Rust strings) and `docs/dev/sync.md`. **From S25 (device-only, the simulator refuses
+  `BGTaskScheduler`):** with the same iPhone and a Debug run from Xcode, the background
+  processing task's check in `docs/dev/ios-project.md` ("Background task": submitted on
+  going home, the lldb simulated launch building the indexes, the simulated expiration
+  leaving work and asking again), and report what the console said.
 - **Done when:** the report names latency, the conflict outcome and the pickable providers; the
   follow-up PR with the Rust strings is merged.
 
@@ -2355,6 +2361,10 @@ this in addition to its own lines):
   4.0"); accessibility audit pass on every screen (XCUITest `performAccessibilityAudit`); size:
   `.ipa` ≤ 200 MB (expect ≈ 43 MB Bundled set, measured in S04, + Rust ≈ 20–40 MB; record); first-launch offline path
   (4.2.3(ii)); review notes (what the app does without download, how Import works, no accounts;
+  **from S25:** why the app declares the `processing` background mode: it builds the Search
+  indexes and alias caches of Resources the user downloaded or imported on the device, from
+  files already there, with no network, in a `BGProcessingTask` that carries on when the app
+  is closed (#333 "Storage");
   **from the S26 review:** the app claims `public.zip-archive` at rank Alternate, so the share
   sheet lists Open Bible for every `.zip`, and a zip that holds neither USFM books nor one SWORD
   module is refused in plain words; it is not listed for an `.epub` or a `.docx`, checked in
@@ -2386,7 +2396,10 @@ this in addition to its own lines):
   upload** of the S34 `.ipa` from Xcode Organizer or Transporter (or, if preferred, generate an ASC
   API key, store it as a repo secret and let the agent run the upload command once the record
   exists); (4) internal TestFlight on the owner's devices for a week; external
-  TestFlight optional; (5) submit for review with the S34 notes; on rejection, open a ticket quoting
+  TestFlight optional, during which (**from S25**) the background processing task is checked
+  on a TestFlight build without the debugger (`docs/dev/ios-project.md`, "Background task",
+  step 4: Resources added, the app closed on charge, the indexes ready at a later launch),
+  unless S31 has already done the lldb check; (5) submit for review with the S34 notes; on rejection, open a ticket quoting
   the reviewer and loop to the responsible step. After (3), an AFK follow-up adds `ios-release.yml`
   per S34's design.
 - **Done when:** a TestFlight build is installable; the review is submitted; the Outcome records
