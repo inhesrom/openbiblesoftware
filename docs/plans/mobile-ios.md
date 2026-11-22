@@ -61,7 +61,7 @@ to Claude Opus 5.5 later on".
 | S21 | Passage Guide + Word Study (lighter), synced arrangement followed | AFK | y | S16 | Guide screens | todo |
 | S22 | Reading plans + optional local reminder | AFK | y | S14b | plans screens, `UNUserNotificationCenter` | todo |
 | S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (PR #405) |
-| S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | todo |
+| S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | done (branch mobile/s24-ios-downloads, PR pending) |
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | done (PR #406) |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
@@ -1382,7 +1382,9 @@ this in addition to its own lines):
   Reading font among the bundled faces — see A6/Risks for system fonts);
   `UIAccessibility.isReduceMotionEnabled` → `view.reduce_motion`, `isDarkerSystemColorsEnabled` →
   High contrast theme pair (ADR 0018); VoiceOver elements per Verse with rotor, 44 pt targets.
-  Previews for each surface in Light/Dark/Sepia on iPhone and iPad.
+  Previews for each surface in Light/Dark/Sepia on iPhone and iPad. **From S24:** move "Use
+  cellular data" (`use_cellular`/`set_use_cellular`, kept in `mobile.downloads`) from the
+  Library sheet into Settings.
 - **Don't:** Study sheet, Split view, Annotations; Theme/tone colour math in Swift.
 - **Deliverables:** `apps/ios/OpenBible/Settings/**`, footnote popover; `docs/dev/mobile-reader.md`
   section; `docs/previews/ios/s14b-*.png`; XCUITests (footnote, theme, Dynamic Type at the largest
@@ -1742,7 +1744,10 @@ this in addition to its own lines):
   jobs; `storage() -> rows`. Swift: register a `BGProcessingTask` id in `project.yml`
   (`BGTaskSchedulerPermittedIdentifiers`), schedule when work is pending, `isExcludedFromBackup` on
   `library/`, `search/`, `aliases/` after boot, Storage screen with Remove, low-storage check before
-  download (`volumeAvailableCapacityForImportantUsage`).
+  download (`volumeAvailableCapacityForImportantUsage`). **From S24:** a first Library →
+  Storage list (sizes, the total, Remove) and the free bytes passed to `plan_*` (from
+  `volumeAvailableCapacityForImportantUsage`, privacy reason `E174.1`) already ship; S25
+  adds the index status to it rather than building it anew.
 - **Don't:** storage maths or "won't fit" rules in Swift (Rust takes free bytes as input).
 - **Deliverables:** Rust methods + tests, Swift task registration + Storage screen,
   `docs/dev/mobile-library.md` section, `docs/previews/ios/s25-*.png`.

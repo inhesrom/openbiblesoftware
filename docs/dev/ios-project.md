@@ -16,6 +16,7 @@ S13, S14a).
 | `apps/ios/scripts/place-import-files.sh` | yes | Puts the Import UI tests' files in a simulator's Files app (below). |
 | `apps/ios/OpenBibleTests/` | yes | XCTest unit tests, hosted in the app, against the real core. |
 | `apps/ios/OpenBibleUITests/` | yes | XCUITest launch smoke with a screenshot attachment. |
+| `apps/ios/TestSupport/` | yes | `MirrorServer`, a local HTTP Starter library mirror both test targets compile in (S24, "Library tests"). |
 | `apps/ios/Packages/OpenBibleCore/Package.swift` | yes | The local Swift package the app links: a binary target `ObsFFI` (`ObsFFI.xcframework`) and the Swift target `OpenBibleCore` (`Sources/Generated/ObsFFI.swift`, which imports the C module `ObsFFIFFI`). Swift code says `import OpenBibleCore`. |
 | `apps/ios/Packages/OpenBibleCore/ObsFFI.xcframework/`, `Sources/Generated/` | no | Copied there by `cargo xtask ios build`. |
 | `apps/ios/Bundled/starter/` | no | The Bundled set, copied by `cargo xtask ios bundled-set` and checked against `apps/ios/bundled-set.lock` (`docs/dev/starter-library.md`, "Mobile sets"). The app bundles it as the folder `starter`. |
@@ -89,6 +90,24 @@ boots in `Application Support/OpenBible-ImportTests`, made afresh each launch (t
 `OBS_TEST_APP_FOLDER`), so the other tests still find the Bundled set alone. "Open in Open
 Bible" can be tried by hand with `simctl openurl <udid> file:///path/to/file.obr`
 (`docs/previews/ios/s26-open-in.png`).
+
+### Library tests
+
+`LibraryTests` (UI) and `DownloadTests` (unit, S24) download Starter library files from a
+local mirror, never the network: `MirrorServer` (`apps/ios/TestSupport`) serves the folder
+`TEST_RUNNER_OBS_STUDY_SET_DIR` names (`dist/starter`) over HTTP on 127.0.0.1 from the test
+process, with byte ranges, a throttle, corrupted files, and GitHub-like 302s to signed URLs
+that expire. The app under test boots in `Application Support/OpenBible-LibraryTests`, made
+afresh, with the Debug variables `OBS_STARTER_MIRROR` (the mirror's URL) and
+`OBS_TEST_NETWORK` (`wifi` or `cellular`, standing for `NWPathMonitor`'s path); a launch with
+`OBS_TEST_APP_FOLDER` cancels the background transfers an earlier test left. Without
+`TEST_RUNNER_OBS_STUDY_SET_DIR` these tests are skipped (`DownloadTests`' transport test
+still runs). The other UI tests launch with `OBS_TEST_NO_STUDY_SET_OFFER=1`, so the
+first-launch Study set offer does not cover the reader they test. App Transport Security
+allows `http://127.0.0.1` without an exception (the tests run with the app's Info.plist as
+it ships). `XCUIDevice.shared.press(.home)` sends the app to the background; on the iOS 27.2
+simulator it stayed in `runningBackground` for the 20 s the test waits rather than being
+suspended, while the system's transfers carried on.
 
 ## The run-script phase
 
@@ -230,7 +249,10 @@ audit: `stat`, `fstat`, `fstatat`, `lstat` (declared); `statfs` and `fstatfs` (S
 locking-style probe on Apple platforms; Apple lists these under the disk-space category);
 `futimes`, `utimes`, `clock_gettime`, `sysctlbyname`. Reason `3B52.1` (files the user chose)
 is declared since Import (S26), which copies a file the user picked or shared; the Sync
-folder (S30) relies on it too.
+folder (S30) relies on it too. Since S24 the app reads the free space of its volume
+(`volumeAvailableCapacityForImportantUsage`) so a download that will not fit says so before
+it starts: `NSPrivacyAccessedAPICategoryDiskSpace` with reason `E174.1` ("Write or delete
+file on-device", as Xcode 27.2's privacy manifest schema lists it).
 
 ## Agent shells on the owner's Mac
 

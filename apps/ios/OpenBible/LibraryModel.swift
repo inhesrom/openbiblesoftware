@@ -100,9 +100,15 @@ final class LibraryModel {
         offer = nil
     }
 
-    /// The Library sheet opened: the core fetches the released Starter library list.
+    /// The Library sheet opened.
     func open() {
         showing = true
+        refresh()
+    }
+
+    /// Library → Starter library opened: the core fetches the released Starter library list
+    /// (#333 "Network": only when the user opens it, starts a download or sees the offer).
+    func starterOpened() {
         _ = try? core?.checkStarter()
         refresh()
     }

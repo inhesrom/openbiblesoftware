@@ -67,6 +67,9 @@ steps add methods (the Study sheet, Annotations, Search, Guides, the Library).
   - `library`: Library → Starter library, the Open catalogue, the downloads and their
     states, Remove and Add back, Storage ([mobile-library](mobile-library.md)). `boot` sets
     the engine's released-leads switch before `sync_starter_library`.
+  - `download_settings` (S24): "Use cellular data" and the first-launch Study set offer,
+    kept in the device-only preference `mobile.downloads`
+    ([mobile-library](mobile-library.md)).
   - `events`: `pump()` lets the engine route finished jobs (`Session::poll_imports`, the
     job queue's one reader), applies the Workspace's effects to the readers, records
     History, moves the downloads on and returns each `Changed` once (`Library`, `Reader(id)`,
@@ -226,6 +229,37 @@ it is under the ignored `/target`.
     S06); Done, Open, Cancel and Details are Swift's labels, like the menu's "Import…";
     Open shows the core's Resource in reader 0. As a test harness only, the Debug
     `OBS_TEST_APP_FOLDER` variable boots in a fresh folder of that name.
+  - From S24 (downloads and the Library, `docs/dev/mobile-library.md` § The shell's
+    downloads): the transport and the downloaded files read HTTP statuses as `fetch.rs`
+    does (`HTTPStatus`: 2xx, 404/410, 429 and GitHub's 403 with no requests left, anything
+    else with its status), with `fetch.rs`'s GitHub API headers and 30 s timeout;
+    `NWPathMonitor`'s path becomes `is_wifi = !usesInterfaceType(.cellular)` (supervisor
+    decision: what `allowsCellularAccess = false` waits for), and a core error reading Use
+    cellular data passes `false`; the free bytes are the volume's
+    `volumeAvailableCapacityForImportantUsage`, nil when unknown; a request goes to the
+    Wi-Fi-only or the cellular background session as its `cellular` says; resume data is
+    kept as `<the core's file>.resume` (deleted by Cancel and on install), a resumed
+    transfer that fails starts afresh once, a running transfer of the same file and URL is
+    kept and one from another URL replaced; progress reaches the core at most every 0.25 s;
+    a finished file is moved to the path the core named. On the screens, `switch`es over
+    the core's answers choose a view: `DownloadPlan` (start the transfers, an alert with
+    the core's words for `AskCellular` and `WontFit`, nothing), `StarterRowStatus` (Remove,
+    Update, Add back or Download), `DownloadState` (progress and Cancel, a spinner, the
+    failure and Retry when the core says `retry`), `RemoveAnswer` (its question as an
+    alert); a yes to the cellular question asks the core again with `cellular_confirmed`.
+    The offer sheet shows while the core answers an offer (and closes when it does not, on
+    Not now, or once Download has started; it stays for the core's question), Download is
+    disabled while the core gives no size (before the list is in there is nothing to
+    plan), and its sheet's appearance is what `study_set_offer_shown` records; the released
+    list is checked when Starter library opens or the offer appears without a size, as #333
+    "Network" says. The labels Library, Starter library, Get Resources, Storage, Total,
+    Study set, Use cellular data, Licence, Licence evidence, Download, Update, Add back,
+    Remove, Cancel, Retry, Not now (the cellular question), OK and Done are Swift's, like
+    S26's; " · " joins the core's fields in a row; the offer's buttons are label-coloured
+    (the system blue fails the audit's contrast); the reader shows the core's banner at its
+    foot, opening the Library. As a test harness only, the Debug variables
+    `OBS_STARTER_MIRROR`, `OBS_TEST_NETWORK` and `OBS_TEST_NO_STUDY_SET_OFFER`, and the
+    cancelling of an earlier test's transfers under `OBS_TEST_APP_FOLDER`.
   - Accepted S07 prototype gaps, where Swift decides more than presentation
     (`docs/dev/mobile-text-view.md` "Decided in Swift"; S14a closes the first two):
     - `CoreTokenizer` overrides only `rangeEnclosingPosition`; the tokenizer's boundary

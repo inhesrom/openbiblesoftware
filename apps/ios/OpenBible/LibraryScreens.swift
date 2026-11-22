@@ -106,6 +106,7 @@ struct StarterLibraryScreen: View {
         }
         .navigationTitle("Starter library")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { model.starterOpened() }
         .accessibilityIdentifier("starter.list")
     }
 }
