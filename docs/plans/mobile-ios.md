@@ -2191,7 +2191,8 @@ under the half they belong to.
   --all-features`; `cargo test -p obs-engine --lib sync` (99 passed); `cargo test -p
   obs-ui-egui sync` (6 passed); the merge property tests at the default seed, 1,000 and 10,000
   cases, green (245 s); `cargo xtask sync-e2e` green; `cargo xtask gallery` green, no golden
-  changed.
+  changed; `cargo xtask ci` green (8 m 28 s; 2,472 tests passed, 44 ignored; fmt, layers,
+  assets, licenses, clippy, a11y, test, wasm).
 
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
