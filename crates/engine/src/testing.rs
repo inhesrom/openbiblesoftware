@@ -2675,6 +2675,65 @@ pub fn copy_bundled_set(from: &Path, to: &Path) {
     std::fs::write(to.join(crate::starter::MANIFEST_FILE), manifest.to_string()).unwrap();
 }
 
+/// A zip of `(name, bytes)` files, deflated.
+pub fn zip_files(files: &[(String, Vec<u8>)]) -> Vec<u8> {
+    use std::io::Write;
+    let mut out = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut out);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, bytes) in files {
+        zip.start_file(name.as_str(), options).unwrap();
+        zip.write_all(bytes).unwrap();
+    }
+    zip.finish().unwrap();
+    out.into_inner()
+}
+
+/// Every file under `dir`, as (`prefix` + its path under `dir` with `/`, bytes), sorted.
+pub fn files_under(dir: &Path, prefix: &str) -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let rel = path
+                    .strip_prefix(dir)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((format!("{prefix}{rel}"), std::fs::read(&path).unwrap()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// One open-text SWORD test module's files under `prefix`, as a SWORD module zip holds
+/// them: its conf (`mods.d/<conf>`) and its data folder (`modules/<data>`, as the conf's
+/// `DataPath` names it), e.g. `("obskjvosis.conf", "texts/ztext/obskjvosis")`.
+pub fn sword_module_files(conf: &str, data: &str, prefix: &str) -> Vec<(String, Vec<u8>)> {
+    let mut files = vec![(
+        format!("{prefix}mods.d/{conf}"),
+        std::fs::read(sword_assets().join("mods.d").join(conf)).unwrap(),
+    )];
+    files.extend(files_under(
+        &sword_assets().join("modules").join(data),
+        &format!("{prefix}modules/{data}/"),
+    ));
+    files
+}
+
+/// The open-text WEB excerpt's USFM books (five) under `prefix`.
+pub fn web_usfm_files(prefix: &str) -> Vec<(String, Vec<u8>)> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/usfm/web");
+    files_under(&dir, prefix)
+}
+
 /// A zip of `(name, text)` files, as a publisher's `*_usfm.zip`.
 pub fn zip_of(files: &[(String, String)]) -> Vec<u8> {
     use std::io::Write;

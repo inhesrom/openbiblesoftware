@@ -33,6 +33,8 @@ pub enum Changed {
     /// Library → Starter library, Get Resources or a download changed (the released manifest
     /// came in, a download moved on, a Resource was removed): ask for them again.
     Downloads,
+    /// An Import's report changed (`MobileApp::import_report`).
+    Imports,
 }
 
 /// What the pump has reported so far.
@@ -82,6 +84,7 @@ impl MobileApp {
             self.events.push(Changed::History);
         }
         self.advance_downloads();
+        self.advance_imports();
         let seen = self.starter_seen();
         if seen != self.events.seen_starter {
             self.events.seen_starter = seen;

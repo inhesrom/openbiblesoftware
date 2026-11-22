@@ -7,6 +7,9 @@ import SwiftUI
 /// gap (`docs/dev/mobile-text-view.md`).
 struct ReaderScreen: View {
     @Bindable var model: ReaderModel
+    /// Import (S26): reached from the options menu until the screen anatomy (#335, S12/S14a)
+    /// gives it its place.
+    @Bindable var importer: ImportModel
     @State private var reference = ""
     @State private var showBooks = false
     @State private var showAbout = false
@@ -58,6 +61,8 @@ struct ReaderScreen: View {
                         ForEach(model.tones, id: \.id) { Text($0.label).tag($0.id) }
                     }
                     Toggle("Show measurements", isOn: $model.showMeasurements)
+                    Button("Import…") { importer.picking = true }
+                        .accessibilityIdentifier("reader.import")
                     Button("About") { showAbout = true }
                 } label: {
                     Image(systemName: "textformat.size")
@@ -108,6 +113,13 @@ struct ReaderScreen: View {
         }
         .sheet(isPresented: $showAbout) {
             AboutView(app: model.app)
+        }
+        .fileImporter(
+            isPresented: $importer.picking, allowedContentTypes: ImportTypes.all,
+            allowsMultipleSelection: false
+        ) { importer.picked($0) }
+        .sheet(item: $importer.shown) { _ in
+            ImportReportSheet(model: importer)
         }
     }
 }

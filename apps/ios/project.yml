@@ -33,6 +33,42 @@ targets:
         buildPhase: resources
     dependencies:
       - package: OpenBibleCore
+    # Import (S26, #333): the kinds of file the app opens from Files and "Open in Open
+    # Bible". XcodeGen writes these keys into OpenBible/Info.plist (gitignored), which Xcode
+    # merges with the keys it generates from the INFOPLIST_KEY_ settings below. The system
+    # copies a shared file into the app (LSSupportsOpeningDocumentsInPlace false), so no file
+    # is opened in place and no entitlement is needed.
+    info:
+      path: OpenBible/Info.plist
+      properties:
+        # XcodeGen would write 1.0 and 1 here; the build settings below stay the versions.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: USFM books
+            LSHandlerRank: Default
+            LSItemContentTypes: [org.ubsicap.usfm]
+          - CFBundleTypeName: Zip of USFM books or of a SWORD module
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.zip-archive]
+          - CFBundleTypeName: Open Bible Resource
+            LSHandlerRank: Owner
+            LSItemContentTypes: [io.github.inhesrom.openbible.obr]
+        # The app's own Resource file format.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.inhesrom.openbible.obr
+            UTTypeDescription: Open Bible Resource
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [obr]
+        # USFM (ubsicap.github.io/usfm) has no system type: the app declares the one it reads.
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.ubsicap.usfm
+            UTTypeDescription: USFM Scripture text
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [usfm, sfm]
     settings:
       base:
         PRODUCT_NAME: OpenBible

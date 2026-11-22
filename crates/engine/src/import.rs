@@ -19,6 +19,11 @@ use crate::{
 /// up for it); the Session builds it in the background instead (#58).
 pub const DEFERRED_INDEX: &str = "Search index: built in the background";
 
+/// The folder in the library folder where Imports unpack and the Mobile app's picked files
+/// wait (`<library>/imports/`, `crate::import_zip`). The library's scan reads only `.obr`
+/// files beside it.
+pub const IMPORTS_DIR: &str = "imports";
+
 /// Shown when nothing can build the Search index here (no cache directory).
 pub const UNAVAILABLE_INDEX: &str = "Search index: unavailable (no cache folder)";
 
@@ -173,6 +178,8 @@ pub fn failure_message(error: &str) -> &'static str {
         .to_ascii_lowercase();
     if e.ends_with("import cancelled") {
         "The Import was cancelled."
+    } else if let Some(message) = zip_failure(&e) {
+        message
     } else if e.contains("no such file or directory") || e.contains("cannot find the") {
         "That file or folder does not exist. It may have been moved, renamed or deleted."
     } else if e.contains("permission denied") || e.contains("access is denied") {
@@ -191,6 +198,125 @@ pub fn failure_message(error: &str) -> &'static str {
     } else {
         "The app could not read this source, so nothing was added to your Library."
     }
+}
+
+/// What a failed zip Import (the Mobile app's, `crate::import_zip`) says; `None` for any
+/// other failure. Each phrase is one only `crate::import_zip` writes. The desktop's Open
+/// catalogue Import reads zips too, and its download that is not a zip fails with
+/// `obs_formats::usfm_zip`'s "not a zip archive", which keeps the generic words: so the
+/// Mobile app's own not-a-zip error says [`NOT_A_ZIP`], and only that is matched.
+fn zip_failure(e: &str) -> Option<&'static str> {
+    Some(
+        if e.contains("would land outside its folder") || e.contains("has a symbolic link") {
+            "This zip holds a file the app will not unpack (a link, or a file outside the zip's \
+         folder), so nothing was added to your Library."
+        } else if e.contains("unpacks to more than") || e.contains("this zip has more than") {
+            "This zip is too large to import: more than 512 MiB unpacked, or more than 10,000 \
+         files."
+        } else if e.contains("zip holds several sword modules") {
+            "This zip holds several SWORD modules. Zip one module, then import it."
+        } else if e.contains("sword module is not where the app looks") {
+            "This zip's SWORD module is not where the app looks for it: mods.d/ must be at the \
+         top of the zip, or in one folder at its top."
+        } else if e.contains("zip holds no usfm books") {
+            "This zip holds no USFM books (.usfm or .sfm files) and no SWORD module, so nothing \
+         was added to your Library."
+        } else if e.contains(DATA_PATH_OUTSIDE) {
+            "This zip's SWORD module keeps its text outside the module's own folder in \
+         modules/, so nothing was added to your Library."
+        } else if e.contains(NOT_A_ZIP) {
+            "That file is not a zip archive, so nothing was added to your Library."
+        } else {
+            return None;
+        },
+    )
+}
+
+/// The Mobile app's zip Import of a file that is not a zip (`crate::import_zip`), unlike
+/// `obs_formats::usfm_zip`'s "not a zip archive", which the desktop's Open catalogue
+/// reports with the generic words.
+pub(crate) const NOT_A_ZIP: &str = "this file is not a zip archive";
+
+/// A SWORD zip whose conf's `DataPath` is not a module folder inside `modules/`
+/// (`sword_modules::install::module_data_dir`), so its text would be read from elsewhere.
+pub(crate) const DATA_PATH_OUTSIDE: &str = "this zip's sword module keeps its data outside";
+
+/// An Import report's licence line when the source carried no licence.
+pub const LICENCE_MISSING: &str =
+    "Licence: unknown (user-imported). No licence found in the source; for personal use only.";
+
+/// An Import report's licence line when the source carried one.
+pub const LICENCE_RECORDED: &str = "Licence recorded from the source; see About.";
+
+/// "1 note", "3 notes".
+fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// What an Import brought in, in the words of what it is (LIBRARY-10): a Bible's Bible books,
+/// Verses, notes and Tagged words; a Commentary's, Lexicon's or Dictionary's entries; a
+/// dataset's cross-references, people and places, or events. Only a Bible's counts show when
+/// they are zero, so a Commentary never reads "0 Bible books · 0 Verses".
+pub fn summary_counts(report: &ImportReport) -> String {
+    let mut parts = Vec::new();
+    let mut nonzero = |n: usize, one: &str, many: &str| {
+        if n > 0 {
+            parts.push(plural(n, one, many));
+        }
+    };
+    let dataset = report.cross_references
+        + report.entities
+        + report.mentions
+        + report.events
+        + report.parallel_sections
+        > 0;
+    if report.entries > 0 {
+        nonzero(report.entries, "entry", "entries");
+        nonzero(report.notes, "note", "notes");
+        nonzero(report.scripture_refs, "Bible reference", "Bible references");
+        nonzero(report.tagged_words, "Strong's link", "Strong's links");
+    } else if dataset {
+        nonzero(
+            report.cross_references,
+            "Cross-reference",
+            "Cross-references",
+        );
+        nonzero(
+            report.parallel_sections,
+            "section with Parallel passages",
+            "sections with Parallel passages",
+        );
+        nonzero(report.entities, "person or place", "people and places");
+        nonzero(report.mentions, "mention", "mentions");
+        nonzero(
+            report.events,
+            "era, lifespan or event",
+            "eras, lifespans and events",
+        );
+    } else {
+        parts.push(plural(report.books.len(), "Bible book", "Bible books"));
+        parts.push(plural(report.verses, "Verse", "Verses"));
+        parts.push(plural(report.notes, "note", "notes"));
+        parts.push(plural(report.tagged_words, "Tagged word", "Tagged words"));
+    }
+    if parts.is_empty() {
+        "Nothing to read was found.".to_string()
+    } else {
+        parts.join(" · ")
+    }
+}
+
+/// "2 source files · usfm": how many files an Import read, and their format.
+pub fn source_line(report: &ImportReport) -> String {
+    format!(
+        "{} · {}",
+        plural(report.source_files.len(), "source file", "source files"),
+        report.source_format
+    )
 }
 
 /// The start of the preference key of each Resource's latest Import report.
@@ -486,6 +612,11 @@ pub enum ImportSource {
         source: Box<crate::open_catalogue::OpenSource>,
         file: std::path::PathBuf,
     },
+    /// A zip of one SWORD module (the Mobile app's Import, #333), unpacked into a temp folder
+    /// under the library's `imports/` and read as [`Self::Sword`] (`crate::import_zip`).
+    SwordZip(std::path::PathBuf),
+    /// A zip of USFM books (the Mobile app's Import, #333), read in memory.
+    UsfmZip(std::path::PathBuf),
 }
 
 // Desktop Import uses these; the browser build has no local Import.
@@ -504,11 +635,23 @@ impl ImportSource {
         }
     }
 
+    /// A SWORD zip if the zip at `path` holds a `mods.d/*.conf`, else a USFM zip
+    /// (`crate::import_zip`). The desktop's [`Self::detect`] never makes either.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn zip(path: std::path::PathBuf) -> Self {
+        match crate::import_zip::zip_kind(&path) {
+            crate::import_zip::ZipKind::Sword => Self::SwordZip(path),
+            crate::import_zip::ZipKind::Usfm => Self::UsfmZip(path),
+        }
+    }
+
     fn path(&self) -> &Path {
         match self {
-            Self::Usfm(p) | Self::Sword { path: p, .. } | Self::Repository { sword_dir: p, .. } => {
-                p
-            }
+            Self::Usfm(p)
+            | Self::SwordZip(p)
+            | Self::UsfmZip(p)
+            | Self::Sword { path: p, .. }
+            | Self::Repository { sword_dir: p, .. } => p,
             Self::Open(source) | Self::OpenDownloaded { source, .. } => Path::new(&source.url),
         }
     }
@@ -595,10 +738,7 @@ impl Session {
     /// [`Self::start_import`] without its report Tab (the Mobile app shows progress itself;
     /// the report is kept). Returns the new Resource id and the job.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn start_import_job(
-        &mut self,
-        source: ImportSource,
-    ) -> Result<(String, JobId), String> {
+    pub fn start_import_job(&mut self, source: ImportSource) -> Result<(String, JobId), String> {
         let dir = self
             .library
             .directory()
@@ -618,6 +758,105 @@ impl Session {
         };
         let job = self.submit_import(source, &dir, &id, None);
         Ok((id, job))
+    }
+
+    /// Move the Resource file at `path` (the app's own copy of a `.obr` the user picked or
+    /// shared, the Mobile app's Import, #333) into the library folder for good and add it:
+    /// its Search index refreshed, its name remembered, its Annotations re-anchored if it
+    /// replaced a revision. Unlike the desktop's drop (`obs_ui_egui::App::dropped`, which
+    /// adds the dropped file where it is for the session), it changes the library folder, so
+    /// a Resource already in the library is replaced only by a greater revision, the Starter
+    /// sync's rule: its file is replaced (wherever the library folder holds it). The same
+    /// revision with the same content changes nothing ([`ObrCopy::AlreadyThere`]); the same
+    /// or a lower revision with other content is refused ([`ObrRefused::NotNewer`]). A new
+    /// Resource is `<id>.obr`, or `<id>-2.obr` when another Resource has that name. A file
+    /// that is refused, or already there, is left where it is.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn add_obr_copy(&mut self, path: &Path) -> Result<ObrAdded, ObrRefused> {
+        use obs_store::ResourceStore;
+        let manifest = obs_store::ObrReader::open(path)
+            .map(|r| r.manifest().clone())
+            .map_err(|e| ObrRefused::Unreadable(e.to_string()))?;
+        let id = manifest.resource_id.clone();
+        if !obs_model::is_valid_resource_id(&id) {
+            return Err(ObrRefused::Unreadable(format!(
+                "{id:?} is not a valid Resource id"
+            )));
+        }
+        if let Some(have) = self.library.get(&id).map(|e| &e.manifest)
+            && manifest.revision <= have.revision
+        {
+            if manifest.revision == have.revision && manifest.content_hash == have.content_hash {
+                return Ok(ObrAdded {
+                    manifest: have.clone(),
+                    outcome: ObrCopy::AlreadyThere,
+                });
+            }
+            return Err(ObrRefused::NotNewer {
+                abbreviation: have.abbreviation.clone(),
+                revision: have.revision,
+                offered: manifest.revision,
+            });
+        }
+        let dir = self
+            .library
+            .directory()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| ObrRefused::Unreadable("No library directory".into()))?;
+        let previous = self.library.get(&id).map(|e| e.path.clone());
+        let dest = match &previous {
+            Some(p) if p.parent() == Some(dir.as_path()) => p.clone(),
+            _ => {
+                let mut n = 1u32;
+                loop {
+                    let name = if n == 1 {
+                        format!("{id}.obr")
+                    } else {
+                        format!("{id}-{n}.obr")
+                    };
+                    let candidate = dir.join(name);
+                    if !candidate.exists() {
+                        break candidate;
+                    }
+                    n += 1;
+                }
+            }
+        };
+        let mut staged = dest.clone().into_os_string();
+        staged.push(".part");
+        let staged = std::path::PathBuf::from(staged);
+        let moved = std::fs::rename(path, &staged)
+            .or_else(|_| std::fs::copy(path, &staged).map(|_| ()))
+            .and_then(|()| std::fs::rename(&staged, &dest));
+        if let Err(e) = moved {
+            let _ = std::fs::remove_file(&staged);
+            return Err(ObrRefused::Unreadable(format!("{}: {e}", dest.display())));
+        }
+        let added = self
+            .library
+            .add_file(&dest)
+            .map(|e| e.manifest.clone())
+            .map_err(|e| ObrRefused::Unreadable(e.to_string()))?;
+        self.refresh_search_index(&id);
+        self.remember_resource_names();
+        self.reanchor_resource(&id);
+        let replaced = previous.is_some();
+        if replaced {
+            self.workspace.push_effect(Effect::Replaced(id.clone()));
+        }
+        if let Err(e) = self.save_preferred_order() {
+            self.workspace.push_effect(Effect::Message(format!(
+                "Could not save the Preferred order: {e}"
+            )));
+        }
+        Ok(ObrAdded {
+            manifest: added,
+            outcome: if replaced {
+                ObrCopy::Replaced
+            } else {
+                ObrCopy::Added
+            },
+        })
     }
 
     /// Download a newer version of the module a Resource was downloaded from and import it
@@ -738,6 +977,83 @@ impl Session {
     }
 }
 
+/// A Resource file [`Session::add_obr_copy`] took: the Resource now in the library, and
+/// what was done.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObrAdded {
+    pub manifest: obs_model::Manifest,
+    pub outcome: ObrCopy,
+}
+
+/// What [`Session::add_obr_copy`] did with a Resource file it took.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObrCopy {
+    /// A Resource new to the library, moved in.
+    Added,
+    /// A greater revision of a Resource in the library: its file was replaced.
+    Replaced,
+    /// The library has this revision with this content already: nothing changed.
+    AlreadyThere,
+}
+
+/// Why [`Session::add_obr_copy`] added nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObrRefused {
+    /// The library has this Resource at `revision`, with other content, and the file's
+    /// revision (`offered`) is not greater (the Starter sync's rule).
+    NotNewer {
+        abbreviation: String,
+        revision: u32,
+        offered: u32,
+    },
+    /// Not a Resource file the library can read, or it could not be moved in: the error.
+    Unreadable(String),
+}
+
+impl ObrRefused {
+    /// What the Import report says, in plain words.
+    pub fn message(&self) -> String {
+        match self {
+            Self::NotNewer {
+                abbreviation,
+                revision,
+                offered,
+            } if offered == revision => format!(
+                "Your Library already has {abbreviation} revision {revision}. This file is \
+                 revision {offered} too, with other content, so nothing was changed."
+            ),
+            Self::NotNewer {
+                abbreviation,
+                revision,
+                offered,
+            } => format!(
+                "Your Library already has {abbreviation} revision {revision}. This file is an \
+                 older revision ({offered}), so nothing was changed."
+            ),
+            Self::Unreadable(_) => "That is not a Resource file this app can read, so nothing \
+                 was added to your Library."
+                .to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for ObrRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotNewer {
+                abbreviation,
+                revision,
+                offered,
+            } => write!(
+                f,
+                "{abbreviation}: the library has revision {revision}; this file is revision \
+                 {offered}, not greater"
+            ),
+            Self::Unreadable(e) => f.write_str(e),
+        }
+    }
+}
+
 /// Where an Import writes: Resource `id` in library folder `dir`, as a new Resource, or
 /// (`revision`) as that Resource revision of the Resource already there.
 #[cfg(not(target_arch = "wasm32"))]
@@ -770,7 +1086,6 @@ fn parse_usfm(
     id: &str,
     ctx: &JobContext,
 ) -> Result<Parsed, Box<dyn std::error::Error>> {
-    use obs_formats::{UsfmImport, UsfmOptions};
     let mut files = if path.is_dir() {
         let mut files = Vec::new();
         for entry in std::fs::read_dir(path)? {
@@ -788,18 +1103,7 @@ fn parse_usfm(
         vec![path.to_path_buf()]
     };
     files.sort();
-    let source = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-    let mut import = UsfmImport::new(UsfmOptions {
-        resource_id: id.into(),
-        title: source.clone(),
-        source_file: source,
-        tool_version: tool_version(),
-        ..Default::default()
-    });
+    let mut import = usfm_import(path, id);
     for file in files {
         if ctx.is_cancelled() {
             return Err("Import cancelled".into());
@@ -809,10 +1113,97 @@ fn parse_usfm(
             std::fs::read_to_string(&file)?,
         )?;
     }
+    finish_usfm(import, ctx)
+}
+
+/// A USFM Import of the books from `path` (a file, a folder or a zip) as Resource `id`,
+/// titled with the file or folder name.
+#[cfg(not(target_arch = "wasm32"))]
+fn usfm_import(path: &Path, id: &str) -> obs_formats::UsfmImport {
+    let source = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+        resource_id: id.into(),
+        title: source.clone(),
+        source_file: source,
+        tool_version: tool_version(),
+        ..Default::default()
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn finish_usfm(
+    import: obs_formats::UsfmImport,
+    ctx: &JobContext,
+) -> Result<Parsed, Box<dyn std::error::Error>> {
     Ok(import.finish_with_progress(|done, total| {
         ctx.progress(done as u64, total as u64);
         !ctx.is_cancelled()
     })?)
+}
+
+/// The USFM books of the zip at `path` (`obs_formats::usfm_zip_books`, which reads `.usfm`
+/// and `.sfm` files from any folder of it).
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_usfm_zip(
+    path: &Path,
+    id: &str,
+    ctx: &JobContext,
+) -> Result<Parsed, Box<dyn std::error::Error>> {
+    let bytes = crate::import_zip::read_usfm_zip(path, crate::import_zip::ZipBounds::DEFAULT)?;
+    let books = obs_formats::usfm_zip_books(&bytes)?;
+    drop(bytes);
+    if books.is_empty() {
+        return Err(
+            "this zip holds no USFM books (.usfm or .sfm files) and no SWORD module (mods.d/)"
+                .into(),
+        );
+    }
+    let mut import = usfm_import(path, id);
+    for (name, text) in books {
+        if ctx.is_cancelled() {
+            return Err("Import cancelled".into());
+        }
+        import.add_book(&name, text)?;
+    }
+    finish_usfm(import, ctx)
+}
+
+/// The one module of the SWORD zip at `path`, unpacked into `<dir>/imports/<id>.sword/`,
+/// which is removed again whatever the outcome, a panic too (`crate::import_zip`). A conf
+/// whose `DataPath` leaves its module folder is refused before the module is read.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn parse_sword_zip(
+    path: &Path,
+    dir: &Path,
+    id: &str,
+    bounds: crate::import_zip::ZipBounds,
+    is_cancelled: impl Fn() -> bool,
+) -> Result<Parsed, Box<dyn std::error::Error>> {
+    let temp = crate::import_zip::TempFolder(
+        dir.join(crate::import_zip::IMPORTS_DIR)
+            .join(format!("{id}.sword")),
+    );
+    let (root, usfm_beside) =
+        crate::import_zip::unpack_sword_zip(path, &temp.0, bounds, &is_cancelled)?;
+    if is_cancelled() {
+        return Err(cancelled());
+    }
+    obs_formats::SwordSource::open(&root)?
+        .check_data_paths()
+        .map_err(|e| {
+            format!("this zip's SWORD module keeps its data outside its folder in modules/ ({e})")
+        })?;
+    let (resource, mut report) = parse_sword(&root, None, id)?;
+    if usfm_beside {
+        report
+            .warnings
+            .push(crate::import_zip::USFM_BESIDE_SWORD.to_string());
+    }
+    Ok((resource, report))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -920,6 +1311,16 @@ fn import_source(
             ImportSource::Sword { path, module } => {
                 ctx.phase("Parse");
                 parse_sword(path, module.as_deref(), id)?
+            }
+            ImportSource::SwordZip(path) => {
+                ctx.phase("Parse");
+                parse_sword_zip(path, dir, id, crate::import_zip::ZipBounds::DEFAULT, || {
+                    ctx.is_cancelled()
+                })?
+            }
+            ImportSource::UsfmZip(path) => {
+                ctx.phase("Parse");
+                parse_usfm_zip(path, id, ctx)?
             }
             ImportSource::Repository {
                 repo,

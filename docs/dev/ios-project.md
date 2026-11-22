@@ -11,7 +11,9 @@ S13, S14a).
 | Path | Committed | What |
 |---|---|---|
 | `apps/ios/project.yml` | yes | The Xcode project, for XcodeGen 2.46. `xcodegen generate` writes `OpenBible.xcodeproj` from it. |
-| `apps/ios/OpenBible/` | yes | The app's Swift sources and `PrivacyInfo.xcprivacy`. Info.plist keys are build settings in `project.yml` (`GENERATE_INFOPLIST_FILE`). |
+| `apps/ios/OpenBible/` | yes | The app's Swift sources and `PrivacyInfo.xcprivacy`. Info.plist keys are build settings in `project.yml` (`GENERATE_INFOPLIST_FILE`), and the document types and type declarations Import needs (S26) are `project.yml`'s `info` properties. |
+| `apps/ios/OpenBible/Info.plist` | no | Written by `xcodegen generate` from `project.yml`'s `info`; Xcode merges it with the keys it generates. |
+| `apps/ios/scripts/place-import-files.sh` | yes | Puts the Import UI tests' files in a simulator's Files app (below). |
 | `apps/ios/OpenBibleTests/` | yes | XCTest unit tests, hosted in the app, against the real core. |
 | `apps/ios/OpenBibleUITests/` | yes | XCUITest launch smoke with a screenshot attachment. |
 | `apps/ios/Packages/OpenBibleCore/Package.swift` | yes | The local Swift package the app links: a binary target `ObsFFI` (`ObsFFI.xcframework`) and the Swift target `OpenBibleCore` (`Sources/Generated/ObsFFI.swift`, which imports the C module `ObsFFIFFI`). Swift code says `import OpenBibleCore`. |
@@ -59,6 +61,34 @@ xcrun simctl io booted screenshot docs/previews/ios/s06-hello.png
 
 The UI test also attaches a screenshot (`s06-hello`) to the test results
 (`-resultBundlePath`).
+
+### Import tests
+
+`ImportTests` (S26) pick a USFM zip, a SWORD module zip and a `.obr` in the system document
+picker from the Files app's local storage ("On My iPhone" / "On My iPad"), so the files must
+be there first, made from the repository's open-text test assets:
+
+```sh
+simctl boot <udid>                                    # the simctl path S05 names
+simctl launch <udid> com.apple.DocumentsApp           # Files, once, on a fresh simulator
+bash apps/ios/scripts/place-import-files.sh <udid>     # from the repository root
+cd apps/ios
+TEST_RUNNER_OBS_IMPORT_FILES=1 xcodebuild test -scheme OpenBible -destination 'id=<udid>' \
+  -derivedDataPath ../../target/ios/xcode
+```
+
+The script zips `crates/formats/tests/assets/usfm/web` (`WEB excerpt.zip`) and the
+`ObsKjvOsis` test module (`KJV module.zip`), makes `KJV excerpt.obr` with `obs-cli import`,
+and copies them into the `File Provider Storage` of the simulator's
+`group.com.apple.FileProvider.LocalStorage` container. A fresh simulator has no Files storage until
+the Files app has run once (`simctl launch <udid> com.apple.DocumentsApp`); the script waits up
+to 30 s for it. CI's `ios.yml` does just that before `xcodebuild test` ("Place the Import tests'
+files": launch Files, run the script, quit Files) and sets `TEST_RUNNER_OBS_IMPORT_FILES=1`.
+Without `TEST_RUNNER_OBS_IMPORT_FILES` the three tests are skipped. The app under test
+boots in `Application Support/OpenBible-ImportTests`, made afresh each launch (the Debug-only
+`OBS_TEST_APP_FOLDER`), so the other tests still find the Bundled set alone. "Open in Open
+Bible" can be tried by hand with `simctl openurl <udid> file:///path/to/file.obr`
+(`docs/previews/ios/s26-open-in.png`).
 
 ## The run-script phase
 
@@ -199,7 +229,8 @@ What the linked core calls, from `nm -u` on the simulator's `libobs_ffi.a` (S06)
 audit: `stat`, `fstat`, `fstatat`, `lstat` (declared); `statfs` and `fstatfs` (SQLite's
 locking-style probe on Apple platforms; Apple lists these under the disk-space category);
 `futimes`, `utimes`, `clock_gettime`, `sysctlbyname`. Reason `3B52.1` (files the user chose)
-belongs with Import (S26) and the Sync folder (S30).
+is declared since Import (S26), which copies a file the user picked or shared; the Sync
+folder (S30) relies on it too.
 
 ## Agent shells on the owner's Mac
 

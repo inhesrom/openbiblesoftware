@@ -211,6 +211,21 @@ it is under the ignored `/target`.
     `OBS_STUDY_SET_DIR` variable (Debug builds), the fling bench stopping when the core's
     location label starts with the book it was given, and frame-drop counting from
     `CADisplayLink`.
+  - From S26 (Import, `docs/dev/mobile-library.md` § Import): the picker's types are the
+    three `project.yml` declares (`ImportTypes`), and what a file holds is the core's to
+    tell; Swift copies a picked or shared file to the path `import_destination` names,
+    inside its security-scoped access and a coordinated read, and deletes a file the
+    system put in `Documents/Inbox` for "Open in" once the copy is done, worked or not
+    (Apple's folder, the app's copy; both paths compared with symlinks resolved, `/var` and
+    `/private/var`); a file shared before the core booted waits for it; a copy that failed is handed
+    to the core (`import_copy_failed`), whose report says so; the report sheet's `switch`
+    over `ImportState` chooses the view (progress and Cancel, the status, or the failure
+    and Details); sections fold where the core's `collapsed` says; a warning line is
+    semibold; section titles are a list's first row in `.headline` and the file name is
+    `.headline` (a grouped list's header and secondary text fail the audit's contrast,
+    S06); Done, Open, Cancel and Details are Swift's labels, like the menu's "Import…";
+    Open shows the core's Resource in reader 0. As a test harness only, the Debug
+    `OBS_TEST_APP_FOLDER` variable boots in a fresh folder of that name.
   - Accepted S07 prototype gaps, where Swift decides more than presentation
     (`docs/dev/mobile-text-view.md` "Decided in Swift"; S14a closes the first two):
     - `CoreTokenizer` overrides only `rangeEnclosingPosition`; the tokenizer's boundary

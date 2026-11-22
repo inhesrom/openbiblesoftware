@@ -1,6 +1,8 @@
 //! Native source selection and live, keyless Import report Tabs (#47).
 
 use egui::{RichText, Ui};
+pub(super) use obs_engine::import::summary_counts;
+use obs_engine::import::{LICENCE_MISSING, LICENCE_RECORDED, source_line};
 use obs_engine::{
     DEFERRED_INDEX, ImportIndexStatus, ImportPhase, ImportRecord, ImportReport, IndexStatus,
     UNAVAILABLE_INDEX, failure_message,
@@ -320,68 +322,6 @@ fn waiting(what: impl Into<egui::WidgetText>) -> egui::ProgressBar {
     crate::components::progress_bar(0.0, what).animate(true)
 }
 
-/// "1 note", "3 notes".
-fn plural(n: usize, one: &str, many: &str) -> String {
-    if n == 1 {
-        format!("{n} {one}")
-    } else {
-        format!("{n} {many}")
-    }
-}
-
-/// What an Import brought in, in the words of what it is (LIBRARY-10): a Bible's Bible books,
-/// Verses, notes and Tagged words; a Commentary's, Lexicon's or Dictionary's entries; a
-/// dataset's cross-references, people and places, or events. Only a Bible's counts show when
-/// they are zero, so a Commentary never reads "0 Bible books · 0 Verses".
-pub(super) fn summary_counts(report: &ImportReport) -> String {
-    let mut parts = Vec::new();
-    let mut nonzero = |n: usize, one: &str, many: &str| {
-        if n > 0 {
-            parts.push(plural(n, one, many));
-        }
-    };
-    let dataset = report.cross_references
-        + report.entities
-        + report.mentions
-        + report.events
-        + report.parallel_sections
-        > 0;
-    if report.entries > 0 {
-        nonzero(report.entries, "entry", "entries");
-        nonzero(report.notes, "note", "notes");
-        nonzero(report.scripture_refs, "Bible reference", "Bible references");
-        nonzero(report.tagged_words, "Strong's link", "Strong's links");
-    } else if dataset {
-        nonzero(
-            report.cross_references,
-            "Cross-reference",
-            "Cross-references",
-        );
-        nonzero(
-            report.parallel_sections,
-            "section with Parallel passages",
-            "sections with Parallel passages",
-        );
-        nonzero(report.entities, "person or place", "people and places");
-        nonzero(report.mentions, "mention", "mentions");
-        nonzero(
-            report.events,
-            "era, lifespan or event",
-            "eras, lifespans and events",
-        );
-    } else {
-        parts.push(plural(report.books.len(), "Bible book", "Bible books"));
-        parts.push(plural(report.verses, "Verse", "Verses"));
-        parts.push(plural(report.notes, "note", "notes"));
-        parts.push(plural(report.tagged_words, "Tagged word", "Tagged words"));
-    }
-    if parts.is_empty() {
-        "Nothing to read was found.".to_string()
-    } else {
-        parts.join(" · ")
-    }
-}
-
 /// What was brought in, dropped markup, Unmapped/Absent counts and licence warnings.
 fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
     section(ui, "Summary");
@@ -390,11 +330,7 @@ fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
             .font(theme::display(text::SUBTITLE))
             .color(theme::c().ink),
     );
-    ui.label(format!(
-        "{} · {}",
-        plural(report.source_files.len(), "source file", "source files"),
-        report.source_format
-    ));
+    ui.label(source_line(report));
     ui.label(summary_counts(report));
     if let Some(counts) = report.verse_map {
         ui.label(format!("Unmapped verses: {}", counts.unmapped));
@@ -403,13 +339,9 @@ fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
     ui.add_space(space::M);
     section(ui, "Licence");
     if report.license_missing {
-        ui.colored_label(
-            theme::c().warn,
-            "Licence: unknown (user-imported). No licence found in the source; for personal \
-             use only.",
-        );
+        ui.colored_label(theme::c().warn, LICENCE_MISSING);
     } else {
-        ui.label("Licence recorded from the source; see About.");
+        ui.label(LICENCE_RECORDED);
     }
     ui.add_space(space::M);
     let dropped: u64 = report.dropped_markup.values().sum();

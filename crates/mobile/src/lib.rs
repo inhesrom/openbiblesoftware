@@ -17,11 +17,13 @@
 //! - `settings`: Theme, Page tone, Text size and Dynamic Type, fonts, Reduce motion;
 //! - [`library`]: Library → Starter library, the Open catalogue, downloads and their states,
 //!   Remove and Add back, Library → Storage;
+//! - [`import`]: Import of a file the user picked or shared, and its Import report;
 //! - `events`: the pump and its [`Changed`] events.
 
 mod app;
 mod events;
 mod frame;
+pub mod import;
 pub mod library;
 mod navigation;
 pub mod paths;
@@ -37,6 +39,7 @@ pub use frame::{
     AROUND, BAND, Footnote, FootnoteMarkerHit, Hit, HitVerse, HitWord, MAX_TILE_PX, ReaderFrame,
     SystemAppearance, TileKey, TilePlace, TimedTile, Viewport,
 };
+pub use import::{IMPORT_KINDS, ImportReportView, ImportState, ReportSection};
 pub use library::{
     DownloadOrigin, DownloadPlan, DownloadRequest, DownloadRow, DownloadState, Network, OpenRow,
     RemoveAnswer, SetSummary, StarterChoice, StarterLibraryView, StarterRow, StarterRowStatus,
@@ -53,6 +56,8 @@ pub use readers::{MAX_READERS, ReaderId, ReaderSnapshot};
 pub use settings::{Choice, Choices, ReadingFont, Settings, text_size_for_content_size};
 pub use text_input::{AccessibilityItem, ContentRect, TextSpan, TextUnitKind};
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod import_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod library_tests;
 #[cfg(test)]

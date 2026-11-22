@@ -199,6 +199,17 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           xcrun simctl bootstatus "$udid" -b
 
+      # ImportTests (S26) pick their files in the document picker from the Files app's local
+      # storage ("On My iPhone"), which a fresh simulator makes only once Files has run:
+      # launch Files, place the files (place-import-files.sh waits for that storage), quit it.
+      - name: Place the Import tests' files
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          xcrun simctl launch "$UDID" com.apple.DocumentsApp
+          bash apps/ios/scripts/place-import-files.sh "$UDID"
+          xcrun simctl terminate "$UDID" com.apple.DocumentsApp || true
+
       # testATaggedWordShowsItsStrongsNumber (S07) needs the Study set, read in place from
       # dist/starter through TEST_RUNNER_OBS_STUDY_SET_DIR; without it, that test alone is
       # skipped and the log says so.
@@ -206,6 +217,8 @@ jobs:
         working-directory: apps/ios
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
+          # The files the step above placed: ImportTests run rather than skip.
+          TEST_RUNNER_OBS_IMPORT_FILES: "1"
         run: |
           # The run-script phase runs cargo under `env -i` and looks for it at ~/.cargo/bin unless
           # CARGO, CARGO_HOME and RUSTUP_HOME say otherwise; this runner installs Rust elsewhere.

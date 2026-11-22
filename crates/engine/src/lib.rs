@@ -80,6 +80,8 @@ pub mod home;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod home_tests;
 pub mod import;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod import_zip;
 pub mod interlinear;
 #[cfg(test)]
 mod interlinear_tests;
@@ -264,7 +266,8 @@ pub use home::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX, failure_message,
+    ImportSource, Imports, ObrAdded, ObrCopy, ObrRefused, OpenOrigin, RepoOrigin,
+    UNAVAILABLE_INDEX, failure_message,
 };
 pub use interlinear::{
     InterlinearKind, InterlinearLine, InterlinearLines, LexiconWord, cell_gloss, cell_texts,
@@ -382,6 +385,9 @@ mod resource_navigation_tests;
 
 #[cfg(test)]
 mod import_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod import_zip_tests;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod annotations_tests;

@@ -63,7 +63,7 @@ to Claude Opus 5.5 later on".
 | S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (PR #405) |
 | S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | todo |
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
-| S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | todo |
+| S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | done (PR #406) |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | todo |
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | todo |
@@ -1780,6 +1780,105 @@ this in addition to its own lines):
 - **Verify:** UI standard; `cargo test -p obs-engine import`; `cargo xtask gallery` (zero changes).
 - **Stop-and-ask:** UI standard; a zip layout the importers cannot place (nested folders, mixed
   modules).
+- **Outcome (2026-11-22, branch `mobile/s26-import`, on S23; S08 has not happened, so the
+  screen anatomy is not decided):**
+  - **Decision (supervisor, at the zip-layout stop-and-ask).** A `.zip` holding a
+    `mods.d/*.conf` is a SWORD zip, else a USFM zip (Rust decides). `mods.d/` is accepted at
+    the top of the zip or in exactly one folder at its top (what Files' Compress makes);
+    deeper, or several modules (also in several folders), is refused in plain words; no
+    module chooser. A zip with USFM files beside a module imports the module and the
+    report's warnings say the books were not imported ("Zip them on their own"). Bounds as
+    named constants: 512 MiB decompressed (declared and as read) and 10,000 entries;
+    zip-slip, absolute, backslash, drive-letter and symlink entries refuse the whole zip; the
+    temp folder is removed in every outcome. A test for each.
+  - **Shipped, engine** (`obs_engine::import_zip`, `import.rs`; the desktop's picker, its
+    UI and `ImportSource::detect` unchanged): `ImportSource::SwordZip` (unpacked into
+    `<library>/imports/<id>.sword/`, read as `Sword`) and `ImportSource::UsfmZip` (through
+    `usfm_zip_books`), `ImportSource::zip(path)`, plain words for each refusal in
+    `failure_message`, and `Session::add_obr_copy` (a `.obr` moved into the library folder;
+    after the review, a Resource already there is replaced only by a greater revision,
+    `Effect::Replaced`; see Review fixes).
+    `summary_counts`, `source_line` and the licence lines moved from `obs-ui-egui` into
+    `obs_engine::import` so both reports say them alike (the desktop draws them unchanged);
+    `start_import_job` and `command_box::type_name` became `pub`; `testing` gained zip
+    fixture helpers.
+  - **Shipped, `obs-mobile` and FFI:** the `import` module (`import_destination`,
+    `start_import`, `import_report`, `cancel_import`, `import_copy_failed`, the pump's
+    `advance_imports`, `Changed::Imports`, boot sweeping `imports/`) with every word of the
+    Import report (`ImportReportView`, `ReportSection` with `collapsed`); mirror Records in
+    `apps/obs-ffi/src/import.rs`.
+  - **Shipped, iOS:** Import… in the reader's options menu (S07/S13's menu; **S12 and S14a
+    may move it**: no navigation was designed here) opens the system document picker
+    limited to the app's types; "Open in Open Bible" through `onOpenURL`; the copy into
+    Application Support inside the security-scoped access and a coordinated read; the
+    Import report as a sheet (live, Cancel, failure and Details, folded sections, Open).
+    `project.yml` `info`: `CFBundleDocumentTypes` and type declarations for `.usfm`/`.sfm`
+    (`org.ubsicap.usfm`, an *imported* declaration, since the app does not own USFM; A7
+    said exported), `.zip` (`public.zip-archive`) and `.obr`
+    (`io.github.inhesrom.openbible.obr`, exported), `LSSupportsOpeningDocumentsInPlace =
+    false`. No entitlement. The privacy manifest adds reason `3B52.1`.
+  - **Checks.** `cargo test -p obs-engine import` (37 tests, 13 new), `cargo test -p
+    obs-mobile import` (8, 6 new), `cargo test -p obs-ffi --test import`; `cargo xtask ios
+    build --sim-only`, `xcodegen generate`, `xcodebuild test` green on an iPhone 17 (all 10
+    tests, Study set override on; ImportTests in Light and Dark) and an iPad Air 11-inch
+    (M4) (all 10), with the files placed by `apps/ios/scripts/place-import-files.sh` and
+    `TEST_RUNNER_OBS_IMPORT_FILES=1`; "Open in" tried with `simctl openurl` on a `.obr`
+    (`s26-open-in.png`); previews `docs/previews/ios/s26-*.png`; `cargo xtask gallery`
+    unchanged; `cargo xtask ci` green.
+  - **Accessibility audit.** It passes on the report sheet with two kinds of finding
+    filtered, each named in the test: the system toolbar's glass Done/Open buttons
+    (contrast, Dynamic Type: iOS 27 draws them at a fixed size with the Large Content
+    Viewer), and on iPad, findings with no element from the dimmed reader drawn behind the
+    floating sheet. The grouped list's own section headers failed contrast (as S06 found),
+    so titles are the sections' first rows.
+  - **Deferred / for later steps.** Imports are per run: a report open when the app is
+    closed is gone at the next launch (the record stays in the User database, as on the
+    desktop). No later step's assumption proved wrong. (CI placing the Import files and the
+    `.obr` revision rule were settled by the review fixes below.)
+  - **Review fixes (2026-11-22, supervisor decisions on the two P1s):**
+    - **`.obr` copy-in** follows the Starter sync's rule, since unlike the desktop's drop
+      (which adds the dropped file where it is, for the session) it changes the library
+      folder: a Resource already in the library is replaced only by a greater revision
+      (`ObrCopy::Replaced`); the same file again is a no-op that says so ("Your Library
+      already has this file (KJV revision 3), so nothing was changed.",
+      `ObrCopy::AlreadyThere`); the same revision with other content, or a lower revision, is
+      refused ("Your Library already has KJV revision 3. …", `ObrRefused::NotNewer`). Tested
+      for greater, same, lower and identical (engine and `obs-mobile`); seen by hand through
+      "Open in" on an iPad.
+    - **Desktop text unchanged after all:** the Mobile zip paths say "this file is not a zip
+      archive" (`NOT_A_ZIP`; `read_usfm_zip` now returns it when the zip cannot be opened),
+      and `zip_failure` matches only that, so the desktop Open catalogue's `archive: not a
+      zip archive` keeps "The app could not read this source…" (tested); the false comment
+      is corrected.
+    - **SWORD zips:** a conf whose `DataPath` is not its module's own folder in `modules/`
+      is refused before the module is read (`SwordSource::check_data_paths`, through
+      `sword_modules::install::module_data_dir`; tested with `../` and absolute paths whose
+      data is really there); the as-read byte bound is tested with a central directory that
+      declares less than the zip holds (no temp folder left); a drop guard (`TempFolder`)
+      removes the temp folder on a panic too (tested); a `:` in any component refuses the
+      zip.
+    - **`obs-mobile`:** the Licence line is the shared `LICENCE_RECORDED` (the desktop's
+      words); `advance_imports` skips an Import once its final report (failed, or complete
+      with its Search index settled) has been seen.
+    - **iOS:** the `Documents/Inbox` check compares paths with `resolvingSymlinksInPath` on
+      both sides (`/var` vs `/private/var` on a device), and the Inbox copy is deleted after
+      a failed copy too.
+    - **CI:** `ios.yml` launches the simulator's Files app, runs `place-import-files.sh` (which
+      now waits up to 30 s for Files' storage) and quits Files before `xcodebuild test`,
+      with `TEST_RUNNER_OBS_IMPORT_FILES=1`, so `ImportTests` run there. Dry run as S32's:
+      the step and the test step extracted from the YAML and run with bash (a `xcrun simctl`
+      shim) on a freshly created iPhone 17 and iPad Air 11-inch (M4), iOS 27.2: files placed,
+      all 10 tests passed on each, the 3 Import tests included. On this Mac a fresh
+      simulator already had Files' storage once booted; launching Files is kept for runner
+      images where it does not.
+    - **Share sheet (for S34):** in the iOS 27.2 simulator, Files → Share lists Open Bible for
+      a `.zip`, but not for an `.epub` or a `.docx` (neither conforms to `public.zip-archive`
+      there); recorded in S34's review notes.
+    - **Checks:** `cargo test -p obs-engine import` (43, 6 new), `cargo test -p obs-mobile
+      import` (8), `cargo test -p obs-ffi --test import` (1), `cargo xtask gallery` (zero
+      changes), `cargo xtask ios build --sim-only`, `xcodegen generate`, the iPhone and iPad
+      runs above, `cargo xtask ci` (green; a first run hit the known `gallery_panel_fit`
+      flake, which passed alone and on the second full run).
 
 ### M6 — Sync (ADR 0022) — recommend its own ticket set
 
@@ -2144,7 +2243,11 @@ this in addition to its own lines):
   from `ATTRIBUTION.toml`; OpenBible.info credit wording per #328 ("data from OpenBible.info, CC BY
   4.0"); accessibility audit pass on every screen (XCUITest `performAccessibilityAudit`); size:
   `.ipa` ≤ 200 MB (expect ≈ 43 MB Bundled set, measured in S04, + Rust ≈ 20–40 MB; record); first-launch offline path
-  (4.2.3(ii)); review notes (what the app does without download, how Import works, no accounts);
+  (4.2.3(ii)); review notes (what the app does without download, how Import works, no accounts;
+  **from the S26 review:** the app claims `public.zip-archive` at rank Alternate, so the share
+  sheet lists Open Bible for every `.zip`, and a zip that holds neither USFM books nor one SWORD
+  module is refused in plain words; it is not listed for an `.epub` or a `.docx`, checked in
+  the iOS 27.2 simulator (Files → Share), so the notes need not mention those);
   `xcodebuild archive` + `-exportArchive` (App Store method) with the Developer Program certificate
   (owner-provided via Xcode Accounts; agent runs the command) + local validation of the `.ipa`
   (`altool --validate-app` or the ASC API equivalent; verify) — **no upload**: the first upload
