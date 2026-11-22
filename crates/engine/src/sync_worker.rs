@@ -75,9 +75,14 @@ impl SyncWorker {
         let connection = user.second_connection()?;
         let (send, outcome) = channel();
         let worker = connection.clone();
+        // A fixed clock (the gallery's, tests') stays fixed on the worker.
+        #[cfg(any(test, feature = "test-support"))]
+        let fixed = obs_store::clock::fixed();
         std::thread::Builder::new()
             .name("sync".into())
             .spawn(move || {
+                #[cfg(any(test, feature = "test-support"))]
+                obs_store::clock::fix(fixed);
                 // The Session may have stopped waiting; then no one reads it.
                 let _ = send.send(run(&worker, folder, platform, task));
             })

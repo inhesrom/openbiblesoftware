@@ -51,3 +51,10 @@ thread_local! {
 pub fn fix(ms: Option<i64>) {
     FIXED.with(|f| f.set(ms));
 }
+
+/// Where this thread's clock is stopped, if it is ([`fix`]): a thread it starts stops its
+/// own there too (the sync worker's, plan S29b), so the gallery's syncs read the same time.
+#[cfg(feature = "test-support")]
+pub fn fixed() -> Option<i64> {
+    FIXED.with(std::cell::Cell::get)
+}
