@@ -2,10 +2,11 @@ import XCTest
 
 /// Library → Storage with Search indexes being built (S25, #333 "Storage"): each row says
 /// "Still being indexed" until its index is built on the device, then "Search index ready";
-/// its accessibility audit and VoiceOver label, and previews. The Starter library Resources
-/// outside the Bundled set are added read in place from a copy of `dist/starter` without its
-/// prebuilt indexes (the Debug Study set override, `OBS_STUDY_SET_DIR`, with every one of them
-/// marked Study set), so the app builds all their indexes after launch. Run with
+/// its accessibility audit and VoiceOver label, and previews; dismissed there, the sheet
+/// opens again on the Library list. The Starter library Resources outside the Bundled set
+/// are added read in place from a copy of `dist/starter` without its prebuilt indexes (the
+/// Debug Study set override, `OBS_STUDY_SET_DIR`, with every one of them marked Study set),
+/// so the app builds all their indexes after launch. Run with
 /// `TEST_RUNNER_OBS_STUDY_SET_DIR=<repo>/dist/starter`; without it the test is skipped.
 @MainActor
 final class StorageTests: XCTestCase {
@@ -109,13 +110,28 @@ final class StorageTests: XCTestCase {
         XCTAssertTrue(app.buttons["storage.remove.\(id)"].exists)
         try previewAndAudit(app, "s25-storage-indexing")
 
-        // Built: no row on screen is still being indexed, and the Bundled set's BSB reads ready.
+        // Built: no row on screen is still being indexed, and the row that was reads ready
+        // (not failed).
         let none = NSPredicate(format: "count == 0")
         expectation(for: none, evaluatedWith: rows(app, saying: "Still being indexed"))
         waitForExpectations(timeout: 240)
-        let bsb = app.descendants(matching: .any)["storage.row.bsb"].firstMatch
-        XCTAssertTrue(bsb.waitForExistence(timeout: 10))
-        XCTAssertTrue(bsb.label.hasSuffix("Search index ready"), bsb.label)
+        let built = app.descendants(matching: .any)["storage.row.\(id)"].firstMatch
+        XCTAssertTrue(built.waitForExistence(timeout: 10), "no row \(id)")
+        XCTAssertTrue(built.label.hasSuffix("Search index ready"), built.label)
         try previewAndAudit(app, "s25-storage-ready")
+
+        // Dismissed on Storage, the sheet opens again on the Library list.
+        app.navigationBars["Storage"].swipeDown(velocity: .fast)
+        let options = app.buttons["reader.options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 10), "the Library sheet did not close")
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: options)
+        waitForExpectations(timeout: 10)
+        options.tap()
+        let library = app.buttons["reader.library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 5), "no Library… in the menu")
+        library.tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 10), "not on the Library list")
+        XCTAssertTrue(app.buttons["library.done"].exists)
+        XCTAssertFalse(app.navigationBars["Storage"].exists, "reopened on Storage")
     }
 }

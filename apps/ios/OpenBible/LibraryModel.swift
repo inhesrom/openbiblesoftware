@@ -84,8 +84,8 @@ final class LibraryModel {
             // Test harness: StorageTests opens Library → Storage at launch, while the indexes
             // the launch queued are still being built.
             if ProcessInfo.processInfo.environment["OBS_TEST_OPEN_STORAGE"] == "1" {
-                path = [.storage]
                 open()
+                path = [.storage]
             }
             // Test harness: the UI tests that do not test the offer launch without it.
             if ProcessInfo.processInfo.environment["OBS_TEST_NO_STUDY_SET_OFFER"] == "1" { return }
@@ -119,8 +119,10 @@ final class LibraryModel {
         offer = nil
     }
 
-    /// The Library sheet opened.
+    /// The Library sheet opened, on its Library list (the pages pushed before it was last
+    /// dismissed are not shown again).
     func open() {
+        path = []
         showing = true
         refresh()
     }
