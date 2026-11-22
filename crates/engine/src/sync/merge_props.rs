@@ -12,7 +12,12 @@
 //! review run now and then: Q1 (a Note's text edited on two devices, then deleted by a third
 //! device before the first meets the second's edit) and D7's (a list damaged and mended, an item
 //! added after the mend by a device whose clock runs ahead, a third device meeting that item
-//! first). Each device's wall
+//! first). From S28c every device joins through the real join (its default Notebook and what
+//! it made before reach the others only in its snapshot), a third of them late; some syncs run
+//! `sync_now` at a small policy, so snapshots are written and own op files trimmed, and devices
+//! merge each other's snapshots for files gone; devices take a Backup and later restore it,
+//! catching up or replacing; and D3's sequence of a child's maker leaving it runs now and then
+//! ([`World::d3_step`]). Each device's wall
 //! clock is its own: the case's clock moves on by random steps, and a device's runs from it by
 //! an offset of its own, sometimes more than [`MAX_FORWARD_SKEW_MS`] ahead (its clocks are then
 //! not observed). Once every device has synced until nothing more moves:
@@ -26,7 +31,8 @@
 //!   base removed it, none while the base is damaged;
 //! - **every Note text survives** (D2, ADR 0006): each text an op wrote is a live Note's (in
 //!   place, or a Sync conflict's copy), unless an op that had it deleted its Note or wrote
-//!   other text over it (an op that only moved it does not count); each copy, as first
+//!   other text over it (an op that only moved it does not count), or a device discarded it on
+//!   purpose by restoring a Backup without it and replacing what is in the folder; each copy, as first
 //!   written, holds a text an op wrote to the Note its `conflict_of` names, and its id is
 //!   `conflict_id` of that Note and that op's clock;
 //! - **every Collection added survives** (D6, ADR 0006): each JSON an add op wrote is a live
@@ -35,6 +41,10 @@
 //! - each tombstone holds the newest delete clock and the newest version covered of the op
 //!   stream; each device has one default Notebook, the oldest (`created_at`, id) of those the
 //!   devices began with; an op is held only while its list's value is damaged.
+//!
+//! The ops are read from an archive of every op file and snapshot ever written (a snapshot's
+//! rows, tombstones and held ops as the ops it merges as, `snapshot_ops`), since trimming and
+//! newer snapshots delete them from the folder.
 //!
 //! The generator is a seeded SplitMix64 (no property-test crate); under the case's fixed clock
 //! (`obs_store::clock::fix`) and seeded ids (`obs_store::annotation::seed_ids`) a seed makes
@@ -1933,7 +1943,7 @@ fn random_edits_on_several_devices_converge_and_lose_no_row() {
 }
 
 #[test]
-#[ignore = "10k cases, about 25 s: cargo test -p obs-engine sync -- --include-ignored"]
+#[ignore = "10k cases, about 95 s: cargo test -p obs-engine sync -- --include-ignored"]
 fn random_edits_on_several_devices_converge_and_lose_no_row_10k_cases() {
     run(FULL_CASES, "props-10k");
 }

@@ -1,6 +1,8 @@
 //! Merging other Synced devices' ops into this User database (ADR 0022 rule 3, plan S28b-1).
 //!
-//! Each device's op files are merged in order, each file in one transaction with noting it
+//! A device not met yet, or whose op files after the last merged here are gone (trimmed), is
+//! first merged from its newest snapshot (`snapshot.rs`, S28c), by the same rules. Each
+//! device's op files are merged in order, each file in one transaction with noting it
 //! applied ([`UserStore::merge_op_file`]); a file that needs a row another device's file has
 //! not brought yet (an Annotation's Notebook, a Highlight's style, a Reading's plan) waits,
 //! rolled back, and is merged again once the other devices' next files are in, in the same
@@ -26,8 +28,8 @@
 //! - **Two Layouts of one name** both stay: the later (the larger id, a UUIDv7) is renamed
 //!   "Name (2)" by the device that finds the clash, recorded as its own edit.
 //! - **A Note's text edited on two devices** (plan S28b-2, D2): the later text stays in place;
-//!   the device whose own text lost (its own row replaced or deleted by another device's op
-//!   that had not seen its text) records that text as a second Note on the same Anchor in
+//!   the device whose own text lost (its own row, by its id or a former one, replaced or
+//!   deleted by another device's op that had not seen its text) records that text as a second Note on the same Anchor in
 //!   the same Notebook, its `conflict_of` naming the Note ([`conflict_copy`]).
 //! - **Deleted parents** (D3): a child arriving at a deleted Notebook, Reading plan, Highlight
 //!   palette or style restores it from its tombstone's row, and a parent's delete meeting a

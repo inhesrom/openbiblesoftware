@@ -4,12 +4,15 @@
 //! - `sync.json`: the folder's format version, written once by the first device;
 //! - `devices/<device-id>/device.json`: the device's name, platform and app version, the only
 //!   file a device ever writes again (its own, whole);
-//! - `devices/<device-id>/ops/<seq>.jsonl`: its op files ([`ops`]), each written once.
+//! - `devices/<device-id>/ops/<seq>.jsonl`: its op files ([`ops`]), each written once;
+//! - `devices/<device-id>/snapshots/<seq>-<sha256>.obsbackup`: its newest snapshot
+//!   ([`snapshot`]), a Backup of its Synced data covering its op files up to `seq`.
 //!
 //! [`folder`] is how the engine reaches the folder, [`clock`] the hybrid logical clock every
-//! op carries, [`merge`] how other devices' ops are merged here (ADR 0022 rule 3). Sync
-//! conflicts of Note text and the rules for deleted parents (plan S28b-2), snapshots and when
-//! sync runs (S28c) are later steps'. `docs/dev/sync.md` documents the files and the merge.
+//! op carries, [`merge`] how other devices' ops and snapshots are merged here (ADR 0022 rule
+//! 3), [`snapshot`] snapshots and trimming (rule 5), [`lifecycle`] a sync and the device-id
+//! rules (`sync_now`, the restore choice, rules 6–7), [`schedule`] when sync runs (rule 8).
+//! `docs/dev/sync.md` documents the files, the merge and the contract the shells use.
 
 pub mod clock;
 pub mod folder;

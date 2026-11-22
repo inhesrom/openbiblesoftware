@@ -31,15 +31,16 @@ single-instance Tab with all of it.
 - The launch backups (`backups/user-000006.db`) and the before-upgrade copy
   (`user.v8-<time>.bak`) are written the same way, so they are Backups too.
 
-### What Sync added (schemas 13 to 16, ADR 0022)
+### What Sync added (schemas 13 to 17, ADR 0022)
 
-Migrations 12 → 13, 13 → 14, 14 → 15 and 15 → 16 (`crates/store/src/sync_schema.rs`) add what Sync needs; a
+Migrations 12 → 13, 13 → 14, 14 → 15, 15 → 16 and 16 → 17 (`crates/store/src/sync_schema.rs`) add what Sync needs; a
 Backup holds it like every other table, and an older Backup gains it as it is restored (with
 ids made then). Every write of Synced data is a `Change` through `UserStore::apply_changes`
 (S27b, `crates/store/src/synced.rs`), which writes the tombstones and, from schema 14, stamps
 each row, item and tombstone with its hybrid logical clock (S28a, `sync_clock.rs`; the
 encoding is in [`sync.md`](sync.md#clocks)); schemas 15 and 16 add what the merge needs
-(S28b-1, S28b-2, [`sync.md`](sync.md#merging)).
+(S28b-1, S28b-2, [`sync.md`](sync.md#merging)), and 17 what a restore or a copy needs (S28c,
+[`sync.md`](sync.md#restores-and-copies-new-device-ids)).
 
 | Table or column | What |
 |---|---|
@@ -47,12 +48,18 @@ encoding is in [`sync.md`](sync.md#clocks)); schemas 15 and 16 add what the merg
 | `layout.id` | Layouts are keyed by a UUIDv7; the name stays unique ignoring case, so every Layout keeps its name and is still found by it. Saving over a Layout keeps its id. |
 | `favorite.uid`, `reading_plan.uid` | A UUIDv7 each, unique, beside the numbers the app names them by (which another device also hands out). |
 | `tombstone` | A deleted synced row, kept for good: `row_table` is its kind (the `row` tag of a serialized `Row`: `notebook`, `annotation`, `favorite`, `layout`, `reading`, `collection`, `guide_section` …), `row_id` its id (a Reading's `<plan uid>/<position>`, a Guide section's `<guide>/<section>`, a list item's name), `clock` its delete's clock. A tombstone written at schema 13 has empty text (`synced_store::NO_CLOCK`), which, like a row's `NULL` clock, means "before this device recorded clocks" and sorts before any clock ([`sync.md`](sync.md#clocks)); from schema 14 every delete writes its clock. `covers` (15): the clock of the version the delete removed (`''`: one from before clocks; `NULL`, every tombstone written before schema 15: up to its own clock), so another device's edit it did not see brings the row back. From schema 15 a tombstone is kept beside a row made again (an undone delete, such an edit), with the newest delete clock and the newest version covered; before it, a row made again took its tombstone away. Replacing the Preferred order leaves none. `row` (16): on a deleted Notebook, Reading plan, Highlight palette or style, the row as its delete removed it (a serialized `Row`), which a child arriving from another device restores ([`sync.md`](sync.md#deleted-parents)); `NULL` on every other tombstone and every one written before schema 16. |
-| `device` | One row: this Synced device's id (UUIDv7, made by the migration) and the name the user gives it. A restore copies the Backup's row like any other; giving a restored device a new id is Sync's (ADR 0022 rule 7). |
+| `device` | One row: this Synced device's id (UUIDv7, made by the migration) and the name the user gives it. A restore copies the Backup's row like any other, then gives the device a new id (ADR 0022 rule 7, below). `restore_choice` (17): 1 after a restore on a device that was syncing, until the user chooses to catch up or replace. |
+| `former_device` (17) | The Synced device ids this database had before (the Backup's and the one before a restore, or a copy's): the merge counts a clock naming any of them as this device's own. |
 | `applied_up_to` | For each other Synced device, the last of its op files applied here; for this device's own id, the last of its own op files written. This device records ops (keeps them in `op_outbox`) only while its own id has a row. |
 | `item_clock` (14) | The clock of each item of a list preference (a Collection, Copy preset, Saved search, Guide section, Resource tags), keyed as its tombstone is; `preference.clock` of the list's key is the newest clock of any op on its items. `position` (15): the item's position as its last write gave it, so every device composes the list in the same order (`NULL`, an item written before schema 15 or a list last written whole: its index). A deleted item's row goes; its tombstone has the clock. The Preferred order's clock is here too (`preferred_order`, `''`), kept when the order is empty. From schema 16 a list written whole has its base's clock here (`preference`, its key), and the base's items the base's clock and their index ([`sync.md`](sync.md#a-lists-whole-value)). |
 | `op_outbox` (14) | While this device records ops: each `Change` applied, with its clock, until it is in an op file of the Sync folder (`file_seq`, once reserved). Empty on a device that does not sync. |
 | `annotations.conflict_of` (16) | On a Sync conflict's copy, the id of the Note whose text won ([`sync.md`](sync.md#sync-conflicts)); `NULL` on every other Annotation. |
 | `sync_held` (16) | Other devices' ops this device could not apply yet, each with its row, clock and `change` JSON, tried again at every sync ([`sync.md`](sync.md#ops-held-back)). Empty on a device that does not sync. |
+
+A **snapshot** in the Sync folder (S28c, [`sync.md`](sync.md#snapshots)) is a Backup in this
+format holding only the Synced data and what merging it needs: History, the Last session,
+remembered Resource names, the outbox, the former ids and every preference that is not Synced
+data are emptied, and it is vacuumed. It is read with the same checks as a Backup.
 
 The restore checks treat them as any table: a Backup missing one is refused, and the trial
 restore compares only what the engine loads, so none of them changes what a restore keeps.
@@ -85,7 +92,12 @@ whole (`Row::Preference`), so nothing in it is lost. Their items' clocks are in
 2. A **Safety backup** of the live database goes to `backups/user-safety-000001.db` (the last
    `SAFETY_BACKUPS` = 5 are kept; their numbering is separate from the launch backups').
 3. The migrated copy's pages are copied over the live connection with the backup API, in one
-   step. The live database stays in WAL mode. Pages copy only between databases of one page
+   step. Then (ADR 0022 rule 7, `sync_device.rs`) the restored database gets a new Synced
+   device id, the Backup's id and the one it had kept as its former ones, and its outbox (ops
+   under the old id) is emptied; on a device that was syncing, `device.restore_choice` is set,
+   and Sync waits until the user chooses to catch up or replace
+   ([`sync.md`](sync.md#restores-and-copies-new-device-ids)). The restore's checks and the
+   trial restore compare what the app keeps, which this does not change. The live database stays in WAL mode. Pages copy only between databases of one page
    size: a copy with another is first rebuilt in a new scratch file
    `backups/.user-restoring.<pid>-<n>.db` with the live
    page size (`VACUUM`), then deleted, however the restore ends (a `ScratchFile` guard).
@@ -242,8 +254,8 @@ uses):
   ids (kept when saved over or renamed); new Favorites and Reading plans get ids; a v13 Backup
   round-trips and a v12 one gains the new tables as it is restored; every preference the
   engine keeps is listed once as synced or staying on the device.
-- `crates/store/tests/sync_clock_db.rs`: a v13 database and a v13 Backup migrate to 16
-  losing nothing; migration 16's columns and tables (a copy's `conflict_of`, a parent's
+- `crates/store/tests/sync_clock_db.rs`: a v13 database and a v13 Backup migrate to 17
+  losing nothing (a restore giving a new id and emptying the outbox); migration 16's columns and tables (a copy's `conflict_of`, a parent's
   tombstone row, a held op, a list's base) round-trip through a Backup, and a v15 Backup restores
   with none; a Backup carries the item clocks and the outbox; item positions and what
   each tombstone covers round-trip through a Backup, and a v14 Backup restores with both
