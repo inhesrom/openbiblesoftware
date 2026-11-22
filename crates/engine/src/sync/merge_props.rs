@@ -69,6 +69,7 @@ use obs_store::{
     Tombstone, UserStore,
 };
 
+use super::DEVICES_DIR;
 use super::folder::{FolderError, MemSyncFolder, SyncFolder};
 use super::lifecycle::{RestoreChoice, SyncOptions, SyncState, restore_choice, sync_now};
 use super::merge::{Outcome, merge_folder};
@@ -200,11 +201,13 @@ struct World {
     joins: Vec<Option<SnapshotFile>>,
     /// Whether each device has joined (it records ops).
     joined: Vec<bool>,
-    /// Each device's Backup (a copy of its database), to restore later.
-    backups: Vec<Option<UserStore>>,
+    /// Each device's Backup (a copy of its database), to restore later, with the op files in
+    /// the archive when it was taken.
+    backups: Vec<Option<(UserStore, BTreeSet<String>)>>,
     /// Note texts and Collections (their JSON without the name) a device discarded on purpose
-    /// by restoring a Backup without them and replacing what is in the folder: they need not
-    /// survive.
+    /// by restoring a Backup without them and replacing what is in the folder, of those its
+    /// own ids' ops wrote after the Backup: they need not survive. (Another device's, or one
+    /// merged here, must: it stays there as a Sync conflict's copy or "Name (2)".)
     discarded_texts: BTreeSet<String>,
     discarded_items: BTreeSet<String>,
     /// How this case writes snapshots and trims (small, so they happen).
@@ -247,6 +250,15 @@ struct Stats {
     trimmed: usize,
     catch_ups: usize,
     replaces: usize,
+    /// The S28c review's sequences: a Backup taken before a device joined late, restored
+    /// catching up after that device's snapshot covers the Backup's device's later files
+    /// ([`World::late_backup_step`]); a database copied, both copies syncing on
+    /// ([`World::copy_step`]); a Backup taken with the Collections on a base; an own snapshot
+    /// damaged in the folder and written again ([`World::mend_step`]).
+    late_backups: usize,
+    copies: usize,
+    based_backups: usize,
+    mended: usize,
 }
 
 impl Stats {
@@ -358,23 +370,124 @@ impl World {
             .collect()
     }
 
+    /// The op files in the archive now.
+    fn archived_op_files(&self) -> BTreeSet<String> {
+        self.folder
+            .archive
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|p| p.contains("/ops/"))
+            .cloned()
+            .collect()
+    }
+
+    /// Device `d` takes a Backup of its database (sometimes with its Collections written
+    /// damaged and mended first, so they have a base, D7).
+    fn take_backup(&mut self, d: usize, rng: &mut Rng) {
+        let user = &self.devices[d];
+        let value = user.preference(COLLECTIONS).unwrap();
+        if rng.below(4) == 0
+            && value
+                .as_deref()
+                .is_none_or(|v| collection_items(v).is_some())
+        {
+            user.set_preference(COLLECTIONS, rng.pick(DAMAGED).unwrap())
+                .unwrap();
+            user.set_preference(COLLECTIONS, value.as_deref().unwrap_or("[]"))
+                .unwrap();
+            self.stats.damaged += 1;
+            self.stats.fixed += 1;
+            self.stats.based_backups += 1;
+            self.done(d);
+        }
+        let files = self.archived_op_files();
+        self.backups[d] = Some((self.devices[d].copy_in_memory().unwrap(), files));
+    }
+
+    /// The Note texts and Collections (their JSON without the name) the ops of device `d`'s
+    /// own ids wrote in op files written since `before` (those in the archive then). A former
+    /// id another device has now (a copy kept it) is that device's, not `d`'s.
+    fn own_writes_since(
+        &self,
+        d: usize,
+        before: &BTreeSet<String>,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        let live: Vec<String> = self
+            .devices
+            .iter()
+            .enumerate()
+            .filter(|(e, _)| *e != d)
+            .map(|(_, u)| u.device_id().unwrap())
+            .collect();
+        let own: Vec<String> = self.devices[d]
+            .own_device_ids()
+            .unwrap()
+            .into_iter()
+            .filter(|id| !live.contains(id))
+            .collect();
+        let (mut texts, mut items) = (BTreeSet::new(), BTreeSet::new());
+        for (path, bytes) in self.folder.archive.lock().unwrap().iter() {
+            let own_file = own
+                .iter()
+                .any(|id| path.starts_with(&format!("{DEVICES_DIR}/{id}/ops/")));
+            if !own_file || before.contains(path) {
+                continue;
+            }
+            let OpFileRead::Whole(ops) = decode_op_file(bytes) else {
+                continue;
+            };
+            for op in ops {
+                match &op.after {
+                    Some(Row::Annotation(a)) if a.is_note() => {
+                        texts.insert(a.body().to_string());
+                    }
+                    Some(Row::Collection(item)) => {
+                        items.insert(without_name(&item.json));
+                    }
+                    Some(Row::Preference(p)) if p.key == COLLECTIONS => {
+                        items.extend(
+                            collection_items(&p.value)
+                                .unwrap_or_default()
+                                .values()
+                                .map(|j| without_name(j)),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        (texts, items)
+    }
+
     /// Device `d` takes a Backup of its database, or restores the one it took and chooses to
-    /// catch up or replace (ADR 0022 rule 7). What a replace discards on purpose (the Note
-    /// texts and Collections it holds that the Backup does not) need not survive.
+    /// catch up or replace (ADR 0022 rule 7).
     fn backup_or_restore(&mut self, d: usize, rng: &mut Rng) {
         if !self.joined[d] {
             return;
         }
         let Some(backup) = self.backups[d].take().filter(|_| rng.below(2) == 0) else {
-            self.backups[d] = Some(self.devices[d].copy_in_memory().unwrap());
+            self.take_backup(d, rng);
             return;
         };
-        self.push_device(d);
         let choice = if rng.below(2) == 0 {
             RestoreChoice::CatchUp
         } else {
             RestoreChoice::Replace
         };
+        self.restore(d, backup, choice);
+    }
+
+    /// Device `d` restores `backup` and chooses `choice`. What a replace discards on purpose
+    /// (the Note texts and Collections it holds that the Backup does not, of those its own
+    /// ops wrote since the Backup) need not survive.
+    fn restore(
+        &mut self,
+        d: usize,
+        (backup, before): (UserStore, BTreeSet<String>),
+        choice: RestoreChoice,
+    ) {
+        self.push_device(d);
         if choice == RestoreChoice::Replace {
             let texts = |u: &UserStore| -> BTreeSet<String> {
                 u.annotations(None)
@@ -395,10 +508,19 @@ impl World {
             };
             let (now_texts, now_items) = (texts(&self.devices[d]), items(&self.devices[d]));
             let (then_texts, then_items) = (texts(&backup), items(&backup));
-            self.discarded_texts
-                .extend(now_texts.difference(&then_texts).cloned());
-            self.discarded_items
-                .extend(now_items.difference(&then_items).cloned());
+            let (own_texts, own_items) = self.own_writes_since(d, &before);
+            self.discarded_texts.extend(
+                now_texts
+                    .difference(&then_texts)
+                    .filter(|t| own_texts.contains(*t))
+                    .cloned(),
+            );
+            self.discarded_items.extend(
+                now_items
+                    .difference(&then_items)
+                    .filter(|j| own_items.contains(*j))
+                    .cloned(),
+            );
         }
         self.devices[d].restore_from(&backup).unwrap();
         let met = self.met(d);
@@ -415,6 +537,149 @@ impl World {
         self.joins[d] = None;
         self.stats.trimmed += report.trimmed.len();
         self.merged(d, &report.merge, &met);
+    }
+
+    /// The S28c review's P0 sequence: D takes a Backup before E joins; E joins (its first
+    /// sync); D writes a Note's text T and pushes; E, not having seen T, writes V over the
+    /// same Note, merges T and writes a snapshot covering D's file of T; D restores the
+    /// Backup and catches up, meeting E through that snapshot. T must survive.
+    fn late_backup_step(&mut self, rng: &mut Rng) {
+        let n = self.devices.len();
+        let late: Vec<usize> = (0..n).filter(|e| !self.joined[*e]).collect();
+        let Some(&e) = rng.pick(&late) else {
+            return;
+        };
+        let joined: Vec<usize> = (0..n).filter(|d| self.joined[*d]).collect();
+        let Some(&d) = rng.pick(&joined) else {
+            return;
+        };
+        self.as_device(d);
+        let body = self.text("late first");
+        let nb = self.devices[d].notebooks().unwrap().remove(0);
+        let note = Annotation {
+            id: new_id(),
+            notebook_id: nb.id,
+            content: Content::Note { body },
+            anchor: None,
+            created_at: 7,
+            modified_at: 7,
+            conflict_of: None,
+        };
+        self.devices[d]
+            .apply_changes(&[Change::insert(Row::Annotation(note.clone()))])
+            .unwrap();
+        self.done(d);
+        self.push(d);
+        self.take_backup(d, rng);
+        self.now += 1;
+        self.as_device(e);
+        self.sync_now(e);
+        self.now += 1;
+        self.as_device(d);
+        let Some(here) = self.devices[d].annotation(&note.id).unwrap() else {
+            return;
+        };
+        self.edit_text(d, &here, "late T by D");
+        self.push(d);
+        self.now += 1 + rng.ms(50);
+        self.as_device(e);
+        let Some(theirs) = self.devices[e].annotation(&note.id).unwrap() else {
+            return;
+        };
+        self.edit_text(e, &theirs, "late V by E");
+        self.sync_all(e);
+        self.push(e);
+        super::snapshot::write_snapshot(&self.devices[e], &self.folder).unwrap();
+        self.now += 1;
+        self.as_device(d);
+        let backup = self.backups[d].take().unwrap();
+        self.restore(d, backup, RestoreChoice::CatchUp);
+        self.stats.late_backups += 1;
+    }
+
+    /// The S28c review's copied database: device `d`'s database is copied to another computer
+    /// (joined or not), and both sync on. The first of the two to write takes nothing new;
+    /// the other finds files under its id it did not write and takes a new id (rule 7).
+    fn copy_step(&mut self, rng: &mut Rng) {
+        if self.devices.len() >= 4 {
+            return;
+        }
+        let d = rng.below(self.devices.len());
+        let copy = self.devices[d].copy_in_memory().unwrap();
+        self.devices.push(copy);
+        self.offsets.push(rng.offset());
+        self.last.push(Vec::new());
+        self.joins.push(None);
+        self.joined.push(self.joined[d]);
+        self.backups.push(None);
+        let c = self.devices.len() - 1;
+        let (first, second) = if rng.below(2) == 0 { (d, c) } else { (c, d) };
+        // The first writes a Notebook of its own.
+        self.as_device(first);
+        let nb = Notebook {
+            id: new_id(),
+            name: (*rng.pick(NAMES).unwrap()).into(),
+            is_default: false,
+            show_in_text: true,
+            created_at: 5,
+            modified_at: 5,
+        };
+        self.deletable.insert(nb.id.clone());
+        self.devices[first]
+            .apply_changes(&[Change::insert(Row::Notebook(nb))])
+            .unwrap();
+        self.done(first);
+        for (e, takes_new_id) in [(first, false), (second, true)] {
+            self.now += 1;
+            self.as_device(e);
+            let met = self.met(e);
+            let report = match sync_now(&self.devices[e], &self.folder, &self.options).unwrap() {
+                SyncState::Synced(report) => report,
+                other => panic!("device {e}: {other:?}"),
+            };
+            assert_eq!(
+                report.new_device_id.is_some(),
+                takes_new_id,
+                "device {e}: {report:?}"
+            );
+            self.joined[e] = true;
+            self.joins[e] = None;
+            self.stats.trimmed += report.trimmed.len();
+            self.merged(e, &report.merge, &met);
+        }
+        self.stats.copies += 1;
+    }
+
+    /// The S28c review's damaged snapshot: a byte of device `e`'s newest snapshot in the
+    /// folder changes; its next sync writes it again, whole.
+    fn mend_step(&mut self, rng: &mut Rng) {
+        let n = self.devices.len();
+        let e = rng.below(n);
+        if !self.joined[e] || self.joins[e].is_some() {
+            return;
+        }
+        let id = self.devices[e].device_id().unwrap();
+        let Some((_, name)) = super::snapshot::newest_snapshot(&self.folder, &id).unwrap() else {
+            return;
+        };
+        let path = format!("{}/{name}", super::snapshot::snapshots_dir(&id));
+        let mut bytes = self.folder.folder.get(&path).unwrap();
+        let at = rng.below(bytes.len());
+        bytes[at] ^= 0x5a;
+        self.folder.folder.put(&path, &bytes);
+        self.as_device(e);
+        self.sync_now(e);
+        let (_, name) = super::snapshot::newest_snapshot(&self.folder, &id)
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(
+                super::snapshot::read_snapshot(&self.devices[e], &self.folder, &id, &name).unwrap(),
+                super::snapshot::SnapshotRead::Whole(_)
+            ),
+            "device {e}: its snapshot {name} not written again"
+        );
+        self.stats.mended += 1;
     }
 
     /// Device `d` writes its ops and merges: often everything in the folder, else what a
@@ -1463,7 +1728,7 @@ fn check_case(
         }
     }
     for _ in 0..(10 + rng.below(40)) {
-        let d = rng.below(n);
+        let d = rng.below(world.devices.len());
         world.now += rng.step();
         world.as_device(d);
         match rng.below(60) {
@@ -1471,6 +1736,9 @@ fn check_case(
             2 | 3 => world.d7_step(&mut rng),
             7 => world.d3_step(&mut rng),
             5 | 6 => world.backup_or_restore(d, &mut rng),
+            9 => world.late_backup_step(&mut rng),
+            11 => world.copy_step(&mut rng),
+            13 => world.mend_step(&mut rng),
             n if n % 4 == 0 => world.sync(d, &mut rng),
             _ => world.edit(d, &mut rng),
         }
@@ -1859,7 +2127,9 @@ fn run(cases: u64, name: &str) {
          more than a day ahead not observed {}; recorded {:?}; Collections written damaged {}, \
          in shape again {}; parents back after their child's maker left them {}; the review's \
          Q1 sequence {}, D7 sequence {}, D3 sequence {}; late joins {}, snapshots merged {} ({} for files \
-         trimmed), own op files trimmed {}, restores catching up {}, replacing {}",
+         trimmed), own op files trimmed {}, restores catching up {}, replacing {}; Backups \
+         before a late join restored {}, databases copied {}, Backups with a base {}, \
+         snapshots written again {}",
         stats.outcomes,
         stats.retried,
         stats.renamed_layouts,
@@ -1880,6 +2150,10 @@ fn run(cases: u64, name: &str) {
         stats.trimmed,
         stats.catch_ups,
         stats.replaces,
+        stats.late_backups,
+        stats.copies,
+        stats.based_backups,
+        stats.mended,
     );
     for outcome in [
         Outcome::Written,
@@ -1932,6 +2206,13 @@ fn run(cases: u64, name: &str) {
         ("an own op file trimmed", stats.trimmed),
         ("a restore that catches up", stats.catch_ups),
         ("a restore that replaces", stats.replaces),
+        ("a Backup before a late join restored", stats.late_backups),
+        ("a database copied", stats.copies),
+        (
+            "a Backup with the Collections on a base",
+            stats.based_backups,
+        ),
+        ("a damaged snapshot written again", stats.mended),
     ] {
         assert!(n > 0, "no case reached {what}");
     }
