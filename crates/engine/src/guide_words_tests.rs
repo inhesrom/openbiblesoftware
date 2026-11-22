@@ -409,7 +409,7 @@ fn an_unwritable_cache_folder_still_gives_links() {
     assert_eq!(table.headword("Abraham@Gen.11.26-1Pe"), Some("Abraham"));
     let error = s.guides.aliases().write_error().unwrap_or_default();
     assert!(error.contains("alias cache"), "{error}");
-    assert_eq!(s.guides.aliases().refresh(&s.library), Ok(2));
+    assert_eq!(s.guides.aliases().refresh(&s.library, || false), Ok(2));
     let rows = people(&mut s, Passage::verse(gen_12(1)));
     let abram = rows.iter().find(|r| r.name == "Abram").unwrap();
     assert_eq!(abram.articles.len(), 2, "{:?}", abram.articles);
@@ -445,11 +445,77 @@ fn refresh_sweeps_leftover_temp_files() {
     }
     let cache = AliasCache::new(Overrides::starter());
     cache.set_dir(t.cache());
-    assert_eq!(cache.refresh(&s.library), Ok(2));
+    assert_eq!(cache.refresh(&s.library, || false), Ok(2));
     assert!(!old.exists(), "a leftover is swept");
     assert!(young.exists(), "a write in progress is not");
     assert!(other.exists(), "nor a file that is not an alias cache's");
     drop(s);
+}
+
+/// Two alias refreshes overlap on job threads, as when a Resource arrives while one runs
+/// (the Mobile app refreshes at every library change): the older refresh, cancelled while it
+/// runs, does not delete the cache file the newer one wrote for the pair the arrival made.
+#[test]
+fn a_cancelled_alias_refresh_keeps_the_newer_refreshs_cache_files() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let t = Temp::new("alias-overlap");
+    for r in [kjv_genesis_12(), tipnr(), dictionary("easton")] {
+        write(&t.lib(), &r);
+    }
+    let mut older = Library::default();
+    assert!(older.scan(&t.lib()).is_empty());
+    write(&t.lib(), &dictionary("smith"));
+    let mut newer = Library::default();
+    assert!(newer.scan(&t.lib()).is_empty());
+    let tipnr = newer.get("tipnr").unwrap().manifest.clone();
+    let smith = newer.get("smith").unwrap().manifest.clone();
+    let smith_file = t.cache().join(aliases::file_name(&tipnr, &smith));
+    let cache = Arc::new(AliasCache::new(Overrides::starter()));
+    cache.set_dir(t.cache());
+    let jobs = JobQueue::threaded(2);
+    let finished = |id: JobId| {
+        let began = Instant::now();
+        while began.elapsed() < Duration::from_secs(60) {
+            if let Some(e) = jobs.wait_event(Duration::from_millis(100))
+                && e.id == id
+                && !matches!(
+                    e.kind,
+                    JobEventKind::Started | JobEventKind::Phase(_) | JobEventKind::Progress { .. }
+                )
+            {
+                return;
+            }
+        }
+        panic!("job {id:?} did not end");
+    };
+
+    // The older refresh is running (held until the newer one is done) when it is cancelled.
+    let (started, has_started) = mpsc::channel();
+    let (go, wait_go) = mpsc::channel::<()>();
+    let first = jobs.submit_fn("older aliases", {
+        let cache = Arc::clone(&cache);
+        move |ctx| {
+            let _ = started.send(());
+            let _ = wait_go.recv_timeout(Duration::from_secs(60));
+            cache.refresh(&older, || ctx.is_cancelled())
+        }
+    });
+    has_started.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(jobs.cancel(first));
+    let second = jobs.submit_fn("newer aliases", {
+        let cache = Arc::clone(&cache);
+        move |ctx| cache.refresh(&newer, || ctx.is_cancelled())
+    });
+    finished(second);
+    assert!(smith_file.exists(), "the newer refresh wrote no file");
+
+    go.send(()).unwrap();
+    finished(first);
+    assert!(
+        smith_file.exists(),
+        "the older refresh deleted the newer pair's file"
+    );
 }
 
 #[test]
@@ -654,7 +720,7 @@ fn starter_library_gen_12_1_lists_abram_with_eastons_abraham() {
     let aliases = AliasCache::new(Overrides::starter());
     aliases.set_dir(cache.clone());
     let t = Instant::now();
-    let pairs = aliases.refresh(&library).unwrap();
+    let pairs = aliases.refresh(&library, || false).unwrap();
     eprintln!("{pairs} alias tables built in {:?}", t.elapsed());
     let t = Instant::now();
     let rows = crate::people_places::library_people_and_places(

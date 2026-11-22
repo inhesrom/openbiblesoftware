@@ -1476,15 +1476,17 @@ impl Session {
 
     /// Make the People & places ↔ Dictionary alias cache of every pair in the library current,
     /// in the background: at library load, a table whose Resources changed is rebuilt (#20).
+    /// A refresh still running is cancelled; it runs to its end in one step, but skips its
+    /// delete of unused cache files, which would take the files this one writes.
     pub fn refresh_alias_caches(&mut self) {
         if let Some(job) = self.guides.alias_job.take() {
             self.jobs().cancel(job);
         }
         let aliases = Arc::clone(&self.guides.aliases);
         let library = self.library.clone();
-        let job = self
-            .jobs()
-            .submit_fn("Dictionary aliases", move |_| aliases.refresh(&library));
+        let job = self.jobs().submit_fn("Dictionary aliases", move |ctx| {
+            aliases.refresh(&library, || ctx.is_cancelled())
+        });
         self.guides.alias_job = Some(job);
     }
 
