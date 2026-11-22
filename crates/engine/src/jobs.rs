@@ -338,6 +338,12 @@ impl JobQueue {
         !self.workers.is_empty()
     }
 
+    /// Whether any job submitted is not over yet (its terminal event may still be waiting to
+    /// be drained). The Mobile app polls more often while it is.
+    pub fn is_busy(&self) -> bool {
+        !lock(&self.shared.cancels).is_empty()
+    }
+
     pub fn submit(&self, job: impl Job) -> JobId {
         let id = JobId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let cancel = Arc::new(AtomicBool::new(false));

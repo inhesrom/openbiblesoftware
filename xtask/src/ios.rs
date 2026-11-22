@@ -37,7 +37,7 @@ const SMOKE_MAIN: &str = "apps/obs-ffi/swift-smoke/main.swift";
 const SMOKE_DIR: &str = "target/ios/swift-smoke";
 /// The Bundled set `bundled-set` copies, which the smoke boots over by default.
 const BUNDLED_SET: &str = "apps/ios/Bundled/starter";
-/// The line the smoke prints for a 390 × 256 pt tile at 3×.
+/// The line the smoke prints for a 390 × 256 pt tile (one whole band) at 3×.
 const SMOKE_TILE: &str = "tile 1170x768";
 /// The bindings' header and module map, as the XCFramework's `Headers` wants them.
 const HEADERS: &str = "target/ios/headers";
@@ -224,8 +224,25 @@ fn bindgen(root: &Path) -> Result<PathBuf> {
             );
         }
     }
+    let swift = out.join(format!("{SWIFT_MODULE}.swift"));
+    let text = std::fs::read_to_string(&swift)
+        .with_context(|| format!("cannot read {}", swift.display()))?;
+    tile_pixels_are_data(&text)?;
     eprintln!("ios: wrote {} to {BINDINGS}", binding_files().join(", "));
     Ok(out)
+}
+
+/// A tile's pixels (`obs_ffi::TilePixels`, the bulk byte path) must reach Swift as the bytes
+/// type, `Data`, read with one `FfiConverterData` read: else the bulk path's `unsafe impl` no
+/// longer matches what the bindings expect.
+fn tile_pixels_are_data(swift: &str) -> Result<()> {
+    if swift.contains("public var rgba: Data") && swift.contains("rgba: FfiConverterData.read(") {
+        return Ok(());
+    }
+    bail!(
+        "the generated {SWIFT_MODULE}.swift does not read Tile.rgba as `Data`: \
+         obs_ffi::TilePixels no longer crosses as UniFFI's bytes type"
+    )
 }
 
 fn binding_files() -> [String; 3] {
@@ -576,6 +593,14 @@ mod tests {
         let small = format!("engine {version}\ntile 780x512\n");
         assert!(smoke_passed(&small).is_err());
         assert!(smoke_passed("tile 1170x768\n").is_err());
+    }
+
+    #[test]
+    fn tile_pixels_must_reach_swift_as_data() {
+        let good = "public var rgba: Data\n rgba: FfiConverterData.read(from: &buf)";
+        assert!(tile_pixels_are_data(good).is_ok());
+        let seq = "public var rgba: [UInt8]\n rgba: FfiConverterSequenceUInt8.read(from: &buf)";
+        assert!(tile_pixels_are_data(seq).is_err());
     }
 
     #[test]

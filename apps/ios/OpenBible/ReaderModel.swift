@@ -4,10 +4,10 @@ import OpenBibleCore
 import UIKit
 import os
 
-/// S07 prototype (#331): the reader screen's state over the core. It boots the core as
-/// `HelloModel` does, then forwards what the user does (a typed reference, a chapter, a Page
-/// tone, a Bible) to the core and shows what the core answers. Debug launch arguments set
-/// the screen up for screenshots and the fling bench (`docs/dev/mobile-text-view.md`).
+/// The reader screen's state over the shared core (`AppCore`): it forwards what the user
+/// does (a typed reference, a chapter, a Page tone, a Bible) to the core and shows what the
+/// core answers. Debug launch arguments set the screen up for screenshots and the fling bench
+/// (`docs/dev/mobile-text-view.md`).
 @MainActor
 @Observable
 final class ReaderModel {
@@ -19,23 +19,25 @@ final class ReaderModel {
 
     struct Sheet: Identifiable {
         let id = UUID()
-        let stub: StudySheetStub
+        let verse: HitVerse
+        let word: HitWord?
     }
 
+    let app: AppCore
     private(set) var state: State = .starting
-    private(set) var core: MobileApp?
-    private(set) var reader: UInt32 = 0
+    /// The reader this screen shows: the first.
+    let reader: UInt32 = 0
     private(set) var location = ""
     var referenceError: String?
     var sheet: Sheet?
     private(set) var tones: [Choice] = []
     private(set) var tone = ""
-    private(set) var bibles: [Choice] = []
+    private(set) var bibles: [LibraryResource] = []
     private(set) var bible = ""
     private(set) var books: [BookChapters] = []
     private(set) var metricsText = ""
     private(set) var benchResult = ""
-    /// The prototype's measurements strip (frames dropped, tile times) under the text.
+    /// The measurements strip (frames dropped, tile times) under the text.
     var showMeasurements = UserDefaults.standard.bool(forKey: "OBSMeasurements")
     private(set) var coldStart: Duration?
     @ObservationIgnored private weak var view: ResourceTextView?
@@ -45,57 +47,72 @@ final class ReaderModel {
 
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "reader")
 
+    init(app: AppCore) {
+        self.app = app
+    }
+
+    var core: MobileApp? { app.core }
+
     func start() async {
-        let folder: URL
-        do { folder = try HelloModel.appFolder() } catch {
-            state = .failed(message: "\(error)")
-            return
-        }
-        var paths = HelloModel.paths(in: folder)
-        #if DEBUG
-            // The debug Study set override (plan S07): a Starter library folder on the Mac.
-            paths.studySet = ProcessInfo.processInfo.environment["OBS_STUDY_SET_DIR"]
-        #endif
-        let bundle = HelloModel.bundledSet()?.path
         let since = { ProcessStart.date.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1 }
         startupMarks.append("start() at \(since()) ms")
-        do {
-            let core = try await Task.detached(priority: .userInitiated) { [paths] in
-                try MobileApp.boot(paths: paths, bundle: bundle)
-            }.value
-            self.core = core
+        await app.start()
+        switch app.state {
+        case .starting:
+            return
+        case .failed(let message):
+            state = .failed(message: message)
+            return
+        case .ready(let core):
             startupMarks.append("booted at \(since()) ms")
-            for problem in core.problems() { Self.log.error("boot: \(problem, privacy: .public)") }
-            let pageTones = core.pageTones()
-            tones = pageTones.choices
-            tone = pageTones.current
-            bibles = core.bibles()
-            bible = core.readerResource(reader: 0) ?? ""
-            books = core.books(reader: 0)
-            applyLaunchArguments(core)
-            state = core.readerResource(reader: 0) == nil ? .failed(message: "No Bible in the library") : .ready
-        } catch {
-            state = .failed(message: Self.message(error))
+            app.onChange = { [weak self] change in self?.changed(change) }
+            refreshChoices(core)
+            applyLaunchArguments()
+            let hasReader = ((try? core.readers()) ?? []).isEmpty == false
+            state = hasReader ? .ready : .failed(message: "No Bible in the library")
+        }
+    }
+
+    /// The Page tones, the Bibles to switch to and the grid's books, as the core lists them.
+    private func refreshChoices(_ core: MobileApp) {
+        if let settings = try? core.settings() {
+            tones = settings.pageTone.choices
+            tone = settings.pageTone.current
+        }
+        bibles = (try? core.parallelResources(reader: reader)) ?? []
+        bible = (try? core.reader(reader: reader))?.resourceId ?? ""
+        books = (try? core.books(reader: reader)) ?? []
+    }
+
+    /// What the core reported from its pump.
+    private func changed(_ change: Changed) {
+        switch change {
+        case .reader(let r) where r == reader:
+            view?.refresh()
+        case .library:
+            if let core { refreshChoices(core) }
+        case .message(let text):
+            Self.log.info("core: \(text, privacy: .public)")
+        default:
+            break
         }
     }
 
     /// Debug launch arguments: `-OBSResource tahot`, `-OBSPageTone sepia`, `-OBSGoTo "Jn 3:16"`.
-    private func applyLaunchArguments(_ core: MobileApp) {
+    private func applyLaunchArguments() {
         let defaults = UserDefaults.standard
         if let id = defaults.string(forKey: "OBSResource") { open(bible: id) }
         if let id = defaults.string(forKey: "OBSPageTone") { setTone(id) }
         if let text = defaults.string(forKey: "OBSGoTo") { goTo(text) }
     }
 
-    static func message(_ error: Error) -> String {
-        if case MobileError.Failed(let message) = error { return message }
-        return "\(error)"
-    }
-
     func attach(_ view: ResourceTextView) {
         self.view = view
         view.onLocation = { [weak self] in self?.location = $0 }
-        view.onTap = { [weak self] in self?.sheet = Sheet(stub: $0) }
+        view.onTap = { [weak self] hit in
+            guard let verse = hit.verse else { return }
+            self?.sheet = Sheet(verse: verse, word: hit.word)
+        }
         view.metrics.onChange = { [weak self, weak view] in
             guard let self, let view else { return }
             self.metricsText = view.metrics.summary()
@@ -132,43 +149,47 @@ final class ReaderModel {
         bench = nil
     }
 
+    /// Go to what the user typed; the core reads it (a reference, or an entry Key).
     func goTo(_ text: String) {
         guard let core else { return }
         do {
-            _ = try core.goTo(reader: reader, text: text)
+            _ = try core.navigate(reader: reader, text: text)
             referenceError = nil
             view?.adoptPosition()
         } catch {
-            referenceError = Self.message(error)
+            referenceError = AppCore.message(error)
         }
     }
 
+    /// Go to a chapter the grid offers (the `book`th of the core's books).
     func goTo(book: Int, chapter: UInt16) {
-        guard let core else { return }
+        guard let core, books.indices.contains(book) else { return }
         do {
-            _ = try core.goToChapter(reader: reader, book: UInt32(book), chapter: chapter)
+            _ = try core.goToVerse(reader: reader, book: books[book].id, chapter: chapter, verse: nil)
             referenceError = nil
             view?.adoptPosition()
         } catch {
-            referenceError = Self.message(error)
+            referenceError = AppCore.message(error)
         }
     }
 
     func setTone(_ id: String) {
-        core?.setPageTone(id: id)
-        tone = core?.pageTones().current ?? id
+        guard let core else { return }
+        if let settings = try? core.setPageTone(id: id) {
+            tone = settings.pageTone.current
+        }
         view?.refresh()
     }
 
+    /// Show another Bible in the reader (the core switches it at the same place).
     func open(bible id: String) {
         guard let core, id != bible else { return }
         do {
-            reader = try core.openReader(resourceId: id, reference: nil)
-            bible = id
-            books = core.books(reader: reader)
+            _ = try core.open(reader: reader, resourceId: id, at: nil)
+            refreshChoices(core)
             view?.show(reader: reader)
         } catch {
-            referenceError = Self.message(error)
+            referenceError = AppCore.message(error)
         }
     }
 }

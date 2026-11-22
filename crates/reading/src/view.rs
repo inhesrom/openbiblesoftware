@@ -167,6 +167,58 @@ pub struct ReadingView {
     /// Where the Notes whose markers it draws end, in document order: the text makes room for
     /// each marker there (#305).
     note_ends: Arc<Vec<DocPos>>,
+    /// How many threads measure the height estimates of the whole document (1: this thread
+    /// alone, as the desktop does). The Mobile app opens a Bible with several, for its cold
+    /// start; the estimates are the same either way.
+    estimate_threads: usize,
+}
+
+/// Fewer blocks than this are estimated on the calling thread whatever the thread count:
+/// starting threads would cost more than it saves.
+const PARALLEL_ESTIMATE_MIN: usize = 2048;
+
+/// Every block's height estimate, block order, on up to `threads` threads (each takes one run
+/// of blocks). The result does not depend on `threads`.
+fn estimate_blocks(
+    doc: &ReadingDoc,
+    settings: &TextSettings,
+    interlinear: Option<&InterlinearSource>,
+    threads: usize,
+) -> Vec<HeightEstimate> {
+    let n = doc.blocks.len();
+    let one = |i: usize| {
+        paragraph(doc, i, settings, interlinear, &[], true)
+            .map_or_else(HeightEstimate::default, |p| HeightEstimate::of(&p))
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    if threads > 1 && n >= PARALLEL_ESTIMATE_MIN {
+        let run = n.div_ceil(threads);
+        let parts = std::thread::scope(|scope| {
+            let spawned: Vec<_> = (0..n)
+                .step_by(run)
+                .map(|start| {
+                    let end = (start + run).min(n);
+                    let handle = std::thread::Builder::new()
+                        .name("obs-estimate".into())
+                        .spawn_scoped(scope, move || (start..end).map(one).collect::<Vec<_>>());
+                    (start..end, handle)
+                })
+                .collect();
+            (spawned.into_iter())
+                .map(|(blocks, handle)| match handle {
+                    // A thread that could not start leaves its run to this one.
+                    Err(_) => blocks.map(one).collect(),
+                    Ok(h) => h
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+                })
+                .collect::<Vec<Vec<HeightEstimate>>>()
+        });
+        return parts.into_iter().flatten().collect();
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = (threads, PARALLEL_ESTIMATE_MIN);
+    (0..n).map(one).collect()
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
@@ -218,6 +270,15 @@ pub fn hyphenates(language: &str) -> bool {
 
 impl ReadingView {
     pub fn new(doc: Arc<ReadingDoc>, settings: TextSettings) -> Self {
+        Self::with_estimate_threads(doc, settings, 1)
+    }
+
+    /// [`Self::new`], measuring the height estimates on up to `threads` threads (wasm: one).
+    pub fn with_estimate_threads(
+        doc: Arc<ReadingDoc>,
+        settings: TextSettings,
+        threads: usize,
+    ) -> Self {
         let mut view = Self {
             doc,
             settings,
@@ -247,6 +308,7 @@ impl ReadingView {
             estimates_size: TextSettings::DEFAULT_SIZE,
             drawn: None,
             note_ends: Arc::new(Vec::new()),
+            estimate_threads: threads.max(1),
         };
         view.set_width(600.0);
         view
@@ -353,12 +415,8 @@ impl ReadingView {
         };
         if self.estimates_key != Some((measured_at.key(), interlinear)) {
             let source = self.interlinear.as_deref();
-            self.estimates = (0..self.doc.blocks.len())
-                .map(|i| {
-                    paragraph(&self.doc, i, &self.settings, source, &[], true)
-                        .map_or_else(HeightEstimate::default, |p| HeightEstimate::of(&p))
-                })
-                .collect();
+            self.estimates =
+                estimate_blocks(&self.doc, &self.settings, source, self.estimate_threads);
             self.estimates_key = Some((self.settings.key(), interlinear));
             self.estimates_size = self.settings.size;
             self.estimated += self.estimates.len() as u64;
@@ -1199,5 +1257,35 @@ impl ReadingView {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A document of `n` paragraphs of different lengths (one block each).
+    fn paragraphs(n: usize) -> Arc<ReadingDoc> {
+        let manifest = obs_engine::testing::bibles::bsb_john_1().manifest;
+        let text: String = (0..n)
+            .map(|i| format!("{}\n", "In the beginning was the Word. ".repeat(1 + i % 7)))
+            .collect();
+        Arc::new(ReadingDoc::from_text(manifest, &text))
+    }
+
+    #[test]
+    fn estimates_on_several_threads_are_the_ones_measured_on_one() {
+        let doc = paragraphs(PARALLEL_ESTIMATE_MIN + 333);
+        assert!(doc.blocks.len() > PARALLEL_ESTIMATE_MIN);
+        let one = ReadingView::new(Arc::clone(&doc), TextSettings::default());
+        for threads in [2, 3, 8] {
+            let many = ReadingView::with_estimate_threads(
+                Arc::clone(&doc),
+                TextSettings::default(),
+                threads,
+            );
+            assert_eq!(many.estimates, one.estimates, "{threads} threads");
+            assert_eq!(many.estimated, one.estimated);
+        }
     }
 }

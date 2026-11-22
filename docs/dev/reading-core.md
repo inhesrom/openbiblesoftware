@@ -12,7 +12,7 @@ tiles) and never on egui, eframe, winit or rfd:
 | Module | What |
 |---|---|
 | `doc` | `ReadingDoc`, `DocBlock`: a Resource opened as one document (units, blocks, Bible Verses, Keys), and its `ComparedBible`/`CopiedBible` impls |
-| `view` | `ReadingView`: virtualized blocks, heights, scrolling anchored to a block, jumps and glides, the Current location, Footnote markers, `Frame` |
+| `view` | `ReadingView`: virtualized blocks, heights, scrolling anchored to a block, jumps and glides, the Current location, Footnote markers, `Frame`; `with_estimate_threads` measures a whole document's height estimates on several threads (the Mobile app's cold start; the same estimates, the desktop keeps one) |
 | `heights` | `HeightIndex`: estimated then measured block heights |
 | `selection` | `Selection`, `DocPos`, `Granularity`; selection rects, word at a point, copied text |
 | `marks` | `Mark`, `MarkKind`, `marks_for`, `HighlightLooks`: Annotations over document positions |

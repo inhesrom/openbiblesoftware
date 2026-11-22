@@ -24,5 +24,16 @@ obs-model.workspace = true
 # Writes `target/ios/gen1.png` in the ignored `hello_engine` test.
 png = "0.18"
 
-[lints]
-workspace = true
+# Not `workspace = true`: Cargo cannot loosen one inherited lint, so the table is copied here
+# with `unsafe_code` at "deny" instead of "forbid" (ADR 0021; plan A1 and S13). The one
+# `#[allow(unsafe_code)]` is on the `unsafe impl FfiConverter for TilePixels` (the tiles' bulk
+# byte path, src/lib.rs), which performs no unsafe operation; `cargo xtask layers` fails if
+# `unsafe` appears anywhere else in this crate.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+# As the workspace's: production code must not unwrap, expect or panic.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

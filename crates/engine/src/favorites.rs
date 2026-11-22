@@ -234,7 +234,7 @@ impl Session {
     /// Work History's day headings out again if the local day has changed since they were
     /// ("Today" becomes "Yesterday" at midnight). Saving the Last session (at most once a
     /// second while the app runs) calls this.
-    pub(crate) fn refresh_history_day(&mut self) {
+    pub fn refresh_history_day(&mut self) {
         self.refresh_history_day_as_of(unix_now());
     }
 

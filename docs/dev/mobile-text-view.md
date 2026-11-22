@@ -3,7 +3,9 @@
 The prototype that answers #331 for iOS: Resource text drawn by our own pipeline (ADR 0004)
 in a hosted UIKit view, with native scrolling, selection, VoiceOver and Dynamic Type. Plan
 `docs/plans/mobile-ios.md` A4 (option B, CPU tiles) and S07. It is throwaway-quality on
-purpose: the Rust surface is marked `S07 prototype` and S13 replaces it; the Swift is rough.
+purpose; the Swift is rough. **S13 replaced its Rust surface with the designed one**
+(`obs_mobile`'s `frame` and `text_input` modules, `docs/dev/mobile-core.md`): the names
+below are S13's, the behaviour is S07's, and S14a productionises the Swift.
 What it must not be is a place where study rules live in Swift (ADR 0021 rule 3): every
 reading-text colour, word or Verse decision, Verse label, reference and count the screen
 shows comes from Rust. The few things Swift still decides are listed under "Decided in
@@ -14,12 +16,13 @@ simulator numbers and only indicative.
 
 ## Contract
 
-**Rust (`crates/mobile/src/text_view.rs`, `obs-ffi` mirrors it):**
+**Rust (`crates/mobile/src/frame.rs` and `text_input.rs`, `obs-ffi` mirrors them):**
 
 - **Content coordinates.** The text view is a `UIScrollView` whose content coordinates are
   the reader's page in points: x from the page's left edge, y from the document's top. Every
   rectangle the core returns (tiles, selection, caret, accessibility frames) is in them.
-- **`reader_frame(reader, offset, width, height, scale, dark) -> ReaderFrame`.** The shell
+- **`frame(reader, offset, Viewport { width, height, scale }, SystemAppearance { dark })
+  -> ReaderFrame`.** The shell
   sends its content offset (clamped to the page; rubber-banding stays the scroll view's
   own). The reader scrolls its `ReadingView` by the difference from the position it last
   reported (the view stays anchored to a block, #14 rule 7), lays out what is in view and
@@ -30,7 +33,7 @@ simulator numbers and only indicative.
   so the text in view never jumps. After a jump or a new Text size the next frame ignores
   the shell's offset and the shell takes the core's position. A new width, scale, Page tone,
   Text size or system dark/light starts a new tile epoch.
-- **Tiles: `reader_tile(reader, key, scale) -> TimedTile?`.** A tile is one band (at most
+- **Tiles: `tile(reader, key, scale) -> TimedTile?`.** A tile is one band (at most
   `BAND` = 256 pt) of one block, keyed `TileKey { epoch, block, band }`, drawn by
   `obs_reading::compose_block_tile`: the block's layout and the band's pixels, wherever the
   block is. This is the bound the S03 review asked for: S03's `layout_tile` laid out
@@ -51,21 +54,25 @@ simulator numbers and only indicative.
   without Verses (a heading, marked as one), in reading order, for the text laid out around
   the view. The label is the reference then the text: `Genesis 1:1. In the beginning God
   created the heavens and the earth.` The identifier is the Verse's OSIS id (`Gen.1.1`).
-- **Tap: `tap(reader, x, y) -> StudySheetStub?`.** The core decides: the Verse under the
+- **Tap: `hit(reader, x, y) -> Hit?`** (S07's `tap` and its `StudySheetStub`). The core
+  decides: the Verse under the
   point, its text and its cross-reference count across the library's Cross-reference sets
   (through the Bible's Verse map to the Standard versification), and, when the word under the
   point is a Tagged word, the word, its Strong's number, Lemma and Gloss (`ShownWord`, as
   Word Info builds it). The count's label (`12 cross-references`) is the core's.
-- **Navigation.** `go_to(reader, text)` reads a typed reference in the Bible's own numbering
-  with the Current location as context (`Jn 3:16`, `3:16`); its error is the parser's.
-  `books(reader)` lists the Bible books the Resource has with their chapter counts, and
-  `go_to_chapter(reader, book, chapter)` goes to one (the grid stub). `open_reader` of a
-  Resource already open gives back its reader where it was, so switching Bibles back and
-  forth opens each once.
-- **Appearance.** `page_tones()` (choices and labels from `PageTone::ALL`) and
-  `set_page_tone(id)`, kept for the run only; `set_content_size(category)` maps UIKit's
-  content size category to a Text size with `text_size_for_content_size`, a table in Rust so
-  Android's font scale can use the same bounds (12–40 pt; Large is the desktop's 20 pt).
+- **Navigation** (S13: `navigation.rs`). `navigate(reader, text)` reads a typed reference in
+  the Resource's own numbering with the Current location as context (`Jn 3:16`, `3:16`), or
+  a Lexicon's Key; its error is the parser's. `books(reader)` lists the Bible books the
+  Resource has with their chapter counts and ids, and `go_to_verse(reader, book, chapter,
+  verse)` goes to one (the grid stub). `open(reader, resource, at)` switches the reader to
+  another Bible at the same place; each document is opened once a run.
+- **Appearance** (S13: `settings.rs`). `settings()` lists the Page tones (choices and labels
+  from `PageTone::ALL`) and `set_page_tone(id)` saves one in the User database;
+  `dynamic_type(category)` maps UIKit's content size category to a Text size from
+  `tokens::DYNAMIC_TYPE`, a table in Rust so Android's font scale can use the same bounds
+  (12–40 pt; Large is the desktop's 20 pt).
+- **Footnotes** (S13). A `Hit` also names a Footnote marker under the point, and
+  `footnote(reader, note)` gives its text (the popover is S14b's).
 - **Debug Study set override.** `Paths::study_set`: a Starter library folder (`dist/starter`)
   whose Study set Resources (`mobile_set: "study"` in its `starter-manifest.json`) are added
   to the library read in place, not copied. The app sets it from the `OBS_STUDY_SET_DIR`
@@ -114,8 +121,8 @@ simulator numbers and only indicative.
 |---|---|
 | `crates/reading/src/view.rs` | `ReadingView::visible_around(above, height)` |
 | `crates/reading/src/tile.rs` | `compose_block_tile`, and `compose_tile` sharing `draw_block` |
-| `crates/mobile/src/text_view.rs` | the prototype surface above, and its tests |
-| `apps/obs-ffi/src/lib.rs` | its mirror (`S07 prototype`) |
+| `crates/mobile/src/frame.rs`, `text_input.rs` | the surface above (S13), its tests in `tests.rs` |
+| `apps/obs-ffi/src/lib.rs` | its mirror |
 | `apps/ios/OpenBible/ResourceTextView.swift` | the scroll view, the tile queue, `TextViewMetrics` |
 | `apps/ios/OpenBible/TextCanvasView.swift` | `UITextInput`, the tokenizer, the accessibility container |
 | `apps/ios/OpenBible/ReaderModel.swift`, `ReaderScreen.swift` | the screen, the fling bench, cold start and footprint |

@@ -3,11 +3,12 @@ import SwiftUI
 import UIKit
 import os
 
-/// S07 prototype (#331): Resource text drawn by the Rust pipeline as CPU tiles (plan A4,
-/// option B) in a `UIScrollView`. The scroll view's content coordinates are the reader's page
-/// in points; the core decides which tiles exist, where they go, what is under a point and
-/// what a tap opens (`obs_mobile::text_view`). This view only shows images where it is told,
-/// forwards the content offset and input, and measures.
+/// Resource text drawn by the Rust pipeline as CPU tiles (plan A4, option B) in a
+/// `UIScrollView` (S07's prototype, on the designed core surface; S14a productionises it).
+/// The scroll view's content coordinates are the reader's page in points; the core decides
+/// which tiles exist, where they go and what is under a point (`obs_mobile`'s `frame`,
+/// `tile`, `hit`). This view only shows images where it is told, forwards the content offset
+/// and input, and measures.
 final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
     let core: MobileApp
     private(set) var reader: UInt32
@@ -25,7 +26,7 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "text")
 
     var onLocation: ((String) -> Void)?
-    var onTap: ((StudySheetStub) -> Void)?
+    var onTap: ((Hit) -> Void)?
     var onFirstText: (() -> Void)?
     let metrics = TextViewMetrics()
 
@@ -67,9 +68,9 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
         refresh()
     }
 
-    /// The system text size, as the core maps it to a Text size.
+    /// The system text size (Dynamic Type), as the core maps it to a Text size.
     private func followContentSize() {
-        _ = core.setContentSize(category: traitCollection.preferredContentSizeCategory.rawValue)
+        _ = try? core.dynamicType(category: traitCollection.preferredContentSizeCategory.rawValue)
     }
 
     override func layoutSubviews() {
@@ -104,10 +105,10 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
         let overscroll = contentOffset.y - offset
         let frame: ReaderFrame
         do {
-            frame = try core.readerFrame(
-                reader: reader, offset: Double(offset), width: Float(bounds.width),
-                height: Float(bounds.height), scale: Float(scale),
-                dark: traitCollection.userInterfaceStyle == .dark)
+            frame = try core.frame(
+                reader: reader, offset: Double(offset),
+                viewport: Viewport(width: Float(bounds.width), height: Float(bounds.height), scale: Float(scale)),
+                appearance: SystemAppearance(dark: traitCollection.userInterfaceStyle == .dark))
         } catch {
             Self.log.error("frame: \(error.localizedDescription, privacy: .public)")
             return
@@ -126,8 +127,8 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
         }
         applying = false
         backgroundColor = UIColor(
-            red: CGFloat(frame.pageRed) / 255, green: CGFloat(frame.pageGreen) / 255,
-            blue: CGFloat(frame.pageBlue) / 255, alpha: 1)
+            red: CGFloat(frame.page.red) / 255, green: CGFloat(frame.page.green) / 255,
+            blue: CGFloat(frame.page.blue) / 255, alpha: 1)
         place(frame, scale: scale)
         if lastFrame?.location != frame.location { onLocation?(frame.location) }
         lastFrame = frame
@@ -189,7 +190,7 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
             height: CGFloat(made.image.height) / scale)
         canvas.layer.addSublayer(layer)
         tiles[made.key] = layer
-        metrics.tile(rustMicros: made.rustMicros, total: made.took)
+        metrics.tile(made)
     }
 
     @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
@@ -198,8 +199,8 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
             return
         }
         let at = recognizer.location(in: canvas)
-        if let stub = try? core.tap(reader: reader, x: Float(at.x), y: Double(at.y)) {
-            onTap?(stub)
+        if let hit = try? core.hit(reader: reader, x: Float(at.x), y: Double(at.y)) {
+            onTap?(hit)
         }
     }
 
@@ -209,12 +210,16 @@ final class ResourceTextView: UIScrollView, UIScrollViewDelegate {
     }
 }
 
-/// A tile's image, drawn from the core's pixels.
+/// A tile's image, drawn from the core's pixels, and what each part of making it took: the
+/// core's drawing, the whole FFI call (the drawing and the pixels' crossing), making the
+/// image, and preparing it for display.
 struct RenderedTile: @unchecked Sendable {
     let key: TileKey
     let image: CGImage
     let rustMicros: UInt32
-    let took: Duration
+    let call: Duration
+    let imaging: Duration
+    let preparing: Duration
 }
 
 /// Draws tiles off the main thread, one at a time, skipping tiles no longer wanted. The
@@ -259,10 +264,12 @@ final class TileRenderer: @unchecked Sendable {
 
     /// The tile's pixels from the core, as an image ready for Core Animation.
     static func render(core: MobileApp, reader: UInt32, key: TileKey, scale: CGFloat) -> RenderedTile? {
-        let began = ContinuousClock.now
-        guard let timed = try? core.readerTile(reader: reader, key: key, scale: Float(scale)) else {
+        let clock = ContinuousClock()
+        let began = clock.now
+        guard let timed = try? core.tile(reader: reader, key: key, scale: Float(scale)) else {
             return nil
         }
+        let called = clock.now
         let tile = timed.tile
         guard tile.width > 0, tile.height > 0,
             let provider = CGDataProvider(data: tile.rgba as CFData),
@@ -274,8 +281,11 @@ final class TileRenderer: @unchecked Sendable {
                 provider: provider, decode: nil, shouldInterpolate: false,
                 intent: .defaultIntent)
         else { return nil }
+        let imaged = clock.now
         let prepared = UIImage(cgImage: image).preparingForDisplay()?.cgImage ?? image
-        return RenderedTile(key: key, image: prepared, rustMicros: timed.micros, took: ContinuousClock.now - began)
+        return RenderedTile(
+            key: key, image: prepared, rustMicros: timed.micros, call: called - began,
+            imaging: imaged - called, preparing: clock.now - imaged)
     }
 }
 
@@ -288,7 +298,10 @@ final class TextViewMetrics {
     private(set) var frames = 0
     private(set) var dropped = 0
     private(set) var tileRustMicros: [UInt32] = []
-    private(set) var tileTotalMicros: [Int] = []
+    /// Swift's side of each tile, split: the FFI call, making the image, preparing it.
+    private(set) var tileCallMicros: [Int] = []
+    private(set) var tileImageMicros: [Int] = []
+    private(set) var tilePrepareMicros: [Int] = []
     private(set) var frameMicrosList: [UInt32] = []
     private(set) var visibleMisses = 0
     private var scrolling = 0
@@ -315,7 +328,9 @@ final class TextViewMetrics {
         frames = 0
         dropped = 0
         tileRustMicros.removeAll()
-        tileTotalMicros.removeAll()
+        tileCallMicros.removeAll()
+        tileImageMicros.removeAll()
+        tilePrepareMicros.removeAll()
         frameMicrosList.removeAll()
         visibleMisses = 0
     }
@@ -330,9 +345,14 @@ final class TextViewMetrics {
         dropped += max(0, missed)
     }
 
-    func tile(rustMicros: UInt32, total: Duration) {
-        tileRustMicros.append(rustMicros)
-        tileTotalMicros.append(Int(total.components.attoseconds / 1_000_000_000_000))
+    func tile(_ made: RenderedTile) {
+        func micros(_ d: Duration) -> Int {
+            Int(d.components.seconds) * 1_000_000 + Int(d.components.attoseconds / 1_000_000_000_000)
+        }
+        tileRustMicros.append(made.rustMicros)
+        tileCallMicros.append(micros(made.call))
+        tileImageMicros.append(micros(made.imaging))
+        tilePrepareMicros.append(micros(made.preparing))
     }
 
     func frameMicros(_ micros: UInt32) {
@@ -352,9 +372,11 @@ final class TextViewMetrics {
         let rust = tileRustMicros.map(Int.init)
         let frame = frameMicrosList.map(Int.init)
         return String(
-            format: "frames %d dropped %d (%.2f%%) · tiles %d rust p50 %d µs p95 %d µs max %d µs · swift p50 %d µs p95 %d µs · frame p50 %d µs p95 %d µs · misses %d",
+            format: "frames %d dropped %d (%.2f%%) · tiles %d rust p50 %d µs p95 %d µs max %d µs · call p50 %d µs p95 %d µs · image p50 %d µs p95 %d µs · prepare p50 %d µs p95 %d µs · frame p50 %d µs p95 %d µs · misses %d",
             frames, dropped, droppedPercent, rust.count, pct(rust, 0.5), pct(rust, 0.95),
-            rust.max() ?? 0, pct(tileTotalMicros, 0.5), pct(tileTotalMicros, 0.95),
+            rust.max() ?? 0, pct(tileCallMicros, 0.5), pct(tileCallMicros, 0.95),
+            pct(tileImageMicros, 0.5), pct(tileImageMicros, 0.95),
+            pct(tilePrepareMicros, 0.5), pct(tilePrepareMicros, 0.95),
             pct(frame, 0.5), pct(frame, 0.95), visibleMisses)
     }
 }
@@ -372,6 +394,7 @@ struct ResourceText: UIViewRepresentable {
     let model: ReaderModel
 
     func makeUIView(context: Context) -> ResourceTextView {
+        // The screen shows this view only once the core is ready (`ReaderModel.State`).
         let view = ResourceTextView(core: model.core!, reader: model.reader)
         model.attach(view)
         return view

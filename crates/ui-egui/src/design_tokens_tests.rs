@@ -1,8 +1,9 @@
 //! #221 acceptance: no hard-coded spacing, size or colour literal remains in the interface
 //! outside the design tokens ([`crate::tokens`]; page colours in [`crate::Palette`]).
 //!
-//! The scanner reads every non-test source file of the crate, and of the reading core it paints
-//! (`crates/reading/src`, its files named `reading/…`), with comments, strings and
+//! The scanner reads every non-test source file of the crate, of the reading core it paints
+//! (`crates/reading/src`, its files named `reading/…`) and of the Mobile app's core
+//! (`crates/mobile/src`, named `mobile/…`), with comments, strings and
 //! `#[cfg(test)]` items blanked out, and flags:
 //!
 //! - any numeric literal in a call that takes a spacing, a size, a radius, a stroke width, a
@@ -29,6 +30,30 @@ const TOKEN_FILES: &[&str] = &["tokens.rs", "palette.rs", "reading_tokens.rs"];
 /// Lines allowed to keep a literal, each exactly: (file, the whole line, the literal, why it
 /// is not a measurement of the look).
 const ALLOWED: &[(&str, &str, &str, &str)] = &[
+    (
+        "mobile/frame.rs",
+        "pub const BAND: f32 = 256.0;",
+        "256.0",
+        "how tall a CPU tile may be: a unit of drawing work, not of the look",
+    ),
+    (
+        "mobile/frame.rs",
+        "pub const AROUND: f32 = 1.0;",
+        "1.0",
+        "how many viewports are laid out ahead: a count, not a measurement",
+    ),
+    (
+        "mobile/frame.rs",
+        "if (view.width() - before).abs() < 0.5 && !state.moved {",
+        "0.5",
+        "a tolerance: a width within half a point is the same width",
+    ),
+    (
+        "mobile/frame.rs",
+        "let blocks = view.visible_around(height * AROUND, height * (1.0 + AROUND));",
+        "1.0",
+        "the viewport itself, counted with the viewports laid out ahead",
+    ),
     (
         "compare_view.rs",
         "width: 400.0,",
@@ -1268,12 +1293,14 @@ fn ui_sources() -> Vec<PathBuf> {
 }
 
 /// The source folders the lint reads, each with the prefix its files are named by in
-/// [`ALLOWED`]: this crate's (none) and the reading core's (`reading/`, ADR 0021).
-fn source_roots() -> [(PathBuf, &'static str); 2] {
+/// [`ALLOWED`]: this crate's (none), the reading core's (`reading/`, ADR 0021) and the Mobile
+/// app's (`mobile/`, plan A5).
+fn source_roots() -> [(PathBuf, &'static str); 3] {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     [
         (manifest.join("src"), ""),
         (manifest.join("../reading/src"), "reading/"),
+        (manifest.join("../mobile/src"), "mobile/"),
     ]
 }
 

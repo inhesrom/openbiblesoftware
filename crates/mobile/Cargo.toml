@@ -16,6 +16,9 @@ obs-reading.workspace = true
 obs-render.workspace = true
 obs-scripture.workspace = true
 obs-store.workspace = true
+# Command parameters (`Session::run`) and the Mobile Last session's JSON.
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 obs-engine = { workspace = true, features = ["test-support"] }

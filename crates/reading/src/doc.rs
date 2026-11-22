@@ -185,9 +185,16 @@ impl ReadingDoc {
                 blocks.push(DocBlock { unit: i, source });
             }
         }
+        // Each unit's first index by id, as a search from the start would find it: a whole
+        // Bible has thousands of units and tens of thousands of Verses.
+        let mut unit_index: std::collections::HashMap<&UnitId, usize> =
+            std::collections::HashMap::with_capacity(units.len());
+        for (i, u) in units.iter().enumerate() {
+            unit_index.entry(&u.id).or_insert(i);
+        }
         let verse_units = verses
             .iter()
-            .map(|v| units.iter().position(|u| u.id == v.unit).unwrap_or(0))
+            .map(|v| unit_index.get(&v.unit).copied().unwrap_or(0))
             .collect();
         let versification = ListedVersification::new(verses.iter().map(|v| (v.verse, v.last)));
         let verse_index = verses
