@@ -500,7 +500,7 @@ impl UserStore {
         applied: &BTreeMap<String, u64>,
         merge: impl FnOnce(&mut MergeTx<'_>) -> Result<T, E>,
     ) -> Result<T, E> {
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         let own = read_device_id(&tx)?;
         if device == own {
             return Err(StoreError::Rejected(
@@ -570,7 +570,7 @@ impl UserStore {
     /// devices carries a clock for each, and this device records ops from now on. Nothing when
     /// it already records them.
     pub fn join_sync(&self) -> Result<(), StoreError> {
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         let own = read_device_id(&tx)?;
         if records_ops(&tx, &own)? {
             return Ok(());
@@ -600,7 +600,7 @@ impl UserStore {
     /// rows as new as theirs; an edit the restored data never saw, from a device whose clock
     /// runs ahead of this one's, can still win. The restore's choice no longer waits.
     pub fn restamp_for_replace(&self) -> Result<(), StoreError> {
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         // The user chose: the restore waits no more, in the same step.
         tx.execute("UPDATE device SET restore_choice = 0 WHERE id = 1", [])
             .map_err(sql)?;

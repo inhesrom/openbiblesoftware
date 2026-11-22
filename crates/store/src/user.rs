@@ -11,9 +11,9 @@
 //! newest [`ROLLING_BACKUPS`] are kept) is written with SQLite's online backup API.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
@@ -82,14 +82,81 @@ const MIGRATIONS: &[&str] = &[
 /// How long a write on one connection to the User database waits for another connection's
 /// write transaction to finish (the sync worker's, [`UserStore::second_connection`]) before it
 /// fails with "database is locked". Long on purpose: a user's edit waits out the longest merge
-/// transaction (a snapshot merged at a join) rather than be refused.
+/// transaction (a snapshot merged at a join) rather than be refused; it waits for no more than
+/// the one transaction it found running ([`WriteTurns`]).
 pub const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A write transaction on the User database: `BEGIN IMMEDIATE`, so it takes the write lock
-/// before it reads. A deferred one that read before another connection committed could not
-/// write at all (`SQLITE_BUSY_SNAPSHOT`, which [`BUSY_TIMEOUT`] never waits out).
-pub(crate) fn write_tx(conn: &Connection) -> Result<Transaction<'_>, StoreError> {
-    Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sql)
+/// How long after the first connection last found the User database locked the second one
+/// waits before its next write transaction, so the first (the UI's, a user's edit) goes
+/// next rather than wait for every transaction of a merge in turn.
+const FIRST_GOES_FIRST: Duration = Duration::from_millis(20);
+
+/// How long the first connection sleeps each time it finds the User database locked.
+const BUSY_RETRY: Duration = Duration::from_micros(100);
+
+/// How a User database's connections take turns writing: the first (the [`UserStore`]
+/// opened by [`UserStore::open`], the UI's) goes first. SQLite's own busy wait backs off
+/// further each time it finds the database locked, so a write waiting while the sync
+/// worker's merge runs one transaction after another would wait for most of them.
+#[derive(Debug)]
+pub(crate) struct WriteTurns {
+    epoch: Instant,
+    /// When the first connection last found the database locked, in microseconds after
+    /// `epoch` (0: never).
+    first_waited_us: AtomicU64,
+}
+
+impl Default for WriteTurns {
+    fn default() -> Self {
+        Self {
+            epoch: Instant::now(),
+            first_waited_us: AtomicU64::new(0),
+        }
+    }
+}
+
+impl WriteTurns {
+    fn now_us(&self) -> u64 {
+        u64::try_from(self.epoch.elapsed().as_micros())
+            .unwrap_or(u64::MAX)
+            .max(1)
+    }
+
+    /// The first connection's busy handler: note that it waits, and try again soon, for at
+    /// most [`BUSY_TIMEOUT`].
+    fn first_busy_handler(turns: Arc<Self>) -> impl FnMut(i32) -> bool + Send + 'static {
+        let mut since = Instant::now();
+        move |count| {
+            if count == 0 {
+                since = Instant::now();
+            }
+            turns
+                .first_waited_us
+                .store(turns.now_us(), Ordering::SeqCst);
+            if since.elapsed() >= BUSY_TIMEOUT {
+                return false;
+            }
+            std::thread::sleep(BUSY_RETRY);
+            true
+        }
+    }
+
+    /// Before the second connection's write transaction: wait while the first waits to write
+    /// (it found the database locked within [`FIRST_GOES_FIRST`]), at most [`BUSY_TIMEOUT`].
+    fn let_the_first_go(&self) {
+        let deadline = Instant::now() + BUSY_TIMEOUT;
+        let window = u64::try_from(FIRST_GOES_FIRST.as_micros()).unwrap_or(u64::MAX);
+        loop {
+            let waited = self.first_waited_us.load(Ordering::SeqCst);
+            if waited == 0 || self.now_us().saturating_sub(waited) > window {
+                return;
+            }
+            if Instant::now() >= deadline {
+                return;
+            }
+            std::thread::sleep(BUSY_RETRY);
+        }
+    }
 }
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
@@ -123,6 +190,10 @@ pub struct UserStore {
     /// [`UserStore::second_connection`] opened from this one, so the connections hand out one
     /// sequence of clocks between them.
     pub(crate) clock: Arc<Mutex<crate::sync_clock::ClockState>>,
+    /// How this connection and the others to the database take turns writing.
+    turns: Arc<WriteTurns>,
+    /// This is a [`SecondConnection`]: it lets the first write first.
+    second: bool,
 }
 
 /// A second connection to a User database, to open on another thread (the sync worker, plan
@@ -135,6 +206,7 @@ pub struct SecondConnection {
     path: PathBuf,
     schema: u32,
     clock: Arc<Mutex<crate::sync_clock::ClockState>>,
+    turns: Arc<WriteTurns>,
     refused: Arc<AtomicBool>,
 }
 
@@ -178,6 +250,8 @@ impl SecondConnection {
         conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
         Ok(UserStore {
             clock: Arc::clone(&self.clock),
+            turns: Arc::clone(&self.turns),
+            second: true,
             ..UserStore::from_parts(conn, self.path.clone())
         })
     }
@@ -191,7 +265,20 @@ impl UserStore {
             #[cfg(feature = "test-support")]
             recorded: Default::default(),
             clock: Default::default(),
+            turns: Default::default(),
+            second: false,
         }
+    }
+
+    /// A write transaction on the User database: `BEGIN IMMEDIATE`, so it takes the write
+    /// lock before it reads. A deferred one that read before another connection committed
+    /// could not write at all (`SQLITE_BUSY_SNAPSHOT`, which no busy wait waits out). On a
+    /// second connection, it lets a write waiting on the first go first ([`WriteTurns`]).
+    pub(crate) fn write_tx(&self) -> Result<Transaction<'_>, StoreError> {
+        if self.second {
+            self.turns.let_the_first_go();
+        }
+        Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate).map_err(sql)
     }
 
     /// What another thread needs to open a second connection to this User database sharing
@@ -201,6 +288,7 @@ impl UserStore {
             path: self.path.clone(),
             schema: self.schema_version()?,
             clock: Arc::clone(&self.clock),
+            turns: Arc::clone(&self.turns),
             refused: Arc::default(),
         })
     }
@@ -251,8 +339,9 @@ impl UserStore {
             .map_err(sql)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(sql)?;
-        conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
         let mut store = Self::from_parts(conn, path.to_path_buf());
+        let handler = WriteTurns::first_busy_handler(Arc::clone(&store.turns));
+        store.conn.busy_handler(Some(handler)).map_err(sql)?;
         let mut report = OpenReport {
             found_version: found,
             ..OpenReport::default()
@@ -487,7 +576,7 @@ impl UserStore {
         &self,
         names: &[(String, String, String)],
     ) -> Result<(), StoreError> {
-        let tx = write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         {
             let mut stmt = tx
                 .prepare_cached(

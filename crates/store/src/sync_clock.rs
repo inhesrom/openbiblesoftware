@@ -267,7 +267,7 @@ impl UserStore {
     /// file reserved and not yet written, by number. An op file reserved before (a write that
     /// stopped half way) comes back with exactly the ops it had.
     pub fn reserve_op_files(&self) -> Result<Vec<ReservedOpFile>, StoreError> {
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         let device = read_device_id(&tx)?;
         let written: Option<i64> = tx
             .query_row(
@@ -328,7 +328,7 @@ impl UserStore {
     pub fn op_file_written(&self, seq: u64) -> Result<(), StoreError> {
         let seq = i64::try_from(seq)
             .map_err(|_| StoreError::Rejected(format!("op file number {seq}")))?;
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         let device = read_device_id(&tx)?;
         let (written, reserved): (Option<i64>, bool) = tx
             .query_row(

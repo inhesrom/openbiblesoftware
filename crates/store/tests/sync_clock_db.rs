@@ -11,7 +11,8 @@
 //! and marking only the next reserved file written. A second connection (the sync worker's,
 //! plan S29b) shares the clock: two connections writing at once on two threads hand out one
 //! increasing sequence, none twice, and a new id one takes is the other's next clock's; once
-//! its writes are refused (a restore is coming) it commits nothing.
+//! its writes are refused (a restore is coming) it commits nothing; and a write on the first
+//! waits only for the second's transaction running, not for each one after it.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(not(target_arch = "wasm32"))]
@@ -1118,4 +1119,41 @@ fn a_second_connection_writes_nothing_once_its_writes_are_refused() {
     assert_eq!(everything(&Connection::open(dir.db()).unwrap()), before);
     // The first connection writes as before.
     add_notebook(&ui, "From the UI");
+}
+
+#[test]
+fn a_write_on_the_first_connection_waits_only_for_the_transaction_running_on_the_second() {
+    let dir = Dir::new("write-turns");
+    let (ui, _) = UserStore::open(&dir.db()).unwrap();
+    let second = ui.second_connection().unwrap();
+    let busy = std::time::Duration::from_secs(2);
+    let worker = std::thread::spawn(move || {
+        // A merge: write transactions one after another, with no gap between them.
+        let sync = second.open().unwrap();
+        let start = std::time::Instant::now();
+        let mut n = 0;
+        while start.elapsed() < busy {
+            let batch: Vec<Change> = (0..50)
+                .map(|_| Change::insert(Row::Notebook(notebook(&new_id()))))
+                .collect();
+            sync.apply_changes(&batch).unwrap();
+            n += 1;
+        }
+        n
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let mut longest = std::time::Duration::ZERO;
+    for i in 0..20 {
+        let at = std::time::Instant::now();
+        add_notebook(&ui, &format!("UI {i}"));
+        longest = longest.max(at.elapsed());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let merged = worker.join().unwrap();
+    assert!(merged > 20, "the worker kept writing ({merged})");
+    // Waiting its turn behind every transaction would take the worker's whole 2 seconds.
+    assert!(
+        longest < std::time::Duration::from_millis(500),
+        "an edit waited {longest:?}"
+    );
 }

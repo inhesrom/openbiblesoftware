@@ -801,7 +801,7 @@ impl UserStore {
                 StoreError::Rejected("this User database is too old to merge".into()).into(),
             );
         }
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         let own = read_device_id(&tx)?;
         let recording = records_ops(&tx, &own)?;
         let mut m = self.merge_tx(&tx, own, recording)?;
@@ -985,7 +985,7 @@ impl UserStore {
                 StoreError::Rejected("this User database is too old to merge".into()).into(),
             );
         }
-        let tx = crate::user::write_tx(&self.conn)?;
+        let tx = self.write_tx()?;
         let own = read_device_id(&tx)?;
         if device == own {
             return Err(StoreError::Rejected(format!(
