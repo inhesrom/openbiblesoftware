@@ -60,7 +60,7 @@ to Claude Opus 5.5 later on".
 | S20 | Search (Bible + Notes, scopes, full syntax) | AFK | y | S14b | Search screen, index status | todo |
 | S21 | Passage Guide + Word Study (lighter), synced arrangement followed | AFK | y | S16 | Guide screens | todo |
 | S22 | Reading plans + optional local reminder | AFK | y | S14b | plans screens, `UNUserNotificationCenter` | todo |
-| S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | todo |
+| S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (branch mobile/s23-library-core, PR pending) |
 | S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | todo |
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | todo |
@@ -1630,6 +1630,53 @@ this in addition to its own lines):
   `cargo test -p obs-engine starter -- --ignored` after `cargo xtask starter`.
 - **Stop-and-ask:** the manifest merge changes a desktop-visible Starter library behaviour; a
   `MANIFEST_FORMAT` selection rule is missing upstream and #333's wording is ambiguous for it.
+- **Outcome (2026-11-22, branch `mobile/s23-library-core`, on S13):**
+  - **Decisions (supervisor, at both stop-and-asks).** (1) The merge would have changed one
+    desktop path: Help → All commands lists "Check the released Starter library"
+    (`starter.check`), which with a bundle fetches the released manifest and today has no
+    effect on the rows. So the merge sits behind a switch only `obs-mobile` sets,
+    `StarterLibrary::set_released_leads(true)`; off, the desktop keeps its either/or byte for
+    byte (a test runs `starter.check` with a bundle and finds the rows, Add back and
+    revisions unchanged). (2) No `MANIFEST_FORMAT` selection existed (`StarterManifest::parse`
+    refused another format), and #333 does not say how to find "the release its format
+    version matches": under the same switch, a format mismatch reads GitHub's releases list
+    (`updates::RELEASES_API`, `parse_releases`), newest first, drafts and pre-releases
+    skipped, at most 20, stopping at the first older format, and pins that release's
+    `releases/download/<tag>/` for its `.obr` files; none: an "update the app" state. The
+    desktop keeps today's refusal.
+  - **Shipped.** Engine: the merge (`manifest()` = released items, then the bundle's the
+    release lacks; the bundle installs only what it holds at the same revision and sha256,
+    the rest downloads), `select_release`/`ReleasedManifest`, `files_base`,
+    `needs_app_update`, `MobileSet` and `starter_wanted_set`, `add_starter_from_files`,
+    `install_open_file` (`ImportSource::OpenDownloaded`, no report Tab), and
+    `library_storage` (`.obr` + Search index + alias bytes per Resource; `space_needed` =
+    2.5 × the size, `fits`). Downloaded files are deleted once read. `obs-mobile` `library`:
+    the Starter library and Open catalogue views (sizes, licences, features, sets as
+    strings), `plan_starter_download`/`plan_open_download` with the free-space and
+    Wi-Fi-only / ask-first-over-cellular rules, the per-Resource states
+    `Queued → Downloading → Verifying → Installing → Indexing → Done | Failed{retry}`,
+    `install_downloaded`, `cancel_download` (deletes the file), the banner text,
+    `remove_resource` (asks first; Removed stays removed), `storage`, and
+    `Changed::Downloads`. `obs-ffi`: the foreign `Transport` trait as the engine's `Fetch`
+    (`set_transport`), every Record and method. `docs/dev/mobile-library.md`.
+  - **Measured** (release build, this Mac): over `dist/starter`, TBESG through the release
+    path after the real Bundled set 0.3 s; the whole Study set (15 Resources, 136.6 MB)
+    through the states 0.13 s to install, its Search indexes by 3.3 s; 19 Resources in the
+    library, 22 rows; Storage 226.4 MB. The simulator staticlib is 28.0 MB.
+  - **Decided here, for S24/S25 to revisit:** a Resource a reader shows is not removed (the
+    engine's Remove closes its Tab, which would leave the reader without one); the error
+    asks to show another Resource first. `install_downloaded` checks and copies a Starter
+    file while holding the core's lock (Swift calls it off the main thread). `downloads/` is
+    not in `backup_excluded()` (files there are deleted once installed); S25 may add it.
+  - **Follow-up (a desktop ticket, not a step):** let the desktop's released manifest lead
+    too, so "Check the released Starter library" with a bundle shows newer released
+    revisions as Update (today it is a no-op with a bundle).
+  - Checks: `cargo xtask ci` green; `cargo xtask gallery` unchanged; `cargo xtask ios build
+    --sim-only` and an `xcodebuild build` of the app for the simulator succeed (Swift
+    unchanged: its `Changed` switch has a `default`); `cargo test -p obs-engine starter --
+    --ignored`, `cargo test -p obs-mobile -- --ignored` and `cargo test -p obs-ffi --test
+    mobile_app -- --ignored` pass over `dist/starter`. No later step's assumption proved
+    wrong.
 
 #### S24 — iOS downloads and Library screens
 
