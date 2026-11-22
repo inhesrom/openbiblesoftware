@@ -67,12 +67,14 @@ fn everything(c: &Connection) -> Tables {
         .map(|t| {
             // `tombstone.covers` (schema 15), `tombstone.row` with its `row_covers` and
             // `row_clock`, and `annotations.conflict_of` (16) are `NULL` on every row written
-            // before them; the migration tests below check that on their own.
+            // before them, and `device.restore_choice` (17) is 0; the migration tests below
+            // check that on their own.
             let columns = strings(
                 c,
                 &format!(
                     "SELECT name FROM pragma_table_info('{t}')
-                     WHERE name NOT IN ('covers', 'row', 'row_covers', 'row_clock', 'conflict_of')"
+                     WHERE name NOT IN ('covers', 'row', 'row_covers', 'row_clock', 'conflict_of',
+                                        'restore_choice')"
                 ),
             );
             let list = columns
@@ -162,7 +164,7 @@ fn v13_fixture(path: &Path) {
 }
 
 #[test]
-fn migrations_14_to_16_keep_every_row_of_a_v13_database_and_copy_it_first() {
+fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
     let dir = Dir::new("v13");
     v13_fixture(&dir.db());
     let before = everything(&Connection::open(dir.db()).unwrap());
@@ -176,7 +178,7 @@ fn migrations_14_to_16_keep_every_row_of_a_v13_database_and_copy_it_first() {
 
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 13);
-    assert_eq!(USER_SCHEMA_VERSION, 16);
+    assert_eq!(USER_SCHEMA_VERSION, 17);
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let copy = report.migration_backup.unwrap();
     assert!(copy.to_string_lossy().contains(".v13-"));
@@ -187,7 +189,7 @@ fn migrations_14_to_16_keep_every_row_of_a_v13_database_and_copy_it_first() {
     for (table, rows) in &before {
         assert_eq!(&after[table], rows, "{table}");
     }
-    for table in ["item_clock", "op_outbox", "sync_held"] {
+    for table in ["item_clock", "op_outbox", "sync_held", "former_device"] {
         assert_eq!(after[table], Vec::<String>::new(), "{table}");
     }
     // A tombstone from before schema 15 covers up to its own clock (`NULL`).
@@ -200,8 +202,30 @@ fn migrations_14_to_16_keep_every_row_of_a_v13_database_and_copy_it_first() {
     );
 }
 
+/// A restored database holds every table of the Backup as it was (`held`), but for what ADR
+/// 0022 rule 7 changes (S28c): the device has a new id, the Backup's among its former ones,
+/// and the outbox (ops under the old id) is empty.
+fn assert_restored_as_held(db: &UserStore, held: &Tables) {
+    let restored = everything(&Connection::open(db.path()).unwrap());
+    for (table, rows) in held {
+        if ["device", "op_outbox", "former_device"].contains(&table.as_str()) {
+            continue;
+        }
+        assert_eq!(&restored[table], rows, "{table}");
+    }
+    assert_eq!(restored["op_outbox"], Vec::<String>::new());
+    let ids = db.own_device_ids().unwrap();
+    for row in held.get("device").into_iter().flatten() {
+        assert!(!row.contains(&ids[0]), "a restore gives the device a new id");
+        assert!(
+            ids[1..].iter().any(|id| row.contains(id.as_str())),
+            "the Backup's id is a former one: {ids:?} {row}"
+        );
+    }
+}
+
 #[test]
-fn a_v13_backup_restores_into_16_losing_nothing() {
+fn a_v13_backup_restores_into_17_losing_nothing() {
     let dir = Dir::new("v13-backup");
     let old = dir.0.join("old").join("user.db");
     v13_fixture(&old);
@@ -216,17 +240,14 @@ fn a_v13_backup_restores_into_16_losing_nothing() {
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
     db.restore(&backup).unwrap();
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    let restored = everything(&Connection::open(db.path()).unwrap());
-    for (table, rows) in &held {
-        assert_eq!(&restored[table], rows, "{table}");
-    }
+    assert_restored_as_held(&db, &held);
     // Restored, it writes clocks.
     let clock = add_notebook(&db, "After");
     assert_eq!(clock.device_id, db.device_id().unwrap());
 }
 
 #[test]
-fn a_backup_carries_the_item_clocks_and_the_outbox() {
+fn a_backup_carries_the_item_clocks_and_the_outbox_which_a_restore_empties() {
     let dir = Dir::new("carry");
     let first = dir.0.join("first").join("user.db");
     let (a, _) = UserStore::open(&first).unwrap();
@@ -244,17 +265,25 @@ fn a_backup_carries_the_item_clocks_and_the_outbox() {
     assert_eq!(held["op_outbox"].len(), 2);
 
     let (mut b, _) = UserStore::open(&dir.db()).unwrap();
+    let b_id = b.device_id().unwrap();
     b.restore(&backup).unwrap();
     let restored = everything(&Connection::open(b.path()).unwrap());
-    for table in [
-        "item_clock",
-        "op_outbox",
-        "tombstone",
-        "applied_up_to",
-        "device",
-    ] {
+    for table in ["item_clock", "tombstone", "applied_up_to"] {
         assert_eq!(restored[table], held[table], "{table}");
     }
+    // ADR 0022 rule 7: a new id, the Backup's (A's) and the one B had before kept as its
+    // former ones; the outbox's ops were A's, and what they changed is in the rows.
+    assert_eq!(restored["op_outbox"], Vec::<String>::new());
+    let ids = b.own_device_ids().unwrap();
+    let a_id = a.device_id().unwrap();
+    assert!(ids[0] != a_id && ids[0] != b_id);
+    let mut former = ids[1..].to_vec();
+    former.sort();
+    let mut expected = vec![a_id, b_id];
+    expected.sort();
+    assert_eq!(former, expected);
+    assert!(!b.records_ops().unwrap(), "the new id has not joined");
+    assert!(!b.restore_choice_pending().unwrap(), "B was not syncing");
 }
 
 /// `(row_id, position)` of every item clock and `(row_id, covers)` of every tombstone, with
@@ -463,10 +492,7 @@ fn a_v15_backup_restores_with_no_conflicts_no_kept_rows_and_nothing_held() {
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
     db.restore(&backup).unwrap();
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    let restored = everything(&Connection::open(db.path()).unwrap());
-    for (table, rows) in &held {
-        assert_eq!(&restored[table], rows, "{table}");
-    }
+    assert_restored_as_held(&db, &held);
     let columns = schema_16_columns(&Connection::open(db.path()).unwrap());
     assert!(
         columns.iter().all(|r| r.ends_with("=NULL")),

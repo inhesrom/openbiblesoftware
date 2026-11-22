@@ -194,7 +194,11 @@ impl UserStore {
     /// file being written, and return its path. A file already there is never touched, and
     /// a name that is this database or SQLite's files beside it is skipped, so removing the
     /// scratch file afterwards can only remove what this call created.
-    fn new_scratch_file(&self, base: &Path, extension: &str) -> Result<PathBuf, StoreError> {
+    pub(crate) fn new_scratch_file(
+        &self,
+        base: &Path,
+        extension: &str,
+    ) -> Result<PathBuf, StoreError> {
         let base = base.as_os_str().to_string_lossy().into_owned();
         let mut last = None;
         for n in 0..1000u32 {
@@ -237,7 +241,8 @@ impl UserStore {
     /// Replace everything in this database with `backup`, a Backup [`UserStore::open_backup`]
     /// read into memory. The file it was read from is not read again, so what is restored is
     /// the copy the caller checked, whatever has happened to the file since (#258). A Safety
-    /// backup of the database as it was is taken first; its path is returned.
+    /// backup of the database as it was is taken first; its path is returned. The restored
+    /// database gets a new Synced device id (ADR 0022 rule 7, `sync_device.rs`).
     pub fn restore_from(&mut self, backup: &UserStore) -> Result<PathBuf, StoreError> {
         let page_size = |c: &Connection| -> Result<i64, StoreError> {
             c.query_row("PRAGMA page_size", [], |r| r.get(0))
@@ -269,10 +274,18 @@ impl UserStore {
             Some((c, file))
         };
         let source = rebuilt.as_ref().map_or(&backup.conn, |(c, _)| c);
+        let syncing = self.syncs()?;
+        let live_id = crate::sync_clock::read_device_id(&self.conn)?;
         let safety = self.safety_backup()?;
         rusqlite::backup::Backup::new(source, &mut self.conn)
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
             .map_err(sql)?;
+        // ADR 0022 rule 7: a restored device is a new Synced device. The Backup's id and the
+        // id it had are its former ones; on a device that was syncing, the restore waits for
+        // the user to choose to catch up or replace (`sync_device.rs`).
+        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        crate::sync_device::renew_device_id(&tx, &[live_id], syncing)?;
+        tx.commit().map_err(sql)?;
         self.reseed_clock();
         Ok(safety)
     }
@@ -399,7 +412,7 @@ impl UserStore {
 
 /// A file [`UserStore::new_scratch_file`] created, removed when dropped however the work on
 /// it ended, so an error part way never leaves it behind.
-struct ScratchFile(PathBuf);
+pub(crate) struct ScratchFile(pub(crate) PathBuf);
 
 impl Drop for ScratchFile {
     fn drop(&mut self) {

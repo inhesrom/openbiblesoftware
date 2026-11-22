@@ -41,7 +41,11 @@ mod search_index;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
+mod snapshot_store;
+#[cfg(not(target_arch = "wasm32"))]
 mod sync_clock;
+#[cfg(not(target_arch = "wasm32"))]
+mod sync_device;
 #[cfg(not(target_arch = "wasm32"))]
 mod sync_schema;
 pub mod synced;
@@ -80,6 +84,11 @@ pub use search_index::damage_search_index;
 pub use search_index::{
     IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
     copy_search_index_as, remove_search_indexes, search_index_files, write_search_index,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use snapshot_store::{
+    SNAPSHOT_EMPTIED, SnapshotContents, SnapshotListBase, SnapshotRow, SnapshotTombstone,
+    row_key_of,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use sync_clock::{OutboxOp, ReservedOpFile};

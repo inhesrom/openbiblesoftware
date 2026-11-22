@@ -540,7 +540,7 @@ fn conflict_copy(
     let Content::Note { body: mine } = &ours.content else {
         return Ok(None);
     };
-    if lost.device_id != tx.device_id() {
+    if !tx.is_own(&lost.device_id) {
         return Ok(None);
     }
     let note_text = |row: Option<&Row>| match row {
@@ -585,7 +585,7 @@ fn own_unseen_item<'s>(
     else {
         return None;
     };
-    if state.clock.as_ref()?.device_id != tx.device_id() {
+    if !tx.is_own(&state.clock.as_ref()?.device_id) {
         return None;
     }
     let unseen = match &op.before {
@@ -853,7 +853,7 @@ fn settle_default(
     let own = tx
         .state(&RowKey::Notebook(default.id.clone()))?
         .clock
-        .is_none_or(|c| c.device_id == tx.device_id());
+        .is_none_or(|c| tx.is_own(&c.device_id));
     let change = |after: &Notebook| {
         Change::update(Row::Notebook(default.clone()), Row::Notebook(after.clone()))
     };

@@ -10,7 +10,9 @@
 //! `apply_changes` stamps every row, item and tombstone it writes with a hybrid logical clock
 //! (`hlc.rs`, `sync_clock.rs`). Migration 14 → 15 adds what each tombstone's delete covers, so
 //! the merge (`merge_store.rs`) lets an edit the delete did not see bring the row back;
-//! 15 → 16 adds Sync conflicts' copies, deleted parents' rows and the ops held back.
+//! 15 → 16 adds Sync conflicts' copies, deleted parents' rows and the ops held back; 16 → 17
+//! the ids this database had before (a restore or a copy gives it a new one, rule 7) and the
+//! choice a restore on a syncing device waits for.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -256,6 +258,23 @@ CREATE TABLE sync_held (
     change    TEXT NOT NULL,
     PRIMARY KEY (row_table, row_id, clock)
 );
+";
+
+/// Migration 16 → 17 (ADR 0022 rule 7, S28c).
+///
+/// - `former_device`: the Synced device ids this database had before its own: restoring a
+///   Backup gives the device a new id, and so does finding op files under its id that it did
+///   not write (a copied database). The Backup's id and the id before the restore (or the
+///   copy's) go here, and the merge counts a clock naming any of them as this device's own
+///   (a Sync conflict's copy, a list item renamed or kept, a default Notebook's demotion), so
+///   a text written under the old id is not lost to a remote edit that never saw it.
+/// - `device.restore_choice`: 1 after a Backup was restored on a device that was syncing,
+///   until the user chooses to catch up with the Sync folder or replace it (`0` otherwise).
+pub(crate) const SCHEMA_17: &str = "
+CREATE TABLE former_device (
+    device_id TEXT PRIMARY KEY
+);
+ALTER TABLE device ADD COLUMN restore_choice INTEGER NOT NULL DEFAULT 0;
 ";
 
 /// Migration 12 → 13, after [`SCHEMA_13`]: this device's id.

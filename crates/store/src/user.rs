@@ -23,7 +23,7 @@ use crate::synced_store;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 16;
+pub const USER_SCHEMA_VERSION: u32 = 17;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -69,6 +69,9 @@ const MIGRATIONS: &[&str] = &[
     // 15 → 16: Sync conflicts' copies, the rows of deleted parents and the ops held back
     // (ADR 0022 rule 3, S28b-2).
     crate::sync_schema::SCHEMA_16,
+    // 16 → 17: the device ids this database had before, and a restore's pending choice
+    // (ADR 0022 rule 7, S28c).
+    crate::sync_schema::SCHEMA_17,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
