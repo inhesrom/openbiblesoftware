@@ -70,6 +70,12 @@ fn commands_of(kind: SettingKind) -> Vec<&'static str> {
             "keys.reset_all",
         ],
         SettingKind::LibraryFolder => vec![],
+        SettingKind::Sync => vec![
+            "sync.choose_folder",
+            "sync.now",
+            "sync.stop",
+            "sync.device_name",
+        ],
     }
 }
 
@@ -323,7 +329,7 @@ pub(crate) fn change(s: &mut Session, id: &str) {
             "keys.set",
             &json!({ "command": "view.text_larger", "key": "Ctrl+Up" }),
         )),
-        SettingKind::LibraryFolder | SettingKind::Action { .. } => {}
+        SettingKind::LibraryFolder | SettingKind::Action { .. } | SettingKind::Sync => {}
     }
 }
 

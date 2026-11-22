@@ -719,6 +719,12 @@ fn reachable(folder: &std::path::Path) -> Result<crate::sync::FsSyncFolder, crat
 
 // ------------------------------------------------------------------------------ commands
 
+/// Whether Help → Keyboard shortcuts lists command `id`: Sync now only once this device
+/// syncs, so a desktop without a Sync folder shows nothing of Sync (plan S29).
+pub(crate) fn shown_on_keys(s: &Session, id: &str) -> bool {
+    id != "sync.now" || s.sync.folder.is_some()
+}
+
 fn has_folder(s: &Session) -> bool {
     s.user.is_some() && s.sync.folder.is_some()
 }
@@ -777,9 +783,18 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         id: "sync.stop",
         label: texts::STOP_SYNCING,
         shortcut: None,
-        params: &[],
+        // Settings → Sync asks first; no key or Command box entry stops it unasked.
+        params: &[ParamSpec {
+            name: "confirm",
+            kind: ParamKind::Boolean,
+            required: true,
+            help: "true: the user confirmed",
+        }],
         enabled: has_folder,
-        run: |s, _| {
+        run: |s, p| {
+            if p.bool("confirm") != Some(true) {
+                return Err(failed("sync.stop", "Stop syncing asks first"));
+            }
             s.stop_syncing().map_err(|e| failed("sync.stop", e))?;
             Ok(Value::Null)
         },

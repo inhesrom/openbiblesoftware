@@ -171,6 +171,9 @@ fn search_finds_every_setting() {
                 .unwrap()
                 .label
                 .to_string(),
+            // Sync's row is under its section's title, which names it: before a folder is
+            // chosen, its button (plan S29).
+            SettingKind::Sync => obs_engine::sync::texts::CHOOSE_FOLDER.to_string(),
             _ => setting.label.to_string(),
         };
         assert!(

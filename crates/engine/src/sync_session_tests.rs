@@ -118,6 +118,10 @@ fn without_a_sync_folder_nothing_syncs_and_nothing_shows() {
     assert_eq!(panel.folder, None);
     assert!(panel.devices.is_empty());
     assert!(!s.is_enabled("sync.now") && !s.is_enabled("sync.stop"));
+    assert!(
+        !(s.key_bindings().iter()).any(|b| b.id.starts_with("sync.")),
+        "Help → Keyboard shortcuts lists nothing of Sync"
+    );
     assert!(!store(&s).records_ops().unwrap(), "nothing is recorded for a Sync folder");
     assert!(std::fs::read_dir(dir.folder()).unwrap().next().is_none());
     // A restore leaves it so.
@@ -160,6 +164,11 @@ fn two_sessions_converge_through_one_folder_and_list_each_other() {
         ]
     );
     assert!(panel.devices[0].this_device && !panel.devices[1].this_device);
+    let keys: Vec<&str> = (a.key_bindings().iter())
+        .map(|b| b.id)
+        .filter(|id| id.starts_with("sync."))
+        .collect();
+    assert_eq!(keys, ["sync.now"], "Sync now can have a key once this device syncs");
     let indicator = a.sync_indicator(now()).unwrap();
     assert_eq!(indicator.text, "Last synced just now");
     assert!(!indicator.warn);
@@ -268,7 +277,7 @@ fn a_restore_never_takes_the_backups_sync_folder() {
     sync(&mut a);
     let backup = dir.0.join("a.obsbackup");
     back_up(&mut a, &backup);
-    a.run("sync.stop", &json!({})).unwrap();
+    a.run("sync.stop", &json!({ "confirm": true })).unwrap();
     restore(&mut a, &backup);
     assert_eq!(a.sync_folder(), None, "this device stopped syncing; the Backup does not restart it");
     assert!(!a.sync_restore_pending());
@@ -283,7 +292,7 @@ fn stop_syncing_records_nothing_more_and_choosing_again_joins_as_a_new_device() 
     let old = store(&a).device_id().unwrap();
     a.create_notebook("Waiting").unwrap();
     assert!(store(&a).has_pending_ops().unwrap());
-    a.run("sync.stop", &json!({})).unwrap();
+    a.run("sync.stop", &json!({ "confirm": true })).unwrap();
     assert_eq!(a.sync_folder(), None);
     assert_eq!(a.sync_indicator(now()), None);
     assert_ne!(store(&a).device_id().unwrap(), old);
