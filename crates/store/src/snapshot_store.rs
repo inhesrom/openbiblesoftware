@@ -543,27 +543,12 @@ impl UserStore {
         Ok(seq.map(|s| u64::try_from(s).unwrap_or_default()))
     }
 
-    /// The rows the outbox holds ops of (their tombstone names), not yet in an op file of the
-    /// Sync folder.
-    pub fn outbox_rows(&self) -> Result<Vec<(String, String)>, StoreError> {
-        let changes = texts(&self.conn, "SELECT change FROM op_outbox ORDER BY id")?;
-        let mut out = Vec::new();
-        for change in changes {
-            let value: serde_json::Value = serde_json::from_str(&change)
-                .map_err(|e| StoreError::Corrupt(format!("outbox change: {e}")))?;
-            for side in ["after", "before"] {
-                if let Some(row) = value.get(side).filter(|v| !v.is_null()) {
-                    let row: Row = serde_json::from_value(row.clone())
-                        .map_err(|e| StoreError::Corrupt(format!("outbox change: {e}")))?;
-                    let (kind, id) = row.key().tombstone();
-                    out.push((kind.to_string(), id));
-                    break;
-                }
-            }
-        }
-        out.sort();
-        out.dedup();
-        Ok(out)
+    /// Whether the outbox holds ops not yet in an op file of the Sync folder (a snapshot is
+    /// written only when it holds none, so it covers exactly the own op files written).
+    pub fn has_pending_ops(&self) -> Result<bool, StoreError> {
+        self.conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM op_outbox)", [], |r| r.get(0))
+            .map_err(sql)
     }
 
     /// Start syncing (ADR 0022 rule 5, the join): every row of Synced data with no clock yet

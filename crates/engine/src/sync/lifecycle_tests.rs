@@ -428,7 +428,7 @@ fn a_newer_snapshot_or_folder_is_left_alone_and_asks_for_an_update() {
     );
     folder.put(&newer, &bytes);
     let report = sync(&b, &folder);
-    assert_eq!(report.merge.needs_newer_app(), [a_id.clone()]);
+    assert_eq!(report.merge.needs_newer_app(), std::slice::from_ref(&a_id));
     assert_eq!(folder.get(&newer).unwrap(), bytes, "left alone");
     assert!(
         !report.written.is_empty() || b.records_ops().unwrap(),

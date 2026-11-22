@@ -178,7 +178,7 @@ pub fn sync_now(
         report.snapshot = Some(write_snapshot(user, folder)?);
     }
     report.merge = merge_folder(user, folder)?;
-    if !user.outbox_rows()?.is_empty() {
+    if user.has_pending_ops()? {
         report.written.extend(write_pending_ops(user, folder)?);
     }
     if snapshot_due(user, folder, &options.policy, now)? {

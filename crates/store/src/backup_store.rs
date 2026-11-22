@@ -514,11 +514,14 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// One object of a User database's schema: its type, its name and (a table's) its columns.
+type SchemaObject = (String, String, Vec<String>);
+
 /// Every table, column, index and trigger of a database freshly migrated to this build's
 /// version: `(type, name, columns)`, the columns of a table only. Made once per process (it
 /// is the same every time), since restores and snapshots check against it often (S28c).
-fn reference_schema() -> Result<&'static [(String, String, Vec<String>)], String> {
-    static SCHEMA: std::sync::OnceLock<Result<Vec<(String, String, Vec<String>)>, String>> =
+fn reference_schema() -> Result<&'static [SchemaObject], String> {
+    static SCHEMA: std::sync::OnceLock<Result<Vec<SchemaObject>, String>> =
         std::sync::OnceLock::new();
     let made = SCHEMA.get_or_init(|| {
         let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;

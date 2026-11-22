@@ -125,7 +125,7 @@ pub fn snapshot_file(user: &UserStore) -> Result<SnapshotFile, SyncError> {
     if !user.records_ops()? {
         return Err(StoreError::Rejected("this device does not record ops".into()).into());
     }
-    if !user.outbox_rows()?.is_empty() {
+    if user.has_pending_ops()? {
         return Err(StoreError::Rejected(
             "a snapshot is written only once every op is in an op file".into(),
         )
@@ -398,7 +398,7 @@ pub fn snapshot_due(
     now_ms: i64,
 ) -> Result<bool, SyncError> {
     let device = user.device_id()?;
-    if !user.records_ops()? || !user.outbox_rows()?.is_empty() {
+    if !user.records_ops()? || user.has_pending_ops()? {
         return Ok(false);
     }
     let written = user.applied_up_to(&device)?;

@@ -99,7 +99,7 @@ fn a_snapshot_never_holds_what_stays_on_the_device() {
         .unwrap();
     // A snapshot of this outbox would cover ops no op file has yet; the engine writes them
     // first (`write_pending_ops`), as here.
-    assert!(!user.outbox_rows().unwrap().is_empty());
+    assert!(user.has_pending_ops().unwrap());
     for file in user.reserve_op_files().unwrap() {
         user.op_file_written(file.seq).unwrap();
     }
