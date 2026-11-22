@@ -454,19 +454,23 @@ impl MergeTx<'_> {
     /// replaces itself). Of a row's held writes only the newest is kept: it supersedes the
     /// older by last writer wins once it applies, so a row a later app keeps writing holds one
     /// op, not one per write. A held delete is always kept (it notes its tombstone when it
-    /// applies), and so is a write whose op line lacked fields (the older write may hold them).
+    /// applies), and so is a write whose op line lacked fields (the older write may hold them),
+    /// and so is this device's own write (by any of its ids): applied before the newer one, in
+    /// clock order, it is what the newer replaces, so the own checks keep it (D6's "Name (2)";
+    /// a list item held while its list was damaged was lost when the newer dropped it).
     pub fn hold(&mut self, op: &HeldOp) -> Result<(), StoreError> {
         let (kind, id) = held_key(&op.change);
         if op.change.after.is_some() && op.absent.is_empty() {
+            let own = self.is_own(&op.clock.device_id);
             for other in read_held_of(self.tx, kind, &id)? {
                 if other.change.after.is_none() || other.clock == op.clock {
                     continue;
                 }
                 if other.clock > op.clock {
-                    if other.absent.is_empty() {
+                    if other.absent.is_empty() && !own {
                         return Ok(());
                     }
-                } else {
+                } else if !self.is_own(&other.clock.device_id) {
                     self.unhold(&other)?;
                 }
             }

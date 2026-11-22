@@ -1637,6 +1637,85 @@ fn an_item_written_after_a_whole_value_goes_on_top_of_it_in_any_arrival_order() 
     converged(&[&p, &q, &r]);
 }
 
+/// The merge property test's seed 20266453, shrunk: A adds "Read" at a; P, its clock behind,
+/// wrote the Collections damaged at p1 and in shape at p2 (both before a); C adds its own
+/// "Read" at c, after a. A meets P's damaged value (its own "Read" is held), then C's
+/// "Read" (held too), then P's value in shape: both apply in clock order, and A, whose own
+/// item lost to C's, keeps it as "Read (2)" (D6), on every device. Before the fix the hold of
+/// C's "Read" dropped A's held one (only a row's newest held write was kept), and A's item was
+/// lost everywhere.
+#[test]
+fn an_own_list_item_held_while_its_list_is_damaged_survives_a_later_item_of_its_name() {
+    let dir = Dir::new("held-own-item");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    Device::settle(&[&a, &b], &cloud);
+    let key = "library.collections";
+    a.user
+        .set_preference(key, r#"[{"name":"Read","n":5}]"#)
+        .unwrap();
+    a.push(&cloud);
+    let at = a.clock(&RowKey::Collection("Read".into())).unwrap();
+    let (p, c) = (new_id(), new_id());
+    let clock = |device: &str, wall_ms: u64| Hlc {
+        wall_ms,
+        counter: 0,
+        device_id: device.into(),
+    };
+    let whole = |device: &str, wall_ms: u64, value: &str| Op {
+        device: device.into(),
+        clock: clock(device, wall_ms),
+        before: None,
+        after: Some(Row::Preference(obs_store::SyncedPreference {
+            key: key.into(),
+            value: value.into(),
+        })),
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    cloud.put(
+        &op_file_path(&p, 1),
+        &encode_op_file(&[whole(&p, at.wall_ms - 2, "not a list")]).unwrap(),
+    );
+    cloud.put(
+        &op_file_path(&p, 2),
+        &encode_op_file(&[whole(&p, at.wall_ms - 1, r#"[{"name":"Other"}]"#)]).unwrap(),
+    );
+    let theirs = Op {
+        device: c.clone(),
+        clock: clock(&c, at.wall_ms + 1_000),
+        before: None,
+        after: Some(Row::Collection(obs_store::SyncedListItem {
+            name: "Read".into(),
+            position: 0,
+            json: r#"{"n":7,"name":"Read"}"#.into(),
+        })),
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    cloud.put(&op_file_path(&c, 1), &encode_op_file(&[theirs]).unwrap());
+    for d in [&a, &b] {
+        meet(&d.user, &p);
+        meet(&d.user, &c);
+    }
+    merge_folder(&a.user, &view(&cloud, &[(p.as_str(), 1)])).unwrap();
+    merge_folder(&a.user, &view(&cloud, &[(p.as_str(), 1), (c.as_str(), 1)])).unwrap();
+    assert_eq!(
+        a.user.sync_held().unwrap().len(),
+        2,
+        "A's own Read and C's, both held"
+    );
+    let report = merge_folder(&a.user, &cloud).unwrap();
+    assert_eq!(report.recorded.items_renamed, 1, "{report:?}");
+    Device::settle(&[&a, &b], &cloud);
+    let both = r#"[{"name":"Other"},{"n":7,"name":"Read"},{"name":"Read (2)","n":5}]"#;
+    for d in [&a, &b] {
+        assert_eq!(d.user.preference(key).unwrap().as_deref(), Some(both));
+        assert!(d.user.sync_held().unwrap().is_empty());
+    }
+    converged(&[&a, &b]);
+}
+
 #[test]
 fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
     let dir = Dir::new("held");
