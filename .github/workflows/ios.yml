@@ -211,10 +211,11 @@ jobs:
           # CARGO, CARGO_HOME and RUSTUP_HOME say otherwise; this runner installs Rust elsewhere.
           CARGO="$(command -v cargo)"
           export CARGO
-          export CARGO_HOME="${CARGO_HOME:-$(dirname "$(dirname "$CARGO")")}"
+          # CARGO_HOME stays the default (~/.cargo, the registry the earlier steps filled) unless
+          # the job sets it; it is not derived from cargo's path (rustup here is Homebrew's).
           RUSTUP_HOME="${RUSTUP_HOME:-$(rustup show home 2>/dev/null || true)}"
           [ -n "$RUSTUP_HOME" ] && export RUSTUP_HOME
-          echo "cargo for the run-script phase: $CARGO (CARGO_HOME=$CARGO_HOME RUSTUP_HOME=${RUSTUP_HOME:-unset})"
+          echo "cargo for the run-script phase: $CARGO (CARGO_HOME=${CARGO_HOME:-default} RUSTUP_HOME=${RUSTUP_HOME:-unset})"
           study="$GITHUB_WORKSPACE/dist/starter"
           ids=$(jq -r '.resources[] | select(.mobile_set == "study") | .resource_id' \
             "$study/starter-manifest.json" 2>/dev/null || true)
