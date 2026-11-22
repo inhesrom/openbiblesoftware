@@ -64,12 +64,15 @@ steps add methods (the Study sheet, Annotations, Search, Guides, the Library).
     sets the Text size for UIKit's content size category for the run (the system keeps the
     choice; `tokens::DYNAMIC_TYPE`, 12–40 pt, Large = 20 pt); `parallel_resources(reader)`.
     Whether an explicit Text size outlives Dynamic Type is S14b's Settings decision.
+  - `library`: Library → Starter library, the Open catalogue, the downloads and their
+    states, Remove and Add back, Storage ([mobile-library](mobile-library.md)). `boot` sets
+    the engine's released-leads switch before `sync_starter_library`.
   - `events`: `pump()` lets the engine route finished jobs (`Session::poll_imports`, the
     job queue's one reader), applies the Workspace's effects to the readers, records
-    History and returns each `Changed` once (`Library`, `Reader(id)`, `History`,
-    `Message`); `busy()` says jobs are running. Effects that place Tabs in Panels or open
-    desktop windows and menus come from commands the Mobile app never runs and are dropped
-    (the module docs list which mean something).
+    History, moves the downloads on and returns each `Changed` once (`Library`, `Reader(id)`,
+    `History`, `Message`, `Downloads`); `busy()` says jobs are running. Effects that place
+    Tabs in Panels or open desktop windows and menus come from commands the Mobile app never
+    runs and are dropped (the module docs list which mean something).
 - **`obs-ffi`** (`apps/obs-ffi`, an app). The one UniFFI crate Swift links, in proc-macro
   mode (`uniffi::setup_scaffolding!()`, `#[uniffi::export]`, no UDL). Its crate types are
   `staticlib` (iOS), `cdylib` (the host library bindgen reads) and `lib` (Rust tests). It
@@ -84,7 +87,9 @@ steps add methods (the Study sheet, Annotations, Search, Guides, the Library).
   channel that every changing call signals, else 50 ms while jobs run and 1 s otherwise,
   locks, calls `pump()`, unlocks, then calls the Swift `Observer.changed` for each change;
   it never reads the job queue's events, and stops when the app or its observer goes.
-  `poll_changed()` is the same poll by hand. Its `uniffi.toml` names the Swift module
+  `poll_changed()` is the same poll by hand. `set_transport(Transport)` takes the shell's
+  foreign `Transport { get(url) -> bytes }` for small JSON and hands it to the engine as its
+  `Fetch` (`src/library.rs`, [mobile-library](mobile-library.md)). Its `uniffi.toml` names the Swift module
   `ObsFFI`, so the bindings are `ObsFFI.swift`, with `ObsFFIFFI.h` and
   `ObsFFIFFI.modulemap` for UniFFI's C module `ObsFFIFFI`.
 - **Tile pixels: the bulk byte path.** UniFFI 0.32 lowers a `Vec<u8>` one byte at a time

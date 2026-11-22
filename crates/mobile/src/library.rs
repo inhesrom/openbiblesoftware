@@ -412,6 +412,13 @@ impl MobileApp {
                     .ok_or_else(|| {
                         MobileError::Failed(format!("{id} is not part of the Starter library"))
                     })?;
+                // In the library at the offered revision: nothing to do.
+                if matches!(
+                    self.session.starter_status(&item),
+                    StarterStatus::InLibrary | StarterStatus::Adding
+                ) {
+                    return Ok(DownloadPlan::Nothing);
+                }
                 vec![item]
             }
         };

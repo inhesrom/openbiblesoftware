@@ -261,6 +261,12 @@ fn library_study_set_downloads_through_the_states_and_installs() {
     assert_eq!(app.starter_library().study_set.resources, 0);
     assert_eq!(app.starter_library().rows.len(), 7);
     assert_eq!(app.download_banner(), None);
+    // A Resource already in the library at the offered revision is not downloaded again.
+    assert_eq!(
+        app.plan_starter_download(&StarterChoice::One("tbesg".into()), WIFI, false, PLENTY)
+            .unwrap(),
+        DownloadPlan::Nothing
+    );
     std::fs::remove_dir_all(&root).unwrap();
 }
 
