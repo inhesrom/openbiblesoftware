@@ -87,6 +87,9 @@ fn a_usfm_zip_imports_with_its_report_and_the_copy_is_deleted() {
         !dest.exists() && !dest.parent().unwrap().exists(),
         "copy deleted"
     );
+    // Its final report seen, the pump no longer builds it.
+    assert!(app.picked.iter().all(|p| p.settled), "settled");
+    assert!(!app.pump().contains(&Changed::Imports));
     // The report opens the new Bible in the reader.
     let reader = app.open(ReaderId(0), &id, None).unwrap();
     assert_eq!(reader.resource_id, id);
@@ -108,7 +111,9 @@ fn a_sword_module_zip_imports_and_a_usfm_file_beside_it_is_named_in_the_report()
         .unwrap();
     assert_eq!(resource.resource_type, ResourceType::Bible);
     assert!(section(&view, "Summary").lines[1].contains("sword"));
-    assert!(!section(&view, "Licence").warning);
+    let licence = section(&view, "Licence");
+    assert!(!licence.warning);
+    assert_eq!(licence.lines, [obs_engine::import::LICENCE_RECORDED]);
     let warnings = section(&view, "Warnings");
     assert!(
         warnings
@@ -137,7 +142,7 @@ fn a_usfm_file_imports_too() {
 }
 
 #[test]
-fn an_obr_is_added_as_it_is_and_a_newer_revision_replaces_it() {
+fn an_obr_is_added_as_it_is_and_only_a_greater_revision_replaces_it() {
     let root = root("obr");
     let mut app = boot(&root);
     let mut sample = obs_store::sample_resource();
@@ -173,6 +178,48 @@ fn an_obr_is_added_as_it_is_and_a_newer_revision_replaces_it() {
             "Replaced {} in your Library with revision {}.",
             sample.manifest.abbreviation, sample.manifest.revision
         )
+    );
+
+    // The same file again changes nothing, and says so.
+    let (import, dest) = pick(&mut app, "shared.obr", &std::fs::read(&file).unwrap());
+    let view = app.import_report(import).unwrap();
+    assert_eq!(view.state, ImportState::Complete, "{view:#?}");
+    assert_eq!(
+        section(&view, "Summary").lines[2],
+        format!(
+            "Your Library already has this file ({} revision 2), so nothing was changed.",
+            sample.manifest.abbreviation
+        )
+    );
+    assert!(!dest.parent().unwrap().exists(), "the copy deleted");
+
+    // A lower revision is refused in plain words; the library keeps revision 2.
+    sample.manifest.revision = 1;
+    obs_store::write_obr(&sample, &file).unwrap();
+    let (import, dest) = pick(&mut app, "shared.obr", &std::fs::read(&file).unwrap());
+    let view = app.import_report(import).unwrap();
+    assert_eq!(view.state, ImportState::Failed, "{view:#?}");
+    assert_eq!(
+        view.failure.as_deref(),
+        Some(
+            format!(
+                "Your Library already has {} revision 2. This file is an older revision (1), \
+                 so nothing was changed.",
+                sample.manifest.abbreviation
+            )
+            .as_str()
+        )
+    );
+    assert!(view.details.as_deref().unwrap().contains("revision 2"));
+    assert!(!dest.parent().unwrap().exists(), "the copy deleted");
+    assert_eq!(
+        app.session
+            .library
+            .get("shared-bible")
+            .unwrap()
+            .manifest
+            .revision,
+        2
     );
     std::fs::remove_dir_all(root).unwrap();
 }

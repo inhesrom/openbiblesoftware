@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use obs_model::ResourceType;
 
 use crate::import_zip::{
-    IMPORTS_DIR, USFM_BESIDE_SWORD, ZIP_IMPORT_ENTRIES, ZIP_IMPORT_LIMIT, ZipBounds, ZipKind,
-    read_usfm_zip, sword_layout, unpack_sword_zip, zip_kind,
+    IMPORTS_DIR, TempFolder, USFM_BESIDE_SWORD, ZIP_IMPORT_ENTRIES, ZIP_IMPORT_LIMIT, ZipBounds,
+    ZipKind, read_usfm_zip, sword_layout, unpack_sword_zip, zip_kind,
 };
 use crate::testing::{sword_module_files, web_usfm_files, zip_files};
 use crate::*;
@@ -410,7 +410,7 @@ fn an_obr_copy_is_moved_into_the_library_and_a_second_revision_replaces_it() {
     let picked = root.join("picked/shared-bible.obr");
     obs_store::write_obr(&sample, &picked).unwrap();
     let added = s.add_obr_copy(&picked).unwrap();
-    assert!(!added.replaced);
+    assert_eq!(added.outcome, ObrCopy::Added);
     assert_eq!(added.manifest.resource_id, "shared-bible");
     let dest = root.join("library/shared-bible.obr");
     assert!(dest.is_file());
@@ -423,11 +423,11 @@ fn an_obr_copy_is_moved_into_the_library_and_a_second_revision_replaces_it() {
             .all(|e| !matches!(e, Effect::Replaced(_)))
     );
 
-    // A newer revision of the same Resource replaces its file and tells the readers.
+    // A greater revision of the same Resource replaces its file and tells the readers.
     sample.manifest.revision += 1;
     obs_store::write_obr(&sample, &picked).unwrap();
     let added = s.add_obr_copy(&picked).unwrap();
-    assert!(added.replaced);
+    assert_eq!(added.outcome, ObrCopy::Replaced);
     assert_eq!(s.library.get("shared-bible").unwrap().path, dest);
     assert_eq!(
         s.library.get("shared-bible").unwrap().manifest.revision,
@@ -459,9 +459,257 @@ fn an_obr_copy_is_moved_into_the_library_and_a_second_revision_replaces_it() {
 
     // A file that is not a Resource is refused and left where it is.
     std::fs::write(&picked, "not a Resource").unwrap();
-    assert!(s.add_obr_copy(&picked).is_err());
+    let refused = s.add_obr_copy(&picked).unwrap_err();
+    assert!(matches!(refused, ObrRefused::Unreadable(_)), "{refused:?}");
+    assert!(
+        refused.message().starts_with("That is not a Resource file"),
+        "{}",
+        refused.message()
+    );
     assert!(picked.is_file());
     drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// `resource` with other text (the same length, so its spans still fit), its content hash
+/// made again.
+fn with_other_text(mut resource: obs_model::Resource) -> obs_model::Resource {
+    let unit = resource
+        .units
+        .iter_mut()
+        .find(|u| u.text.contains("LORD"))
+        .unwrap();
+    unit.text = unit.text.replacen("LORD", "Lord", 1);
+    resource.manifest.content_hash = resource.content_hash();
+    resource
+}
+
+#[test]
+fn an_obr_copy_replaces_a_resource_only_with_a_greater_revision_and_an_identical_file_changes_nothing()
+ {
+    let (mut s, root) = fixture("obr-revisions");
+    let mut library = obs_store::sample_resource();
+    library.manifest.revision = 3;
+    library.manifest.content_hash = library.content_hash();
+    let dest = root.join("library/kjv-sample.obr");
+    obs_store::write_obr(&library, &dest).unwrap();
+    s.library.scan(&root.join("library"));
+    let before = std::fs::read(&dest).unwrap();
+    let picked = root.join("picked/kjv-sample.obr");
+    let unchanged = |s: &mut Session| {
+        assert_eq!(
+            std::fs::read(&dest).unwrap(),
+            before,
+            "the library's file kept"
+        );
+        assert_eq!(s.library.get("kjv-sample").unwrap().manifest.revision, 3);
+        assert!(
+            s.workspace
+                .take_effects()
+                .iter()
+                .all(|e| !matches!(e, Effect::Replaced(_)))
+        );
+        assert!(picked.is_file(), "left where it is");
+    };
+
+    // The same file again: nothing changes, and the outcome says so.
+    obs_store::write_obr(&library, &picked).unwrap();
+    let added = s.add_obr_copy(&picked).unwrap();
+    assert_eq!(added.outcome, ObrCopy::AlreadyThere);
+    assert_eq!(added.manifest.revision, 3);
+    unchanged(&mut s);
+
+    // The same revision with other content is refused.
+    let other = with_other_text(library.clone());
+    assert_ne!(other.manifest.content_hash, library.manifest.content_hash);
+    obs_store::write_obr(&other, &picked).unwrap();
+    let refused = s.add_obr_copy(&picked).unwrap_err();
+    assert_eq!(
+        refused,
+        ObrRefused::NotNewer {
+            abbreviation: "KJV".into(),
+            revision: 3,
+            offered: 3
+        }
+    );
+    assert_eq!(
+        refused.message(),
+        "Your Library already has KJV revision 3. This file is revision 3 too, with other \
+         content, so nothing was changed."
+    );
+    unchanged(&mut s);
+
+    // A lower revision is refused, whatever its content.
+    let mut lower = other.clone();
+    lower.manifest.revision = 2;
+    obs_store::write_obr(&lower, &picked).unwrap();
+    let refused = s.add_obr_copy(&picked).unwrap_err();
+    assert_eq!(
+        refused.message(),
+        "Your Library already has KJV revision 3. This file is an older revision (2), so \
+         nothing was changed."
+    );
+    lower.manifest.content_hash = library.manifest.content_hash.clone();
+    obs_store::write_obr(&lower, &picked).unwrap();
+    assert!(matches!(
+        s.add_obr_copy(&picked),
+        Err(ObrRefused::NotNewer { offered: 2, .. })
+    ));
+    unchanged(&mut s);
+
+    // A greater revision replaces it, in place.
+    let mut greater = other;
+    greater.manifest.revision = 4;
+    obs_store::write_obr(&greater, &picked).unwrap();
+    let added = s.add_obr_copy(&picked).unwrap();
+    assert_eq!(added.outcome, ObrCopy::Replaced);
+    assert_eq!(s.library.get("kjv-sample").unwrap().path, dest);
+    assert_eq!(s.library.get("kjv-sample").unwrap().manifest.revision, 4);
+    assert!(
+        s.workspace
+            .take_effects()
+            .contains(&Effect::Replaced("kjv-sample".into()))
+    );
+    assert!(!picked.exists(), "moved in");
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_desktop_open_catalogue_not_a_zip_error_keeps_the_generic_words() {
+    // `obs_formats::usfm_zip`'s error, as the desktop's Open catalogue Import reports a
+    // download that is not a zip.
+    assert_eq!(
+        failure_message("WEB from eBible.org: archive: not a zip archive: invalid Zip archive"),
+        "The app could not read this source, so nothing was added to your Library."
+    );
+    // The Mobile app's own.
+    assert_eq!(
+        failure_message("page.zip: this file is not a zip archive: invalid Zip archive"),
+        "That file is not a zip archive, so nothing was added to your Library."
+    );
+}
+
+#[test]
+fn a_component_with_a_colon_anywhere_refuses_the_whole_zip() {
+    refused_entry("drive-later", |zip| {
+        zip.start_file("modules/C:/escaped", options()).unwrap();
+        zip.write_all(b"out").unwrap();
+    });
+}
+
+#[test]
+fn a_sword_conf_whose_data_path_leaves_the_temp_folder_is_refused() {
+    let (mut s, root) = fixture("sword-data-path");
+    // The module's data where `DataPath=../../../outside/` would find it, from
+    // `<library>/imports/<id>.sword/`: without the check it would be read from there.
+    for (name, bytes) in kjv_module("") {
+        if let Some(rest) = name.strip_prefix("modules/texts/ztext/obskjvosis/") {
+            let out = root.join("outside").join(rest);
+            std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+            std::fs::write(out, bytes).unwrap();
+        }
+    }
+    for (name, data_path) in [
+        ("up", "../../../outside/"),
+        ("absolute", &*format!("{}/", root.join("outside").display())),
+    ] {
+        let files: Vec<(String, Vec<u8>)> = kjv_module("")
+            .into_iter()
+            .map(|(n, bytes)| {
+                if n.ends_with(".conf") {
+                    let conf = String::from_utf8(bytes).unwrap().replace(
+                        "DataPath=./modules/texts/ztext/obskjvosis/",
+                        &format!("DataPath={data_path}"),
+                    );
+                    assert!(conf.contains(data_path));
+                    (n, conf.into_bytes())
+                } else {
+                    (n, bytes)
+                }
+            })
+            .collect();
+        let zip = root.join(format!("picked/{name}.zip"));
+        write_zip(&zip, &files);
+        let id = import_zip(&mut s, &zip);
+        let (error, message) = failed_with(&s, &id);
+        assert!(error.contains("DataPath"), "{error}");
+        assert_eq!(
+            message,
+            "This zip's SWORD module keeps its text outside the module's own folder in \
+             modules/, so nothing was added to your Library.",
+            "{error}"
+        );
+        assert_eq!(imports_left(&root), Vec::<String>::new());
+    }
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// `zip` with the central directory's uncompressed size of entry `name` set to `size`: what
+/// the zip declares, not what it holds.
+fn declare_size(zip: &mut [u8], name: &str, size: u32) {
+    let mut at = 0;
+    let mut patched = false;
+    while let Some(i) = zip[at..]
+        .windows(4)
+        .position(|w| w == [0x50, 0x4b, 0x01, 0x02])
+    {
+        let h = at + i;
+        let name_len = u16::from_le_bytes([zip[h + 28], zip[h + 29]]) as usize;
+        if &zip[h + 46..h + 46 + name_len] == name.as_bytes() {
+            zip[h + 24..h + 28].copy_from_slice(&size.to_le_bytes());
+            patched = true;
+        }
+        at = h + 4;
+    }
+    assert!(patched, "no {name} in the central directory");
+}
+
+#[test]
+fn a_zip_that_holds_more_than_it_declares_is_refused_as_it_is_read_and_leaves_no_temp_folder() {
+    let (s, root) = fixture("sword-declared");
+    let files = kjv_module("");
+    let total: u64 = files.iter().map(|(_, b)| b.len() as u64).sum();
+    let (big, big_bytes) = files.iter().max_by_key(|(_, b)| b.len()).unwrap();
+    let mut bytes = zip_files(&files);
+    declare_size(&mut bytes, big, 1);
+    let zip = root.join("picked/lying.zip");
+    std::fs::write(&zip, bytes).unwrap();
+    // What it declares fits; what it holds does not.
+    let bounds = ZipBounds {
+        bytes: total - big_bytes.len() as u64 + 1,
+        entries: files.len(),
+    };
+    let open = || zip::ZipArchive::new(std::fs::File::open(&zip).unwrap()).unwrap();
+    assert!(sword_layout(&mut open(), bounds).is_ok());
+    let library = root.join("library");
+    let err = crate::import::parse_sword_zip(&zip, &library, "kjv-1", bounds, || false)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err,
+        format!("this zip unpacks to more than {} bytes", bounds.bytes)
+    );
+    assert!(failure_message(&format!("lying.zip: {err}")).starts_with("This zip is too large"));
+    assert!(library.join(IMPORTS_DIR).is_dir(), "it was unpacked there");
+    assert_eq!(imports_left(&root), Vec::<String>::new());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_temp_folder_is_removed_after_a_panic_too() {
+    let root = std::env::temp_dir().join(format!("obs-import-zip-panic-{}", std::process::id()));
+    let temp = root.join(IMPORTS_DIR).join("kjv-1.sword");
+    std::fs::create_dir_all(temp.join("modules")).unwrap();
+    std::fs::write(temp.join("modules/file"), b"unpacked").unwrap();
+    let caught = std::panic::catch_unwind(|| {
+        let _guard = TempFolder(temp.clone());
+        panic!("the importer panicked");
+    });
+    assert!(caught.is_err());
+    assert!(!temp.exists());
     std::fs::remove_dir_all(root).unwrap();
 }
 

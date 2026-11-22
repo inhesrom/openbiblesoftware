@@ -116,6 +116,19 @@ impl SwordSource {
             .collect()
     }
 
+    /// Refuse the library if any module's conf names a `DataPath` that is not that
+    /// module's own folder inside `modules/` (`sword_modules::install::module_data_dir`):
+    /// the reader joins `DataPath` onto the library folder as it is, so `../…` or an
+    /// absolute path would read files from outside it. For a library the app did not
+    /// install itself (a SWORD zip the user shared, unpacked).
+    pub fn check_data_paths(&self) -> Result<(), ImportError> {
+        for conf in self.library.modules() {
+            sword_modules::install::module_data_dir(conf)
+                .map_err(|e| ImportError::Sword(e.to_string()))?;
+        }
+        Ok(())
+    }
+
     /// The module to import when none is named: the one in the given conf file, or the
     /// library's only module.
     pub fn default_module(&self) -> Option<String> {

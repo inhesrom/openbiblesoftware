@@ -14,10 +14,12 @@
 
 use std::path::{Path, PathBuf};
 
-use obs_engine::import::{IMPORTS_DIR, LICENCE_MISSING, source_line, summary_counts};
+use obs_engine::import::{
+    IMPORTS_DIR, LICENCE_MISSING, LICENCE_RECORDED, source_line, summary_counts,
+};
 use obs_engine::{
     DEFERRED_INDEX, ImportIndexStatus, ImportPhase, ImportRecord, ImportReport, IndexStatus,
-    UNAVAILABLE_INDEX, failure_message,
+    ObrCopy, UNAVAILABLE_INDEX, failure_message,
 };
 
 use crate::{Changed, MobileApp, MobileError};
@@ -79,6 +81,9 @@ pub(crate) struct Picked {
     state: PickedState,
     /// The report last reported, to tell when it changes.
     seen: Option<ImportReportView>,
+    /// Whether `seen` is its final report (finished, its Search index line too), so the
+    /// pump no longer rebuilds it.
+    pub(crate) settled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -87,10 +92,10 @@ enum PickedState {
     Named,
     /// An Import job of Resource `0`.
     Importing(String),
-    /// A `.obr` moved into the library.
+    /// A `.obr` taken into the library (or already there).
     Added {
         manifest: Box<obs_model::Manifest>,
-        replaced: bool,
+        outcome: ObrCopy,
     },
     /// Refused before any job: (plain words, the error).
     Refused(String, String),
@@ -102,10 +107,6 @@ pub const IMPORT_KINDS: &str = "The app imports USFM books (.usfm, .sfm), a zip 
 
 /// The plain words for a picked file the shell could not copy into the app.
 const COPY_FAILED: &str = "The app could not read that file, so nothing was added to your Library.";
-
-/// The plain words for a `.obr` the library cannot read.
-const NOT_A_RESOURCE: &str =
-    "That is not a Resource file this app can read, so nothing was added to your Library.";
 
 impl MobileApp {
     /// The folder where Imports unpack and picked files wait: `<library>/imports/`.
@@ -138,6 +139,7 @@ impl MobileApp {
             folder,
             state: PickedState::Named,
             seen: None,
+            settled: false,
         });
         Ok(file)
     }
@@ -204,9 +206,9 @@ impl MobileApp {
         match self.session.add_obr_copy(path) {
             Ok(added) => PickedState::Added {
                 manifest: Box::new(added.manifest),
-                replaced: added.replaced,
+                outcome: added.outcome,
             },
-            Err(e) => PickedState::Refused(NOT_A_RESOURCE.to_string(), e),
+            Err(e) => PickedState::Refused(e.message(), e.to_string()),
         }
     }
 
@@ -261,18 +263,22 @@ impl MobileApp {
         match &picked.state {
             PickedState::Named => {}
             PickedState::Refused(plain, error) => fail(&mut view, plain, error),
-            PickedState::Added { manifest, replaced } => {
+            PickedState::Added { manifest, outcome } => {
                 view.heading = "Import complete".into();
                 view.state = ImportState::Complete;
                 view.status = self.index_line(&manifest.resource_id, None);
                 view.resource_id = Some(manifest.resource_id.clone());
-                let added = if *replaced {
-                    format!(
+                let added = match outcome {
+                    ObrCopy::Added => "Added to your Library as it is.".to_string(),
+                    ObrCopy::Replaced => format!(
                         "Replaced {} in your Library with revision {}.",
                         manifest.abbreviation, manifest.revision
-                    )
-                } else {
-                    "Added to your Library as it is.".to_string()
+                    ),
+                    ObrCopy::AlreadyThere => format!(
+                        "Your Library already has this file ({} revision {}), so nothing \
+                         was changed.",
+                        manifest.abbreviation, manifest.revision
+                    ),
                 };
                 view.sections.push(section(
                     "Summary",
@@ -350,14 +356,16 @@ impl MobileApp {
     }
 
     /// Move each Import on (the pump calls it): a finished one's copy is deleted, and
-    /// [`Changed::Imports`] is reported when any report changed.
+    /// [`Changed::Imports`] is reported when any report changed. An Import whose final report
+    /// was seen is skipped.
     pub(crate) fn advance_imports(&mut self) {
         let mut changed = false;
         for i in 0..self.picked.len() {
-            if matches!(self.picked[i].state, PickedState::Named) {
+            if self.picked[i].settled || matches!(self.picked[i].state, PickedState::Named) {
                 continue;
             }
             let view = self.report_of(&self.picked[i]);
+            self.picked[i].settled = self.is_final(&view);
             if view.state != ImportState::Running {
                 let folder = &self.picked[i].folder;
                 if folder.exists() {
@@ -371,6 +379,19 @@ impl MobileApp {
         }
         if changed {
             self.events.push(Changed::Imports);
+        }
+    }
+
+    /// Whether `view` can no longer change: failed, or complete with its Search index built,
+    /// failed or unavailable (until then its index line moves on).
+    fn is_final(&self, view: &ImportReportView) -> bool {
+        match (view.state, &view.resource_id) {
+            (ImportState::Running, _) => false,
+            (ImportState::Complete, Some(id)) => matches!(
+                self.session.search.status(id),
+                Some(IndexStatus::Ready | IndexStatus::Failed(_) | IndexStatus::Unavailable)
+            ),
+            _ => true,
         }
     }
 }
@@ -434,7 +455,7 @@ fn report_sections(report: &ImportReport) -> Vec<ReportSection> {
         lines: vec![if report.license_missing {
             LICENCE_MISSING.to_string()
         } else {
-            "Licence recorded from the source.".to_string()
+            LICENCE_RECORDED.to_string()
         }],
         warning: report.license_missing,
         collapsed: false,

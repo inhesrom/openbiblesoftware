@@ -11,15 +11,18 @@
 //! resource forks (`__MACOSX/`, `._*` files) are left out.
 //!
 //! **What is never unpacked.** Every entry's path is checked before anything is written: an
-//! absolute path, a drive letter, a backslash, a `..` component or a symbolic link refuses the
-//! whole zip. At most [`ZIP_IMPORT_ENTRIES`] entries and [`ZIP_IMPORT_LIMIT`] bytes
-//! decompressed (counted as read, not as the zip declares them). The temp folder is removed
-//! whatever the outcome.
+//! absolute path, a `:` in any component (a drive letter), a backslash, a `..` component or a
+//! symbolic link refuses the whole zip. Once unpacked, a conf whose `DataPath` is not its
+//! module's own folder in `modules/` (it would be read from elsewhere) is refused before the
+//! module is read. At most [`ZIP_IMPORT_ENTRIES`] entries and
+//! [`ZIP_IMPORT_LIMIT`] bytes decompressed (counted as read, not as the zip declares them).
+//! The temp folder is removed whatever the outcome, a panic too ([`TempFolder`]).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub use crate::import::IMPORTS_DIR;
+use crate::import::NOT_A_ZIP;
 
 /// Most bytes a zip Import decompresses (a SWORD module unpacked, or a USFM zip's file read).
 pub const ZIP_IMPORT_LIMIT: u64 = 512 * 1024 * 1024;
@@ -56,6 +59,16 @@ fn mib(bytes: u64) -> String {
         format!("{} MiB", bytes / (1024 * 1024))
     } else {
         format!("{bytes} bytes")
+    }
+}
+
+/// A folder under [`IMPORTS_DIR`] that a zip Import unpacks into, removed when this is
+/// dropped: after `Ok`, `Err`, a cancel, or a panic the job queue catches.
+pub(crate) struct TempFolder(pub(crate) PathBuf);
+
+impl Drop for TempFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -107,9 +120,9 @@ fn conf_root<'a>(parts: &'a [&'a str]) -> Option<&'a [&'a str]> {
     }
 }
 
-/// An entry's path as safe components, or why it is refused: absolute, a drive letter, a
-/// backslash, a NUL or a `..` component would let it land outside the folder it is unpacked
-/// into. `.` components are dropped.
+/// An entry's path as safe components, or why it is refused: absolute, a `:` (a drive
+/// letter) in any component, a backslash, a NUL or a `..` component would let it land
+/// outside the folder it is unpacked into. `.` components are dropped.
 fn safe_parts(name: &str) -> Result<Vec<&str>, String> {
     let outside = || format!("this zip has a file that would land outside its folder ({name})");
     if name.starts_with('/') || name.contains('\\') || name.contains('\0') {
@@ -119,8 +132,9 @@ fn safe_parts(name: &str) -> Result<Vec<&str>, String> {
         .split('/')
         .filter(|p| !p.is_empty() && *p != ".")
         .collect();
-    let drive = parts.first().is_some_and(|p| p.contains(':'));
-    if drive || parts.contains(&"..") {
+    // A drive letter or a stream name (`C:`, `a:b`) in any component: on Windows,
+    // joining `C:` replaces the path.
+    if parts.iter().any(|p| p.contains(':') || *p == "..") {
         return Err(outside());
     }
     Ok(parts)
@@ -205,7 +219,7 @@ pub(crate) fn unpack_sword_zip(
 ) -> Result<(PathBuf, bool), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
-        .map_err(|e| format!("archive: not a zip archive: {e}"))?;
+        .map_err(|e| format!("{NOT_A_ZIP}: {e}"))?;
     let layout = sword_layout(&mut zip, bounds)?;
     if dest.exists() {
         std::fs::remove_dir_all(dest)?;
@@ -258,10 +272,11 @@ pub(crate) fn read_usfm_zip(
     if bytes.len() as u64 > bounds.bytes {
         return Err(bounds.too_large().into());
     }
-    if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_slice()))
-        && zip.len() > bounds.entries
-    {
+    let zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_slice()))
+        .map_err(|e| format!("{NOT_A_ZIP}: {e}"))?;
+    if zip.len() > bounds.entries {
         return Err(bounds.too_many().into());
     }
+    drop(zip);
     Ok(bytes)
 }
