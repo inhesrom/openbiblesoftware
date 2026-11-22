@@ -203,7 +203,7 @@ impl Session {
     ) -> Result<PathBuf, String> {
         // A syncing device syncs first, so edits not yet written reach the folder before the
         // restore replaces them; its Sync folder is put back after (plan S29).
-        let (sync_folder, sync_unfinished) = self.sync_before_restore();
+        let before = self.sync_before_restore();
         let Some(mut user) = self.user.take() else {
             return Err(NO_USER.into());
         };
@@ -212,9 +212,7 @@ impl Session {
             Err(e) => {
                 // Nothing changed: keep the Session as it was, undo history included.
                 self.user = Some(user);
-                if sync_unfinished {
-                    self.after_restore_sync_unfinished();
-                }
+                self.after_restore_sync(before, false);
                 return Err(e);
             }
         };
@@ -224,8 +222,9 @@ impl Session {
             .ok()
             .flatten()
             .unwrap_or_default();
-        if restored != sync_folder
-            && let Err(e) = user.set_preference(crate::sync_session::SYNC_FOLDER_PREF, &sync_folder)
+        if restored != before.folder
+            && let Err(e) =
+                user.set_preference(crate::sync_session::SYNC_FOLDER_PREF, &before.folder)
         {
             log::warn!("the Sync folder could not be kept after the restore: {e}");
         }
@@ -233,9 +232,7 @@ impl Session {
         // preference the Backup does not have is back at its default.
         self.forget_user_preferences();
         self.attach_user(user);
-        if sync_unfinished {
-            self.after_restore_sync_unfinished();
-        }
+        self.after_restore_sync(before, true);
         self.after_restore();
         self.last_restore = Some(LastRestore {
             from: path.to_path_buf(),
