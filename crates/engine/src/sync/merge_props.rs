@@ -2108,12 +2108,16 @@ fn check_case(
         );
     }
     // A Collection a replace's Backup never knew is kept (D3), unless an op that had it
-    // replaced or deleted it, or a whole value an op or a join wrote supersedes it.
+    // replaced or deleted it, or a whole value an op or a join wrote supersedes it, or the
+    // list is damaged (its items held).
     for (json, clock) in &world.never_known {
         assert!(
             live_items.contains(json)
                 || replaced_items.contains(json)
-                || written_bases.iter().any(|b| b >= clock),
+                || written_bases.iter().any(|b| b >= clock)
+                || base_items
+                    .as_ref()
+                    .is_some_and(|(_, items)| items.is_none()),
             "the Collection {json} at {clock}, never known to a replace's Backup, was lost"
         );
     }
