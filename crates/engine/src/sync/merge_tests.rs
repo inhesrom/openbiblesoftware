@@ -1402,6 +1402,70 @@ fn an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both() 
     converged(&[&d, &g]);
 }
 
+/// X adds Collection "Read"; Y adds its own "Read" later; Z, having Y's, deletes "Read". X
+/// meets Z's delete before Y's add (or after it): the delete never saw X's item, so X's comes
+/// back under its own name, edit beats delete (or, Y's add having renamed it first, as "Read
+/// (2)"); nothing is lost on any device (the S28b-2 review's D6 survival invariant, seed
+/// 1592592031).
+#[test]
+fn a_delete_that_never_saw_this_devices_list_item_of_its_name_keeps_it() {
+    for delete_first in [true, false] {
+        let dir = Dir::new(&format!("item-unseen-delete-{delete_first}"));
+        let cloud = MemSyncFolder::new();
+        let (x, y, z) = (device(&dir, "x"), device(&dir, "y"), device(&dir, "z"));
+        Device::settle(&[&x, &y, &z], &cloud);
+        let key = "library.collections";
+        x.user
+            .set_preference(key, r#"[{"name":"Read","ids":["kjv"]}]"#)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        y.user
+            .set_preference(key, r#"[{"name":"Read","ids":["bsb"]}]"#)
+            .unwrap();
+        y.push(&cloud);
+        z.sync(&cloud);
+        z.user.set_preference(key, "[]").unwrap();
+        z.push(&cloud);
+        // Y meets Z's delete of its item before X's: else X's re-record (which never saw Y's
+        // item) would make Y keep its item as "Read (2)", a copy no one needed (safe, as D2's
+        // three-device chain is).
+        y.sync(&cloud);
+        let only = |dev: &Device| -> Vec<(String, u64)> {
+            files_of(&cloud, &dev.id)
+                .into_iter()
+                .map(|s| (dev.id.clone(), s))
+                .collect()
+        };
+        let (first, second) = if delete_first { (&z, &y) } else { (&y, &z) };
+        let mut seen = only(first);
+        let files = |seen: &[(String, u64)]| -> MemSyncFolder {
+            let files: Vec<(&str, u64)> = seen.iter().map(|(d, n)| (d.as_str(), *n)).collect();
+            view(&cloud, &files)
+        };
+        write_pending_ops(&x.user, &cloud).unwrap();
+        let report = merge_folder(&x.user, &files(&seen)).unwrap();
+        if delete_first {
+            assert_eq!(report.recorded.items_kept, 1, "{report:?}");
+        }
+        seen.extend(only(second));
+        merge_folder(&x.user, &files(&seen)).unwrap();
+        Device::settle(&[&x, &y, &z], &cloud);
+        let kept = if delete_first {
+            r#"[{"name":"Read","ids":["kjv"]}]"#
+        } else {
+            r#"[{"name":"Read (2)","ids":["kjv"]}]"#
+        };
+        for dev in [&x, &y, &z] {
+            assert_eq!(
+                dev.user.preference(key).unwrap().as_deref(),
+                Some(kept),
+                "delete first: {delete_first}"
+            );
+        }
+        converged(&[&x, &y, &z]);
+    }
+}
+
 /// B tags a Resource; A, which has no tags and has not met B's, saves its Collections, which
 /// writes the Resource tags too (`Session::save_collections`), `"{}"`: that changes nothing,
 /// so it is no whole value (a base, D7) superseding B's tag, and every device keeps the tag.

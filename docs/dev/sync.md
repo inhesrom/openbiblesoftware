@@ -228,6 +228,7 @@ Per op, against the row's state here (`MergeTx::state`: the row, its clock, its 
 | Write | A child (an Annotation, a Reading, a style, a Highlight's new style) whose parent is deleted here | The parent restored from its tombstone's row and recorded, then the child as above ([deleted parents](#deleted-parents)) |
 | Write or delete | This device's own Note (its clock is this device's), whose text the op had not seen (its `before` text is another, or it has none) and would lose | A [Sync conflict](#sync-conflicts)'s copy recorded first, then the op as above |
 | Write (an add, or an edit of another version) | This device's own Collection, Copy preset or Saved search of that name, other JSON, older, which the op had not seen | The op's as above; this device's recorded again as "`name` (2)" ([list items of one name](#two-list-items-of-one-name)) |
+| Delete (of another version of that name) | This device's own Collection, Copy preset or Saved search, which the delete had not seen (its `before_clock` is not this row's clock, its `before` JSON another) | Kept: the delete noted, this device's item recorded again under its own name, after what the tombstone covers (edit beats delete, [list items of one name](#two-list-items-of-one-name)) (`EditKept`) |
 | Write | A list item at or before its list's base (its newest whole-value write) | Nothing (`Superseded`) ([a list's whole value](#a-lists-whole-value)) |
 | Write | A list item of a list whose value here is not in its list's shape | Held (`Held`) ([held ops](#ops-held-back)) |
 | Any | An op this build refuses (a synced preference a later app added …) | Held (`Held`); the rest of its file merges |
@@ -376,6 +377,19 @@ before either syncs; G's edit replaces D's item having seen only G's, and D's wo
 every device (`merge_tests::an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both`).
 The cost, accepted (the list-item version of a [Sync conflict](#sync-conflicts)): two devices
 editing one shared item before either syncs keep both, the earlier edit as "`name` (2)".
+
+A delete is the same case as a Sync conflict's delete (Q1): X adds "Read", Y adds its own
+"Read" later, and Z, having Y's, deletes "Read"; X meeting Z's delete before Y's add would lose
+its item, which no device saw. So a remote delete of this device's own item whose `before` is
+another version (its `before_clock` not this row's clock, its JSON another) does not remove it:
+the delete is noted in the tombstone, and this device records its item again under its own name
+(the delete freed it), stamped after what the tombstone covers, so it beats the delete on every
+device by the ordinary rule (edit beats delete; `MergeReport::recorded.items_kept`). Met in the
+other order, Y's add renames X's item first, as above
+(`merge_tests::a_delete_that_never_saw_this_devices_list_item_of_its_name_keeps_it`, both
+orders). As with D2's three-device chain, a copy no one needed can come of it: a device whose
+own item the re-record replaces before it meets the delete of that item keeps it as
+"`name` (2)"; safe, and every device converges on it.
 
 ### A list's whole value
 

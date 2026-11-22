@@ -35,7 +35,8 @@
 //!   device records the restore, so every device takes it.
 //! - **Two list items of one name** (D6): the later stays under the name; the device whose own
 //!   item lost to another's write that had not seen it (an add, or an edit of another version)
-//!   records it again as "Name (2)".
+//!   records it again as "Name (2)"; one deleted by another device's delete that had not seen
+//!   it (it deleted another version of the name) is recorded again under its own name.
 //! - **A list's whole value** (D7) is its base: item ops at or before it are superseded, later
 //!   ones go on top of it, or are held while it is not in its list's shape.
 //! - **An op this build cannot apply** (a synced preference a later app added …) is held in
@@ -111,9 +112,12 @@ pub struct Recorded {
     pub parents_restored: usize,
     /// Rows deleted with a parent recorded again, the parent kept for a live child (D3).
     pub children_restored: usize,
-    /// List items of this device's recorded again under a free name, another device's add of
-    /// that name having won (D6).
+    /// List items of this device's recorded again under a free name, another device's write
+    /// of that name that had not seen them having won (D6).
     pub items_renamed: usize,
+    /// List items of this device's recorded again under their own name, another device's
+    /// delete of that name not having seen them (edit beats delete).
+    pub items_kept: usize,
     /// Held ops applied or superseded on a later try.
     pub unheld: usize,
 }
@@ -124,6 +128,7 @@ impl Recorded {
         self.parents_restored += other.parents_restored;
         self.children_restored += other.children_restored;
         self.items_renamed += other.items_renamed;
+        self.items_kept += other.items_kept;
         self.unheld += other.unheld;
     }
 }
@@ -567,28 +572,41 @@ fn conflict_copy(
     }))
 }
 
-/// This device's own list item (a Collection, Copy preset or Saved search) that `op`, another
-/// device's write of an item of that name with other JSON, replaces without having seen it
-/// (D6): an add, or a write whose `before` is another version (`before_clock` not this row's,
-/// its JSON another). It is recorded again under a free name. So two devices' concurrent
-/// edits of one item keep both, the earlier as "Name (2)", as D2 keeps both Note texts.
-fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> Option<Row> {
-    let ours = state.row.as_ref()?;
-    let own = state.clock.as_ref()?.device_id == tx.device_id();
-    let unseen = |o: &obs_store::SyncedListItem| match &op.before {
+/// This device's own list item here (a Collection, Copy preset or Saved search: the row's
+/// clock is this device's) that `op` had not seen: it is an add (no `before`), or its `before`
+/// is another version (its `before_clock` not this row's clock, its JSON another).
+fn own_unseen_item<'s>(
+    tx: &MergeTx<'_>,
+    op: &Op,
+    state: &'s RowState,
+) -> Option<&'s obs_store::SyncedListItem> {
+    let (Row::Collection(ours) | Row::CopyPreset(ours) | Row::SavedSearch(ours)) =
+        state.row.as_ref()?
+    else {
+        return None;
+    };
+    if state.clock.as_ref()?.device_id != tx.device_id() {
+        return None;
+    }
+    let unseen = match &op.before {
         None => true,
         Some(Row::Collection(before) | Row::CopyPreset(before) | Row::SavedSearch(before)) => {
-            op.before_clock != state.clock && before.json != o.json
+            op.before_clock != state.clock && before.json != ours.json
         }
         Some(_) => false,
     };
-    match (ours, winner) {
-        (Row::Collection(o), Row::Collection(w))
-        | (Row::CopyPreset(o), Row::CopyPreset(w))
-        | (Row::SavedSearch(o), Row::SavedSearch(w))
-            if own && o.json != w.json && unseen(o) =>
-        {
-            Some(ours.clone())
+    unseen.then_some(ours)
+}
+
+/// This device's own list item that `op`, another device's write of an item of that name with
+/// other JSON, replaces without having seen it ([`own_unseen_item`], D6). It is recorded
+/// again under a free name. So two devices' concurrent edits of one item keep both, the
+/// earlier as "Name (2)", as D2 keeps both Note texts.
+fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> Option<Row> {
+    let ours = own_unseen_item(tx, op, state)?;
+    match winner {
+        Row::Collection(w) | Row::CopyPreset(w) | Row::SavedSearch(w) if w.json != ours.json => {
+            state.row.clone()
         }
         _ => None,
     }
@@ -631,6 +649,15 @@ fn merge_delete(
         tx.record(&[Change::update(here.clone(), here.clone())])?;
         restore_deleted_with(tx, key, file, recorded)?;
         return Ok(Outcome::ParentKept);
+    }
+    if own_unseen_item(tx, op, state).is_some() {
+        // This device's own list item, which the delete never saw (it deleted another
+        // version of that name): edit beats delete. The delete is noted, and this device
+        // records its item again, after what the tombstone covers, so every device keeps it.
+        tx.note_delete(key, &op.clock, covers, deleted)?;
+        tx.record(&[Change::update(here.clone(), here.clone())])?;
+        recorded.items_kept += 1;
+        return Ok(Outcome::EditKept);
     }
     if let Some(copy) = conflict_copy(tx, op, state, None)? {
         tx.record(&[Change::insert(Row::Annotation(copy))])?;

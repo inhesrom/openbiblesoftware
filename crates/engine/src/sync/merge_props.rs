@@ -181,6 +181,7 @@ impl Stats {
         self.recorded.parents_restored += report.recorded.parents_restored;
         self.recorded.children_restored += report.recorded.children_restored;
         self.recorded.items_renamed += report.recorded.items_renamed;
+        self.recorded.items_kept += report.recorded.items_kept;
         self.recorded.unheld += report.recorded.unheld;
     }
 }
