@@ -697,7 +697,7 @@ impl AliasCache {
         Err("Opening Resources is not supported here".into())
     }
 
-    pub fn refresh(&self, _: &crate::Library) -> Result<usize, String> {
+    pub fn refresh(&self, _: &crate::Library, _: impl Fn() -> bool) -> Result<usize, String> {
         Err("Opening Resources is not supported here".into())
     }
 }
