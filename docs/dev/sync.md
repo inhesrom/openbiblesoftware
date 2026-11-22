@@ -178,13 +178,14 @@ what was merged; a worker that stopped without an outcome (it panicked) is a fai
   1.4–4.7 ms (0.2–0.4 ms with no sync running); a new device joining that folder, edits at most
   4–8 ms; a new device joining a library of 10,000 Notes, the result's frame 4.5–7.6 ms, but
   **an edit made during it waits 0.5–0.9 s** for the one merge transaction (10,000 ops in one
-  op file, or the snapshot: [for later steps](#for-later-steps)). The frame after the
+  op file, or the snapshot; S29c's batches made it 4.7 ms: [below](#merges-in-batches-s29c)). The frame after the
   result's, where the views read again what moved `annotations_revision` (`MarkCache`'s
   Annotations in text, Notebooks and Highlight styles, the Notes Tool's cards, Needs
   attention's count), measured from S29b's review (three more runs): 0.9–1.2 ms after the
   1,000-file catch-up, **17–24 ms after a 10,000-Note join** (the same reads as after any
-  Annotation edit there; [for later steps](#for-later-steps)); in those runs the 10,000-Note
-  join's edits waited 0.74–0.85 s.
+  Annotation edit there; S29c: 9.9–11.9 ms, and 2.4–2.9 ms for a small sync there,
+  [below](#merges-in-batches-s29c)); in those runs the 10,000-Note join's edits waited
+  0.74–0.85 s.
 - **The worker needs only `SyncFolder: Send + Sync`** (as the trait is), made on its thread
   (`sync_worker::FolderMaker`, crate-private; the desktop's is `FsSyncFolder` at the chosen
   path, checked to be there).
@@ -261,6 +262,19 @@ edit in between two of them: it waits for one batch, not the file.
   read only those and patch what they hold (the cards read in full while one is edited, to
   keep their order); Needs attention's count is one SQL count. Any other change of
   `annotations_revision` reads everything, as before.
+- **Measured** (owner's Mac, `measure_syncs_off_the_ui_thread` and
+  `measure_merge_batches_against_one_transaction`, local folder, frames of 16 ms, an edit at
+  every frame; dev profile, then release): a new device joining 10,000 Notes, **the longest
+  edit 4.7 ms** in one op file and in a snapshot alike (p50 0.1–0.5 ms; S29b: 0.5–0.9 s), the
+  sync 1.3–1.5 s in 112–119 batches; then all 10,000 edited in one op file, the longest edit
+  5.6–6.1 ms (in one transaction it would wait the whole merge, 4.8 s); the 1,000-file catch-up's
+  longest edit 1.3–3.8 ms. No frame's sync work over 4.9 ms. None of those files merged whole.
+  The batches' commits cost 3–4% (a 10,000-Note join 450 → 466–472 ms, 10,000 updates 4.80 →
+  4.91–4.96 s). An edit at every frame slows a large merge (`WriteTurns` gives each waiting
+  edit 20 ms): the 10,000-update catch-up took 14 s of wall time against 5 s of merge work. The
+  views' reads the frame after: 2.4–2.9 ms when a 10,000-Note library merges one edited and one
+  added Note (only those read); 9.9–11.9 ms when the merge changed all 10,000 (read whole, S29b's
+  17–24 ms less the second read of every Annotation Needs attention's count made).
 
 ## Data
 
@@ -1162,6 +1176,32 @@ Mobile app has no period (`at_launch(false)`).
   9000000, 10000000, 11111111, 22222222, 33333333, 44444444, 20261122); 1,000 cases take
   about 23 s, 10,000 about 240–350 s on the owner's Mac with two runs at once.
 
+- **S29c** (merges in batches): `crates/engine/src/sync/merge_batch_tests.rs`: a merge stopped
+  every two batches of three ops goes on where it stood each time and ends with the unsplit
+  merge's `synced_dump`, Sync conflicts and Notes (a copy, D2; a kept parent, D3; 40 Notes added,
+  edited and deleted); a cursor inside a snapshot its device then replaced is dropped and the
+  newer merges from its start, converging with every Note; a Backup taken between batches
+  restores with its cursor, Catch up finishes that file first (its snapshot written once it is
+  done) and Replace empties it, both converging; a file whose Notes need a Notebook only another
+  device's file brings merges whole, commits nothing and waits, then merges after it; no snapshot
+  is written while a merge is partly done. `crates/store/tests/sync_clock_db.rs`: the cursor is
+  committed per batch, a batch from another op is refused, the last drops it and notes the file;
+  a Backup carries it, a snapshot holds none, a restore brings it back, Replace empties it, a v18
+  Backup restores with none. `merge_props.rs`: every case merges in batches of 1–3 ops (its own
+  generator, so a seed's edits are those it made before S29c), a fifth of the random syncs stop
+  after 1–6 batches (a crash), and the run must reach a stop, one inside a snapshot, a stopped
+  file finished first and a file merged whole; no file may wait after a batch was committed.
+  Per 1,000 cases about 100,000 batches, 570 stops (370 in a snapshot), 360 files finished first,
+  40 cursors dropped, 28 files merged whole; per 10,000 at seeds 20266453, 891, 7744, 1 and 42
+  (all green, 220–260 s each) 980,000–990,000 batches, about 5,500 stops, 3,300–3,400 finished
+  first, 320–350 dropped, 170–290 merged whole of about 86,000 snapshots and 1.4 million ops
+  merged. `sync_session_tests.rs`: after a sync that changed only Annotations the patched text
+  Annotations and cards equal a whole read (both card orders, a Sync conflict's copy, its Note
+  then deleted elsewhere), and a merge touching a Notebook reads everything;
+  `an_edit_during_a_10k_note_join_waits_for_one_batch_of_the_merge_not_the_file` (under
+  100 ms; 4.7 ms on the owner's Mac). Mutation checks: `may_wait` always false fails the 1,000
+  props (a file waits after a batch) and the whole-file unit test; the cards not reading a copy
+  whose Note changed fails the views test.
 - `crates/engine/src/sync_session_tests.rs` (S29): without a Sync folder nothing syncs, shows
   or is recorded, and a restore leaves it so; two Sessions converge through one folder and list
   each other; an edit makes a sync due 30 seconds on, else the period; a restore on a syncing
@@ -1207,19 +1247,21 @@ Mobile app has no period (`at_launch(false)`).
 
 ## For later steps
 
-- **Split the largest merge transactions** (found by S29b): a snapshot, or an op file of
-  thousands of ops (a device that made 10,000 changes between syncs), merges in one
-  transaction, 0.5–0.9 s for 10,000 Notes on the owner's Mac; an edit the user makes
-  meanwhile waits for it on the UI thread. Past `BUSY_TIMEOUT` (10 s) the edit is refused
-  ("database is locked") rather than waiting longer: a larger library or an iPhone could get
-  there, and the restore's copy into the live database waits up to that long for an abandoned
-  worker's transaction still running. Merging them in bounded transactions keeps edits under a
-  frame and far from that limit, but touches the merge's all-or-none contract
-  (`merge_snapshot`, `merge_op_file` with its `applied_up_to`).
-- **The views' reads after a large merge** (found by S29b's review): the frame after a sync
-  that merged anything re-reads every Annotation in text and the Notes Tool's cards, 17–24 ms
-  at 10,000 Notes (dev profile), as after any Annotation edit; reading only what changed would
-  keep it under a frame.
+- **Merges in batches** and **the views' reads after a merge**, found by S29b, are S29c's
+  ([above](#merges-in-batches-s29c)). Left from them:
+  - A merge of 10,000 Annotation updates is about ten times a merge of 10,000 inserts (4.8 s
+    against 0.45 s of merge work, dev and release alike); in batches no edit waits for it, but
+    the sync takes that long, and longer while the user edits (`WriteTurns`' 20 ms per waiting
+    edit). Where an update's merge spends it is not measured yet.
+  - After a merge that changed many Annotations (a join), the views still read every one, about
+    10–12 ms at 10,000 Notes; the marks of each open Resource are made again from all of them
+    as after any edit.
+  - A sync that fails after committing some batches (a folder error, a stop) leaves rows merged
+    that the Session does not reload until a later sync merges something (it finishes that file
+    first). Before S29c a failure after some whole files did the same.
+  - Other single transactions a large library makes: the join's stamping (`join_sync`),
+    Replace's `restamp_for_replace`, and the outbox's reserve and noting written are each one
+    statement per table, not measured at 10,000 rows on an iPhone.
 - **S30:** Needs attention lists the Sync conflicts and held ops as the desktop does
   (`texts`, `Session::sync_held_lines`, `resolve_sync_conflict`); render `SyncState`
   (`needs_newer_app` per device, `FolderNewer`, `NeedsRestoreChoice` with Catch up as the

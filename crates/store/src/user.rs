@@ -86,8 +86,9 @@ const MIGRATIONS: &[&str] = &[
 /// How long a write on one connection to the User database waits for another connection's
 /// write transaction to finish (the sync worker's, [`UserStore::second_connection`]) before it
 /// fails with "database is locked". Long on purpose: a user's edit waits out the longest merge
-/// transaction (a snapshot merged at a join) rather than be refused; it waits for no more than
-/// the one transaction it found running ([`WriteTurns`]).
+/// transaction rather than be refused (a batch of a merge, a few ms, S29c; a file merged whole
+/// because an op of it might wait, as long as that file); it waits for no more than the one
+/// transaction it found running ([`WriteTurns`]).
 pub const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How long after the first connection last found the User database locked the second one
