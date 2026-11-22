@@ -1768,7 +1768,10 @@ under the half they belong to.
   2,704, delete noted 2,182, parent kept 244, held 349; conflict copies 470, parents restored
   288, rows restored with a parent 99, items renamed 1,188, items kept 4, held ops applied
   10,655; parents back after their child's maker left them 15. 10k runs with seeds 7, 424242,
-  99999999, 123456789, 1, 31337 and 2026 green (about 30–43 s each).
+  99999999, 123456789, 1, 31337 and 2026 green (about 30–43 s each). Measured after the fixes:
+  `cargo xtask ci` green (6 m 36 s, 2,406 tests passed, 43 ignored); `cargo test -p obs-store
+  --all-features` 158 passed; `cargo test -p obs-engine sync -- --include-ignored` 52 passed
+  (79 s); clippy (`-D warnings`) and the wasm check clean.
 
 #### S28c — Sync 2c (Rust): snapshots, trimming, versioning, device-id rules, restore, scheduling
 
