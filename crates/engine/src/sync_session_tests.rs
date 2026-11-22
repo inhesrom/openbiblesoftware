@@ -66,18 +66,27 @@ fn now() -> i64 {
     obs_store::clock::now_ms()
 }
 
-/// Sync now, as Sync now does: "Syncing…" for a frame, then the sync.
+/// Sync now, as Sync now does: the sync starts on its worker at the next frame, "Syncing…"
+/// until a frame takes its result.
 fn sync(s: &mut Session) {
     s.run("sync.now", &json!({})).unwrap();
-    assert_eq!(
-        s.sync_tick(now()),
-        Some(0),
-        "a requested sync is due at once"
+    assert!(s.sync_tick(now()).is_some());
+    assert!(
+        s.sync_panel(now()).syncing,
+        "a requested sync starts at once"
     );
-    assert!(s.sync_panel(now()).syncing);
     assert_eq!(s.sync_panel(now()).status, texts::SYNCING);
-    s.sync_tick(now());
-    assert!(!s.sync_panel(now()).syncing);
+    settle(s);
+}
+
+/// The frames until the sync running (or a restore's choice) has ended and been taken.
+fn settle(s: &mut Session) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while s.sync_panel(now()).syncing {
+        assert!(std::time::Instant::now() < deadline, "the sync never ended");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        s.sync_tick(now());
+    }
 }
 
 fn store(s: &Session) -> &obs_store::UserStore {
@@ -215,12 +224,9 @@ fn an_edit_makes_a_sync_due_thirty_seconds_on_and_the_period_is_five_minutes() {
     a.create_notebook("Edited").unwrap();
     let due = a.sync_tick(t).unwrap();
     assert!(due <= 30_000 && due > 20_000, "{due}");
-    assert_eq!(
-        a.sync_tick(t + 30_000),
-        Some(0),
-        "due 30 seconds after the edit"
-    );
     a.sync_tick(t + 30_000);
+    assert!(a.sync_panel(now()).syncing, "due 30 seconds after the edit");
+    settle(&mut a);
     assert!(!store(&a).has_pending_ops().unwrap(), "the edit went out");
 }
 
@@ -266,6 +272,9 @@ fn a_restore_on_a_syncing_device_syncs_first_keeps_its_folder_and_catching_up_wo
     a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
         .unwrap();
     assert!(!a.sync_restore_pending());
+    assert_eq!(a.sync_panel(now()).status, texts::SYNCING);
+    settle(&mut a);
+    assert!(!a.sync_restore_pending());
     assert!(
         notebook_names(&a).contains(&"Written just before".to_string()),
         "catching up brought it back"
@@ -297,6 +306,7 @@ fn the_restore_prompt_comes_back_after_a_restart_until_it_is_answered() {
     assert_eq!(a.sync_tick(now()), None);
     a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
         .unwrap();
+    settle(&mut a);
     drop(a);
     let a = dir.session("a");
     assert!(!a.sync_restore_pending(), "answered once, asked no more");
@@ -324,6 +334,7 @@ fn replace_makes_the_restored_data_what_every_device_has() {
     assert!(a.sync_restore_pending());
     a.run("sync.restore_choice", &json!({ "choice": "replace" }))
         .unwrap();
+    settle(&mut a);
     assert!(!a.sync_restore_pending());
     assert!(notebook_names(&a).contains(&"Kept".to_string()));
     sync(&mut b);

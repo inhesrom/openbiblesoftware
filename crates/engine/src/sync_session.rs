@@ -7,9 +7,11 @@
 //! - The Sync folder is a preference that stays on the device ([`SYNC_FOLDER_PREF`]); a
 //!   restore or its undo puts this device's back (`backups.rs`), so restoring a Backup never
 //!   starts or stops syncing, nor moves it to another folder.
-//! - A sync runs on the UI thread on the Session's own connection (supervisor decision D3):
-//!   the User database's clock and device id live in that connection. A due sync is marked
-//!   "Syncing…" for one frame, then runs at the next [`Session::sync_tick`].
+//! - A sync runs off the UI thread (plan S29b, `sync_worker.rs`): a due sync starts on its
+//!   worker at a [`Session::sync_tick`], shows "Syncing…" until its result is taken at a
+//!   later tick, and every read of the Sync folder is there. Choosing a folder and Stop syncing
+//!   wait for a sync running (still "Syncing…") and then apply; a restore waits for it, and for
+//!   the sync it runs first, at most [`RESTORE_SYNC_WAIT`].
 //! - **Stop syncing** gives the device a new id (`UserStore::take_new_device_id`): it records
 //!   no more ops, its outbox is emptied, a restore's question is dropped, and its files stay
 //!   in the folder. Choosing a folder again joins as a new Synced device.
@@ -27,6 +29,10 @@ use crate::notes::NotesFilter;
 use crate::session::Session;
 use crate::sync::SyncSchedule;
 use crate::sync::texts;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::sync_worker::RESTORE_SYNC_WAIT;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::sync_worker::{SyncOutcome, SyncTask, SyncWorker};
 
 /// The preference holding the Sync folder this device chose (its path; empty or none: this
 /// device does not sync). It stays on the device (`DEVICE_PREFERENCES`).
@@ -35,13 +41,29 @@ pub const SYNC_FOLDER_PREF: &str = "sync.folder";
 /// The platform this build is for, as `device.json` names it.
 pub const PLATFORM: &str = std::env::consts::OS;
 
+/// Why the last sync failed when a restore did not wait for it (its Details).
+const RESTORE_SYNC_UNFINISHED: &str = "The sync before the restore did not finish in time, so \
+     the restore went ahead without it; the Safety backup holds the edits it had not written.";
+
+/// How often, in milliseconds, the frames look for the result of a sync running on its worker.
+const SYNC_POLL_MS: i64 = 50;
+
 /// Where the Session's sync is between two frames.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Default)]
 enum Phase {
     #[default]
     Idle,
-    /// A sync is due: shown as "Syncing…" for a frame, it runs at the next tick.
-    Starting,
+    /// A sync runs on its worker ("Syncing…").
+    #[cfg(not(target_arch = "wasm32"))]
+    Running(SyncWorker),
+}
+
+/// What waits for the sync running to end, then applies (still "Syncing…" meanwhile).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+enum Deferred {
+    ChooseFolder(PathBuf),
+    StopSyncing,
 }
 
 /// How the last sync ended (none syncs on wasm).
@@ -89,6 +111,33 @@ pub struct SessionSync {
     restore_pending: bool,
     /// How long the last sync took, in milliseconds.
     last_duration_ms: Option<i64>,
+    /// Settings → Sync's action waiting for the sync running.
+    deferred: Option<Deferred>,
+    /// How long a restore waits for the sync before it ([`RESTORE_SYNC_WAIT`]; tests wait
+    /// less).
+    #[cfg(not(target_arch = "wasm32"))]
+    restore_wait: std::time::Duration,
+    /// The Sync folder tests give the worker instead of the one at [`SessionSync::folder`].
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    test_folder: Option<TestFolder>,
+}
+
+/// A Sync folder a test gives the worker.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[derive(Clone)]
+pub(crate) struct TestFolder(pub(crate) std::sync::Arc<dyn crate::sync::SyncFolder>);
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+impl std::fmt::Debug for TestFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TestFolder")
+    }
+}
+
+impl SessionSync {
+    fn syncing(&self) -> bool {
+        !matches!(self.phase, Phase::Idle)
+    }
 }
 
 impl Default for SessionSync {
@@ -104,6 +153,11 @@ impl Default for SessionSync {
             newer_app: Vec::new(),
             restore_pending: false,
             last_duration_ms: None,
+            deferred: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            restore_wait: RESTORE_SYNC_WAIT,
+            #[cfg(all(test, not(target_arch = "wasm32")))]
+            test_folder: None,
         }
     }
 }
@@ -229,9 +283,19 @@ impl Session {
             .and_then(|u| u.preference(SYNC_FOLDER_PREF).ok().flatten())
             .filter(|p| !p.trim().is_empty())
             .map(PathBuf::from);
+        let old = std::mem::take(&mut self.sync);
+        // A sync still running was on the User database this replaces.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Phase::Running(worker) = old.phase {
+            worker.abandon();
+        }
         self.sync = SessionSync {
-            platform: self.sync.platform,
+            platform: old.platform,
             folder,
+            #[cfg(not(target_arch = "wasm32"))]
+            restore_wait: old.restore_wait,
+            #[cfg(all(test, not(target_arch = "wasm32")))]
+            test_folder: old.test_folder,
             ..SessionSync::default()
         };
         self.sync.restore_pending = self.read_restore_pending();
@@ -249,19 +313,23 @@ impl Session {
         false
     }
 
-    /// Called every frame: notes an edit not yet synced, and runs a sync when one is due (a
-    /// due sync shows "Syncing…" for a frame first). Returns in how many milliseconds the next
-    /// is due (0: draw again now), or `None` without a Sync folder.
+    /// Called every frame: notes an edit not yet synced, starts a sync on its worker when one
+    /// is due, and takes a running sync's result once it is there (then reloads the Synced
+    /// data it merged, and applies what waited for it). Returns in how many milliseconds to
+    /// call again (the next sync due, or soon while one runs), or `None` without a Sync folder.
     pub fn sync_tick(&mut self, now_ms: i64) -> Option<i64> {
         self.sync.folder.as_ref()?;
-        match self.sync.phase {
-            Phase::Starting => self.run_due_sync(),
-            Phase::Idle => {
-                self.note_sync_edit(now_ms);
-                if self.sync.schedule.is_due(now_ms) && !self.sync.restore_pending {
-                    self.sync.phase = Phase::Starting;
-                    return Some(0);
-                }
+        if self.sync.syncing() {
+            if !self.take_sync_result() {
+                return Some(SYNC_POLL_MS);
+            }
+            self.sync.folder.as_ref()?;
+        }
+        self.note_sync_edit(now_ms);
+        if self.sync.schedule.is_due(now_ms) && !self.sync.restore_pending {
+            self.start_sync(now_ms);
+            if self.sync.syncing() {
+                return Some(SYNC_POLL_MS);
             }
         }
         if self.sync.restore_pending {
@@ -289,36 +357,101 @@ impl Session {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn run_due_sync(&mut self) {
-        self.sync.phase = Phase::Idle;
+    fn start_sync(&mut self, now_ms: i64) {
+        self.sync.schedule.sync_failed(now_ms);
     }
 
-    /// Run the sync that is due, on this Session's connection.
+    #[cfg(target_arch = "wasm32")]
+    fn take_sync_result(&mut self) -> bool {
+        true
+    }
+
+    /// Start the sync that is due on its worker.
     #[cfg(not(target_arch = "wasm32"))]
-    fn run_due_sync(&mut self) {
-        self.sync.phase = Phase::Idle;
-        let Some(folder) = self.sync.folder.clone() else {
+    fn start_sync(&mut self, now_ms: i64) {
+        if let Err(e) = self.start_worker(SyncTask::Sync) {
+            self.after_sync(
+                SyncOutcome {
+                    state: Err(e),
+                    devices: None,
+                },
+                now_ms,
+            );
+        }
+    }
+
+    /// Start `task` on a worker, through the Sync folder (tests: theirs), on a second
+    /// connection to the User database.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn start_worker(&mut self, task: SyncTask) -> Result<(), crate::sync::SyncError> {
+        let Some(path) = self.sync.folder.clone() else {
+            return Err(crate::sync::SyncError::Damaged(
+                "this device does not sync".into(),
+            ));
+        };
+        let folder: crate::sync_worker::FolderMaker =
+            Box::new(move || crate::sync_worker::reachable(&path));
+        #[cfg(test)]
+        let folder: crate::sync_worker::FolderMaker = match self.sync.test_folder.clone() {
+            Some(TestFolder(test)) => Box::new(move || Ok(test)),
+            None => folder,
+        };
+        let worker = SyncWorker::start(self.sync_store()?, folder, self.sync.platform, task)?;
+        self.sync.phase = Phase::Running(worker);
+        Ok(())
+    }
+
+    /// Take the running sync's result when it is there; whether no sync runs now.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn take_sync_result(&mut self) -> bool {
+        let Phase::Running(worker) = &self.sync.phase else {
+            return true;
+        };
+        let Some(outcome) = worker.take() else {
+            return false;
+        };
+        self.finish_sync(outcome);
+        true
+    }
+
+    /// The running sync ended with `outcome`: take it, then apply what waited for it.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn finish_sync(&mut self, outcome: SyncOutcome) {
+        let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) else {
             return;
         };
-        let started = obs_store::clock::now_ms();
-        let result = self.sync_once(&folder);
-        self.after_sync(&folder, result, started);
+        self.after_sync(outcome, worker.started);
+        if let SyncTask::RestoreChoice(_) = worker.task {
+            // A choice that could not reach the folder is asked again.
+            self.sync.restore_pending = self.read_restore_pending();
+        }
+        match self.sync.deferred.take() {
+            Some(Deferred::ChooseFolder(folder)) => {
+                if let Err(e) = self.choose_sync_folder(&folder) {
+                    self.sync.last = Some(LastSync::Failed(e));
+                }
+            }
+            Some(Deferred::StopSyncing) => {
+                if let Err(e) = self.stop_syncing() {
+                    self.sync.last = Some(LastSync::Failed(e));
+                }
+            }
+            None => {}
+        }
     }
 
-    /// One `sync_now` through the Sync folder at `folder`; a folder that is not there (a
-    /// disk not mounted, a cloud folder moved) is not reached, and nothing is made there.
+    /// Wait, until `deadline`, for the sync running to end, and take its result; whether no
+    /// sync runs now.
     #[cfg(not(target_arch = "wasm32"))]
-    fn sync_once(
-        &self,
-        folder: &std::path::Path,
-    ) -> Result<crate::sync::SyncState, crate::sync::SyncError> {
-        let store = self.sync_store()?;
-        let fs = reachable(folder)?;
-        crate::sync::sync_now(
-            store,
-            &fs,
-            &crate::sync::SyncOptions::new(self.sync.platform),
-        )
+    fn wait_for_sync(&mut self, deadline: std::time::Instant) -> bool {
+        let Phase::Running(worker) = &self.sync.phase else {
+            return true;
+        };
+        let Some(outcome) = worker.wait(deadline) else {
+            return false;
+        };
+        self.finish_sync(outcome);
+        true
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -331,16 +464,11 @@ impl Session {
     /// Take what a sync (or a restore's choice) found: its state, the devices, and the Synced
     /// data it merged, which the Session reloads.
     #[cfg(not(target_arch = "wasm32"))]
-    fn after_sync(
-        &mut self,
-        folder: &std::path::Path,
-        result: Result<crate::sync::SyncState, crate::sync::SyncError>,
-        started: i64,
-    ) {
+    fn after_sync(&mut self, outcome: SyncOutcome, started: i64) {
         use crate::sync::SyncState;
         let finished = obs_store::clock::now_ms();
         self.sync.last_duration_ms = Some(finished.saturating_sub(started));
-        match result {
+        match outcome.state {
             Ok(state) => {
                 self.sync.schedule.synced(started, finished);
                 self.sync.edit_noted = false;
@@ -368,8 +496,8 @@ impl Session {
                         self.sync.last = Some(LastSync::NeedsRestoreChoice);
                     }
                 }
-                if let Ok(fs) = reachable(folder) {
-                    self.read_folder_devices(&fs);
+                if let Some(devices) = outcome.devices {
+                    self.set_folder_devices(devices);
                 }
             }
             Err(e) => {
@@ -380,12 +508,9 @@ impl Session {
         }
     }
 
-    /// The Synced devices of the Sync folder (their `device.json`).
+    /// The Synced devices of the Sync folder (their `device.json`), as the worker read them.
     #[cfg(not(target_arch = "wasm32"))]
-    fn read_folder_devices(&mut self, folder: &crate::sync::FsSyncFolder) {
-        let Ok(devices) = crate::sync::read_devices(folder) else {
-            return;
-        };
+    fn set_folder_devices(&mut self, devices: Vec<crate::sync::FolderDevice>) {
         self.sync.devices = devices
             .into_iter()
             .map(|d| match d.file {
@@ -436,10 +561,14 @@ impl Session {
     }
 
     /// Choose the Sync folder: this device syncs through it from now on (the first sync, due
-    /// at once, joins it).
+    /// at once, joins it). While a sync runs, it is chosen once that sync ends.
     pub fn choose_sync_folder(&mut self, folder: &std::path::Path) -> Result<(), String> {
         if !folder.is_dir() {
             return Err(format!("{} is not a folder", folder.display()));
+        }
+        if self.sync.syncing() {
+            self.sync.deferred = Some(Deferred::ChooseFolder(folder.to_path_buf()));
+            return Ok(());
         }
         let user = self.user_data()?;
         user.set_preference(SYNC_FOLDER_PREF, &folder.to_string_lossy())?;
@@ -450,8 +579,14 @@ impl Session {
     /// Stop syncing: this device records no more ops (a new device id, its outbox emptied, a
     /// restore's question dropped), then forgets the folder; its files stay in the folder. The
     /// new id comes first, so a failure leaves the device syncing as before rather than
-    /// recording into an outbox nothing reads.
+    /// recording into an outbox nothing reads. While a sync runs, it stops once that sync
+    /// ends.
     pub fn stop_syncing(&mut self) -> Result<(), String> {
+        if self.sync.syncing() {
+            self.user_data()?;
+            self.sync.deferred = Some(Deferred::StopSyncing);
+            return Ok(());
+        }
         let user = self.user_data()?;
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(store) = user.user_store() {
@@ -489,53 +624,59 @@ impl Session {
     }
 
     /// Catch up or Replace, after a Backup was restored on this syncing device (rule 7),
-    /// then a sync.
+    /// then a sync, on its worker ("Syncing…"; the prompt is gone meanwhile, and comes back
+    /// when the choice could not reach the folder).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn choose_restore(&mut self, choice: crate::sync::RestoreChoice) -> Result<(), String> {
-        let folder = self
-            .sync
-            .folder
-            .clone()
-            .ok_or("This device does not sync")?;
-        let started = obs_store::clock::now_ms();
-        let result = (|| {
-            let store = self.sync_store()?;
-            let fs = reachable(&folder)?;
-            crate::sync::restore_choice(
-                store,
-                &fs,
-                choice,
-                &crate::sync::SyncOptions::new(self.sync.platform),
-            )
-        })();
-        let failed = result.as_ref().err().map(ToString::to_string);
-        self.after_sync(&folder, result, started);
-        // A choice that could not reach the folder is asked again.
-        self.sync.restore_pending = self.read_restore_pending();
-        match failed {
-            Some(e) => Err(e),
-            None => Ok(()),
+        if self.sync.folder.is_none() {
+            return Err("This device does not sync".into());
         }
+        if self.sync.syncing() {
+            return Err("A sync is running".into());
+        }
+        self.start_worker(SyncTask::RestoreChoice(choice))
+            .map_err(|e| e.to_string())?;
+        self.sync.restore_pending = false;
+        Ok(())
     }
 
     /// Before a restore (or its undo) replaces the User database: sync first when the folder
     /// is reachable, so edits not yet written reach it (a failure does not hold the restore
-    /// back: the Safety backup has them). Returns this device's Sync folder preference, which
-    /// the restore puts back.
-    pub(crate) fn sync_before_restore(&mut self) -> String {
+    /// back: the Safety backup has them). A sync running is waited for, then this one runs on
+    /// its worker (the folder is never read on the UI thread); the restore waits for both at
+    /// most [`RESTORE_SYNC_WAIT`], then goes ahead, the sync left running abandoned (it
+    /// writes nothing more). Returns this device's Sync folder preference, which the restore
+    /// puts back, and whether the sync was left unfinished
+    /// ([`Session::after_restore_sync_unfinished`]).
+    pub(crate) fn sync_before_restore(&mut self) -> (String, bool) {
         let kept = (self.user.as_ref())
             .and_then(|u| u.preference(SYNC_FOLDER_PREF).ok().flatten())
             .unwrap_or_default();
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(folder) = self.sync.folder.clone() {
-            let started = obs_store::clock::now_ms();
-            let result = self.sync_once(&folder);
-            if let Err(e) = &result {
-                log::warn!("sync before the restore failed: {e}");
+        if self.sync.folder.is_some() {
+            let deadline = std::time::Instant::now() + self.sync.restore_wait;
+            if self.wait_for_sync(deadline) {
+                self.start_sync(obs_store::clock::now_ms());
+                if self.wait_for_sync(deadline)
+                    && let Some(LastSync::Failed(e)) = &self.sync.last
+                {
+                    log::warn!("sync before the restore failed: {e}");
+                }
             }
-            self.after_sync(&folder, result, started);
+            if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
+                worker.abandon();
+                log::warn!("the sync before the restore did not finish in time");
+                return (kept, true);
+            }
         }
-        kept
+        (kept, false)
+    }
+
+    /// After a restore whose sync first did not finish in time: say so (Settings → Sync's
+    /// status and Details), and try again as after a failed sync.
+    pub(crate) fn after_restore_sync_unfinished(&mut self) {
+        self.sync.schedule.sync_failed(obs_store::clock::now_ms());
+        self.sync.last = Some(LastSync::Failed(RESTORE_SYNC_UNFINISHED.into()));
     }
 
     /// What Settings → Sync shows, at `now_ms`.
@@ -580,7 +721,7 @@ impl Session {
             status,
             details,
             warn,
-            syncing: self.sync.phase == Phase::Starting,
+            syncing: self.sync.syncing(),
             folder_newer: (self.sync.last == Some(LastSync::FolderNewer))
                 .then_some(texts::FOLDER_NEWER),
             restore_pending: self.sync.restore_pending,
@@ -590,7 +731,7 @@ impl Session {
 
     /// The status line, the error behind it, and whether it is a problem.
     fn sync_status(&self, now_ms: i64) -> (String, Option<String>, bool) {
-        if self.sync.phase == Phase::Starting {
+        if self.sync.syncing() {
             return (texts::SYNCING.to_string(), None, false);
         }
         if self.sync.restore_pending {
@@ -641,14 +782,14 @@ impl Session {
         Some(SyncIndicator {
             text,
             warn,
-            syncing: self.sync.phase == Phase::Starting,
+            syncing: self.sync.syncing(),
         })
     }
 
     /// Whether the restore prompt shows: a Backup was restored while this device synced,
     /// and it waits for Catch up or Replace.
     pub fn sync_restore_pending(&self) -> bool {
-        self.sync.folder.is_some() && self.sync.restore_pending
+        self.sync.folder.is_some() && self.sync.restore_pending && !self.sync.syncing()
     }
 
     /// How long the last sync took, in milliseconds.
@@ -753,21 +894,6 @@ impl Session {
             self.notes.reveal = Some((note.id.clone(), true));
         }
         Ok(())
-    }
-}
-
-/// The Sync folder at `folder`, when it is there.
-#[cfg(not(target_arch = "wasm32"))]
-fn reachable(
-    folder: &std::path::Path,
-) -> Result<crate::sync::FsSyncFolder, crate::sync::SyncError> {
-    if folder.is_dir() {
-        Ok(crate::sync::FsSyncFolder::new(folder))
-    } else {
-        Err(crate::sync::SyncError::Damaged(format!(
-            "{} is not there",
-            folder.display()
-        )))
     }
 }
 
