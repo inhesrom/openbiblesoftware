@@ -72,6 +72,17 @@ final class StorageTests: XCTestCase {
         }
     }
 
+    /// The audit in Light, then in Dark (given time to settle: the navigation title read
+    /// mid-change fails contrast).
+    private func audits(_ app: XCUIApplication) throws {
+        try audit(app)
+        XCUIDevice.shared.appearance = .dark
+        sleep(3)
+        try audit(app)
+        XCUIDevice.shared.appearance = .light
+        sleep(2)
+    }
+
     private func rows(_ app: XCUIApplication, saying text: String) -> XCUIElementQuery {
         app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH 'storage.row.' AND label CONTAINS %@", text))
@@ -83,35 +94,31 @@ final class StorageTests: XCTestCase {
         app.launchEnvironment["OBS_TEST_APP_FOLDER"] = "OpenBible-StorageTests"
         app.launchEnvironment["OBS_TEST_NO_STUDY_SET_OFFER"] = "1"
         app.launchEnvironment["OBS_STUDY_SET_DIR"] = starter.path
+        // Library → Storage at once, while the launch's index builds run (they take seconds).
+        app.launchEnvironment["OBS_TEST_OPEN_STORAGE"] = "1"
         app.launch()
-        XCTAssertTrue(app.staticTexts["reader.location"].waitForExistence(timeout: 30), "no reader")
-        app.buttons["reader.options"].tap()
-        app.buttons["reader.library"].tap()
-        let storage = app.descendants(matching: .any)["library.storage"].firstMatch
-        XCTAssertTrue(storage.waitForExistence(timeout: 10), "no Library sheet")
-        storage.tap()
-        XCTAssertTrue(app.navigationBars["Storage"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Storage"].waitForExistence(timeout: 30), "no Storage")
 
         // While the indexes are built: rows say so, in the core's words.
         let building = rows(app, saying: "Still being indexed").firstMatch
-        XCTAssertTrue(building.waitForExistence(timeout: 20), "no row still being indexed")
+        XCTAssertTrue(building.waitForExistence(timeout: 5), "no row still being indexed")
         // VoiceOver reads a row as one element: its title and size, then its index; Remove
         // follows it.
         let id = building.identifier.replacingOccurrences(of: "storage.row.", with: "")
         XCTAssertTrue(building.label.hasSuffix("Still being indexed"), building.label)
         XCTAssertTrue(building.label.contains(" MB"), building.label)
         XCTAssertTrue(app.buttons["storage.remove.\(id)"].exists)
+        try audits(app)
         shot(app, "s25-storage-indexing")
-        try audit(app)
 
-        // Built: no row is still being indexed, and the Bundled set's BSB reads ready.
+        // Built: no row on screen is still being indexed, and the Bundled set's BSB reads ready.
         let none = NSPredicate(format: "count == 0")
         expectation(for: none, evaluatedWith: rows(app, saying: "Still being indexed"))
         waitForExpectations(timeout: 240)
         let bsb = app.descendants(matching: .any)["storage.row.bsb"].firstMatch
         XCTAssertTrue(bsb.waitForExistence(timeout: 10))
         XCTAssertTrue(bsb.label.hasSuffix("Search index ready"), bsb.label)
+        try audits(app)
         shot(app, "s25-storage-ready")
-        try audit(app)
     }
 }

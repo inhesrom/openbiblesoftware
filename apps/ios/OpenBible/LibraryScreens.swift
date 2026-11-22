@@ -15,7 +15,7 @@ struct LibrarySheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.path) {
             List {
                 if let banner = model.banner {
                     DownloadBanner(text: banner)
@@ -267,35 +267,45 @@ struct OpenRowView: View {
 }
 
 /// Library → Storage: the space each Resource takes, its Search index, and the total, as the
-/// core counts and words them.
+/// core counts and words them. Sizes are in the primary colour (the grouped list's secondary
+/// text fails the audit's contrast, as S06 found).
 struct StorageScreen: View {
     let model: LibraryModel
 
     var body: some View {
         List {
             if let storage = model.storage {
-                LabeledContent("Total", value: storage.size)
-                    .accessibilityIdentifier("storage.total")
+                HStack {
+                    Text("Total")
+                    Spacer()
+                    Text(storage.size)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("storage.total")
                 ForEach(storage.rows, id: \.resourceId) { row in
-                    HStack {
+                    HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
-                            LabeledContent(row.title, value: row.size)
+                            Text(row.title).fixedSize(horizontal: false, vertical: true)
+                            Text(row.size).font(.subheadline)
                             if let index = row.index {
                                 HStack(spacing: 6) {
                                     if index.state == .building {
-                                        ProgressView().accessibilityHidden(true)
+                                        ProgressView().controlSize(.small).accessibilityHidden(true)
                                     }
-                                    Text(index.label).font(.footnote)
+                                    Text(index.label)
                                 }
+                                .font(.footnote)
                             }
                         }
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("storage.row.\(row.resourceId)")
+                        Spacer(minLength: 0)
                         Button("Remove", role: .destructive) { model.remove(row.resourceId) }
                             .accessibilityLabel("Remove \(row.title)")
                             .accessibilityIdentifier("storage.remove.\(row.resourceId)")
                     }
                     .buttonStyle(.borderless)
+                    .padding(.vertical, 2)
                 }
             }
         }

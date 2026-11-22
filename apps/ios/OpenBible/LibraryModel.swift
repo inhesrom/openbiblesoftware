@@ -42,6 +42,8 @@ final class LibraryModel {
     let downloads: DownloadCenter
     /// The Library sheet is up.
     var showing = false
+    /// The Library sheet's pushed lists.
+    var path: [LibrarySheet.Page] = []
     private(set) var starter: StarterLibraryView?
     private(set) var openRows: [OpenRow] = []
     let filters = licenceFilters()
@@ -79,6 +81,12 @@ final class LibraryModel {
         network.start()
         refresh()
         #if DEBUG
+            // Test harness: StorageTests opens Library → Storage at launch, while the indexes
+            // the launch queued are still being built.
+            if ProcessInfo.processInfo.environment["OBS_TEST_OPEN_STORAGE"] == "1" {
+                path = [.storage]
+                open()
+            }
             // Test harness: the UI tests that do not test the offer launch without it.
             if ProcessInfo.processInfo.environment["OBS_TEST_NO_STUDY_SET_OFFER"] == "1" { return }
         #endif
