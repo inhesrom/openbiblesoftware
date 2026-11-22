@@ -1209,8 +1209,8 @@ impl ObrReader {
         self.to_verse_in(row, &mut None)
     }
 
-    /// [`Self::to_verse`], reusing `last`, the unit id of the row before, when this row is in
-    /// the same unit: a whole Bible's Verses come in unit order, so reading every Verse asks
+    /// [`Self::to_verse`], reusing `last_unit`, the unit ordinal and id of the row before, when
+    /// this row is in the same unit: a whole Bible's Verses come in unit order, so reading every Verse asks
     /// for each unit's id once, not once per Verse.
     fn to_verse_in(
         &self,
