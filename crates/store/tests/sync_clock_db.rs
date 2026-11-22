@@ -10,7 +10,8 @@
 //! while this device records them, giving a reserved op file the same ops when it is retried
 //! and marking only the next reserved file written. A second connection (the sync worker's,
 //! plan S29b) shares the clock: two connections writing at once on two threads hand out one
-//! increasing sequence, none twice, and a new id one takes is the other's next clock's.
+//! increasing sequence, none twice, and a new id one takes is the other's next clock's; once
+//! its writes are refused (a restore is coming) it commits nothing.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(not(target_arch = "wasm32"))]
@@ -1087,4 +1088,34 @@ fn a_second_connection_is_refused_at_another_schema_and_where_there_is_no_databa
     std::fs::remove_file(dir.db()).unwrap();
     assert!(second.open().is_err(), "nothing is made at its path");
     assert!(!dir.db().exists());
+}
+
+#[test]
+fn a_second_connection_writes_nothing_once_its_writes_are_refused() {
+    let dir = Dir::new("second-refuses");
+    let (ui, _) = UserStore::open(&dir.db()).unwrap();
+    let second = ui.second_connection().unwrap();
+    let sync = second.open().unwrap();
+    add_notebook(&sync, "Before");
+    assert!(!second.writes_refused());
+    second.clone().refuse_writes();
+    assert!(second.writes_refused(), "its clones share the switch");
+    let before = everything(&Connection::open(dir.db()).unwrap());
+    let nb = notebook("After");
+    assert!(
+        sync.apply_changes(&[Change::insert(Row::Notebook(nb))])
+            .is_err()
+    );
+    assert!(
+        sync.set_device_name("Refused").is_err(),
+        "one statement too"
+    );
+    assert!(sync.take_new_device_id().is_err());
+    assert!(
+        second.open().unwrap().start_recording_ops().is_err(),
+        "a connection opened after it too"
+    );
+    assert_eq!(everything(&Connection::open(dir.db()).unwrap()), before);
+    // The first connection writes as before.
+    add_notebook(&ui, "From the UI");
 }

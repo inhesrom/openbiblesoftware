@@ -11,6 +11,7 @@
 //! newest [`ROLLING_BACKUPS`] are kept) is written with SQLite's online backup API.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -127,23 +128,42 @@ pub struct UserStore {
 /// A second connection to a User database, to open on another thread (the sync worker, plan
 /// S29b): the database's path and the clock it shares with the [`UserStore`] it came from.
 /// Every clock either connection hands out is after every clock the other handed out or
-/// observed.
+/// observed. Its clones share one switch, [`SecondConnection::refuse_writes`], for when the
+/// database is about to be replaced (a restore) while the other thread still works.
 #[derive(Debug, Clone)]
 pub struct SecondConnection {
     path: PathBuf,
     schema: u32,
     clock: Arc<Mutex<crate::sync_clock::ClockState>>,
+    refused: Arc<AtomicBool>,
 }
 
 impl SecondConnection {
+    /// From now on every transaction a connection opened from this one commits is rolled back
+    /// instead (an SQLite commit hook), so work left running on the old data never writes into
+    /// what replaces it.
+    pub fn refuse_writes(&self) {
+        self.refused.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether [`SecondConnection::refuse_writes`] was called.
+    pub fn writes_refused(&self) -> bool {
+        self.refused.load(Ordering::SeqCst)
+    }
+
     /// Open it: the database must be there, at the schema the first connection had. Nothing
     /// is migrated or backed up (the first connection did that at its open).
     pub fn open(&self) -> Result<UserStore, StoreError> {
-        let conn = Connection::open_with_flags(
+        let mut conn = Connection::open_with_flags(
             &self.path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(sql)?;
+        let refused = Arc::clone(&self.refused);
+        // The hook runs while the commit holds the write lock, which the restore needs too:
+        // a commit it lets through is done before the restore starts copying.
+        conn.commit_hook(Some(move || refused.load(Ordering::SeqCst)))
+            .map_err(sql)?;
         let found: u32 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(sql)?;
@@ -181,6 +201,7 @@ impl UserStore {
             path: self.path.clone(),
             schema: self.schema_version()?,
             clock: Arc::clone(&self.clock),
+            refused: Arc::default(),
         })
     }
 
