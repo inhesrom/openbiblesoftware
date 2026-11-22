@@ -2,14 +2,16 @@
 
 The Rust side of Sync, from plan steps S28a (the file layer), S28b-1 and S28b-2 (the merge,
 [below](#merging)) and S28c (snapshots, trimming, device ids, restores, when sync runs:
-[the contract](#contract)), and the desktop's Settings → Sync, status indicator, restore
-prompt and Needs attention from S29 ([below](#the-desktop-s29)); S30 is the iOS screens. The
+[the contract](#contract)), the desktop's Settings → Sync, status indicator, restore
+prompt and Needs attention from S29 ([below](#the-desktop-s29)), and sync on a worker off the
+UI thread from S29b ([below](#off-the-ui-thread-s29b)); S30 is the iOS screens. The
 shells render the states and words of the engine and hold no rule. Terms are in [CONTEXT.md](../../CONTEXT.md):
 **Sync folder**, **Synced device**, **Synced data**, **Sync conflict**.
 
 | Layer | Piece | Role |
 |---|---|---|
 | `obs-store` | `hlc.rs` | `Hlc`: the hybrid logical clock, its text form, `Hlc::next`, `MAX_FORWARD_SKEW_MS`. Compiles everywhere. |
+| `obs-store` | `user.rs` | `UserStore::second_connection` (`SecondConnection`: `open`, `refuse_writes`), `BUSY_TIMEOUT`, `UserStore::write_tx` (`BEGIN IMMEDIATE`) and `WriteTurns` (S29b: [off the UI thread](#off-the-ui-thread-s29b)). |
 | `obs-store` | `sync_clock.rs` | From schema 14, `apply_changes` gives each `Change` the next clock and writes it into the row, item or tombstone; while this device records ops, keeps each `Change` with its clock in `op_outbox`. `device_id`, `observe_clock`, `start_recording_ops`, `records_ops`, `reserve_op_files`, `op_file_written`. |
 | `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`), 14 → 15 (`tombstone.covers`, `item_clock.position`), 15 → 16 (`annotations.conflict_of`, `tombstone.row` with `row_covers` and `row_clock`, `sync_held`) and 16 → 17 (`former_device`, `device.restore_choice`); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
 | `obs-store` | `sync_device.rs` | ADR 0022 rule 7: `own_device_ids` (this id and the former ones), `take_new_device_id` (a copied database), `restore_choice_pending`, `clear_restore_choice`, `device_name`, `set_device_name`, `merged_devices`, `last_reserved_op_file`; `renew_device_id`, which `UserStore::restore_from` (`backup_store.rs`) runs after every restore. |
@@ -24,6 +26,7 @@ shells render the states and words of the engine and hold no rule. Terms are in 
 | `obs-engine` | `sync/schedule.rs` | `SyncSchedule` and `next_sync_due` (ADR 0022 rule 8). Compiles everywhere. |
 | `obs-engine` | `sync/mod.rs` | Paths, `sync.json` (`ensure_sync_json`), `device.json` (`write_device_json`, `read_devices`), `SyncError`. |
 | `obs-engine` | `sync/texts.rs` | Every word the shells show of Sync (S29, owner-approved through the supervisor): onboarding, folder guidance per platform, status lines, device rows, the restore prompt, the Sync conflict's text and actions, held ops' lines. Compiles everywhere; S30 shows the same. |
+| `obs-engine` | `sync_worker.rs` | S29b: `SyncWorker` (a sync or a restore's choice on a thread of its own, on a second connection), `RESTORE_SYNC_WAIT`, the folder it refuses once abandoned. |
 | `obs-engine` | `sync_session.rs` | The desktop Session's sync (S29): the Sync folder (`SYNC_FOLDER_PREF`), the `SyncSchedule`, `Session::sync_tick`, `sync_panel`, `sync_indicator`, `sync_restore_pending`, `sync_held_lines`, `resolve_sync_conflict` (`ConflictChoice`), the restore's hooks, commands `sync.*`. |
 | `obs-ui-egui` | `shell/sync_ui.rs` | Settings → Sync, the menu bar's status indicator, the restore prompt, the frame's tick; Needs attention's parts are in `shell/notes_tab.rs`. |
 
@@ -65,15 +68,11 @@ behaves as before (the gallery's goldens are unchanged).
   lets tests and the gallery draw one platform's words on every computer).
 - **When it runs:** `Session::sync_tick(now)` every frame keeps the `SyncSchedule`
   (`at_launch(true)`: at launch, every 5 minutes, 30 seconds after the first edit not yet
-  synced, which it notes when the outbox has ops, and on Sync now). A due sync shows
-  "Syncing…" for one frame, then `sync_now` runs at the next tick **on the UI thread, on the
-  Session's own connection** (supervisor decision D3: the store's clock and device id live in
-  that connection). Measured on the owner's Mac (`measure_syncs_on_the_ui_thread`, a local
-  folder, dev profile): one edit 13–20 ms; a folder of 1,002 op files with nothing new 7–8 ms;
-  a new device joining it from snapshots 35–37 ms; a device away while another wrote 1,000 op
-  files catching up in one sync 136–141 ms; in the two-instance e2e 9–29 ms a sync. Plan step
-  S29b moves sync off the UI thread before iCloud is relied on.
-- **After a sync** that merged anything, the Session reloads what it keeps of Synced data, as
+  synced, which it notes when the outbox has ops, and on Sync now). A due sync starts **on
+  its worker** ([off the UI thread](#off-the-ui-thread-s29b), S29b; S29 ran it on the UI
+  thread, supervisor decision D3, 136–141 ms for a 1,000-file catch-up) and shows "Syncing…"
+  until a later tick takes its result (the tick asks for the next frame in 50 ms meanwhile).
+- **After a sync** (at the tick that takes its result) that merged anything, the Session reloads what it keeps of Synced data, as
   at launch (Preferred order, Guide arrangements, Favorites, Reading plans, Copy presets,
   Collections, Saved searches, Word forms), moves `annotations_revision`, runs Notes searches
   again and re-anchors as at launch (`reload_synced_data`); preferences that stay on the device
@@ -84,19 +83,26 @@ behaves as before (the gallery's goldens are unchanged).
   device's `needs_newer_app`, the Synced devices from their `device.json` (this one first,
   "(this device)"; a restored or copied device lists its old id as another device), the name.
   Help → Keyboard shortcuts lists Sync now only once a folder is chosen.
-- **Stop syncing** (`sync.stop {confirm: true}`, asked first) gives the device a new id
+- **Stop syncing** (`sync.stop {confirm: true}`, asked first; while a sync runs it waits for
+  it, "Syncing…" meanwhile, as choosing a folder does) gives the device a new id
   (`take_new_device_id`): it records no more ops, its outbox is emptied, a restore's question
   is dropped, its files stay in the folder; then it forgets the folder (in that order, so a
   failure leaves it syncing rather than recording into an outbox nothing reads). Choosing a folder again joins as
   a new Synced device.
 - **A restore** (`data.restore`, `data.undo_restore`) on a device with a Sync folder syncs first
   when the folder is reachable (`Session::sync_before_restore`; a failure does not hold the
-  restore back: the Safety backup has the edits), and puts this device's `sync.folder` back
+  restore back: the Safety backup has the edits). That sync runs on its worker, after any sync
+  already running, while the restore **waits on the UI thread** (a restore blocks its frame
+  anyway; supervisor decision for S29b), for both at most `RESTORE_SYNC_WAIT` (30 s): then the
+  restore goes ahead, the sync left running is abandoned (it writes nothing more, [below](#off-the-ui-thread-s29b)),
+  and Settings → Sync's Details say "The sync before the restore did not finish in time…".
+  The restore puts this device's `sync.folder` back
   after it, whatever the Backup held ([`backups.md`](backups.md#restore)), so a restore never
   starts, stops or moves sync. On a device that was syncing the prompt "Restored from a
   Backup" then shows over the window until **Catch up** (the default, Enter) or **Replace**
-  runs `sync.restore_choice {choice}` (`restore_choice`, then a sync); it comes back after a
-  restart.
+  runs `sync.restore_choice {choice}` (`restore_choice`, then a sync, on the worker: the prompt
+  goes, "Syncing…" shows, and the prompt comes back if the folder could not be reached); it
+  comes back after a restart.
 - **Needs attention** (`notes-tool.md`) lists the Sync conflicts' copies (with "Sync conflict:
   this text and the Note's at … were changed on two devices…", and **Keep this version**,
   **Keep the other**, **Keep both**, **Combine**: `sync.resolve_conflict {id, keep}`, each one
@@ -106,6 +112,52 @@ behaves as before (the gallery's goldens are unchanged).
   **Changes waiting**,
   the held ops, each "A change from <device> to <what> is waiting: <why>. It is tried again at
   every sync."
+
+## Off the UI thread (S29b)
+
+Every sync (and a restore's Catch up or Replace) runs on a thread of its own
+(`sync_worker.rs`, one at a time), so no frame waits for it and no read of the Sync folder (an
+iCloud placeholder's download can block for seconds) is on the UI thread: the worker makes the
+folder, runs `sync_now` or `restore_choice`, reads the devices' `device.json`, and sends the
+outcome over a channel. The tick that takes it updates the schedule and status and reloads
+what was merged; a worker that stopped without an outcome (it panicked) is a failed sync.
+
+- **A second connection.** The worker opens the User database again
+  (`UserStore::second_connection().open()`: the same file, at the schema the first had,
+  nothing migrated or backed up). No schema change.
+- **One clock.** Both connections share one `ClockState` (`Arc<Mutex<…>>`): they hand out one
+  increasing sequence of clocks, no clock twice, and a clock the merge observes is passed by
+  the next edit's. The device id a clock names is read in the transaction that stamps it, so a
+  new id the worker takes (a copied database) is the next edit's at once.
+- **Writes take turns.** Every write transaction is `BEGIN IMMEDIATE` (`UserStore::write_tx`):
+  a deferred one that read before the other connection committed could not write at all
+  (`SQLITE_BUSY_SNAPSHOT`), refusing a user's edit. A write waits for the other's transaction
+  (`BUSY_TIMEOUT`, 10 s), and the first connection (the UI's) goes first (`WriteTurns`): its
+  busy handler retries every 100 µs and marks that it waits, and the worker starts no write
+  transaction within 20 ms of that mark. Without it SQLite's busy wait, which backs off further
+  at each try, left an edit waiting 125 ms behind a 1,000-file merge's transactions one after
+  another; with it, 1–5 ms.
+- **Edits during a sync** are stamped after every clock merged so far, go in the outbox (the
+  outbox rows the sync reserved before them are its; theirs go in the next file) and are synced
+  with the next sync, due 30 seconds after the edit as any; a merge transaction reads the rows
+  as they are, so an edit committed meanwhile is a local edit to it (last writer wins, a Sync
+  conflict's copy of Note text). A Note editor's save keeps its base-text rule.
+- **An abandoned sync** (a restore that did not wait for it, above) has its writes refused:
+  its connection's commit hook rolls back every transaction from then (a commit let through
+  holds the write lock the restore needs, so it is done before the restore copies), and its
+  folder refuses every call. Either alone keeps the restored data as it is.
+- **Measured** (`measure_syncs_off_the_ui_thread`, three runs on the owner's Mac, dev
+  profile, a local folder, frames of 16 ms; each frame's sync work is `sync_tick` and the
+  status the shell draws): catching up with 1,000 op files (the sync 128–159 ms), 9–11
+  frames, sync work at most 0.09–0.19 ms a frame, the result's frame (with the reload)
+  0.07–0.10 ms, no frame's over 1.2 ms; the same with an edit at every frame, the longest edit
+  1.4–4.7 ms (0.2–0.4 ms with no sync running); a new device joining that folder, edits at most
+  4–8 ms; a new device joining a library of 10,000 Notes, the result's frame 4.5–7.6 ms, but
+  **an edit made during it waits 0.5–0.9 s** for the one merge transaction (10,000 ops in one
+  op file, or the snapshot: [for later steps](#for-later-steps)).
+- **The worker needs only `SyncFolder: Send + Sync`** (as the trait is), made on its thread
+  (`sync_worker::FolderMaker`, crate-private; the desktop's is `FsSyncFolder` at the chosen
+  path, checked to be there).
 
 ## Data
 
@@ -920,7 +972,22 @@ Mobile app has no period (`at_launch(false)`).
   Note another device deleted offers Keep this text and Let it go; a Note editor's save after
   a merge changed its Note keeps both texts (into a new copy, or the merge's copy of its
   text); the restore prompt comes back after a restart until it is answered; held ops listed with why; a folder not
-  there and one a newer app set up. `measure_syncs_on_the_ui_thread` (ignored) measures.
+  there and one a newer app set up. S29b: no call of the Sync folder is on the UI thread
+  (through a restore and its Catch up); edits made while a sync runs (it held reading another
+  device's op file) are kept and reach the other device; choosing a folder and Stop syncing
+  wait for the sync running, "Syncing…" meanwhile; a worker that panics is a failed sync and
+  the next syncs; a restore whose sync first is held goes ahead after its wait, says so, and
+  that sync, let go, changes neither the restored data nor the folder (failing without both
+  the commit hook and the folder's refusal). `measure_syncs_off_the_ui_thread` (ignored)
+  measures.
+- `crates/store/tests/sync_clock_db.rs` (S29b): two connections on two threads, the wall
+  clock standing still, hand out 400 clocks once each, increasing on each, all in the outbox,
+  the first's next passing a clock the second observed; a new id taken on the second is the
+  first's next clock's; a second connection is refused at another schema and where there is
+  no database; once its writes are refused it commits nothing (an `apply_changes`, one
+  statement, a new id, a connection opened after), the first writing as before; a write on the
+  first waits only for the second's transaction running (failing with SQLite's own busy
+  wait).
 - `crates/ui-egui/src/sync_tests.rs` (S29): the same through the harness (Choose Sync folder…
   with the folder dialog injected, the indicator opening Settings on Sync, the prompt's two
   buttons, Needs attention's buttons, an autosave after a merge keeping both texts and typing
@@ -934,11 +1001,23 @@ Mobile app has no period (`at_launch(false)`).
 
 ## For later steps
 
-- **S29b:** sync off the UI thread (a worker on a second connection sharing the store's clock
-  and device id, or the merge chunked per tick), so no frame stalls over 16 ms and no iCloud
-  placeholder read happens on the UI thread.
+- **Split the largest merge transactions** (found by S29b): a snapshot, or an op file of
+  thousands of ops (a device that made 10,000 changes between syncs), merges in one
+  transaction, about 550 ms for 10,000 Notes on the owner's Mac; an edit the user makes
+  meanwhile waits for it on the UI thread. Merging them in bounded transactions keeps edits
+  under a frame, but touches the merge's all-or-none contract (`merge_snapshot`,
+  `merge_op_file` with its `applied_up_to`).
+- **Known issue (found by S29b, there before it):** the merge property test fails at
+  `OBS_MERGE_SEED=20266453` (case 0 of a run from that seed; case 5331 of a 10k run from
+  20261122): "the Collection {"n":5} added at 01a3189b1d7d-0000-… was lost". It fails the same
+  at S29 (`d468f1b`), on one connection. A fix-up step on the sync stack takes it.
 - **S30:** Needs attention lists the Sync conflicts and held ops as the desktop does
   (`texts`, `Session::sync_held_lines`, `resolve_sync_conflict`); render `SyncState`
   (`needs_newer_app` per device, `FolderNewer`, `NeedsRestoreChoice` with Catch up as the
   default and Replace), let the user name the device, drive `SyncSchedule` (`at_launch(false)`),
-  and implement `SyncFolder` in Swift, on S29b's off-thread path. The words are `texts`'s.
+  and implement `SyncFolder` in Swift, on S29b's off-thread path: the Swift folder (an
+  `NSFileCoordinator`-backed `SyncFolder`, `Send + Sync`) is given to the worker in place of
+  `FsSyncFolder` (S30 adds the public Session hook that sets the worker's `FolderMaker`; today
+  it is crate-private, the desktop's path and tests' folder), and `obs-mobile` calls
+  `Session::sync_tick` as the desktop's frames do, so no coordinated read or placeholder
+  download is on the main thread. The words are `texts`'s.

@@ -71,7 +71,7 @@ to Claude Opus 5.5 later on".
 | S28b-2 | Sync 2b-2 (Rust): Note-text Sync conflicts, deleted parents, list items of one name, a list's whole value | AFK | n | S28b-1 | `conflict_of`, parent rows in tombstones, `sync_held`, wider property tests | done (PR #402) |
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | done (PR #404) |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | done (PR #407) |
-| S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | todo |
+| S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | done (branch mobile/s29b-sync-off-ui, PR pending) |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 (ships after S29b) | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S30 | test report, folder list for onboarding | todo |
 | S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
@@ -2090,6 +2090,64 @@ under the half they belong to.
 - **Stop-and-ask:** the shared clock needs a store schema change; two connections can hand
   out the same clock.
 
+- **Outcome (2026-11-22, branch `mobile/s29b-sync-off-ui`):** **Decisions (via supervisor):**
+  the worker on a second connection, not the chunked merge (chunking would leave the folder's
+  reads, iCloud placeholders included, on the UI thread, and a snapshot merge is one
+  transaction); choosing a folder and Stop syncing wait for a sync running, "Syncing…"
+  meanwhile; a restore's sync first runs on the worker while the restore **waits on the UI
+  thread** (it blocks its frame anyway), at most `RESTORE_SYNC_WAIT` (30 s), then goes ahead,
+  says so in Settings → Sync's Details, and the sync left running writes nothing more; the
+  10,000-Note transaction below is a follow-up note, not split here; the merge bug below is
+  recorded, not fixed here. **Shipped:** `obs-store` `UserStore::second_connection`
+  (`SecondConnection`: `open` at the same schema, nothing migrated; `refuse_writes`, an SQLite
+  commit hook rolling back each commit from then), the clock shared between connections
+  (`Arc<Mutex<ClockState>>`; the device id read in the stamping transaction, so a new id the
+  worker takes is the UI's next clock's), every User database write transaction `BEGIN
+  IMMEDIATE` (`UserStore::write_tx`; deferred ones that read before the other connection
+  committed would fail with `SQLITE_BUSY_SNAPSHOT`, refusing an edit), `BUSY_TIMEOUT` (10 s)
+  and `WriteTurns` (the UI's connection goes first: SQLite's own backing-off busy wait left an
+  edit 125 ms behind a 1,000-file merge's transactions, now 1–5 ms); rusqlite's `hooks`
+  feature; no schema change. `obs-engine` `sync_worker.rs` (`SyncWorker`: one named thread per
+  sync or restore choice, the folder made and every `SyncFolder` call there, `device.json`s
+  read there; a panic is a failed sync) and `sync_session.rs` on it (`Phase::Running`,
+  "Syncing…" until the tick takes the result, then the reload; deferred Choose folder / Stop
+  syncing; Catch up / Replace on the worker, the prompt hidden meanwhile and back when the
+  folder could not be reached). The desktop UI is unchanged (`sync_ui.rs` untouched); the
+  harness tests wait for the worker. Docs: `sync.md` "Off the UI thread (S29b)" and the
+  desktop section. **Measured** (`measure_syncs_off_the_ui_thread`, which replaces
+  `measure_syncs_on_the_ui_thread`; three runs, owner's Mac, dev profile, local folder, frames
+  of 16 ms, each frame's sync work being `sync_tick` and the status the shell draws): the
+  1,000-file catch-up (the sync 128–159 ms, S29: 136–141 ms in one frame) took 9–11 frames,
+  **the longest frame's sync work 0.09–0.19 ms**, the result's frame with the reload
+  0.07–0.10 ms, histogram all under 1 ms (one frame of 1.1 ms in an editing run); an edit at
+  every frame meanwhile took at most 1.4–4.7 ms (0.2–0.4 ms with no sync); a new device
+  joining that folder, edits at most 4–8 ms. **The worker's longest write transaction:** a
+  per-file merge of the catch-up a few ms (the edit waits above); a new device joining a
+  library of **10,000 Notes**, one transaction of 0.5–0.9 s whether they come in one op file
+  or the snapshot, so an edit made during that first join waits that long on the UI thread
+  (over the supervisor's ~100 ms line: a follow-up note in `sync.md` "For later steps",
+  "Split the largest merge transactions"); the result's frame 4.5–7.6 ms. **Tests:** store
+  4 (two connections on two threads with the wall clock still hand out 400 clocks once each,
+  increasing, the UI's next passing one the worker observed, failing without the shared
+  clock or with deferred transactions; a new id taken on the worker is the UI's next clock's;
+  a second connection refused at another schema or with no database; refused writes commit
+  nothing; a UI write waits only for the transaction running, failing with SQLite's own busy
+  wait); engine 5 (no `SyncFolder` call on the UI thread through syncs, a restore and Catch
+  up; edits during a held sync kept and sent; deferred Stop syncing and Choose folder with
+  "Syncing…"; a panicking worker; a restore whose sync is held goes ahead after its wait,
+  says so, and the sync let go changes neither the restored data nor the folder, failing
+  without both the commit hook and the folder's refusal); the S29 engine and harness tests
+  wait for the worker. **Found:** the merge property test loses a row at
+  **`OBS_MERGE_SEED=20266453`** (case 0: "the Collection {"n":5} added at
+  01a3189b1d7d-0000-01a3189b-1106-7389-ab3f-8a0111211392 was lost"; case 5331 of a 10k run
+  from 20261122); it fails the same at `d468f1b` (S29, before S29b, on one connection), so it
+  is the merge's: a fix-up step on the sync stack takes it (`sync.md` "Known issue").
+  `sync-e2e` makes a Notebook named "Mac B" on B (there at `d468f1b` too, not checked by the
+  e2e). **Verified:** `cargo test -p obs-store --all-features`; `cargo test -p obs-engine
+  --lib sync`; the merge property tests, 1,000 cases and 10,000 from the default seed and
+  10,000 from `OBS_MERGE_SEED=777000`, green; `cargo xtask sync-e2e` green; `cargo xtask
+  gallery` green with no golden changed; `cargo xtask ci` (below). S30's entry now says how
+  iOS plugs in ("Added by S29b").
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
 - **Goal:** the iPhone joins a Sync folder through the document picker; every rule stays in Rust.
@@ -2118,7 +2176,10 @@ under the half they belong to.
   blocks the main thread for more than a frame on a cold placeholder.
 - **Added by S29 (supervisor):** iOS syncs on S29b's off-thread path (a worker sharing the
   store's clock and device id, or the chunked merge), never on the main thread; S30 does not
-  ship before S29b. Every word is `obs_engine::sync::texts`'s (approved for both apps), and the
+  ship before S29b. **Added by S29b:** it is the worker; S30 adds a public Session hook that
+  gives the worker a Swift `SyncFolder` (`Send + Sync`, made on the worker's thread through
+  `sync_worker::FolderMaker`) and drives `Session::sync_tick`; `NSFileCoordinator` and
+  placeholder downloads then never run on the main thread. Every word is `obs_engine::sync::texts`'s (approved for both apps), and the
   desktop Session's rules (`sync_session.rs`: the schedule, the restore keeping the folder,
   Stop syncing's new id, the conflict actions, held ops' lines) are the ones `obs-mobile`
   exposes.
