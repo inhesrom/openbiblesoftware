@@ -1055,15 +1055,31 @@ Mobile app has no period (`at_launch(false)`).
   `a_copys_text_survives_a_restore_when_the_original_wrote_over_it` (891: an older former id's
   version counted as after the op). `sync_clock_db.rs`:
   `former_ids_keep_the_order_they_were_given_up_through_migration_18_restores_and_backups`.
-  `merge_props.rs` runs the first four sequences now and then
+  From the fix's review: `lifecycle_tests::a_copys_edited_conflict_copy_survives_a_restore_from_before_it_took_its_id`
+  (a copy's Backup from before its new id, restored after it edited its Sync conflict's copy:
+  the new id, met only through its snapshot, merged after the original's files, and the copy
+  made again beat the edit; the 891 fix had made this lose),
+  `a_conflict_copy_edited_under_a_restored_id_survives_a_second_restore_of_the_backup` (the
+  same through a restore chain x → y → z, which the merge before the fix lost too), and
+  `a_former_ids_snapshot_delete_covering_the_backups_own_item_deletes_it_on_a_restore` (3146456
+  end to end, through a former id's own snapshot, its files trimmed); `merge_tests::a_copys_originals_older_write_is_not_held_beside_this_devices_own_item`
+  (no "(2)" no one needed) and `of_a_former_ids_held_writes_only_the_newest_is_kept` (no pile
+  of a copy's original's held writes), each failing before its fix.
+  `merge_props.rs` runs five of the sequences now and then
   (`held_own_item_step`, `far_base_after_re_add_step`, `snapshot_delete_step`,
-  `edited_copy_step`; per 1,000 cases about 196, 194, 86 and 48) and must reach each. Mutation
-  checks: undoing the held-write fix, the re-add's stamp or the former-ids-first order fails the
-  1,000-case run; the delete with no `before` is caught by its unit test only (former ids first
-  now keeps the restore sequence from reaching it). After the fixes 10,000-case runs from 20
-  seeds in a row (1, 7, 42, 99, 777, 1234, 4321, 65536, 100000, 2000000, 3000000, 7000000,
-  8000000, 9000000, 10000000, 11111111, 22222222, 33333333, 44444444, 20261122) found nothing;
-  1,000 cases take about 19 s, 10,000 about 250 s on the owner's Mac with four runs at once.
+  `edited_copy_step`, `copy_backup_step`; per 1,000 cases about 187, 231, 86, 57 and 183,
+  each counted only when its deciding step happened: two writes held, the second add made, the
+  copy found and edited, a Backup that never met the id with its snapshot there) and must reach
+  each. Mutation checks: undoing the held-write fix, the re-add's stamp, the former-ids-first
+  order or a former id's snapshot merging with its files fails the 1,000-case run; the delete
+  with no `before` is caught by its unit test and the end-to-end lifecycle test above (the
+  props' restores merge a former id's history before the tombstone); the held-write rule's
+  narrowing by its two unit tests. After the review's fixes 10,000-case runs from 20 seeds
+  (20266453, 123456, 3141592, 5000000, 7744, 891, 1, 42, 2718281, 1618033, 8675309, 13579,
+  24680, 555555, 6000000, 12345678, 98765, 4040404, 77777777, 31415926) found nothing (before
+  them: 1, 7, 42, 99, 777, 1234, 4321, 65536, 100000, 2000000, 3000000, 7000000, 8000000,
+  9000000, 10000000, 11111111, 22222222, 33333333, 44444444, 20261122); 1,000 cases take
+  about 23 s, 10,000 about 240–350 s on the owner's Mac with two runs at once.
 
 - `crates/engine/src/sync_session_tests.rs` (S29): without a Sync folder nothing syncs, shows
   or is recorded, and a restore leaves it so; two Sessions converge through one folder and list
