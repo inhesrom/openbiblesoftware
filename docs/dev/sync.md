@@ -267,6 +267,7 @@ Per op, against the row's state here (`MergeTx::state`: the row, its clock, its 
 | Write (an add, or an edit of another version) | This device's own Collection, Copy preset or Saved search of that name, other JSON, older, which the op had not seen | The op's as above; this device's recorded again as "`name` (2)" ([list items of one name](#two-list-items-of-one-name)) |
 | Delete (of another version of that name) | This device's own Collection, Copy preset or Saved search, which the delete had not seen (its `before_clock` is not this row's clock, its `before` JSON another) | Kept: the delete noted, this device's item recorded again under its own name, after what the tombstone covers (edit beats delete, [list items of one name](#two-list-items-of-one-name)) (`EditKept`) |
 | Write | A list item at or before its list's base (its newest whole-value write) | Nothing (`Superseded`) ([a list's whole value](#a-lists-whole-value)) |
+| Write, losing (`Superseded`, `Covered`) | An op of this device's former id, against a version not this device's own | Its Note text recorded as a copy, its list item as "`name` (2)" or again under its name ([restores and copies](#restores-and-copies-new-device-ids)) |
 | Write | A list item of a list whose value here is not in its list's shape | Held (`Held`) ([held ops](#ops-held-back)) |
 | Any | An op this build refuses (a synced preference a later app added …) | Held (`Held`); the rest of its file merges |
 
@@ -584,7 +585,13 @@ wrote its files (`sync_device.rs`, migration 17):
   device's own (`own_device_ids`, `MergeTx::is_own`): a text written under the old id that a
   remote edit never saw is still kept as a copy. Two devices claiming one id (another device's
   Backup restored, a copy) make the same copy (its id is derived) and the same "(2)", which
-  converge.
+  converge. A former id's op files are this device's own history, so `merge_folder` merges them
+  before every other device's; and **an op of a former id that loses here** (superseded by a
+  version that is not this device's own, or covered by a delete of another version) keeps its
+  Note text as a copy (`conflict_id` of the Note and the op's clock) or its list item as
+  "Name (2)", or under its own name against the delete (`merge::former_own_lost`): the device
+  that wrote it would have when that version replaced it, and that device is this one now. The
+  cost: a copy no one needed when the other device had in fact seen it (safe).
 - **`applied_up_to` stays**: the other devices' rows are what the restored data has merged of
   them, so catching up replays their files after those; the old own id's row (the last of its
   own files written) is now what it has merged of that id, another device's from now on.
@@ -770,7 +777,7 @@ Mobile app has no period (`at_launch(false)`).
   database with Replace makes a third device converge to the restored state (rows it held back,
   rows it deleted deleted, a row made since kept) and keeps another device's own later text as
   a Sync conflict's copy; a text written under the old id survives a remote edit that never saw
-  it. `schedule.rs`: launch, resume and request; 30 s after the first edit; the desktop's
+  it, also when that edit is merged before the old id's op. `schedule.rs`: launch, resume and request; 30 s after the first edit; the desktop's
   5 minutes; a failed sync.
 - `merge_props.rs` (S28c): every device joins through the real join (its default Notebook and
   what it made before only in its snapshot), a third of them late, at their first sync; a
@@ -785,7 +792,8 @@ Mobile app has no period (`at_launch(false)`).
   one merged for files trimmed, a file trimmed, a catch-up and a replace. Mutation checks: the
   former ids not counted as own (the props, two unit tests), the replace's clock not after
   every clock held (the props), a device met through another's snapshot still waiting for its
-  own (a unit test). 1,000 cases take about 10 s (was 4: each join writes a snapshot and every
+  own (a unit test), a former id's losing op not kept (a unit test: the props merge former ids
+  first, which leaves the case to partial views). 1,000 cases take about 10 s (was 4: each join writes a snapshot and every
   other device reads it), 10,000 about 95 s.
 
 ## For later steps

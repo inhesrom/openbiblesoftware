@@ -1882,26 +1882,37 @@ under the half they belong to.
   Replace's clock must pass every clock the restored data holds, even one far ahead (else a
   snapshot covering a far-ahead device's files held older rows, and the devices that met that
   device through it never got them); a delete's covers must not be taken from the row here; a
-  device met through another's snapshot no longer waits for its own. **Tests:** store
+  device met through another's snapshot no longer waits for its own; from the 10k runs, a
+  former id's op that loses to a version not its own (an edit merged before it) must keep its
+  text or item, as the device that wrote it would have (`merge::former_own_lost`; former ids'
+  files are merged first), and a snapshot's base positions must recompose the stored list.
+  **Tests:** store
   `snapshot_db.rs` (2: nothing that stays on the device is in a snapshot, which reads back with
   every row clocked and parents first; the join), `sync_clock_db.rs` (restores give a new id,
-  empty the outbox and keep every other table; migration 17); engine `lifecycle_tests` (12, one
+  empty the outbox and keep every other table; migration 17); engine `lifecycle_tests` (13, one
   per rule: two `FsSyncFolder` devices converge end to end and a third joins late; a late joiner
   from snapshots alone holds tombstone rows, bases, copies and held ops; op files wait for the
   first snapshot; trimming; a newer or changed snapshot and a newer folder; a copied database,
   and a copy writing first; the restore choice across a restart; catch up; Replace making a
   third device converge to the restored state; Replace keeping another device's own text as a
-  copy; the old id's text surviving), `schedule` (4); the S28a/S28b helpers join for real
+  copy; the old id's text surviving, also merged after the edit that never saw it),
+  `schedule` (4); the S28a/S28b helpers join for real
   (`merge_tests::push_ops`, `meet` for hand-written files); `merge_props` widened (real joins,
   a third late; `sync_now` at a small policy, so snapshots and trimming; Backups restored with
   both choices; D3's maker-left sequence; invariants over an archive of every op file and
   snapshot ever written; what a Replace discards on purpose need not survive). Mutation checks:
   former ids not own (props and 2 unit tests), Replace's clock not after every clock held
-  (props), a device met through another's snapshot waiting for its own (a unit test). A 1k run
-  reached: written 44,842, superseded 17,414, covered 117, edit kept 305, delete noted 528,
-  parent kept 30, held 27; late joins 308, snapshots merged 4,178 (46 for files trimmed), own
-  files trimmed 138, restores catching up 34, replacing 35, D3 sequences 49 (parents back
-  after their child's maker left them 47). MEASURED. **Not done:** S29 and S30's screens; only
+  (props), a device met through another's snapshot waiting for its own (a unit test), a former
+  id's losing op not kept (a unit test). A 1k run (9.3 s, was 4 s: every join writes a snapshot
+  that every other device reads) reached: written 44,840, superseded 17,414, covered 118, edit
+  kept 305, delete noted 529, parent kept 30, held 27; late joins 308, snapshots merged 4,178
+  (46 for files trimmed), own files trimmed 138, restores catching up 34, replacing 35, D3
+  sequences 49 (parents back after their child's maker left them 47). A 10k run (94 s) reached:
+  written 448,639, superseded 180,273, covered 1,523, edit kept 3,264, delete noted 6,139,
+  parent kept 231, held 331; conflict copies 529, parents restored 688, items renamed 1,045,
+  items kept 19; late joins 3,043, snapshots merged 42,027 (676 for files trimmed), own files
+  trimmed 1,512, restores catching up 388, replacing 420. 10k runs with seeds 7, 424242,
+  99999999, 1, 31337 and 2026 green (about 94 s each). MEASURED. **Not done:** S29 and S30's screens; only
   own op files are trimmed, so a restored or copied device leaves its old id's files in the
   folder for good. S29's entry gained an "Added by S28c" bullet.
 
