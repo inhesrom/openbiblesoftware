@@ -185,18 +185,27 @@ impl ConflictChoice {
         }
     }
 
-    /// Its button, and its undo step's name.
-    pub fn label(self) -> &'static str {
-        match self {
-            ConflictChoice::KeepThis => texts::KEEP_THIS,
-            ConflictChoice::KeepOther => texts::KEEP_OTHER,
-            ConflictChoice::KeepBoth => texts::KEEP_BOTH,
-            ConflictChoice::Combine => texts::COMBINE,
-        }
-    }
-
     pub fn from_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|c| c.id() == id)
+    }
+}
+
+/// A Sync conflict's actions, each with its button (and its undo step's name): the four while
+/// the Note in place is there (`in_place`), else, when another device deleted it, Keep this
+/// text (the copy becomes an ordinary Note) and Let it go (the copy is deleted).
+pub fn conflict_actions(in_place: bool) -> &'static [(ConflictChoice, &'static str)] {
+    if in_place {
+        &[
+            (ConflictChoice::KeepThis, texts::KEEP_THIS),
+            (ConflictChoice::KeepOther, texts::KEEP_OTHER),
+            (ConflictChoice::KeepBoth, texts::KEEP_BOTH),
+            (ConflictChoice::Combine, texts::COMBINE),
+        ]
+    } else {
+        &[
+            (ConflictChoice::KeepBoth, texts::KEEP_THIS_TEXT),
+            (ConflictChoice::KeepOther, texts::LET_IT_GO),
+        ]
     }
 }
 
@@ -438,15 +447,17 @@ impl Session {
         Ok(())
     }
 
-    /// Stop syncing: this device forgets the folder and records no more ops (a new device id,
-    /// its outbox emptied, a restore's question dropped); its files stay in the folder.
+    /// Stop syncing: this device records no more ops (a new device id, its outbox emptied, a
+    /// restore's question dropped), then forgets the folder; its files stay in the folder. The
+    /// new id comes first, so a failure leaves the device syncing as before rather than
+    /// recording into an outbox nothing reads.
     pub fn stop_syncing(&mut self) -> Result<(), String> {
         let user = self.user_data()?;
-        user.set_preference(SYNC_FOLDER_PREF, "")?;
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(store) = user.user_store() {
             store.take_new_device_id().map_err(|e| e.to_string())?;
         }
+        user.set_preference(SYNC_FOLDER_PREF, "")?;
         self.load_sync();
         Ok(())
     }
@@ -732,7 +743,12 @@ impl Session {
                 delete_copy,
             ],
         };
-        self.commit(choice.label(), changes)?;
+        // Without the Note in place, keeping this version or combining keeps this text.
+        let actions = conflict_actions(in_place.is_some());
+        let label = (actions.iter().find(|(c, _)| *c == choice))
+            .or(actions.first())
+            .map_or(texts::KEEP_BOTH, |(_, label)| *label);
+        self.commit(label, changes)?;
         if let (ConflictChoice::Combine, Some(note)) = (choice, &in_place) {
             self.notes.reveal = Some((note.id.clone(), true));
         }

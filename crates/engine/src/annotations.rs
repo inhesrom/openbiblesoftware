@@ -755,6 +755,82 @@ impl Session {
         Ok(after)
     }
 
+    /// Save a Note editor's text `body`, typed over `base`: the Note's text when the editor
+    /// opened or last saved. When the Note's text is no longer `base` (a sync merged another
+    /// device's edit of it while the editor was open), the typed text never goes over it
+    /// (ADR 0022 rule 3): it is written as a Sync conflict's copy of the Note, on its Anchor
+    /// and in its Notebook, or into the copy the merge made of `base` (the copy is also used
+    /// when the merge deleted the Note), and that copy is returned, for the editor to go on
+    /// in. Otherwise it is saved by [`Self::continue_note_edit`] (`continues`) or
+    /// [`Self::edit_note`].
+    pub fn save_note_edit(
+        &mut self,
+        id: &str,
+        body: &str,
+        base: &str,
+        continues: bool,
+    ) -> Result<Annotation, String> {
+        let note = match self.annotation(id) {
+            Ok(note) => Some(note),
+            Err(gone) => {
+                // Deleted underneath: by a merge that kept `base` as a copy, or by an undo
+                // (nothing left to save into).
+                if self.merged_copy_of(id, base).is_none() {
+                    return Err(gone);
+                }
+                None
+            }
+        };
+        let moved = match &note {
+            Some(note) if note.is_note() && note.body() != base => true,
+            Some(_) => false,
+            None => true,
+        };
+        if !moved {
+            return if continues {
+                self.continue_note_edit(id, body)
+            } else {
+                self.edit_note(id, body)
+            };
+        }
+        let now = now_ms();
+        let change = match (self.merged_copy_of(id, base), note) {
+            (Some(copy), _) if copy.body() == body => return Ok(copy),
+            (Some(copy), _) => Change::update(
+                Row::Annotation(copy.clone()),
+                Row::Annotation(Annotation {
+                    content: Content::Note {
+                        body: body.to_string(),
+                    },
+                    modified_at: now.max(copy.modified_at),
+                    ..copy
+                }),
+            ),
+            (None, Some(note)) => Change::insert(Row::Annotation(Annotation {
+                id: new_id_at(now),
+                content: Content::Note {
+                    body: body.to_string(),
+                },
+                modified_at: now.max(note.modified_at),
+                conflict_of: Some(note.id.clone()),
+                ..note
+            })),
+            (None, None) => return Err("The Note was deleted".into()),
+        };
+        let Some(Row::Annotation(copy)) = change.after.clone() else {
+            return Err("The Note was not saved".into());
+        };
+        // Its undo step is an edit of the copy's text, so the editor's next saves join it.
+        self.commit(EDIT_NOTE, vec![change])?;
+        Ok(copy)
+    }
+
+    /// The Sync conflict's copy of Note `id` that holds `text`, as a merge makes one.
+    fn merged_copy_of(&self, id: &str, text: &str) -> Option<Annotation> {
+        (self.sync_conflicts().into_iter())
+            .find(|c| c.conflict_of.as_deref() == Some(id) && c.body() == text)
+    }
+
     /// Change a Highlight's style.
     pub fn set_highlight_style(&mut self, id: &str, style: &str) -> Result<Annotation, String> {
         let style = self.highlight_style(style)?.id;
@@ -1126,6 +1202,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: false,
                 help: "Merge into the previous undo step if it edited this Note's text (saving while typing)",
             },
+            ParamSpec {
+                name: "base",
+                kind: ParamKind::String,
+                required: false,
+                help: "The text the editor started from: if the Note's text is another now (a sync changed it), `body` is kept as a Sync conflict's copy, whose id is returned",
+            },
         ],
         enabled: has_user,
         run: run_edit,
@@ -1424,10 +1506,11 @@ fn run_edit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "annotation.edit";
     let id = p.str("id").unwrap_or_default();
     let body = p.str("body").unwrap_or_default();
-    let a = if p.bool("continue").unwrap_or(false) {
-        s.continue_note_edit(id, body)
-    } else {
-        s.edit_note(id, body)
+    let continues = p.bool("continue").unwrap_or(false);
+    let a = match p.str("base") {
+        Some(base) => s.save_note_edit(id, body, base, continues),
+        None if continues => s.continue_note_edit(id, body),
+        None => s.edit_note(id, body),
     }
     .map_err(|e| failed(CMD, e))?;
     Ok(json!({ "annotation": to_json(&a) }))

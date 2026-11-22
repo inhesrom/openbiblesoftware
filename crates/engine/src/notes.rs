@@ -117,6 +117,9 @@ pub struct Card {
     pub missing: Option<String>,
     /// For an Orphaned annotation or a Sync conflict's copy: why it needs attention.
     pub attention: Option<String>,
+    /// For a Sync conflict's copy: its actions with their buttons
+    /// ([`crate::conflict_actions`]); none for any other card.
+    pub conflict_actions: &'static [(crate::ConflictChoice, &'static str)],
 }
 
 impl Card {
@@ -439,6 +442,9 @@ impl Session {
             }
             _ => None,
         };
+        // For a Sync conflict's copy: whether the Note in place is still there.
+        let in_place =
+            (a.conflict_of.as_deref()).map(|of| self.annotation(of).is_ok_and(|n| n.is_note()));
         let attention = match &a.anchor {
             Some(Anchor::TextRange { range }) if range.orphaned => Some(format!(
                 "This text was not found in {} after it changed. Select the text in a \
@@ -450,9 +456,13 @@ impl Session {
                     ", or delete it"
                 }
             )),
-            _ if a.conflict_of.is_some() => Some(crate::sync::texts::conflict_attention(
-                &anchor_label(&self.library, a.anchor.as_ref()),
-            )),
+            _ if in_place == Some(false) => {
+                Some(crate::sync::texts::CONFLICT_IN_PLACE_GONE.to_string())
+            }
+            _ if in_place.is_some() => Some(crate::sync::texts::conflict_attention(&anchor_label(
+                &self.library,
+                a.anchor.as_ref(),
+            ))),
             _ => None,
         };
         Card {
@@ -461,6 +471,7 @@ impl Session {
             quote: range.map(|r| collapse(&r.quote)),
             missing,
             attention,
+            conflict_actions: in_place.map_or(&[], crate::conflict_actions),
             annotation: a,
         }
     }

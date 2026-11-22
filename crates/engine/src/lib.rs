@@ -324,7 +324,9 @@ pub use settings::{
     SETTINGS, Setting, SettingKind, SettingsSection, setting_asking_first, setting_by_id,
     setting_matches, settings_matching,
 };
-pub use sync_session::{ConflictChoice, SYNC_FOLDER_PREF, SyncDeviceRow, SyncIndicator, SyncPanel};
+pub use sync_session::{
+    ConflictChoice, SYNC_FOLDER_PREF, SyncDeviceRow, SyncIndicator, SyncPanel, conflict_actions,
+};
 pub use timeline::{Emphasis, Timeline, TimelineEntry, TimelineView};
 pub use toolbar::{
     BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,

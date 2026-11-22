@@ -5,7 +5,9 @@
 //! work; Stop syncing gives a new id and records nothing more; a Sync conflict's copy is in
 //! Needs attention with its four actions, each one undo step that the other device takes
 //! too; held ops are listed with why; a folder that is not there and one a newer app set up
-//! say so.
+//! say so. A Note editor's save after a merge changed its Note keeps both texts, the typed one
+//! as a Sync conflict's copy; a copy whose Note was deleted on another device offers Keep this
+//! text and Let it go.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -277,6 +279,30 @@ fn a_restore_on_a_syncing_device_syncs_first_keeps_its_folder_and_catching_up_wo
 }
 
 #[test]
+fn the_restore_prompt_comes_back_after_a_restart_until_it_is_answered() {
+    let dir = Dir::new("pending-restart");
+    let mut a = dir.syncing("a");
+    a.create_notebook("Backed up").unwrap();
+    sync(&mut a);
+    let backup = dir.0.join("a.obsbackup");
+    back_up(&mut a, &backup);
+    restore(&mut a, &backup);
+    assert!(a.sync_restore_pending());
+    // Quit without answering: the next launch asks again, and syncs nothing until then.
+    drop(a);
+    let mut a = dir.session("a");
+    assert_eq!(a.sync_folder(), Some(dir.folder().as_path()));
+    assert!(a.sync_restore_pending(), "asked again after a restart");
+    assert_eq!(a.sync_panel(now()).status, texts::RESTORE_TITLE);
+    assert_eq!(a.sync_tick(now()), None);
+    a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
+        .unwrap();
+    drop(a);
+    let a = dir.session("a");
+    assert!(!a.sync_restore_pending(), "answered once, asked no more");
+}
+
+#[test]
 fn replace_makes_the_restored_data_what_every_device_has() {
     let dir = Dir::new("replace");
     let mut a = dir.syncing("a");
@@ -394,6 +420,7 @@ fn a_sync_conflicts_copy_is_in_needs_attention_with_its_four_actions() {
     let cards = holder.note_cards("").unwrap();
     assert_eq!(cards.len(), 1);
     assert!(cards[0].is_sync_conflict() && cards[0].needs_attention());
+    assert_eq!(cards[0].conflict_actions, crate::conflict_actions(true));
     assert_eq!(
         cards[0].attention.as_deref(),
         Some(
@@ -415,8 +442,16 @@ fn a_sync_conflicts_copy_is_in_needs_attention_with_its_four_actions() {
     assert_eq!(body(holder, &n.id), copy.body());
     assert!(holder.annotation(&copy.id).is_err());
     assert_eq!(holder.undo_history().undo_label(), Some(texts::KEEP_THIS));
+    // The other device takes it: this version in place, no copy.
+    sync(holder);
+    sync(other);
+    assert_eq!(body(other, &n.id), copy.body());
+    assert!(other.sync_conflicts().is_empty());
     holder.undo().unwrap();
     assert_eq!(body(holder, &n.id), in_place.body());
+    sync(holder);
+    sync(other);
+    assert_eq!(body(other, &n.id), in_place.body());
 
     run(holder, ConflictChoice::KeepOther);
     assert!(holder.annotation(&copy.id).is_err());
@@ -429,6 +464,12 @@ fn a_sync_conflicts_copy_is_in_needs_attention_with_its_four_actions() {
         holder.note_cards("").unwrap().is_empty(),
         "nothing needs attention"
     );
+    // The other device takes it: both texts, as two ordinary Notes.
+    sync(holder);
+    sync(other);
+    assert_eq!(body(other, &n.id), in_place.body());
+    assert_eq!(body(other, &copy.id), copy.body());
+    assert!(other.sync_conflicts().is_empty());
     holder.undo().unwrap();
     assert_eq!(holder.note_cards("").unwrap().len(), 1);
 
@@ -448,6 +489,180 @@ fn a_sync_conflicts_copy_is_in_needs_attention_with_its_four_actions() {
     sync(other);
     assert!(other.sync_conflicts().is_empty());
     assert_eq!(body(other, &n.id), body(holder, &n.id));
+}
+
+/// Real time passes, so the next edit's clock is later than the last one's.
+fn later() {
+    std::thread::sleep(std::time::Duration::from_millis(5));
+}
+
+/// A Note editor's save, as the Notes Tool's card makes it: `body` typed over `base`.
+fn save_typed(s: &mut Session, id: &str, body: &str, base: &str, continues: bool) -> Annotation {
+    let out = s
+        .run(
+            "annotation.edit",
+            &json!({ "id": id, "body": body, "base": base, "continue": continues }),
+        )
+        .unwrap();
+    s.annotation(out["annotation"]["id"].as_str().unwrap())
+        .unwrap()
+}
+
+#[test]
+fn an_editors_save_after_a_merge_changed_its_note_keeps_both_texts() {
+    let dir = Dir::new("edit-merged");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    let n = add_note(&mut a, "first");
+    sync(&mut a);
+    sync(&mut b);
+    // A's editor opens on "first"; B's edit reaches A before A's editor saves.
+    b.edit_note(&n.id, "by B").unwrap();
+    sync(&mut b);
+    sync(&mut a);
+    assert_eq!(a.annotation(&n.id).unwrap().body(), "by B");
+    let copy = save_typed(&mut a, &n.id, "first, typed on A", "first", false);
+    assert_ne!(copy.id, n.id, "the typed text is not written over B's");
+    assert_eq!(copy.conflict_of.as_deref(), Some(n.id.as_str()));
+    assert_eq!(copy.body(), "first, typed on A");
+    assert_eq!(
+        (copy.anchor.clone(), copy.notebook_id.clone()),
+        (n.anchor.clone(), n.notebook_id.clone())
+    );
+    assert_eq!(a.annotation(&n.id).unwrap().body(), "by B");
+    // The editor goes on in the copy; its saves are one undo step.
+    let more = save_typed(
+        &mut a,
+        &copy.id,
+        "first, typed on A, and more",
+        "first, typed on A",
+        true,
+    );
+    assert_eq!(more.id, copy.id);
+    assert_eq!(more.body(), "first, typed on A, and more");
+    assert_eq!(a.sync_conflicts().len(), 1);
+    a.notes.filter = NotesFilter::NeedsAttention;
+    let cards = a.note_cards("").unwrap();
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0].conflict_actions, crate::conflict_actions(true));
+    // B gets both texts.
+    sync(&mut a);
+    sync(&mut b);
+    assert_eq!(b.annotation(&n.id).unwrap().body(), "by B");
+    assert_eq!(
+        b.annotation(&copy.id).unwrap().body(),
+        "first, typed on A, and more"
+    );
+    a.undo().unwrap();
+    assert!(
+        a.annotation(&copy.id).is_err(),
+        "one undo takes the pass back"
+    );
+    assert_eq!(a.annotation(&n.id).unwrap().body(), "by B");
+}
+
+#[test]
+fn an_editors_save_goes_into_the_copy_a_merge_made_of_its_text() {
+    let dir = Dir::new("edit-merged-copy");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    let n = add_note(&mut a, "first");
+    sync(&mut a);
+    sync(&mut b);
+    // A's editor saved once; B edits later, before seeing it, and wins.
+    save_typed(&mut a, &n.id, "saved on A", "first", false);
+    later();
+    b.edit_note(&n.id, "by B").unwrap();
+    sync(&mut b);
+    sync(&mut a);
+    assert_eq!(a.annotation(&n.id).unwrap().body(), "by B");
+    let merged = copy_of(&a);
+    assert_eq!(merged.body(), "saved on A");
+    let saved = save_typed(&mut a, &n.id, "saved on A, then more", "saved on A", true);
+    assert_eq!(
+        saved.id, merged.id,
+        "the merge's copy takes the text: one copy"
+    );
+    assert_eq!(saved.body(), "saved on A, then more");
+    assert_eq!(a.sync_conflicts().len(), 1);
+    assert_eq!(a.annotation(&n.id).unwrap().body(), "by B");
+    // Without a merge, the save is an ordinary edit.
+    let m = add_note(&mut a, "plain");
+    let edited = save_typed(&mut a, &m.id, "plain, edited", "plain", false);
+    assert_eq!(edited.id, m.id);
+    assert_eq!(edited.body(), "plain, edited");
+    assert_eq!(a.sync_conflicts().len(), 1);
+}
+
+#[test]
+fn a_sync_conflicts_copy_whose_note_was_deleted_elsewhere_keeps_this_text_or_lets_it_go() {
+    let dir = Dir::new("conflict-gone");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    let mut c = dir.syncing("c");
+    let n = add_note(&mut a, "first");
+    sync(&mut a);
+    sync(&mut b);
+    sync(&mut c);
+    // A changes the Note; B, not having seen that, changes it later; C, having B's text
+    // only, deletes it.
+    a.edit_note(&n.id, "kept on A").unwrap();
+    later();
+    b.edit_note(&n.id, "by B").unwrap();
+    sync(&mut b);
+    sync(&mut c);
+    c.delete_annotation(&n.id).unwrap();
+    sync(&mut c);
+    sync(&mut a);
+    assert!(a.annotation(&n.id).is_err(), "the delete won");
+    let copy = copy_of(&a);
+    assert_eq!(copy.body(), "kept on A");
+    a.notes.filter = NotesFilter::NeedsAttention;
+    let cards = a.note_cards("").unwrap();
+    assert_eq!(cards.len(), 1);
+    assert_eq!(
+        cards[0].attention.as_deref(),
+        Some(texts::CONFLICT_IN_PLACE_GONE)
+    );
+    assert_eq!(
+        cards[0].conflict_actions,
+        [
+            (ConflictChoice::KeepBoth, texts::KEEP_THIS_TEXT),
+            (ConflictChoice::KeepOther, texts::LET_IT_GO),
+        ]
+    );
+    // An editor open on the deleted Note saves into the copy.
+    let saved = save_typed(&mut a, &n.id, "kept on A, typed on", "kept on A", false);
+    assert_eq!(saved.id, copy.id);
+    a.undo().unwrap();
+    assert_eq!(a.annotation(&copy.id).unwrap().body(), "kept on A");
+
+    let run = |s: &mut Session, keep: ConflictChoice| {
+        s.run(
+            "sync.resolve_conflict",
+            &json!({ "id": copy.id, "keep": keep.id() }),
+        )
+        .unwrap();
+    };
+    // Keep this text: an ordinary Note.
+    run(&mut a, ConflictChoice::KeepBoth);
+    assert_eq!(a.undo_history().undo_label(), Some(texts::KEEP_THIS_TEXT));
+    let kept = a.annotation(&copy.id).unwrap();
+    assert_eq!(
+        (kept.conflict_of.as_deref(), kept.body()),
+        (None, "kept on A")
+    );
+    assert!(
+        a.note_cards("").unwrap().is_empty(),
+        "nothing needs attention"
+    );
+    a.undo().unwrap();
+    // Let it go: the copy is deleted, and undo brings it back.
+    run(&mut a, ConflictChoice::KeepOther);
+    assert_eq!(a.undo_history().undo_label(), Some(texts::LET_IT_GO));
+    assert!(a.annotation(&copy.id).is_err());
+    a.undo().unwrap();
+    assert_eq!(a.annotation(&copy.id).unwrap().body(), "kept on A");
 }
 
 #[test]

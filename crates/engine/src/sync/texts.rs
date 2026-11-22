@@ -70,6 +70,21 @@ pub const KEEP_THIS: &str = "Keep this version";
 pub const KEEP_OTHER: &str = "Keep the other";
 pub const KEEP_BOTH: &str = "Keep both";
 pub const COMBINE: &str = "Combine";
+/// A Sync conflict's actions when another device deleted the Note in place.
+pub const KEEP_THIS_TEXT: &str = "Keep this text";
+pub const LET_IT_GO: &str = "Let it go";
+/// What a Sync conflict's copy says when another device deleted the Note in place.
+pub const CONFLICT_IN_PLACE_GONE: &str = "Sync conflict: this text was changed here while the \
+     Note was deleted on another device. Keep this text or let it go.";
+
+/// Needs attention's hover text: with a Sync folder chosen it lists Sync conflicts too.
+pub fn needs_attention_hover(syncing: bool) -> &'static str {
+    if syncing {
+        "Annotations whose text was not found after their Resource changed, and Sync conflicts"
+    } else {
+        "Annotations whose text was not found after their Resource changed"
+    }
+}
 
 /// The heading of the held ops in Needs attention.
 pub const CHANGES_WAITING: &str = "Changes waiting";
