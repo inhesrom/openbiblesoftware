@@ -2046,7 +2046,11 @@ under the half they belong to.
   `docs/previews/s29-*.png` and the icon catalogue. **Found:** a restored device lists its
   old id as another Synced device of the same name (rule 7's new id; correct, possibly
   confusing; S30/S31 may want "(before a restore)"); a held op's "why" is the store's own
-  wording. **For S30:** reuse `sync::texts` and the Session's APIs through `obs-mobile`, on
+  wording. **Verified:** `cargo xtask ci` green (7 m 05 s; 2,451 tests passed, 44 ignored; the
+  first run's only failures were the known `find_bar` flake, green alone, and the menu audit's
+  ellipsis rule, fixed: `sync.choose_folder`'s label is "Choose Sync folder", its button
+  "Choose Sync folder…"); `cargo xtask gallery` green with only the 24 new goldens blessed;
+  `cargo xtask sync-e2e` green (run four times). **For S30:** reuse `sync::texts` and the Session's APIs through `obs-mobile`, on
   S29b's off-thread path.
 
 #### S29b — Sync 3b: sync off the UI thread
