@@ -411,8 +411,10 @@ one name with different JSON (plan S28b-2 D6): last writer wins keeps the later 
 and the device whose own item lost (its item's clock is its own, and the op had not seen it:
 an add, with no `before`, or a write whose `before_clock` is not this row's clock and whose
 `before` JSON is not this device's) records its item again under the first free name of
-"`name` (2)", "`name` (3)" … among the list's items here, at its old position, every other
-field of its JSON as it was (`preference_items::renamed_item`). The device whose item won does
+"`name` (2)", "`name` (3)" … among the list's items here and the items held here (one held
+while its list was damaged comes back under its own name; S28c's property runs found a
+"(2)" taking the name of an own "(2)" held then, which lost it), at its old position, every
+other field of its JSON as it was (`preference_items::renamed_item`). The device whose item won does
 nothing. The edit case: G adds "Greek", D adds its own "Greek" later, and G then edits its own
 before either syncs; G's edit replaces D's item having seen only G's, and D's would be lost on
 every device (`merge_tests::an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both`).
@@ -500,7 +502,7 @@ freed page keeps deleted data, and marked as a rollback-journal file):
 
 | Kept | Emptied (stays on the device, rule 4) |
 |---|---|
-| Every synced table with its clocks, `anchors`, `notes_fts`; `annotations.conflict_of` | `history`, `last_session`, `resource_names` |
+| Every synced table with its clocks, `anchors`; `annotations.conflict_of` | `history`, `last_session`, `resource_names`; `notes_fts`, the Notes search index (emptied and merged into nothing with `optimize` before the `VACUUM`: its segments keep the words of deleted Notes; `delete-all` is only for an index without content of its own) |
 | `tombstone` whole: `covers`, a parent's `row` with `row_covers` and `row_clock` | `op_outbox` (written as op files first), `former_device` |
 | `item_clock`: items' clocks and positions, the lists' bases (`'preference'`, key) | Every preference that is not Synced data (display preferences, Search history and recent searches, the Command box's recent entries …) |
 | `device` (the writer's id; `restore_choice` 0), `applied_up_to`: **the op files it covers**, for each device the last merged, for its own id the last written | |
@@ -509,7 +511,10 @@ freed page keeps deleted data, and marked as a rollback-journal file):
 A device writes one **only with an empty outbox**, right after `write_pending_ops`, so it
 covers exactly its own op files up to `seq`. Its first is the join's (`seq` 0 when it joins
 with nothing written); later ones when `snapshot_due` says (`SnapshotPolicy`: 100 own op files
-since its newest, or the first of them 30 days old). Writing one deletes its older snapshots.
+since its newest, or the first of them 30 days old), and whenever its newest in the folder is
+not whole to `read_snapshot` (partly written, changed, damaged), so a device writing few ops or
+none is still met by one joining (each sync reads its own newest snapshot for that). Writing
+one deletes its older snapshots, and replaces a damaged file of its own name.
 
 **Which a device merges** (`merge_folder`, per other device X):
 
@@ -529,7 +534,11 @@ then the items written after it; each tombstone a delete at its newest clock cov
 newest version covered, after (a parent's) the delete whose row it keeps, at that delete's
 clock and covers; each held op as it was. Every clock is observed. Then X is merged up to the
 snapshot's `seq`, and every other device up to the larger of what is noted here and what the
-snapshot covers, so a new device replays only the op files after it. Each list's
+snapshot covers, so a new device replays only the op files after it; but never this device's
+own ids, current or former: a former id's files are this device's own history and merge op by
+op, so its own checks see each op (S28c review: a device met after a Backup, whose snapshot
+covered the old id's file of a text, else made the restored device skip that file, and the
+text was lost). Each list's
 `preference.clock` is raised to the snapshot's. Rows with no clock are left out: the join
 gives every row one ([below](#joining)).
 
@@ -574,14 +583,23 @@ ADR 0022 rule 7. A Synced device's id changes when its database stops being the 
 wrote its files (`sync_device.rs`, migration 17):
 
 - **A restore** (`UserStore::restore_from`, so also Undo restore and every restore the app
-  does) always gives the device a new UUIDv7. **A copied database**: `sync_now` finds op files
+  does) always gives the device a new UUIDv7, in one step: the Backup is staged in a copy, given
+  the new id, former ids, empty outbox and pending choice there, then copied page by page in
+  one transaction, so a stop never leaves the Backup's data under its old id with no choice
+  waiting. **A copied database**: `sync_now` finds op files
   or a snapshot under its id numbered above both the last of its own op files written and the
   last reserved (`last_reserved_op_file`: after a stop between writing a file and noting it,
-  the file is above the first but still reserved), or `write_pending_ops` finds a reserved own
+  the file is above the first but still reserved), or, on a device not syncing yet, any op file
+  or snapshot under its id (a new id never has files: the database was copied before either
+  copy joined), or `write_pending_ops` finds a reserved own
   file there with other ops (`OwnFileDiffers`: the copy wrote first); it takes a new id
-  (`take_new_device_id`) and catches up, with no question asked.
-- **The ids it had** go to `former_device` (a restore adds the Backup's id and the one it had
-  before), and every "own" check of the merge counts a clock naming any of them as this
+  (`take_new_device_id`), before it joins, and catches up, with no question asked.
+- **The ids it had** go to `former_device`: a restore keeps the device's own ids (the one it
+  had before and its former ones) and adds the Backup's id, with the Backup's former ones, only
+  when that id is one of them (supervisor decision on the S28c review): a Backup of another
+  device's, restored on a new computer while that device still syncs, does not make that
+  device's ops this one's own, which would make Sync conflict copies of them no one needs for
+  the life of the database. Every "own" check of the merge counts a clock naming any of them as this
   device's own (`own_device_ids`, `MergeTx::is_own`): a text written under the old id that a
   remote edit never saw is still kept as a copy. Two devices claiming one id (another device's
   Backup restored, a copy) make the same copy (its id is derived) and the same "(2)", which
@@ -605,9 +623,15 @@ wrote its files (`sync_device.rs`, migration 17):
     clocks, so every later change in the folder wins, and rows deleted since stay deleted),
     and it merges everything in the folder after what the restored data had merged, its own
     old id's later files included.
-  - **Replace**: `restamp_for_replace` first gives every synced row, item clock, list base and
-    the tombstone of every row not here one new clock, after every clock the data holds, even
-    one far ahead (which the device's own clock does not follow), then it joins. Its snapshot
+  - **Replace**: `restamp_for_replace` first gives every synced row, item clock, the base of a
+    list whose value is not in its shape, and the tombstone of every row not here one new
+    clock, after every clock the data holds, even one far ahead (which the device's own clock
+    does not follow), then it joins. The base of a list in its shape keeps its clock (S28c
+    review): the re-stamped items go on top of it, and another device's item made since (later
+    than the base) is a row the restored data never knew, kept; re-stamped, the base superseded
+    every such item with no copy. The cost: a whole value not in its shape written after the
+    Backup (on any device) stays the base, so the list stays damaged, its items (the restored
+    ones too) held, until a value in shape is written; nothing is lost. Its snapshot
     wins everywhere: rows the restored data holds replace every other version, rows it had
     deleted are deleted everywhere, rows it never knew (made since on any device) are kept
     (ADR 0006 and rule 7 together), and another device's own Note text or list item it replaces
@@ -625,7 +649,7 @@ wrote its files (`sync_device.rs`, migration 17):
 1. `sync.json` is read (written by the first device); one of a newer format stops here
    (`FolderNewer`).
 2. A restore waiting for the user's choice stops here (`NeedsRestoreChoice`).
-3. A copied database takes a new id ([above](#restores-and-copies-new-device-ids)).
+3. A copied database takes a new id, before it joins ([above](#restores-and-copies-new-device-ids)).
 4. A device not recording ops joins ([above](#joining)).
 5. Its pending ops are written (`write_pending_ops`), then its snapshot if one is due.
 6. `merge_folder`: held ops tried again, snapshots, every other device's op files, held ops
@@ -763,9 +787,14 @@ Mobile app has no period (`at_launch(false)`).
   recent entries, device-only or unlisted preferences, remembered Resource names, outbox or
   former ids (no text of them anywhere in it), and its Synced data, device and `applied_up_to`;
   it reads back as a Backup with every row clocked, parents first; a join clocks every row and
-  starts recording, and a second join changes nothing. `sync_clock_db.rs`: a restore keeps
-  every table but gives a new id (the Backup's and the old one former), empties the outbox and
-  asks no question on a device that did not sync; migration 17 adds empty `former_device`.
+  starts recording, and a second join changes nothing; no local string, nor a word of a Note
+  deleted before the join, is anywhere in a snapshot's bytes. `sync_clock_db.rs`: a restore
+  keeps every table but gives a new id (the one it had former, not another database's Backup's),
+  empties the outbox and asks no question on a device that did not sync; on a syncing device
+  the new id, former ids, empty outbox and pending choice arrive together, and a restore whose
+  new-id step fails leaves the database as it was; the Backup's id is a former one only when it
+  is this device's own; a v16 Backup restores into 17; a name held for a damaged list is not
+  free for a clash rename; migration 17 adds empty `former_device`.
 - `crates/engine/src/sync/lifecycle_tests.rs`: two devices with `FsSyncFolder` on one disk
   converge end to end through `sync_now`, each with what it made before joining, and a third
   joins late from their snapshots; a late joiner from snapshots alone (every file they cover
@@ -780,8 +809,13 @@ Mobile app has no period (`at_launch(false)`).
   database with Replace makes a third device converge to the restored state (rows it held back,
   rows it deleted deleted, a row made since kept) and keeps another device's own later text as
   a Sync conflict's copy; a text written under the old id survives a remote edit that never saw
-  it, also when that edit is merged before the old id's op. `schedule.rs`: launch, resume and request; 30 s after the first edit; the desktop's
-  5 minutes; a failed sync.
+  it, also when that edit is merged before the old id's op. From the S28c review: a former id's
+  files merge op by op when the snapshot of a device met after the Backup covers them (its
+  text kept); a Replace over a list base keeps another device's Collection made after the
+  Backup everywhere; a database copied before either copy joins takes a new id, converges and
+  trims none of the other copy's files; an idle device's damaged snapshot is written again
+  (under the same name too). `schedule.rs`: launch, resume and request; 30 s after the first
+  edit; an edit made while a sync ran still due; the desktop's 5 minutes; a failed sync.
 - `merge_props.rs` (S28c): every device joins through the real join (its default Notebook and
   what it made before only in its snapshot), a third of them late, at their first sync; a
   quarter of the syncs run `sync_now` at a small policy (a snapshot every 1–3 own files or
@@ -791,13 +825,29 @@ Mobile app has no period (`at_launch(false)`).
   every op file and snapshot ever written (`snapshot_ops` for the snapshots): convergence, rows
   exactly when not covered, every Note text and Collection kept unless an op that had it
   replaced it, or a replace discarded it on purpose (what the restoring device held that its
-  Backup did not), held only while damaged. The run must reach a late join, a snapshot merged,
-  one merged for files trimmed, a file trimmed, a catch-up and a replace. Mutation checks: the
-  former ids not counted as own (the props, two unit tests), the replace's clock not after
-  every clock held (the props), a device met through another's snapshot still waiting for its
-  own (a unit test), a former id's losing op not kept (a unit test: the props merge former ids
-  first, which leaves the case to partial views). 1,000 cases take about 10 s (was 4: each join writes a snapshot and every
-  other device reads it), 10,000 about 95 s.
+  Backup did not, of what its own ids' ops wrote after the Backup: another device's text or
+  item must stay as a copy or "(2)"), held only while damaged. From the S28c review: a
+  Collection another joined device held that a replace's Backup never knew (no row, no
+  tombstone) stays, unless an op that had it, or a whole value an op or a join (not a
+  replace's base in shape) wrote at or after it, took it, or the list ends damaged (held); and
+  four sequences: a Backup taken before a device joins late, that device writing over the
+  Backup's device's later text and then a snapshot covering it, the Backup restored catching
+  up (`late_backup_step`); a database copied, joined or not, the first copy writing and the
+  other taking a new id (`copy_step`); a Backup taken with the Collections on a base; an own
+  snapshot damaged in the folder, whole again after its device's next sync (`mend_step`). The
+  run must reach a late join, a snapshot merged, one merged for files trimmed, a file
+  trimmed, a catch-up, a replace and each of those four. Mutation checks: the former ids not
+  counted as own (the props, two unit tests), the replace's clock not after every clock held
+  (the props), a device met through another's snapshot still waiting for its own (a unit
+  test), a former id's losing op not kept (a unit test: the props merge former ids first,
+  which leaves the case to partial views); from the review, a snapshot moving a former id's
+  `applied_up_to` (the props' late Backup, a unit test), Replace re-stamping a base in shape
+  (the props' never-known check, a unit test), the copied-database check only on a recording
+  device (the props' copy, a unit test), a damaged own snapshot not written again (the props'
+  mend, a unit test), a clash rename taking a held name (a 10k seed, a store test). 1,000
+  cases take about 15–23 s on a loaded Mac (16.6 s before the review's sequences on the same
+  load; the copies add devices, and each `sync_now` reads its own newest snapshot), 10,000
+  about 145–190 s.
 
 ## For later steps
 

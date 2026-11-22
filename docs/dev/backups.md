@@ -49,7 +49,7 @@ encoding is in [`sync.md`](sync.md#clocks)); schemas 15 and 16 add what the merg
 | `favorite.uid`, `reading_plan.uid` | A UUIDv7 each, unique, beside the numbers the app names them by (which another device also hands out). |
 | `tombstone` | A deleted synced row, kept for good: `row_table` is its kind (the `row` tag of a serialized `Row`: `notebook`, `annotation`, `favorite`, `layout`, `reading`, `collection`, `guide_section` …), `row_id` its id (a Reading's `<plan uid>/<position>`, a Guide section's `<guide>/<section>`, a list item's name), `clock` its delete's clock. A tombstone written at schema 13 has empty text (`synced_store::NO_CLOCK`), which, like a row's `NULL` clock, means "before this device recorded clocks" and sorts before any clock ([`sync.md`](sync.md#clocks)); from schema 14 every delete writes its clock. `covers` (15): the clock of the version the delete removed (`''`: one from before clocks; `NULL`, every tombstone written before schema 15: up to its own clock), so another device's edit it did not see brings the row back. From schema 15 a tombstone is kept beside a row made again (an undone delete, such an edit), with the newest delete clock and the newest version covered; before it, a row made again took its tombstone away. Replacing the Preferred order leaves none. `row` (16): on a deleted Notebook, Reading plan, Highlight palette or style, the row as its delete removed it (a serialized `Row`), which a child arriving from another device restores ([`sync.md`](sync.md#deleted-parents)); `NULL` on every other tombstone and every one written before schema 16. |
 | `device` | One row: this Synced device's id (UUIDv7, made by the migration) and the name the user gives it. A restore copies the Backup's row like any other, then gives the device a new id (ADR 0022 rule 7, below). `restore_choice` (17): 1 after a restore on a device that was syncing, until the user chooses to catch up or replace. |
-| `former_device` (17) | The Synced device ids this database had before (the Backup's and the one before a restore, or a copy's): the merge counts a clock naming any of them as this device's own. |
+| `former_device` (17) | The Synced device ids this database had before (after a restore, the one it had and its former ones, plus the Backup's only when that is one of them; after a copy, the copy's): the merge counts a clock naming any of them as this device's own. |
 | `applied_up_to` | For each other Synced device, the last of its op files applied here; for this device's own id, the last of its own op files written. This device records ops (keeps them in `op_outbox`) only while its own id has a row. |
 | `item_clock` (14) | The clock of each item of a list preference (a Collection, Copy preset, Saved search, Guide section, Resource tags), keyed as its tombstone is; `preference.clock` of the list's key is the newest clock of any op on its items. `position` (15): the item's position as its last write gave it, so every device composes the list in the same order (`NULL`, an item written before schema 15 or a list last written whole: its index). A deleted item's row goes; its tombstone has the clock. The Preferred order's clock is here too (`preferred_order`, `''`), kept when the order is empty. From schema 16 a list written whole has its base's clock here (`preference`, its key), and the base's items the base's clock and their index ([`sync.md`](sync.md#a-lists-whole-value)). |
 | `op_outbox` (14) | While this device records ops: each `Change` applied, with its clock, until it is in an op file of the Sync folder (`file_seq`, once reserved). Empty on a device that does not sync. |
@@ -58,8 +58,8 @@ encoding is in [`sync.md`](sync.md#clocks)); schemas 15 and 16 add what the merg
 
 A **snapshot** in the Sync folder (S28c, [`sync.md`](sync.md#snapshots)) is a Backup in this
 format holding only the Synced data and what merging it needs: History, the Last session,
-remembered Resource names, the outbox, the former ids and every preference that is not Synced
-data are emptied, and it is vacuumed. It is read with the same checks as a Backup.
+remembered Resource names, the outbox, the former ids, the Notes search index (`notes_fts`) and
+every preference that is not Synced data are emptied, and it is vacuumed. It is read with the same checks as a Backup.
 
 The restore checks treat them as any table: a Backup missing one is refused, and the trial
 restore compares only what the engine loads, so none of them changes what a restore keeps.
@@ -91,11 +91,13 @@ whole (`Row::Preference`), so nothing in it is lost. Their items' clocks are in
    Notebook if there is none. Nothing has been written yet.
 2. A **Safety backup** of the live database goes to `backups/user-safety-000001.db` (the last
    `SAFETY_BACKUPS` = 5 are kept; their numbering is separate from the launch backups').
-3. The migrated copy's pages are copied over the live connection with the backup API, in one
-   step. Then (ADR 0022 rule 7, `sync_device.rs`) the restored database gets a new Synced
-   device id, the Backup's id and the one it had kept as its former ones, and its outbox (ops
-   under the old id) is emptied; on a device that was syncing, `device.restore_choice` is set,
-   and Sync waits until the user chooses to catch up or replace
+3. The migrated copy is staged in a copy (in memory, or the page-size rebuild below), which
+   first gets (ADR 0022 rule 7, `sync_device.rs`) a new Synced device id, the live database's
+   id and former ids kept as its former ones (the Backup's only when it is one of them), and an
+   empty outbox (ops under the old id); on a device that was syncing, `device.restore_choice`
+   is set there. Its pages are then copied over the live connection with the backup API, in
+   one step, so all of it arrives together, and Sync waits until the user chooses to catch up
+   or replace
    ([`sync.md`](sync.md#restores-and-copies-new-device-ids)). The restore's checks and the
    trial restore compare what the app keeps, which this does not change. The live database stays in WAL mode. Pages copy only between databases of one page
    size: a copy with another is first rebuilt in a new scratch file
