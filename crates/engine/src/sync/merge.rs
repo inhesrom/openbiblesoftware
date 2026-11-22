@@ -620,7 +620,7 @@ fn merge_delete(
         tx.record(&[Change::insert(Row::Annotation(copy))])?;
         recorded.conflicts += 1;
     }
-    tx.write_merged(&Change::delete(here.clone()), &op.clock, covers)?;
+    tx.delete_merged(here, deleted, &op.clock, covers)?;
     Ok(Outcome::Written)
 }
 

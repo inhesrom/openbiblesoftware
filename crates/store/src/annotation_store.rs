@@ -19,9 +19,10 @@ use crate::highlight_style_store::{
     read_palette, read_style, style_exists, write_palette, write_style,
 };
 use crate::hlc::Hlc;
+use crate::preference_items::ListPreference;
 use crate::sync_clock::{
-    CLOCK_SCHEMA, COVERS_SCHEMA, HELD_SCHEMA, Stamp, SyncColumns, read_device_id, read_row_clock,
-    read_tombstone_covers, record_op, records_ops, stamp_row,
+    CLOCK_SCHEMA, COVERS_SCHEMA, HELD_SCHEMA, Stamp, SyncColumns, read_device_id, read_list_base,
+    read_row_clock, read_tombstone_covers, record_op, records_ops, stamp_row,
 };
 use crate::sync_schema::is_synced_preference;
 use crate::synced_store::{
@@ -766,12 +767,20 @@ impl UserStore {
             None
         };
         // What a local write must come after, so every device's merge takes it: the version
-        // it replaces, and (a row made again) what its tombstone covers.
+        // it replaces, (a row made again) what its tombstone covers, and (a list item) its
+        // list's base, which supersedes every item op at or before it.
         let replaced = match stamp {
-            Stamp::Local { .. } if columns.schema_15 => before_clock
-                .as_deref()
-                .and_then(Hlc::parse)
-                .max(read_tombstone_covers(tx, &key)?),
+            Stamp::Local { .. } if columns.schema_15 => {
+                let base = match ListPreference::of_row(&key) {
+                    Some(list) if columns.schema_16 => read_list_base(tx, &list)?,
+                    _ => None,
+                };
+                before_clock
+                    .as_deref()
+                    .and_then(Hlc::parse)
+                    .max(read_tombstone_covers(tx, &key)?)
+                    .max(base)
+            }
             _ => None,
         };
         if matches!(stamp, Stamp::Kept) && (change.before.is_none() || change.after.is_none()) {
@@ -829,7 +838,7 @@ impl UserStore {
                 (clock.encode()?, before_clock.unwrap_or_default())
             }
             Stamp::Local { .. } => (NO_CLOCK.to_string(), NO_CLOCK.to_string()),
-            Stamp::Merged { clock, covers } => {
+            Stamp::Merged { clock, covers, .. } => {
                 stamp_row(tx, &key, change, clock, columns)?;
                 let covers = match covers {
                     Some(c) => c.encode()?,
@@ -841,9 +850,15 @@ impl UserStore {
             Stamp::Kept => return Ok(()),
         };
         if columns.tombstones {
-            // A parent's tombstone keeps the row deleted, which another device's child of it
-            // arriving later restores (schema 16).
-            let row = match &change.before {
+            // A parent's tombstone keeps the row deleted (as the deleting device had it),
+            // which another device's child of it arriving later restores (schema 16).
+            let deleted = match stamp {
+                Stamp::Merged {
+                    deleted: Some(row), ..
+                } => Some(*row),
+                _ => change.before.as_ref(),
+            };
+            let row = match deleted {
                 Some(before) if columns.schema_16 && keeps_row(&key) => {
                     Some(serde_json::to_string(before).map_err(|e| {
                         StoreError::Rejected(format!("a row that is not JSON: {e}"))

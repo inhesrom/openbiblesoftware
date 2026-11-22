@@ -138,7 +138,19 @@ impl MergeTx<'_> {
 
     /// The row `key` names as it is here, with its clock and tombstone.
     pub fn state(&mut self, key: &RowKey) -> Result<RowState, StoreError> {
-        let row = crate::annotation_store::read_row(self.tx, &mut self.lists, key)?;
+        // An item of a list whose value is not in its shape is not there as a row: the value
+        // is one whole row then (D7).
+        let whole = match ListPreference::of_row(key) {
+            Some(list) => list
+                .items(read_preference(self.tx, &list.key())?.as_deref())
+                .is_none(),
+            None => false,
+        };
+        let row = if whole {
+            None
+        } else {
+            crate::annotation_store::read_row(self.tx, &mut self.lists, key)?
+        };
         let clock = match row {
             Some(_) => read_row_clock(self.tx, key)?
                 .as_deref()
@@ -190,7 +202,37 @@ impl MergeTx<'_> {
             &mut self.lists,
             columns,
             change,
-            &Stamp::Merged { clock, covers },
+            &Stamp::Merged {
+                clock,
+                covers,
+                deleted: None,
+            },
+            true,
+        )
+    }
+
+    /// Delete the row here (`here`, as [`MergeTx::state`] read it) for another device's op at
+    /// `clock` covering `covers`, which deleted it as `deleted` (its `before`): a parent's
+    /// tombstone keeps that row, as on the device that deleted it, so every device keeps the
+    /// same whatever version it had.
+    pub fn delete_merged(
+        &mut self,
+        here: &Row,
+        deleted: Option<&Row>,
+        clock: &Hlc,
+        covers: Option<&Hlc>,
+    ) -> Result<(), StoreError> {
+        let columns = self.store.sync_columns(self.tx)?;
+        self.store.apply_one(
+            self.tx,
+            &mut self.lists,
+            columns,
+            &Change::delete(here.clone()),
+            &Stamp::Merged {
+                clock,
+                covers,
+                deleted,
+            },
             true,
         )
     }

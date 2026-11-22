@@ -52,6 +52,9 @@ pub(crate) enum Stamp<'a> {
     Merged {
         clock: &'a Hlc,
         covers: Option<&'a Hlc>,
+        /// For a delete, the row as the op's device deleted it (its `before`), which a
+        /// parent's tombstone keeps; `None`: the row here.
+        deleted: Option<&'a Row>,
     },
     /// Rewritten here the way every device rewrites it from what they all merged (a default
     /// Notebook another device's older one replaces): an update, and the row keeps its clock.
@@ -413,7 +416,13 @@ pub(crate) fn stamp_row(
         RowKey::ReadingPlan(uid) => set("reading_plan", "uid", uid),
         RowKey::Layout(id) => set("layout", "id", id),
         RowKey::Preference(k) => match ListPreference::of_key(k) {
-            Some(list) if columns.schema_16 => stamp_list_base(c, &list, &clock, deleted),
+            Some(list) if columns.schema_16 => {
+                let value = match &change.after {
+                    Some(Row::Preference(p)) => Some(p.value.as_str()),
+                    _ => None,
+                };
+                stamp_list_base(c, &list, &clock, value, deleted)
+            }
             _ => set("preference", "key", k),
         },
         RowKey::Reading(plan, position) if !deleted => c
@@ -490,13 +499,16 @@ pub(crate) fn stamp_row(
 /// ([`stamp_row`]).
 pub(crate) const LIST_BASE_TABLE: &str = "preference";
 
-/// Make the whole value of `list` just written at `clock` (text form) its base: the list's
-/// `preference.clock` is the newest of it and every item op, the base's clock is kept, and
-/// the item clocks at or before it go.
+/// Make the whole value of `list` just written at `clock` (text form), `value` (`None`:
+/// deleted), its base: the list's `preference.clock` is the newest of it and every item op,
+/// the base's clock is kept, and the item clocks at or before it go; each item of `value`
+/// (when in shape) gets the base's clock and its index in `value` as its position, so every
+/// device composes the list in the same order however its later items arrived.
 fn stamp_list_base(
     c: &Connection,
     list: &ListPreference,
     clock: &str,
+    value: Option<&str>,
     deleted: bool,
 ) -> Result<(), StoreError> {
     let key = list.key();
@@ -519,8 +531,26 @@ fn stamp_list_base(
              AND clock <= ?3",
         params![kind, prefix, clock],
     )
-    .map(drop)
-    .map_err(sql)
+    .map_err(sql)?;
+    let Some(items) = value.and_then(|v| list.items(Some(v))) else {
+        return Ok(());
+    };
+    let mut stmt = c
+        .prepare_cached(
+            "INSERT INTO item_clock (row_table, row_id, clock, position) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (row_table, row_id) DO NOTHING",
+        )
+        .map_err(sql)?;
+    for (i, item) in items.iter().enumerate() {
+        let (kind, id) = item.key().tombstone();
+        let position = match item {
+            Row::ResourceTags(_) => None,
+            _ => i64::try_from(i).ok(),
+        };
+        stmt.execute(params![kind, id, clock, position])
+            .map_err(sql)?;
+    }
+    Ok(())
 }
 
 /// The clock of the base of `list` (its newest whole-value write, from schema 16), if any.
