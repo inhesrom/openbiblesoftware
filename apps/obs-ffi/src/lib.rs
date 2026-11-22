@@ -19,6 +19,14 @@ use obs_mobile::ReaderId;
 
 uniffi::setup_scaffolding!();
 
+mod library;
+pub use library::{
+    DownloadOrigin, DownloadPlan, DownloadRequest, DownloadRow, DownloadState, LicenceClass,
+    LicenceFilter, MobileSet, Network, OpenRow, RemoveAnswer, SetSummary, StarterChoice,
+    StarterLibraryView, StarterRow, StarterRowStatus, StorageRow, StorageView, Transport,
+    TransportError,
+};
+
 /// The engine's version.
 #[uniffi::export]
 pub fn engine_version() -> String {
@@ -581,9 +589,15 @@ impl From<obs_mobile::Settings> for Settings {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum Changed {
     Library,
-    Reader { reader: u32 },
+    Reader {
+        reader: u32,
+    },
     History,
-    Message { text: String },
+    Message {
+        text: String,
+    },
+    /// Library → Starter library, Get Resources or a download changed.
+    Downloads,
 }
 
 impl From<obs_mobile::Changed> for Changed {
@@ -593,6 +607,7 @@ impl From<obs_mobile::Changed> for Changed {
             obs_mobile::Changed::Reader(r) => Self::Reader { reader: r.0 },
             obs_mobile::Changed::History => Self::History,
             obs_mobile::Changed::Message(text) => Self::Message { text },
+            obs_mobile::Changed::Downloads => Self::Downloads,
         }
     }
 }

@@ -45,6 +45,7 @@ pub use library::{
 pub use navigation::{BookChapters, HistoryDay, HistoryVisit, ParsedReference};
 pub use obs_engine::licence::{LicenceClass, LicenceFilter};
 pub use obs_engine::starter::MobileSet;
+pub use obs_engine::sword_repo;
 pub use obs_model::ResourceType;
 pub use obs_reading::{DocPos, Tile};
 pub use paths::Paths;
