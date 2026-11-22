@@ -220,7 +220,7 @@ struct World {
     /// merged here, must: it stays there as a Sync conflict's copy or "Name (2)".)
     discarded_texts: BTreeSet<String>,
     discarded_items: BTreeSet<String>,
-    /// The Collections (JSON without the name, and clock) other devices held when a device
+    /// The Collections (JSON without the name, and clock) other joined devices held when a device
     /// restored a Backup that never knew them (no row, no tombstone) and replaced what is in
     /// the folder: rows never known are kept (D3), so only an op that had one, or a base
     /// written whole later by an op or a join (not a replace's), may take it away.
@@ -527,7 +527,9 @@ impl World {
             let (then_texts, then_items) = (texts(&backup), items(&backup));
             let (own_texts, own_items) = self.own_writes_since(d, &before);
             for (e, user) in self.devices.iter().enumerate() {
-                if e == d {
+                // A device not joined yet records no ops: one of its items it deletes before
+                // joining is gone with no op that had it.
+                if e == d || !self.joined[e] {
                     continue;
                 }
                 let value = user.preference(COLLECTIONS).unwrap();
