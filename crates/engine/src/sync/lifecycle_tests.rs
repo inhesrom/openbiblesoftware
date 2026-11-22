@@ -1004,6 +1004,68 @@ fn a_copys_text_survives_a_restore_when_the_original_wrote_over_it() {
     assert_eq!(texts(&d), ["T on D", "V on C"]);
 }
 
+/// The seed 891 sequence, but D meets C's V before the restore: it keeps T as a Sync
+/// conflict's copy K, edits K to T2 and syncs. The restored Backup is from before D took its
+/// id, so it never met D's old id: that id is met through its join snapshot. A former id's
+/// snapshot merges with its op files, the last given up first, before the older former id's
+/// files (C's, the copy's original) and other snapshots: T, K and T2 are here as D's own when
+/// V arrives, and T2 stays. Before the fix D's old id's snapshot and files merged after C's,
+/// T lost to V, D made K again at a new clock, and that beat T2, lost on every device.
+#[test]
+fn a_copys_edited_conflict_copy_survives_a_restore_from_before_it_took_its_id() {
+    let dir = Dir::new("copy-restore-unmet-id-copy-edited");
+    let folder = MemSyncFolder::new();
+    let c = open(&dir, "c");
+    let nb = default_notebook(&c);
+    let n = note(&nb, "first");
+    add(&c, Row::Annotation(n.clone()));
+    sync(&c, &folder);
+    let c_id = c.device_id().unwrap();
+    let mut d = c.copy_in_memory().unwrap();
+    let backup = d.copy_in_memory().unwrap();
+    add(&c, Row::Notebook(notebook("On C")));
+    sync(&c, &folder);
+    let d_id = sync(&d, &folder).new_device_id.unwrap();
+    settle(&[&c, &d], &folder);
+    d.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "T on D")),
+    )])
+    .unwrap();
+    sync(&d, &folder);
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    c.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "V on C")),
+    )])
+    .unwrap();
+    let report = sync(&c, &folder);
+    assert_eq!(report.merge.recorded.conflicts, 0, "{report:?}");
+    let report = sync(&d, &folder);
+    assert_eq!(report.merge.recorded.conflicts, 1, "{report:?}");
+    let copy = d
+        .annotations(None)
+        .unwrap()
+        .into_iter()
+        .find(|a| a.conflict_of.is_some())
+        .unwrap();
+    d.apply_changes(&[Change::update(
+        Row::Annotation(copy.clone()),
+        Row::Annotation(with_text(&copy, "T2 on D")),
+    )])
+    .unwrap();
+    sync(&d, &folder);
+    d.restore_from(&backup).unwrap();
+    // The restored database never met D's old id: it is met through its snapshot.
+    assert_eq!(d.merged_up_to(&d_id).unwrap(), None);
+    assert!(newest_snapshot(&folder, &d_id).unwrap().is_some());
+    restore_choice(&d, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    assert_eq!(d.own_device_ids().unwrap()[1..], [d_id.clone(), c_id]);
+    settle(&[&c, &d], &folder);
+    converged(&[&c, &d]);
+    assert_eq!(texts(&d), ["T2 on D", "V on C"]);
+}
+
 #[test]
 fn a_replace_over_a_list_base_keeps_another_devices_collection_made_after_the_backup() {
     let dir = Dir::new("restore-replace-base");

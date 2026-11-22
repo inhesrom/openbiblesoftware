@@ -207,30 +207,42 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
         }
     }
     // This device's former ids first (a restore or a copy gave it a new id), before any
-    // snapshot too, the last given up first (`own_device_ids`): their op files are its own
-    // history, so their versions are here as its own before another device's replace them,
-    // and the own checks see them (ADR 0022 rule 7). A snapshot, or an older former id's
-    // later files (after a copy, the other copy's), merged first could make the merge record
+    // other snapshot too, the last given up first (`own_device_ids`), each with its snapshot
+    // (a former id this database never met) before its op files: they are its own history,
+    // so their versions are here as its own before another device's replace them, and the
+    // own checks see them (ADR 0022 rule 7). Another snapshot, or an older former id's later
+    // files (after a copy, the other copy's), merged first could make the merge record
     // again, at a new clock, a row the last id made and later edited (a Sync conflict's copy,
-    // an item kept), and that record would beat the later edit.
-    let mut pending = Vec::new();
-    for id in own_ids.iter().filter(|id| ready.contains(id)) {
-        pending.push(pending_of(user, folder, id, &mut report)?);
-    }
-    ready.retain(|id| !own_ids.contains(id));
-    merge_pending(user, &mut pending, &mut report)?;
-    // A snapshot that waits (for a row another device's file brings) is tried again after
-    // the others.
+    // an item kept), and that record would beat the later edit. A former id's snapshot that
+    // waits is tried again with the others, its files after it.
     let mut waits: Vec<Option<String>> = vec![None; snapshots.len()];
     let mut merged = vec![false; snapshots.len()];
+    let mut pending = Vec::new();
+    for id in &own_ids {
+        if let Some(i) = snapshots.iter().position(|(s, _, _)| s == id) {
+            let (_, seq, contents) = &snapshots[i];
+            waits[i] = snapshot_waits(user, *seq, contents, &mut report)?;
+            if waits[i].is_some() {
+                continue;
+            }
+            merged[i] = true;
+        } else if !ready.contains(id) {
+            continue;
+        }
+        pending.push(pending_of(user, folder, id, &mut report)?);
+        merge_pending(user, &mut pending, &mut report)?;
+    }
+    ready.retain(|id| !own_ids.contains(id));
+    // A snapshot that waits (for a row another device's file brings) is tried again after
+    // the others.
     loop {
         let mut progress = false;
         for (i, (id, seq, contents)) in snapshots.iter().enumerate() {
             if merged[i] {
                 continue;
             }
-            match merge_snapshot(user, *seq, contents, &mut report) {
-                Ok(()) => {
+            match snapshot_waits(user, *seq, contents, &mut report)? {
+                None => {
                     if waits[i].take().is_some() {
                         report.retried += 1;
                     }
@@ -238,11 +250,7 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
                     ready.push(id.clone());
                     progress = true;
                 }
-                Err(
-                    MergeError::Waits(why)
-                    | MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why)),
-                ) => waits[i] = Some(why),
-                Err(MergeError::Store(e)) => return Err(e.into()),
+                why => waits[i] = why,
             }
         }
         if !progress {
@@ -278,6 +286,23 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
     }
     retry_held(user, &mut report)?;
     Ok(report)
+}
+
+/// Merge a snapshot: why it waits (for a row another device's file brings), if it does.
+fn snapshot_waits(
+    user: &UserStore,
+    seq: u64,
+    contents: &obs_store::SnapshotContents,
+    report: &mut MergeReport,
+) -> Result<Option<String>, SyncError> {
+    match merge_snapshot(user, seq, contents, report) {
+        Ok(()) => Ok(None),
+        Err(
+            MergeError::Waits(why)
+            | MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why)),
+        ) => Ok(Some(why)),
+        Err(MergeError::Store(e)) => Err(e.into()),
+    }
 }
 
 /// The op files of `device` after the last merged here, to merge.
