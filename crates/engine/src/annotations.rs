@@ -439,6 +439,51 @@ impl Session {
         self.annotations_revision
     }
 
+    /// The Annotations that changed since `revision` (a view's), when the revision has moved
+    /// once since, for a sync's merge that changed only those (no Notebook, Highlight style or
+    /// palette) and at most [`ANNOTATIONS_PATCH_LIMIT`] of them (S29c): a view holding what it
+    /// read at `revision` then reads only them ([`Session::patch_annotations_in_text`],
+    /// [`Session::patch_note_cards`]). `None`: read everything again.
+    pub fn annotations_changed_since(
+        &self,
+        revision: Option<u64>,
+    ) -> Option<&std::collections::BTreeSet<String>> {
+        let (moved_to, ids) = self.annotations_changed.as_ref()?;
+        (*moved_to == self.annotations_revision && revision? + 1 == *moved_to).then_some(ids)
+    }
+
+    /// `shown`, the Annotations to draw in text as [`Session::annotations_in_text`] read them,
+    /// with those of `ids` read again: as that would read them now, when they are all that
+    /// changed.
+    pub fn patch_annotations_in_text(
+        &self,
+        shown: &mut Vec<Annotation>,
+        ids: &std::collections::BTreeSet<String>,
+    ) -> Result<(), String> {
+        let visible: std::collections::HashSet<String> = self
+            .notebooks()?
+            .into_iter()
+            .filter(|n| n.show_in_text)
+            .map(|n| n.id)
+            .collect();
+        let highlights = self.appearance.show_highlights;
+        let user = self.user_data()?;
+        let mut fresh = Vec::new();
+        for id in ids {
+            if let Some(a) = user.annotation(id)?
+                && visible.contains(&a.notebook_id)
+                && (highlights || a.is_note())
+            {
+                fresh.push(a);
+            }
+        }
+        shown.retain(|a| !ids.contains(&a.id));
+        shown.extend(fresh);
+        // Oldest first, as the User database lists them.
+        shown.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(())
+    }
+
     pub fn undo_history(&self) -> &UndoHistory {
         &self.history
     }
@@ -562,7 +607,13 @@ impl Session {
             .annotation(id)?
             .ok_or_else(|| format!("There is no Annotation {id}"))
     }
+}
 
+/// How many Annotations a sync's merge may change for the views to read only those
+/// ([`Session::annotations_changed_since`]); past it they read everything, which is faster.
+pub const ANNOTATIONS_PATCH_LIMIT: usize = 200;
+
+impl Session {
     /// Annotations in one Notebook, or in all.
     pub fn annotations(&self, notebook: Option<&str>) -> Result<Vec<Annotation>, String> {
         self.user_data()?.annotations(notebook)

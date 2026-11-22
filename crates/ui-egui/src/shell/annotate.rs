@@ -212,6 +212,16 @@ impl MarkCache {
         if self.revision == Some(revision) {
             return;
         }
+        // A sync's merge that changed only a few Annotations: read only those (S29c).
+        if let Some(ids) = session.annotations_changed_since(self.revision)
+            && session
+                .patch_annotations_in_text(&mut self.annotations, ids)
+                .is_ok()
+        {
+            self.revision = Some(revision);
+            self.by_resource.clear();
+            return;
+        }
         self.revision = Some(revision);
         // Only what shows in text: Notebooks with Show in text on, Highlights unless View →
         // Show Highlights is off (#63).

@@ -356,6 +356,40 @@ fn in_scope(scope: &Scope, a: &Annotation) -> bool {
     }
 }
 
+/// What the Notes Tool lists: its Notebook (`None`: all), Needs attention only, and the words
+/// its filter box holds, with the Notebooks' names.
+struct CardsListed {
+    notebooks: BTreeMap<String, String>,
+    only: Option<String>,
+    attention_only: bool,
+    words: Vec<String>,
+}
+
+impl CardsListed {
+    /// `a`'s card, when it is listed (in the Notebook asked for: the caller's).
+    fn card(&self, session: &Session, a: Annotation) -> Option<Card> {
+        if self.attention_only && !needs_attention(&a) {
+            return None;
+        }
+        let c = session.card(a, &self.notebooks);
+        if self.words.is_empty() {
+            return Some(c);
+        }
+        let hay = format!(
+            "{}\n{}\n{}\n{}",
+            note_plain_text(c.annotation.body()),
+            c.quote.as_deref().unwrap_or_default(),
+            c.reference,
+            c.notebook
+        )
+        .to_lowercase();
+        self.words
+            .iter()
+            .all(|w| hay.contains(w.as_str()))
+            .then_some(c)
+    }
+}
+
 impl Session {
     /// How many Annotations each Notebook holds (empty Notebooks left out).
     pub fn notebook_counts(&self) -> Result<Vec<(String, u64)>, String> {
@@ -382,6 +416,56 @@ impl Session {
         if self.user.is_none() {
             return Ok(Vec::new());
         }
+        let listed = self.cards_listed(filter)?;
+        let mut cards: Vec<Card> = self
+            .annotations(listed.only.as_deref())?
+            .into_iter()
+            .filter_map(|a| listed.card(self, a))
+            .collect();
+        self.sort_cards(&mut cards);
+        Ok(cards)
+    }
+
+    /// `cards`, the Notes Tool's cards as [`Session::note_cards`] made them for `filter`, with
+    /// the Annotations of `ids` read again, and the cards of Sync conflicts' copies of them:
+    /// as that would make them now, when those are all that changed (no Notebook: S29c,
+    /// [`Session::annotations_changed_since`]).
+    pub fn patch_note_cards(
+        &self,
+        cards: &mut Vec<Card>,
+        ids: &BTreeSet<String>,
+        filter: &str,
+    ) -> Result<(), String> {
+        if self.user.is_none() {
+            cards.clear();
+            return Ok(());
+        }
+        let listed = self.cards_listed(filter)?;
+        // A copy's card says whether the Note in place is still there.
+        let mut again: BTreeSet<String> = ids.clone();
+        again.extend(
+            (cards.iter())
+                .filter(|c| (c.annotation.conflict_of.as_ref()).is_some_and(|of| ids.contains(of)))
+                .map(|c| c.annotation.id.clone()),
+        );
+        let user = self.user_data()?;
+        let mut fresh = Vec::new();
+        for id in &again {
+            if let Some(a) = user.annotation(id)?
+                && listed.only.as_ref().is_none_or(|nb| *nb == a.notebook_id)
+                && let Some(card) = listed.card(self, a)
+            {
+                fresh.push(card);
+            }
+        }
+        cards.retain(|c| !again.contains(&c.annotation.id));
+        cards.extend(fresh);
+        self.sort_cards(cards);
+        Ok(())
+    }
+
+    /// What the Notes Tool lists for `filter` now.
+    fn cards_listed(&self, filter: &str) -> Result<CardsListed, String> {
         let notebooks: BTreeMap<String, String> = self
             .notebooks()?
             .into_iter()
@@ -389,40 +473,27 @@ impl Session {
             .collect();
         let only = match &self.notes.filter {
             NotesFilter::All | NotesFilter::NeedsAttention => None,
-            NotesFilter::Notebook(id) if notebooks.contains_key(id) => Some(id.as_str()),
+            NotesFilter::Notebook(id) if notebooks.contains_key(id) => Some(id.clone()),
             // The Notebook went away (deleted, or undone): show all.
             NotesFilter::Notebook(_) => None,
         };
-        let attention_only = self.notes.filter == NotesFilter::NeedsAttention;
-        let words: Vec<String> = filter.split_whitespace().map(str::to_lowercase).collect();
-        let mut cards: Vec<Card> = self
-            .annotations(only)?
-            .into_iter()
-            .filter(|a| !attention_only || needs_attention(a))
-            .map(|a| self.card(a, &notebooks))
-            .filter(|c| {
-                if words.is_empty() {
-                    return true;
-                }
-                let hay = format!(
-                    "{}\n{}\n{}\n{}",
-                    note_plain_text(c.annotation.body()),
-                    c.quote.as_deref().unwrap_or_default(),
-                    c.reference,
-                    c.notebook
-                )
-                .to_lowercase();
-                words.iter().all(|w| hay.contains(w.as_str()))
-            })
-            .collect();
+        Ok(CardsListed {
+            notebooks,
+            only,
+            attention_only: self.notes.filter == NotesFilter::NeedsAttention,
+            words: filter.split_whitespace().map(str::to_lowercase).collect(),
+        })
+    }
+
+    /// `cards` in the Notes Tool's order.
+    fn sort_cards(&self, cards: &mut [Card]) {
         match self.notes.order {
-            CardOrder::Bible => self.sort_in_bible_order(&mut cards),
+            CardOrder::Bible => self.sort_in_bible_order(cards),
             CardOrder::Modified => cards.sort_by(|a, b| {
                 (b.annotation.modified_at, &b.annotation.id)
                     .cmp(&(a.annotation.modified_at, &a.annotation.id))
             }),
         }
-        Ok(cards)
     }
 
     /// The Notes Tool's card for `a`; `notebooks` maps Notebook ids to names.

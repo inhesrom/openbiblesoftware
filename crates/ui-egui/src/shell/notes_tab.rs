@@ -346,6 +346,9 @@ impl State {
         if self.notes_ui.loaded.as_ref() == Some(&want) {
             return;
         }
+        if self.patch_notes(&want) {
+            return;
+        }
         let keep_order = want.pinned
             && self
                 .notes_ui
@@ -413,6 +416,63 @@ impl State {
         ui.attention = self.session.needs_attention_count();
         ui.held = self.session.sync_held_lines();
         ui.loaded = Some(want);
+    }
+
+    /// After a sync's merge that changed only a few Annotations (S29c), read only those cards
+    /// again, when nothing else of what the list shows moved and no card is being edited (an
+    /// edited card keeps the list's order: [`Shell::refresh_notes`] reads it whole). Whether it
+    /// did.
+    fn patch_notes(&mut self, want: &Loaded) -> bool {
+        let Some(loaded) = &self.notes_ui.loaded else {
+            return false;
+        };
+        let same = loaded.same_view(want)
+            && loaded.library == want.library
+            && !loaded.pinned
+            && !want.pinned;
+        let Some(ids) = same
+            .then(|| {
+                self.session
+                    .annotations_changed_since(Some(loaded.revision))
+            })
+            .flatten()
+        else {
+            return false;
+        };
+        let ui = &mut self.notes_ui;
+        let old: Vec<String> = ui.cards.iter().map(|c| c.annotation.id.clone()).collect();
+        let cards = Arc::make_mut(&mut ui.cards);
+        if self
+            .session
+            .patch_note_cards(cards, ids, &want.text)
+            .is_err()
+        {
+            return false;
+        }
+        let size = self.session.text.size;
+        // The same cards in the same order keep their measured heights.
+        let same = old.len() == cards.len()
+            && old
+                .iter()
+                .zip(cards.iter())
+                .all(|(a, b)| *a == b.annotation.id);
+        if !same {
+            ui.heights = Some(HeightIndex::new(
+                cards.iter().map(|c| estimate(c, size)).collect(),
+            ));
+        }
+        let kept: BTreeSet<&str> = cards.iter().map(|c| c.annotation.id.as_str()).collect();
+        ui.refs.retain(|id, _| kept.contains(id.as_str()));
+        ui.counts = self
+            .session
+            .notebook_counts()
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        ui.attention = self.session.needs_attention_count();
+        ui.held = self.session.sync_held_lines();
+        ui.loaded = Some(want.clone());
+        true
     }
 
     /// `notes.open` asked for a card: scroll to it and, for a Note, start editing it.

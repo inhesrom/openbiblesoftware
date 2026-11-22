@@ -635,6 +635,27 @@ impl UserStore {
         read_annotation(&self.conn, id)
     }
 
+    /// How many Annotations Needs attention lists: Orphaned annotations (a Text range not
+    /// found again) and Sync conflicts' copies. One count, not a read of every Annotation.
+    pub fn needs_attention_count(&self) -> Result<u64, StoreError> {
+        let copies = if self.schema_version()? >= HELD_SCHEMA {
+            "a.conflict_of IS NOT NULL OR"
+        } else {
+            ""
+        };
+        self.conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM annotations a LEFT JOIN anchors n ON n.annotation_id = a.id
+                     WHERE {copies} (n.kind = 'text_range' AND n.status = 'orphaned')"
+                ),
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|n| u64::try_from(n).unwrap_or(0))
+            .map_err(sql)
+    }
+
     /// Annotations in one Notebook (or all), oldest first.
     pub fn annotations(&self, notebook: Option<&str>) -> Result<Vec<Annotation>, StoreError> {
         let mut stmt = self

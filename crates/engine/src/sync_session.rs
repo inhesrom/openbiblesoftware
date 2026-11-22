@@ -121,6 +121,9 @@ pub struct SessionSync {
     restore_pending: bool,
     /// How long the last sync took, in milliseconds.
     last_duration_ms: Option<i64>,
+    /// The last sync's merge: how many batches it committed, and how many times a file merged
+    /// whole for an op that might wait (S29c).
+    last_batches: Option<(usize, usize)>,
     /// Settings → Sync's action waiting for the sync running.
     deferred: Option<Deferred>,
     /// How long a restore waits for the sync before it ([`RESTORE_SYNC_WAIT`]; tests wait
@@ -166,6 +169,7 @@ impl Default for SessionSync {
             newer_app: Vec::new(),
             restore_pending: false,
             last_duration_ms: None,
+            last_batches: None,
             deferred: None,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: RESTORE_SYNC_WAIT,
@@ -540,9 +544,17 @@ impl Session {
                         self.sync.newer_app = report.merge.needs_newer_app();
                         let merged = !report.merge.merged.is_empty()
                             || !report.merge.snapshots.is_empty()
-                            || report.merge.recorded.unheld > 0;
+                            || report.merge.recorded.unheld > 0
+                            || report.merge.resumed > 0;
+                        self.sync.last_batches = Some((report.merge.batches, report.merge.whole));
                         if merged {
-                            self.reload_synced_data();
+                            // What the merge changed, when it is only a few Annotations.
+                            let touched = &report.merge.touched;
+                            let only = (!touched.annotation_views
+                                && touched.annotations.len()
+                                    <= crate::annotations::ANNOTATIONS_PATCH_LIMIT)
+                                .then(|| touched.annotations.clone());
+                            self.reload_synced_data(only);
                         }
                     }
                     SyncState::FolderNewer { .. } => self.sync.last = Some(LastSync::FolderNewer),
@@ -588,9 +600,11 @@ impl Session {
 
     /// Synced data changed under the Session (a merge): reload what it keeps of it, as at
     /// launch, and have views and Notes searches read it again. Preferences that stay on the
-    /// device are not touched.
+    /// device are not touched. `only`: the Annotations the merge changed, when it changed
+    /// nothing else the views read (no Notebook, Highlight style or palette): the views read
+    /// only those ([`Session::annotations_changed_since`]).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(crate) fn reload_synced_data(&mut self) {
+    pub(crate) fn reload_synced_data(&mut self, only: Option<std::collections::BTreeSet<String>>) {
         if let Some(order) = (self.user.as_ref()).and_then(|u| u.preferred_order().ok()) {
             self.library.set_preferred_order(order);
         }
@@ -604,6 +618,7 @@ impl Session {
         // Word forms (a synced setting) is read again when next asked for.
         self.bible_search.forget_recent();
         self.annotations_revision += 1;
+        self.annotations_changed = only.map(|ids| (self.annotations_revision, ids));
         self.rerun_searches_of_user_data();
         if let NotesFilter::Notebook(id) = &self.notes.filter
             && !(self.notebooks().unwrap_or_default().iter()).any(|n| &n.id == id)
@@ -879,6 +894,12 @@ impl Session {
         self.sync.last_duration_ms
     }
 
+    /// The last sync's merge: the batches it committed, and how many times a file merged whole
+    /// for an op that might wait (S29c).
+    pub fn last_sync_batches(&self) -> Option<(usize, usize)> {
+        self.sync.last_batches
+    }
+
     /// The other devices' ops this device holds back (Needs attention), each as a line.
     pub fn sync_held_lines(&self) -> Vec<String> {
         #[cfg(not(target_arch = "wasm32"))]
@@ -909,12 +930,9 @@ impl Session {
 
     /// What Needs attention counts: Orphaned annotations, Sync conflicts and held ops.
     pub fn needs_attention_count(&self) -> usize {
-        let annotations = (self.user.as_ref())
-            .and_then(|u| u.annotations(None).ok())
+        let marked = (self.user.as_ref())
+            .and_then(|u| u.needs_attention_count().ok())
             .unwrap_or_default();
-        let marked = (annotations.iter())
-            .filter(|a| a.is_orphaned() || a.conflict_of.is_some())
-            .count();
         marked + self.sync_held_lines().len()
     }
 
