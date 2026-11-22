@@ -119,7 +119,8 @@ impl MobileApp {
     /// (`obs_ui_egui::App::with_file`), with jobs on worker threads: make the folders, scan
     /// the library, set the Search index, alias and log folders, open (or create) the User
     /// database, add the Starter library from the bundle on the first run, make the alias
-    /// caches current in the background, then open the readers of the Mobile Last session, or the first Bible in Preferred order at its start.
+    /// caches current in the background, then open the readers of the Mobile Last session,
+    /// or the first Bible in Preferred order at its start.
     /// What went wrong without stopping it is in [`Self::problems`].
     #[cfg(not(target_arch = "wasm32"))]
     pub fn boot(paths: Paths, bundle: Option<&std::path::Path>) -> Result<Self, MobileError> {
