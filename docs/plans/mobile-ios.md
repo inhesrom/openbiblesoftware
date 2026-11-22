@@ -61,7 +61,7 @@ to Claude Opus 5.5 later on".
 | S21 | Passage Guide + Word Study (lighter), synced arrangement followed | AFK | y | S16 | Guide screens | todo |
 | S22 | Reading plans + optional local reminder | AFK | y | S14b | plans screens, `UNUserNotificationCenter` | todo |
 | S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (PR #405) |
-| S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | done (branch mobile/s24-ios-downloads, PR pending) |
+| S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | done (PR #409) |
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | done (PR #406) |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
