@@ -388,7 +388,7 @@ A key that runs a command, or does something to the reading-pane selection (a Se
 _Avoid_: Hotkey, Key map, Accelerator, Key binding (in the UI)
 
 **Settings**:
-The Tab (Ctrl+, or View → Settings) where every preference is in one place, under Text and fonts, Interface size, Theme and Page tone, Reading layout defaults, Toolbar, Keyboard shortcuts (the Keyboard shortcuts list itself), Library folders and downloads, Search, and Privacy and data. Its header box searches the Settings by their names, sections, plain words ("zoom", "sepia") and choices. A change there is made by the same command as from the View menu, the toolbar, Home or Search, so it applies at once; each Setting's Reset link puts its default back. Settings is not a separate store: the preferences stay in the User database.
+The Tab (Ctrl+, or View → Settings) where every preference is in one place, under Text and fonts, Interface size, Theme and Page tone, Reading layout defaults, Toolbar, Keyboard shortcuts (the Keyboard shortcuts list itself), Library folders and downloads, Search, Privacy and data, and Sync. Its header box searches the Settings by their names, sections, plain words ("zoom", "sepia") and choices. A change there is made by the same command as from the View menu, the toolbar, Home or Search, so it applies at once; each Setting's Reset link puts its default back. Settings is not a separate store: the preferences stay in the User database.
 _Avoid_: Preferences (as the Tab's name), Options, Program settings, Settings file
 
 **Selection key**:

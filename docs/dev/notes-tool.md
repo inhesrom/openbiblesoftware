@@ -25,8 +25,9 @@ managing every Annotation (#18 rule 7). The Search Tool's Notes mode searches No
   renamed but not deleted. Either way it is one undo step: Ctrl+Z brings the Notebook and its
   Annotations back exactly.
 - **⚠ Needs attention** (#65, #17 rule 12) lists the Orphaned annotations of every
-  Notebook, with their count. It shows only when there are some, or while it is chosen
-  (then, once all are dealt with: "Nothing needs attention"). `notes.notebook` with
+  Notebook, the Sync conflicts' copies and the changes other Synced devices sent that this one
+  holds back (plan S29), with their count. It shows only when there are some, or while it is
+  chosen (then, once all are dealt with: "Nothing needs attention"). `notes.notebook` with
   `value: attention` chooses it.
 
 ### Orphaned cards
@@ -43,6 +44,25 @@ not found in *TB* after it changed", shows its quote, and offers:
 - **Delete**.
 
 Each is one undo step. Re-anchoring itself is described in [annotations.md](annotations.md).
+
+### Sync conflicts and changes waiting (plan S29)
+
+A **Sync conflict**'s copy (ADR 0022 rule 3: `conflict_of` names the Note in place) is listed
+in Needs attention, and in its Notebook, with "Sync conflict: this text and the Note's at
+*Genesis 1:1* were changed on two devices. Keep one, combine them or keep both." and four
+actions (`sync.resolve_conflict {id, keep}`, each one undo step that syncs like any edit):
+
+- **Keep this version** (`this`): the copy's text goes into the Note in place; the copy goes.
+- **Keep the other** (`other`): the copy goes.
+- **Keep both** (`both`): the copy becomes an ordinary Note (`conflict_of` cleared).
+- **Combine** (`combine`): the Note in place gets its text, a blank line and the copy's text;
+  the copy goes, and the Note opens to edit.
+
+When the Note in place was deleted since, Keep this version and Combine keep the copy as an
+ordinary Note. Above the cards, **Changes waiting** lists the held ops
+(`Session::sync_held_lines`), each "A change from *Ian's iPhone* to *the Collection
+“Gospels”* is waiting: *why*. It is tried again at every sync."; they have no actions. The
+words are `obs_engine::sync::texts`'s.
 
 ### Show in text
 
