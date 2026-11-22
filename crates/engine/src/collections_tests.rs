@@ -836,8 +836,9 @@ fn the_list_preferences_the_engine_writes_are_saved_item_by_item() {
     s.run("collection.save", &json!({ "name": "Study set" }))
         .unwrap();
     // Saving the Collections saves the Resource tags too: an empty `{}` where there was
-    // none has no item to write, so it is written whole, once.
-    assert_eq!(written_rows(&s), ["collection", "preference (whole)"]);
+    // none changes nothing (no value reads as no tags), so nothing is written whole: a whole
+    // value would supersede other devices' tags (S28b-2 review P1-1).
+    assert_eq!(written_rows(&s), ["collection"]);
     s.run(
         "collection.toggle",
         &json!({ "name": "Study set", "id": "tbd" }),

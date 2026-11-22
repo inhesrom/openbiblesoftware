@@ -1183,6 +1183,31 @@ fn two_collections_of_one_name_added_on_two_devices_both_stay_the_loser_renamed(
     converged(&[&a, &b]);
 }
 
+/// B tags a Resource; A, which has no tags and has not met B's, saves its Collections, which
+/// writes the Resource tags too (`Session::save_collections`), `"{}"`: that changes nothing,
+/// so it is no whole value (a base, D7) superseding B's tag, and every device keeps the tag.
+#[test]
+fn a_collections_save_on_a_device_with_no_tags_keeps_another_devices_earlier_tags() {
+    let dir = Dir::new("no-tags");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let tags = "library.tags";
+    let tagged = r#"{"kjv":["English"]}"#;
+    b.user.set_preference(tags, tagged).unwrap();
+    b.push(&cloud);
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    a.user
+        .set_preference("library.collections", r#"[{"name":"Greek","ids":[]}]"#)
+        .unwrap();
+    a.user.set_preference(tags, "{}").unwrap();
+    assert_eq!(a.user.preference(tags).unwrap(), None, "no value: no tags");
+    Device::settle(&[&a, &b], &cloud);
+    for d in [&a, &b] {
+        assert_eq!(d.user.preference(tags).unwrap().as_deref(), Some(tagged));
+    }
+    converged(&[&a, &b]);
+}
+
 /// A writes a value of the Collections that is not a list (damaged, D7) at w; B adds an item
 /// at x after w. Both hold the damaged value with B's item held, whatever order they meet;
 /// a value in shape written after that (before x) gets B's item on top, on both.

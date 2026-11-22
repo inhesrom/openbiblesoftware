@@ -621,7 +621,7 @@ pub(crate) fn write_preference(c: &Connection, key: &str, value: &str) -> Result
 
 /// The Changes that set synced preference `key` to `value`: one per item of a list
 /// preference whose old and new values are both in shape, else one for the whole value.
-/// None when it already holds `value`.
+/// None when it already holds `value`, or holds none and `value` is an empty list.
 pub(crate) fn preference_changes(
     c: &Connection,
     key: &str,
@@ -640,10 +640,15 @@ pub(crate) fn preference_changes(
         // its index.
         stored_positions(c, &mut before)?;
         let changes = diff(&before, &after);
-        // An empty list written where there was no value has no items to add: it is
-        // written whole, so the value is there as the engine wrote it.
         if !changes.is_empty() {
             return Ok(changes);
+        }
+        // An empty list written where there was no value changes nothing: no value reads as
+        // an empty list. Written whole it would be the list's base (D7), which supersedes
+        // every other device's items made before it (`Session::save_collections` writes the
+        // Resource tags with the Collections, `"{}"` on a device that has none).
+        if old.is_none() {
+            return Ok(Vec::new());
         }
     }
     let row = |value: String| {
