@@ -493,7 +493,14 @@ are seeded like every other clock.
   parent comes back; two Collections of one name both stay; a damaged whole value holds later
   items on every device until one in shape puts them on top; an item after a whole value goes on
   top in any order; an op file with an unknown synced preference between two good ops holds it
-  and merges the rest, and the next file too.
+  and merges the rest, and the next file too. From the S28b-2 review: a Collections save on a device with no tags
+  keeps another device's earlier tags; an edit of an item that never saw this device's item of
+  its name keeps both; a delete that never saw this device's list item of its name keeps it, in
+  both orders; a parent's tombstone keeps the same row in every order of its deletes; a child of
+  a held parent is held too and applies after it; a kept parent does not bring back a row this
+  device's user deleted too; of a row's held writes only the newest is kept.
+  `crates/store/tests/synced_writes_db.rs`: an empty list written where there was none changes
+  nothing.
 - `crates/engine/src/sync/merge_props.rs`: two or three in-memory devices make random edits
   (Notebooks, Notes, Highlights, Favorites, Layouts with clashing names, the Preferred order,
   Reading done-marks, a synced preference, Collections changed, added, removed and moved)
@@ -511,18 +518,33 @@ are seeded like every other clock.
   Reading plans with their Readings, Highlight styles and palettes with Highlights on them,
   edit Note text on several devices at once, add Collections of one name on two devices, and
   write the Collections' whole value damaged and in shape again; and check that every Note text
-  an op wrote is a live Note's (in place or a copy) unless a device that had it replaced or
-  deleted it, that a copy's `conflict_of` names a Note an op wrote, that a Collection follows its
-  list's base, and that an op is held only while its list is damaged. The run must reach every
+  an op wrote is a live Note's (in place or a copy) unless an op that had it deleted its Note or
+  wrote other text over it (a move does not count), that each copy as first written holds a text
+  an op wrote to the Note its `conflict_of` names with the id `conflict_id` gives for that op's
+  clock, that every Collection an add op wrote is live under some name unless an op that had it
+  replaced or deleted it or the base supersedes it, that a Collection follows its list's base,
+  and that an op is held only while its list is damaged. From the S28b-2 review they also save
+  the Resource tags with the Collections as `Session::save_collections` does (`"{}"` where there
+  are none), damage and mend the Collections more often, sync seeing only part of the folder (some
+  devices' files, or their first few), and run the review's Q1 sequence (a Note's text edited on
+  two devices, a third deleting it, the first meeting the delete first) and D7 sequence (a list
+  damaged and mended, an item after the mend from a device whose clock runs ahead, a third device
+  meeting the item first). The run must reach every
   outcome (`ParentKept` and `Held` included), a file retried, a Layout renamed, a default
   demoted, a moved item, an undo, a clock not observed, a Sync conflict's copy, a parent restored
   for a child, a row restored with its parent, a list item renamed, a held op applied, a damaged
   and a mended whole value, and a parent back after its child's maker moved or deleted the
-  child. 1,000 cases in CI (about 3 s), 10,000 under `--include-ignored` (about 28 s); the run
-  prints how often each was reached. Mutation checks: the property tests find a missing copy
-  (D2), a parent kept without being recorded again (D3) and an item not held (D7); the copy made
-  on a delete and the items put back on a merged base are found by their unit tests only (the
-  generator reaches them too rarely).
+  child, and both review sequences. 1,000 cases in CI (about 4 s), 10,000 under
+  `--include-ignored` (about 30 s); the run prints how often each was reached. Mutation checks:
+  the property tests find a missing copy (D2), a parent kept without being recorded again (D3),
+  an item not held (D7), the copy on a delete missing (Q1), held items not put back on a merged
+  base, the empty-list whole write (P1-1), D6 firing only on adds (P1-2) and an own list item
+  deleted by a delete that never saw it; removing `restore_deleted_with` fails their "a row
+  restored with its parent" reach check (no invariant can see it: a parent the child's maker
+  left comes back without its rows) and two unit tests; a tombstone row compared with the
+  tombstone's newest of all deletes, or with the tie-break flipped (still the same in every
+  order), a held parent's child left waiting, and a kept parent bringing back a row deleted here
+  too are found by their unit tests only.
 - `crates/engine/src/sync/tests.rs`: ops round-trip byte for byte through `FsSyncFolder`;
   a truncated op file is skipped and read whole next time; a damaged one fails its length or
   hash; a newer one is left alone and asks for an update; temporary and other names are

@@ -5,8 +5,14 @@
 //! them, moved off), Favorites, Layouts (names clash), the Preferred order, Reading plans
 //! (deleted with their Readings) and their done-marks, a synced preference and Collections
 //! (items changed, added under one name on two devices, removed and moved, and the whole value
-//! written damaged and written again in shape), deleting rows too, undo their own last change
-//! (a row deleted comes back with its old id), and sync at random moments. Each device's wall
+//! written damaged and written again in shape) with the Resource tags saved beside them as
+//! `Session::save_collections` saves them, deleting rows too, undo their own last change (a row
+//! deleted comes back with its old id), and sync at random moments, sometimes seeing only part
+//! of the folder (some devices' files, or only their first few). Two sequences from the S28b-2
+//! review run now and then: Q1 (a Note's text edited on two devices, then deleted by a third
+//! device before the first meets the second's edit) and D7's (a list damaged and mended, an item
+//! added after the mend by a device whose clock runs ahead, a third device meeting that item
+//! first). Each device's wall
 //! clock is its own: the case's clock moves on by random steps, and a device's runs from it by
 //! an offset of its own, sometimes more than [`MAX_FORWARD_SKEW_MS`] ahead (its clocks are then
 //! not observed). Once every device has synced until nothing more moves:
@@ -19,8 +25,13 @@
 //!   after it as above, one before it as the base has it unless a later delete covering the
 //!   base removed it, none while the base is damaged;
 //! - **every Note text survives** (D2, ADR 0006): each text an op wrote is a live Note's (in
-//!   place, or a Sync conflict's copy, whose `conflict_of` names a Note an op wrote), unless a
-//!   device that had it replaced or deleted it;
+//!   place, or a Sync conflict's copy), unless an op that had it deleted its Note or wrote
+//!   other text over it (an op that only moved it does not count); each copy, as first
+//!   written, holds a text an op wrote to the Note its `conflict_of` names, and its id is
+//!   `conflict_id` of that Note and that op's clock;
+//! - **every Collection added survives** (D6, ADR 0006): each JSON an add op wrote is a live
+//!   Collection's under some name, unless an op that had it replaced or deleted it, or the
+//!   Collections' base supersedes it (written at or after it, or damaged);
 //! - each tombstone holds the newest delete clock and the newest version covered of the op
 //!   stream; each device has one default Notebook, the oldest (`created_at`, id) of those the
 //!   devices began with; an op is held only while its list's value is damaged.

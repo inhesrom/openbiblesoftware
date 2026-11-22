@@ -11,7 +11,11 @@
 //! for Notebooks, Reading plans and palettes (D3), and a child of one deleted before schema
 //! 16 is held; two list items of one name both stay (D6); a damaged whole list value holds
 //! the later items on every device (D7); an op this build rejects is held, and its file and
-//! the next merge.
+//! the next merge. From the S28b-2 review: an empty Resource tags value saved where there was
+//! none supersedes no other device's tags; an edit or a delete that never saw this device's
+//! list item of its name keeps it; a parent's tombstone row is the same in every order; a
+//! child of a held parent is held too; a kept parent brings back no row deleted here too; of a
+//! row's held writes only the newest is kept.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
