@@ -830,3 +830,41 @@ fn a_replace_over_a_list_base_keeps_another_devices_collection_made_after_the_ba
         );
     }
 }
+
+#[test]
+fn a_database_copied_before_it_joins_takes_a_new_id_and_trims_none_of_the_others_files() {
+    let dir = Dir::new("copied-before-joining");
+    let folder = MemSyncFolder::new();
+    let a = open(&dir, "a");
+    add(&a, Row::Notebook(notebook("Romans")));
+    // The data directory copied to a new computer before either syncs.
+    let copy = a.copy_in_memory().unwrap();
+    sync(&a, &folder);
+    let a_id = a.device_id().unwrap();
+    add(&a, Row::Notebook(notebook("On A")));
+    sync(&a, &folder);
+    write_snapshot(&a, &folder).unwrap();
+    let a_files = folder.list(&ops_dir(&a_id)).unwrap();
+    assert!(!a_files.is_empty());
+    let a_snapshots = folder.list(&snapshots_dir(&a_id)).unwrap();
+    add(&copy, Row::Notebook(notebook("On the copy")));
+    // The copy trims as soon as it may: none of A's files are its own to trim.
+    let report = sync_with(&copy, &folder, &trimming(0));
+    let new = report.new_device_id.clone().unwrap();
+    assert!(new != a_id && report.joined, "{report:?}");
+    assert_eq!(copy.own_device_ids().unwrap(), [new.clone(), a_id.clone()]);
+    assert_eq!(report.snapshot, Some(0), "its join snapshot: {report:?}");
+    assert!(report.trimmed.is_empty(), "{report:?}");
+    assert_eq!(folder.list(&ops_dir(&a_id)).unwrap(), a_files);
+    assert_eq!(folder.list(&snapshots_dir(&a_id)).unwrap(), a_snapshots);
+    settle(&[&a, &copy], &folder);
+    converged(&[&a, &copy]);
+    assert!(a.device_id().unwrap() == a_id, "A keeps its id");
+    for user in [&a, &copy] {
+        let names = names(user);
+        for name in ["Romans", "On A", "On the copy"] {
+            assert!(names.contains(&name.to_string()), "{name}: {names:?}");
+        }
+    }
+    assert_eq!(folder.list(&ops_dir(&a_id)).unwrap(), a_files);
+}

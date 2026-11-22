@@ -9,7 +9,9 @@
 //! 3. **A copied database** (rule 7): op files or a snapshot under this device's id numbered
 //!    above both the last of its own op files written and the last reserved were not written
 //!    here (after a stop between writing a file and noting it, the file is above the first
-//!    but still reserved). The device takes a new id and catches up, as after a restore.
+//!    but still reserved); on a device that has not joined yet, any are another copy's (the
+//!    database copied before either synced). The device takes a new id and catches up, as
+//!    after a restore, before it joins.
 //! 4. **Join** (rule 5): a device not recording ops gives every row without a clock one
 //!    (`UserStore::join_sync`) and records ops from then; its first snapshot, written next,
 //!    brings what it made before to the others.
@@ -119,10 +121,21 @@ pub fn restore_choice(
 }
 
 /// Whether the Sync folder holds op files or a snapshot under this device's id that it did
-/// not write: numbered above both the last of its own op files written and the last reserved
-/// (rule 7, a copied database).
+/// not write (rule 7, a copied database): a device that has not joined yet has written none
+/// (a new id, a UUIDv7, never has files), so any is another copy's; one that records ops
+/// wrote those numbered up to the last of its own op files written or the last reserved.
 fn written_elsewhere(user: &UserStore, folder: &dyn SyncFolder) -> Result<bool, SyncError> {
     let device = user.device_id()?;
+    if !user.records_ops()? {
+        return Ok(folder
+            .list(&ops_dir(&device))?
+            .iter()
+            .any(|n| op_file_seq(n).is_some())
+            || folder
+                .list(&snapshots_dir(&device))?
+                .iter()
+                .any(|n| snapshot_file_seq(n).is_some()));
+    }
     let mine = user
         .applied_up_to(&device)?
         .max(user.last_reserved_op_file()?.unwrap_or(0));
@@ -155,7 +168,7 @@ pub fn sync_now(
         return Ok(SyncState::NeedsRestoreChoice);
     }
     let mut report = SyncReport::default();
-    if user.records_ops()? && written_elsewhere(user, folder)? {
+    if written_elsewhere(user, folder)? {
         report.new_device_id = Some(user.take_new_device_id()?);
     }
     if !user.records_ops()? {
