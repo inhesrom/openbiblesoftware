@@ -15,9 +15,14 @@
 //! first). From S28c every device joins through the real join (its default Notebook and what
 //! it made before reach the others only in its snapshot), a third of them late; some syncs run
 //! `sync_now` at a small policy, so snapshots are written and own op files trimmed, and devices
-//! merge each other's snapshots for files gone; devices take a Backup and later restore it,
-//! catching up or replacing; and D3's sequence of a child's maker leaving it runs now and then
-//! ([`World::d3_step`]). Each device's wall
+//! merge each other's snapshots for files gone; devices take a Backup (sometimes with the
+//! Collections on a base) and later restore it, catching up or replacing; and D3's sequence of
+//! a child's maker leaving it runs now and then ([`World::d3_step`]), as do the S28c review's:
+//! a Backup taken before a device joins late, restored catching up after that device's
+//! snapshot covers the Backup's device's later files ([`World::late_backup_step`]); a database
+//! copied, joined or not, both copies syncing on ([`World::copy_step`]); and an own snapshot
+//! damaged in the folder, written again at its device's next sync ([`World::mend_step`]).
+//! Each device's wall
 //! clock is its own: the case's clock moves on by random steps, and a device's runs from it by
 //! an offset of its own, sometimes more than [`MAX_FORWARD_SKEW_MS`] ahead (its clocks are then
 //! not observed). Once every device has synced until nothing more moves:
@@ -32,12 +37,17 @@
 //! - **every Note text survives** (D2, ADR 0006): each text an op wrote is a live Note's (in
 //!   place, or a Sync conflict's copy), unless an op that had it deleted its Note or wrote
 //!   other text over it (an op that only moved it does not count), or a device discarded it on
-//!   purpose by restoring a Backup without it and replacing what is in the folder; each copy, as first
+//!   purpose by restoring a Backup without it and replacing what is in the folder (only a
+//!   text its own ids' ops wrote after the Backup: another device's stays there as a copy,
+//!   D3); each copy, as first
 //!   written, holds a text an op wrote to the Note its `conflict_of` names, and its id is
 //!   `conflict_id` of that Note and that op's clock;
 //! - **every Collection added survives** (D6, ADR 0006): each JSON an add op wrote is a live
 //!   Collection's under some name, unless an op that had it replaced or deleted it, or the
-//!   Collections' base supersedes it (written at or after it, or damaged);
+//!   Collections' base supersedes it (written at or after it, or damaged), or (as a text) a
+//!   replace discarded it; one another device held that a replace's Backup never knew stays,
+//!   unless an op that had it, or a whole value an op or a join wrote at or after it, took it
+//!   (a replace leaves a base in shape at its clock);
 //! - each tombstone holds the newest delete clock and the newest version covered of the op
 //!   stream; each device has one default Notebook, the oldest (`created_at`, id) of those the
 //!   devices began with; an op is held only while its list's value is damaged.
@@ -210,6 +220,13 @@ struct World {
     /// merged here, must: it stays there as a Sync conflict's copy or "Name (2)".)
     discarded_texts: BTreeSet<String>,
     discarded_items: BTreeSet<String>,
+    /// The Collections (JSON without the name, and clock) other devices held when a device
+    /// restored a Backup that never knew them (no row, no tombstone) and replaced what is in
+    /// the folder: rows never known are kept (D3), so only an op that had one, or a base
+    /// written whole later by an op or a join (not a replace's), may take it away.
+    never_known: Vec<(String, Hlc)>,
+    /// The ids a restore that replaced took: their snapshots' bases are a replace's.
+    replaced_ids: BTreeSet<String>,
     /// How this case writes snapshots and trims (small, so they happen).
     options: SyncOptions,
     /// What the merges did, over every case of a run.
@@ -509,6 +526,24 @@ impl World {
             let (now_texts, now_items) = (texts(&self.devices[d]), items(&self.devices[d]));
             let (then_texts, then_items) = (texts(&backup), items(&backup));
             let (own_texts, own_items) = self.own_writes_since(d, &before);
+            for (e, user) in self.devices.iter().enumerate() {
+                if e == d {
+                    continue;
+                }
+                let value = user.preference(COLLECTIONS).unwrap();
+                for (name, json) in value
+                    .as_deref()
+                    .and_then(collection_items)
+                    .unwrap_or_default()
+                {
+                    let key = RowKey::Collection(name);
+                    let then = backup.row_state(&key).unwrap();
+                    if then.row.is_none() && then.tombstone.is_none() {
+                        let clock = user.row_state(&key).unwrap().clock.unwrap();
+                        self.never_known.push((without_name(&json), clock));
+                    }
+                }
+            }
             self.discarded_texts.extend(
                 now_texts
                     .difference(&then_texts)
@@ -531,7 +566,11 @@ impl World {
             };
         match choice {
             RestoreChoice::CatchUp => self.stats.catch_ups += 1,
-            RestoreChoice::Replace => self.stats.replaces += 1,
+            RestoreChoice::Replace => {
+                self.stats.replaces += 1;
+                self.replaced_ids
+                    .insert(self.devices[d].device_id().unwrap());
+            }
         }
         self.last[d].clear();
         self.joins[d] = None;
@@ -1716,6 +1755,8 @@ fn check_case(
         backups: (0..n).map(|_| None).collect(),
         discarded_texts: BTreeSet::new(),
         discarded_items: BTreeSet::new(),
+        never_known: Vec::new(),
+        replaced_ids: BTreeSet::new(),
         options,
         stats: std::mem::take(stats),
     };
@@ -1811,6 +1852,9 @@ fn check_case(
     let collections = RowKey::Preference(COLLECTIONS.into());
     // The Collections of every whole value written (their items had no op of their own).
     let mut whole_items = BTreeSet::new();
+    // The clocks of the Collections' whole values written by an op or a join (not a replace's
+    // base in shape, which a replace leaves at its clock).
+    let mut written_bases = Vec::new();
     // Rows a device made and deleted before it joined: only its snapshot's tombstone has them.
     let mut deleted_before_joining = BTreeSet::new();
     let mut deleted_in_files = BTreeSet::new();
@@ -1866,6 +1910,12 @@ fn check_case(
             };
             if base.as_ref().is_none_or(|(c, _)| *c < op.clock) {
                 base = Some((op.clock.clone(), p.value.clone()));
+            }
+            let replaces = from_snapshot
+                && world.replaced_ids.contains(&op.device)
+                && collection_items(&p.value).is_some();
+            if !replaces {
+                written_bases.push(op.clock.clone());
             }
             for item in collection_items(&p.value).unwrap_or_default().keys() {
                 whole_items.insert(row_name(&RowKey::Collection(item.clone())));
@@ -2055,6 +2105,16 @@ fn check_case(
                 || superseded
                 || world.discarded_items.contains(json),
             "the Collection {json} added at {clock} was lost"
+        );
+    }
+    // A Collection a replace's Backup never knew is kept (D3), unless an op that had it
+    // replaced or deleted it, or a whole value an op or a join wrote supersedes it.
+    for (json, clock) in &world.never_known {
+        assert!(
+            live_items.contains(json)
+                || replaced_items.contains(json)
+                || written_bases.iter().any(|b| b >= clock),
+            "the Collection {json} at {clock}, never known to a replace's Backup, was lost"
         );
     }
     // No row is there that no op wrote and the devices did not begin with (or, a
