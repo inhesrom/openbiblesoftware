@@ -63,7 +63,7 @@ to Claude Opus 5.5 later on".
 | S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (PR #405) |
 | S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | todo |
 | S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
-| S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | todo |
+| S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | done (branch mobile/s26-import, PR pending) |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | todo |
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | todo |
@@ -1780,6 +1780,62 @@ this in addition to its own lines):
 - **Verify:** UI standard; `cargo test -p obs-engine import`; `cargo xtask gallery` (zero changes).
 - **Stop-and-ask:** UI standard; a zip layout the importers cannot place (nested folders, mixed
   modules).
+- **Outcome (2026-11-22, branch `mobile/s26-import`, on S23; S08 has not happened, so the
+  screen anatomy is not decided):**
+  - **Decision (supervisor, at the zip-layout stop-and-ask).** A `.zip` holding a
+    `mods.d/*.conf` is a SWORD zip, else a USFM zip (Rust decides). `mods.d/` is accepted at
+    the top of the zip or in exactly one folder at its top (what Files' Compress makes);
+    deeper, or several modules (also in several folders), is refused in plain words; no
+    module chooser. A zip with USFM files beside a module imports the module and the
+    report's warnings say the books were not imported ("Zip them on their own"). Bounds as
+    named constants: 512 MiB decompressed (declared and as read) and 10,000 entries;
+    zip-slip, absolute, backslash, drive-letter and symlink entries refuse the whole zip; the
+    temp folder is removed in every outcome. A test for each.
+  - **Shipped, engine** (`obs_engine::import_zip`, `import.rs`; the desktop's picker, its
+    UI and `ImportSource::detect` unchanged): `ImportSource::SwordZip` (unpacked into
+    `<library>/imports/<id>.sword/`, read as `Sword`) and `ImportSource::UsfmZip` (through
+    `usfm_zip_books`), `ImportSource::zip(path)`, plain words for each refusal in
+    `failure_message`, and `Session::add_obr_copy` (a `.obr` moved into the library folder
+    as the desktop's drop adds one; the same Resource's file replaced, `Effect::Replaced`).
+    `summary_counts`, `source_line` and the licence lines moved from `obs-ui-egui` into
+    `obs_engine::import` so both reports say them alike (the desktop draws them unchanged);
+    `start_import_job` and `command_box::type_name` became `pub`; `testing` gained zip
+    fixture helpers.
+  - **Shipped, `obs-mobile` and FFI:** the `import` module (`import_destination`,
+    `start_import`, `import_report`, `cancel_import`, `import_copy_failed`, the pump's
+    `advance_imports`, `Changed::Imports`, boot sweeping `imports/`) with every word of the
+    Import report (`ImportReportView`, `ReportSection` with `collapsed`); mirror Records in
+    `apps/obs-ffi/src/import.rs`.
+  - **Shipped, iOS:** Import… in the reader's options menu (S07/S13's menu; **S12 and S14a
+    may move it**: no navigation was designed here) opens the system document picker
+    limited to the app's types; "Open in Open Bible" through `onOpenURL`; the copy into
+    Application Support inside the security-scoped access and a coordinated read; the
+    Import report as a sheet (live, Cancel, failure and Details, folded sections, Open).
+    `project.yml` `info`: `CFBundleDocumentTypes` and type declarations for `.usfm`/`.sfm`
+    (`org.ubsicap.usfm`, an *imported* declaration, since the app does not own USFM; A7
+    said exported), `.zip` (`public.zip-archive`) and `.obr`
+    (`io.github.inhesrom.openbible.obr`, exported), `LSSupportsOpeningDocumentsInPlace =
+    false`. No entitlement. The privacy manifest adds reason `3B52.1`.
+  - **Checks.** `cargo test -p obs-engine import` (37 tests, 13 new), `cargo test -p
+    obs-mobile import` (8 new), `cargo test -p obs-ffi --test import`; `cargo xtask ios
+    build --sim-only`, `xcodegen generate`, `xcodebuild test` green on an iPhone 17 (all 10
+    tests, Study set override on; ImportTests in Light and Dark) and an iPad Air 11-inch
+    (M4) (all 10), with the files placed by `apps/ios/scripts/place-import-files.sh` and
+    `TEST_RUNNER_OBS_IMPORT_FILES=1`; "Open in" tried with `simctl openurl` on a `.obr`
+    (`s26-open-in.png`); previews `docs/previews/ios/s26-*.png`; `cargo xtask gallery`
+    unchanged; `cargo xtask ci` green.
+  - **Accessibility audit.** It passes on the report sheet with two kinds of finding
+    filtered, each named in the test: the system toolbar's glass Done/Open buttons
+    (contrast, Dynamic Type: iOS 27 draws them at a fixed size with the Large Content
+    Viewer), and on iPad, findings with no element from the dimmed reader drawn behind the
+    floating sheet. The grouped list's own section headers failed contrast (as S06 found),
+    so titles are the sections' first rows.
+  - **Deferred / for later steps.** CI (`ios.yml`, S32) does not place the Import files, so
+    `ImportTests` skip there until it runs the script. Imports are per run: a report open
+    when the app is closed is gone at the next launch (the record stays in the User
+    database, as on the desktop). Copying in a `.obr` of a Starter Resource replaces its
+    file like the desktop's drop does; the next launch's Starter sync then treats it by its
+    revision. No later step's assumption proved wrong.
 
 ### M6 — Sync (ADR 0022) — recommend its own ticket set
 

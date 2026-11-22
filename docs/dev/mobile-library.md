@@ -2,7 +2,8 @@
 
 The Mobile app's Library: **Library → Starter library** (the Bundled set, the Study set and
 the rest of the Starter library), **Get Resources**' Open catalogue, the downloads, Remove
-and Add back, and **Library → Storage**. Every rule (the manifests and their merge, the sets,
+and Add back, **Library → Storage**, and **Import** (S26: a file from the document picker or
+"Open in Open Bible", with its Import report). Every rule (the manifests and their merge, the sets,
 sha256 pinning, each download's state, "Wi-Fi only", "ask first over cellular", "won't fit")
 is in Rust; the shell owns only the transfers. S23 of [the iOS plan](../plans/mobile-ios.md)
 built the Rust side; S24 builds the iOS screens and the background transfers on it. The
@@ -129,6 +130,70 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   threads with the core unlocked. Mirror Records and Enums of everything above, and
   `Changed.downloads`. Paths cross as `String`s.
 
+## Import (S26, #333 "Import")
+
+- **The shell's part** (`apps/ios`, `ImportModel`). Import… (for now in the reader's options
+  menu; S12/S14a may move it) opens the system document picker (SwiftUI `fileImporter`, a
+  `UIDocumentPickerViewController`) limited to the app's types; "Open in Open Bible" arrives
+  through `onOpenURL`. For each file Swift asks `import_destination(file name)`, copies the
+  file there inside its security-scoped access and an `NSFileCoordinator` read (the original
+  stays where it was; a file the system copied into `Documents/Inbox` for "Open in" is
+  deleted once copied), then calls `start_import(path)`, or `import_copy_failed(path,
+  error)` when the copy failed. It shows `import_report(n)` in a sheet and asks again on
+  `Changed.imports`; Cancel is `cancel_import(n)`; Open shows the new Resource in reader 0.
+  Swift tells no file kind apart beyond the picker's types.
+- **Types** (`apps/ios/project.yml` `info`): `CFBundleDocumentTypes` for
+  `org.ubsicap.usfm` (`.usfm`, `.sfm`, an imported type declaration conforming to
+  `public.plain-text`; rank Default), `public.zip-archive` (rank Alternate) and
+  `io.github.inhesrom.openbible.obr` (`.obr`, exported, conforming to `public.data`; rank
+  Owner); `LSSupportsOpeningDocumentsInPlace = false`, so the system copies a shared file
+  into the app and nothing is opened in place. No entitlement. The privacy manifest adds
+  reason `3B52.1` (metadata of files the user chose) to the file timestamp category.
+- **`obs-mobile` `import`** (`MobileApp`):
+  - `import_destination(file_name)`: `<library>/imports/picked-<n>/<name>` (only the name's
+    last component; a folder per file, so the Import reads the name the user knows).
+  - `start_import(path)`: only a path the core named (any other is refused and left
+    alone). By the name's extension: `.usfm`/`.sfm` → `ImportSource::Usfm`; `.zip` →
+    `ImportSource::zip` (below); `.obr` → `Session::add_obr_copy`; anything else is refused
+    with `IMPORT_KINDS`. Returns the Import's number. The job is the desktop's Import job
+    without its report Tab (`Session::start_import_job`); its `ImportRecord` is saved in the
+    User database as on the desktop.
+  - `import_report(n)` → `ImportReportView`: heading ("Import in progress", "Import
+    complete", "Import failed"), the file name, `ImportState`, progress and status ("Reading
+    the file…", "3 / 66 Bible books", "Search index: 4 / 10", "Search index: built"…), the
+    failure in plain words (`failure_message`) with the error for Details, the Resource for
+    Open, and `ReportSection`s in the desktop report's words and order: Summary (title,
+    `source_line`, `summary_counts`, Unmapped and Absent verses), Licence
+    (`LICENCE_MISSING`, a warning), then Warnings, Dropped markup and Source files and Bible
+    books, folded (`collapsed`). A `.obr`'s report: its title, type and abbreviation, and
+    "Added to your Library as it is." or "Replaced <abbr> in your Library with revision N.".
+  - `cancel_import(n)`; `import_copy_failed(path, error)`.
+  - The pump's `advance_imports` deletes a finished Import's copy (`picked-<n>/`) and reports
+    `Changed::Imports` when a report changed. Boot deletes `<library>/imports/` whole: no
+    Import outlives the run that started it.
+- **The engine's zips** (`obs_engine::import_zip`; the desktop never makes these sources,
+  `ImportSource::detect` is unchanged):
+  - `ImportSource::zip(path)`: a zip holding a `mods.d/*.conf` (resource forks aside) is
+    `SwordZip`, anything else `UsfmZip` (a file that is not a zip then fails as one).
+  - `SwordZip`: every entry is checked before anything is written. An absolute path, a
+    drive letter, a backslash, a NUL or a `..` component, or a symbolic link refuses the
+    whole zip; more than `ZIP_IMPORT_ENTRIES` (10,000) entries, or more than
+    `ZIP_IMPORT_LIMIT` (512 MiB) declared or actually decompressed, refuses it. `mods.d/`
+    must be at the top of the zip or in one folder at its top (Files' Compress); deeper, or a
+    zip of several modules, is refused (no module chooser on mobile). `__MACOSX/` and `._*`
+    files are left out. The zip unpacks into `<library>/imports/<id>.sword/`, is read as
+    `ImportSource::Sword`, and that folder is removed whatever the outcome. USFM files beside
+    the module are not imported, and the report's warnings say so (`USFM_BESIDE_SWORD`).
+  - `UsfmZip`: the file (at most `ZIP_IMPORT_LIMIT`, `ZIP_IMPORT_ENTRIES` entries) read by
+    `usfm_zip_books` (`.usfm`/`.sfm` from any folder, its own per-file and total bounds) and
+    imported as a USFM folder is; none: "This zip holds no USFM books…".
+  - `failure_message` has plain words for each refusal (a file it will not unpack; too large;
+    several modules; not where the app looks; no books; not a zip).
+  - `Session::add_obr_copy(path)` moves a `.obr` into the library folder as the desktop's drop
+    adds one (Search index, remembered names, re-anchoring): the same Resource's file is
+    replaced (`Effect::Replaced` reloads its readers), a new one is `<id>.obr` or
+    `<id>-2.obr`; a file that is not a Resource is refused and left where it is.
+
 ## Data
 
 | What | Where |
@@ -138,6 +203,9 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
 | The released manifest last fetched and its pinned files base | User database preference `starter-library.released` (device-only, `DEVICE_PREFERENCES`) |
 | The releases list | `https://api.github.com/repos/inhesrom/openbiblesoftware/releases?per_page=20`, only on a manifest format mismatch |
 | The release's files | `https://github.com/inhesrom/openbiblesoftware/releases/latest/download/`, or the pinned `…/releases/download/<tag>/` |
+| Picked and shared files waiting for Import | `<root>/library/imports/picked-<n>/<name>`; deleted when the Import is over, and at boot |
+| A SWORD zip while it is read | `<root>/library/imports/<resource id>.sword/`; removed whatever the outcome |
+| Import reports | User database preference `import-report/<id>`, as on the desktop |
 | Space a download needs | 2.5 × its size: the file, its staged copy, room for its Search index (the Study set's indexes are 0.34 of its files) |
 
 ## Evidence
@@ -174,5 +242,22 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   in 0.13 s, indexed by 3.3 s, release build; Storage 226.4 MB).
 - `apps/obs-ffi/tests/library.rs`: the Study set fetched through a Rust `Transport` standing
   in for Swift's, on job threads, and installed; a transport error in words.
+- Import: `crates/engine/src/import_zip_tests.rs` (`cargo test -p obs-engine import`): a
+  SWORD zip with `mods.d/` at the top and in one wrapper folder (resource forks aside)
+  imports and leaves no temp folder; too deep, several modules (also in two folders)
+  refused in plain words; USFM files beside a module named in the report; a zip-slip, an
+  absolute, a backslash, a drive-letter and a symbolic-link entry each refuse the whole zip
+  with nothing written outside; the 512 MiB and 10,000-entry bounds (small bounds in the
+  test) for SWORD and USFM zips, and a cancelled unpack; a module the importer refuses fails
+  after unpacking and leaves no temp folder; a USFM zip from a folder; no books, not a zip;
+  a `.obr` moved in, a newer revision replacing it, a taken name, a non-Resource refused.
+  `crates/mobile/src/import_tests.rs` (`cargo test -p obs-mobile import`): a USFM zip, a
+  SWORD zip (with USFM beside it), a USFM file and a `.obr` (and its next revision) through
+  the named file, with their reports; refusals and the copy deleted; a copy that failed; a
+  path not named; Cancel; boot sweeping `imports/`. `apps/obs-ffi/tests/import.rs`: zips and
+  a refusal through the FFI with jobs on threads. `apps/ios/OpenBibleUITests/ImportTests`
+  (with `apps/ios/scripts/place-import-files.sh`, `docs/dev/ios-project.md`): a USFM zip, a
+  SWORD zip and a `.obr` picked from Files on an iPhone and an iPad, their reports, the
+  report sheet's accessibility audit, Open.
 - S24 adds the simulator evidence (background transfers, a bad hash showing Retry, Wi-Fi only
   on a simulated cellular path).
