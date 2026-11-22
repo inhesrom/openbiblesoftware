@@ -142,6 +142,26 @@ jobs:
             target/update-e2e/shots/
             target/update-e2e/data/logs/
           if-no-files-found: warn
+      # Sync between two desktop instances (plan S29): two User databases and one temporary
+      # Sync folder converge; a restored Backup's prompt takes Catch up and Replace.
+      - name: cargo xtask sync-e2e
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a -s "-screen 0 1280x800x24" cargo xtask sync-e2e
+          else
+            cargo xtask sync-e2e
+          fi
+      - name: Sync screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-e2e-${{ matrix.os }}
+          path: |
+            target/sync-e2e/shots/
+            target/sync-e2e/a/logs/
+            target/sync-e2e/b/logs/
+          if-no-files-found: warn
 
   bench:
     name: xtask bench
