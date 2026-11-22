@@ -1851,8 +1851,9 @@ under the half they belong to.
   rows the Backup never knew are kept, another device's own unseen text or item becomes a
   Sync conflict copy or "(2)" (ADR 0006 and rule 7 together: the stop-and-ask answered); a
   restore on a non-syncing device: new id, no prompt; a copied database: new id and an
-  automatic catch-up. **D4** migration 17 `former_device` (the Backup's id and the pre-restore
-  id, or the copy's), counted as own by every own check (D2 copy, D6 rename and keep, D4
+  automatic catch-up. **D4** migration 17 `former_device` (the pre-restore id and its former
+  ones, plus the Backup's id only when it is one of them, since the review fixes; or the
+  copy's), counted as own by every own check (D2 copy, D6 rename and keep, D4
   demotion). **Shipped:** store `sync_device.rs` (`own_device_ids`, `take_new_device_id`,
   `renew_device_id` run by `restore_from`, the restore choice, the device name,
   `merged_devices`, `last_reserved_op_file`), `snapshot_store.rs` (`snapshot_bytes` and
@@ -1918,6 +1919,47 @@ under the half they belong to.
   warnings`) and the wasm check clean. **Not done:** S29 and S30's screens; only
   own op files are trimmed, so a restored or copied device leaves its old id's files in the
   folder for good. S29's entry gained an "Added by S28c" bullet.
+  **Review fixes (2026-11-24, review BLOCK, every finding applied):** **P0** `merge_snapshot`
+  no longer moves `applied_up_to` of any own id (current or former, `is_own`), so a former
+  id's files merge op by op and its text survives a snapshot of a device met after the
+  Backup. **P1** Replace leaves the base of a list in its shape at its clock (a value not in
+  shape is still re-stamped), so another device's Collection made after the Backup stays.
+  **P1** the copied-database check runs on a device not syncing yet too: any op file or
+  snapshot under its id makes it take a new id before it joins. **P1** a restore stages the
+  Backup in a copy, gives it the new id, former ids, empty outbox and pending choice there,
+  then copies pages in one transaction. **P2 (supervisor decision)** a restore keeps the
+  device's own ids and adds the Backup's id only when it is one of them (a Backup of another
+  device's does not make that device's ops own); the Backup's own former ids come with it
+  then, and not otherwise. **P2** a snapshot's `notes_fts` is emptied before `VACUUM`
+  (`DELETE` + `optimize`: `delete-all` is refused on an index with its own content).
+  **P2** `SyncSchedule::synced(started, finished)` keeps a sync due for an edit made while it
+  ran. **P2** an own snapshot that fails `read_snapshot` is written again (each sync reads its
+  newest own snapshot), replacing a damaged file of its name. **P2** the property tests excuse
+  only what a Replace's own ids wrote after its Backup, check that a Collection another joined
+  device held and the Backup never knew stays, and run the review's (a) a Backup before a late
+  join restored catching up, (b) a copied database, joined or not, (c) Backups with the
+  Collections on a base, (d) an own snapshot damaged and written again. **P2** a v16 Backup
+  restore test. **Found by the 10k runs and fixed:** a clash rename ("Name (2)") could take
+  the name an own item was held under while its list was damaged, losing that item when it
+  came back (seen through a copy's former id); `renamed_for_clash` now skips held names.
+  **Documented cost:** a whole Collections value not in its shape written after the Backup
+  stays the base after a Replace (the list stays damaged, its items held, until a value in
+  shape is written; nothing lost). Mutation checks (each fails without its fix): P0 (a
+  lifecycle test, the props' late Backup), Replace's base (a lifecycle test, the props'
+  never-known check), the copy before joining (a lifecycle test, the props' copy), the atomic
+  restore (a store test whose new-id step fails: without staging the Backup's data stayed
+  under its old id), the former-id rule (two store tests), `notes_fts` (the raw-bytes test),
+  the schedule (a unit test), the damaged snapshot (a lifecycle test for the check and for the
+  same-name file, the props' mend), the held name (a store test, a 10k seed). Tests added:
+  lifecycle 4 (17 in all), store `sync_clock_db` 5, `snapshot_db` 1, `schedule` 1. Measured
+  on a Mac also building S23: 1k props 15–23 s (16.6 s before the sequences on the same load),
+  10k with the default seed and seeds 7, 424242, 31337 and 2026 green (145–191 s each; the
+  default reached late joins 3,001, snapshots merged 58,710, Backups before a late join
+  restored 551, databases copied 4,353, Backups on a base 2,304, snapshots written again
+  3,708, restores catching up 953, replacing 371); `cargo test -p obs-store --all-features`
+  166 passed; `cargo test -p obs-engine sync` 73 passed, 1 ignored; clippy clean;
+  `cargo xtask ci` green (8 m 20 s; 2,436 tests passed, 43 ignored; fmt, layers, assets,
+  licenses, clippy, a11y, test, wasm).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 
