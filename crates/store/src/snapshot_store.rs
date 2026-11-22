@@ -659,9 +659,9 @@ impl MergeTx<'_> {
         base: &Hlc,
         items: &[(RowKey, Option<i64>)],
     ) -> Result<(), StoreError> {
-        if ListPreference::of_key(list).is_none() {
+        let Some(preference) = ListPreference::of_key(list) else {
             return Ok(());
-        }
+        };
         let base = base.encode()?;
         for (key, position) in items {
             let (kind, id) = key.tombstone();
@@ -672,6 +672,11 @@ impl MergeTx<'_> {
                     params![kind, id, base, position],
                 )
                 .map_err(sql)?;
+        }
+        // The stored value is composed again in the order those positions give.
+        if let Some(mut items) = preference.items(read_preference(self.conn(), list)?.as_deref()) {
+            crate::synced_store::stored_positions(self.conn(), &mut items)?;
+            crate::synced_store::write_preference(self.conn(), list, &preference.compose(&items))?;
         }
         self.forget_lists();
         Ok(())

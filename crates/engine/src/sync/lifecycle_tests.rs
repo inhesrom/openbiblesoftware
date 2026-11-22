@@ -707,3 +707,48 @@ fn a_text_written_under_the_old_id_survives_a_remote_edit_that_never_saw_it() {
     assert!(texts.contains(&"T on A".to_string()), "{texts:?}");
     assert!(texts.contains(&"V on B".to_string()), "{texts:?}");
 }
+
+#[test]
+fn a_former_ids_text_merged_after_an_edit_that_never_saw_it_is_kept_as_a_copy() {
+    let dir = Dir::new("restore-former-late");
+    let folder = MemSyncFolder::new();
+    let (mut a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    let nb = default_notebook(&a);
+    let n = note(&nb, "first");
+    add(&a, Row::Annotation(n.clone()));
+    settle(&[&a, &b], &folder);
+    // A is backed up, then writes T; B, never seeing T, writes V later. A is restored from the
+    // Backup (it never had T) and catches up seeing only B's files first: V is in place before
+    // A's own T arrives, from its old id, and loses to it.
+    let backup = back_up(&dir, &a, "a");
+    let a_id = a.device_id().unwrap();
+    a.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "T on A")),
+    )])
+    .unwrap();
+    sync(&a, &folder);
+    b.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "V on B")),
+    )])
+    .unwrap();
+    super::ops::write_pending_ops(&b, &folder).unwrap();
+    a.restore(&backup).unwrap();
+    let only_b = MemSyncFolder::new();
+    for path in folder.paths() {
+        if !path.contains(&format!("{a_id}/ops/")) {
+            only_b.put(&path, &folder.get(&path).unwrap());
+        }
+    }
+    restore_choice(&a, &only_b, RestoreChoice::CatchUp, &options()).unwrap();
+    assert_eq!(a.annotation(&n.id).unwrap().unwrap().body(), "V on B");
+    let report = sync(&a, &folder);
+    assert_eq!(report.merge.recorded.conflicts, 1, "{report:?}");
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    let texts = texts(&a);
+    assert!(texts.contains(&"T on A".to_string()), "{texts:?}");
+    assert!(texts.contains(&"V on B".to_string()), "{texts:?}");
+}

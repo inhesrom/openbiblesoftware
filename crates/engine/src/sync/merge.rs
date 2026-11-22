@@ -249,7 +249,11 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             report.stopped.push((id, 0, OpsStop::NoSnapshot));
         }
     }
-    ready.sort();
+    // This device's former ids first (a restore or a copy gave it a new id): their op files
+    // are its own history, so their versions are here as its own before another device's
+    // replace them, and the own checks see them (ADR 0022 rule 7).
+    let own_ids = user.own_device_ids()?;
+    ready.sort_by_key(|id| (!own_ids.contains(id), id.clone()));
     let mut pending: Vec<Pending> = Vec::new();
     for id in ready {
         let ops = read_ops_after(folder, &id, user.applied_up_to(&id)?)?;
@@ -587,11 +591,13 @@ fn merge_write(
     let clock = Some(&op.clock);
     if state.row.is_some() {
         if state.clock.as_ref() >= clock {
+            former_own_lost(tx, op, state, after, recorded)?;
             return Ok(Outcome::Superseded);
         }
     } else if let Some(tombstone) = &state.tombstone
         && tombstone.covers.as_ref() >= clock
     {
+        former_own_lost(tx, op, state, after, recorded)?;
         return Ok(Outcome::Covered);
     }
     let mut row = with_fields_here(after, state.row.as_ref(), &op.absent)?;
@@ -647,6 +653,92 @@ fn merge_write(
         recorded.items_renamed += 1;
     }
     Ok(Outcome::Written)
+}
+
+/// An op of one of this device's former ids (written before a restore or a copy gave it a
+/// new id, ADR 0022 rule 7) that loses here to another device's version (`state`, later, or a
+/// delete covering it that is not this op's own version): the device that wrote it would have
+/// kept its Note text as a Sync conflict's copy (D2) or its list item as "Name (2)", or under
+/// its own name against a delete (D6), when that version replaced it. That device is this one
+/// now, so this one does, whatever order the ops come in. Nothing when the version here is
+/// this device's own (by any of its ids: it came after the op) or holds the op's text. Such a
+/// copy may be one no one needed (the other device had seen the op's text), which is safe.
+fn former_own_lost(
+    tx: &mut MergeTx<'_>,
+    op: &Op,
+    state: &RowState,
+    after: &Row,
+    recorded: &mut Recorded,
+) -> Result<(), MergeError> {
+    let writer = &op.clock.device_id;
+    if writer == tx.device_id() || !tx.is_own(writer) {
+        return Ok(());
+    }
+    if state
+        .clock
+        .as_ref()
+        .is_some_and(|c| tx.is_own(&c.device_id))
+    {
+        return Ok(());
+    }
+    if state.row.is_none()
+        && state.tombstone.as_ref().is_some_and(|t| {
+            t.covers.as_ref() == Some(&op.clock)
+                || t.covers.as_ref().is_some_and(|c| tx.is_own(&c.device_id))
+        })
+    {
+        // The delete removed this version, or a later one of this device's: it had seen it.
+        return Ok(());
+    }
+    match (after, &state.row) {
+        (Row::Annotation(mine), here) if mine.is_note() => {
+            let place = match here {
+                Some(Row::Annotation(here)) if here.is_note() && here.body() == mine.body() => {
+                    return Ok(());
+                }
+                Some(Row::Annotation(here)) => here,
+                _ => mine,
+            };
+            let id = conflict_id(&mine.id, &op.clock);
+            let there = tx.state(&RowKey::Annotation(id.clone()))?;
+            if there.row.is_some() || there.tombstone.is_some() {
+                return Ok(());
+            }
+            let copy = Row::Annotation(Annotation {
+                id,
+                notebook_id: place.notebook_id.clone(),
+                content: Content::Note {
+                    body: mine.body().to_string(),
+                },
+                anchor: place.anchor.clone(),
+                created_at: mine.created_at,
+                modified_at: mine.modified_at,
+                conflict_of: Some(mine.id.clone()),
+            });
+            ensure_parents(tx, &copy, None, recorded)?;
+            tx.record(&[Change::insert(copy)])?;
+            recorded.conflicts += 1;
+        }
+        (
+            Row::Collection(mine) | Row::CopyPreset(mine) | Row::SavedSearch(mine),
+            Some(Row::Collection(here) | Row::CopyPreset(here) | Row::SavedSearch(here)),
+        ) => {
+            if here.json != mine.json
+                && let Some(renamed) = tx.renamed_for_clash(after)?
+            {
+                tx.record(&[Change::insert(renamed)])?;
+                recorded.items_renamed += 1;
+            }
+        }
+        (Row::Collection(_) | Row::CopyPreset(_) | Row::SavedSearch(_), None) => {
+            // Deleted by a delete that never saw it: recorded again under its own name, after
+            // what the tombstone covers.
+            tx.record(&[Change::insert(after.clone())])?;
+            recorded.items_kept += 1;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// The id of the Sync conflict's copy of Note `note` holding its text at `lost` (the clock of
