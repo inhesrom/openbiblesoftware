@@ -773,20 +773,149 @@ fn op_files(folder: &Path) -> usize {
         .sum()
 }
 
-/// How long a sync holds the UI thread (supervisor decision D3, plan S29): a sync of one
-/// edit through a local folder, a device merging 1,000 op files another wrote while it was
-/// away, a sync with nothing new beside them, and a new device joining that folder.
+/// What the frames did while a sync ran on its worker: each frame's sync work on the UI
+/// thread (`sync_tick`: starting it, looking for its result, then taking it and reloading
+/// the Synced data it merged; and the status the shell draws) and, when the frames edited,
+/// how long each edit took.
+struct Frames {
+    ticks: Vec<std::time::Duration>,
+    edits: Vec<std::time::Duration>,
+}
+
+impl Frames {
+    fn report(&self, what: &str) -> String {
+        let ms = |d: &std::time::Duration| d.as_secs_f64() * 1000.0;
+        let mut ticks: Vec<f64> = self.ticks.iter().map(ms).collect();
+        ticks.sort_by(f64::total_cmp);
+        let buckets = [1.0, 2.0, 4.0, 8.0, 16.0, f64::INFINITY];
+        let mut counts = [0usize; 6];
+        for t in &ticks {
+            counts[buckets.iter().position(|b| t < b).unwrap_or(5)] += 1;
+        }
+        let last = self.ticks.last().map_or(0.0, ms);
+        let mut line = format!(
+            "{what}: {} frames, sync work a frame max {:.2} ms (the result's frame {last:.2} ms), \
+             p50 {:.3} ms; histogram <1 {} | 1-2 {} | 2-4 {} | 4-8 {} | 8-16 {} | >=16 {}",
+            ticks.len(),
+            ticks.last().copied().unwrap_or(0.0),
+            ticks.get(ticks.len() / 2).copied().unwrap_or(0.0),
+            counts[0],
+            counts[1],
+            counts[2],
+            counts[3],
+            counts[4],
+            counts[5],
+        );
+        if !self.edits.is_empty() {
+            let mut edits: Vec<f64> = self.edits.iter().map(ms).collect();
+            edits.sort_by(f64::total_cmp);
+            line.push_str(&format!(
+                "; an edit each frame ({}): max {:.2} ms, p50 {:.2} ms",
+                edits.len(),
+                edits.last().copied().unwrap_or(0.0),
+                edits.get(edits.len() / 2).copied().unwrap_or(0.0),
+            ));
+        }
+        line
+    }
+
+    fn max_tick(&self) -> std::time::Duration {
+        self.ticks.iter().max().copied().unwrap_or_default()
+    }
+}
+
+/// Sync now, as the app's frames run it (one each 16 ms) until the sync's result is taken,
+/// timing each frame's sync work, and with `edit` making a Notebook at every frame while it
+/// runs.
+fn frames_of_a_sync(s: &mut Session, edit: bool) -> Frames {
+    let frame = std::time::Duration::from_millis(16);
+    let mut frames = Frames {
+        ticks: Vec::new(),
+        edits: Vec::new(),
+    };
+    s.run("sync.now", &json!({})).unwrap();
+    loop {
+        let start = std::time::Instant::now();
+        s.sync_tick(now());
+        // What the shell asks every frame besides.
+        let syncing = s.sync_panel(now()).syncing;
+        let _ = s.sync_indicator(now());
+        frames.ticks.push(start.elapsed());
+        if !syncing {
+            return frames;
+        }
+        if edit {
+            let at = std::time::Instant::now();
+            s.create_notebook(&format!("Edit {}", new_id())).unwrap();
+            frames.edits.push(at.elapsed());
+        }
+        // Spun, not slept: a sleep in a test process can wake many milliseconds late (timer
+        // coalescing), and the frames would be too few to see a stall.
+        while start.elapsed() < frame {
+            std::hint::spin_loop();
+        }
+    }
+}
+
+/// A device makes `notes` Notes over `files` op files (one sync each), then a new device
+/// joins, editing at every frame: its frames, and how long its sync took (ms).
+fn joined_by_a_new_device(notes: usize, files: usize) -> (Frames, i64) {
+    let dir = Dir::new(&format!("measure-{notes}-{files}"));
+    let mut l = dir.syncing("library");
+    sync(&mut l);
+    let notebook = l.default_notebook().unwrap().id;
+    for file in 0..files {
+        let changes: Vec<Change> = (file * notes / files..(file + 1) * notes / files)
+            .map(|i| {
+                Change::insert(Row::Annotation(Annotation {
+                    id: new_id(),
+                    notebook_id: notebook.clone(),
+                    content: Content::Note {
+                        body: format!("Note {i}: a sentence or two of study."),
+                    },
+                    anchor: None,
+                    created_at: 1,
+                    modified_at: 1,
+                    conflict_of: None,
+                }))
+            })
+            .collect();
+        store(&l).apply_changes(&changes).unwrap();
+        sync(&mut l);
+    }
+    let mut n = dir.syncing("new");
+    let frames = frames_of_a_sync(&mut n, true);
+    assert_eq!(
+        (n.annotations(None).unwrap().into_iter())
+            .filter(|a| a.is_note())
+            .count(),
+        notes
+    );
+    (frames, n.last_sync_duration_ms().unwrap())
+}
+
+/// How sync holds the UI thread now that it runs on its worker (plan S29b; S29 measured it on
+/// the UI thread, 136–141 ms for the catch-up): frame by frame, a device catching up with
+/// 1,000 op files another wrote while it was away, once with no edits and once with an edit
+/// at every frame (how long a user's edit waits for the worker's merge transactions); a new
+/// device joining that folder; and a new device joining a folder whose other device holds
+/// 10,000 Notes (the merge's biggest transactions: a file of 10,000 ops, and a snapshot).
 /// `cargo test -p obs-engine --lib measure_ -- --ignored --nocapture`.
 #[test]
 #[ignore = "a measurement, not a check"]
-fn measure_syncs_on_the_ui_thread() {
+fn measure_syncs_off_the_ui_thread() {
     let dir = Dir::new("measure");
     let mut a = dir.syncing("a");
+    let mut e = dir.syncing("e");
     let mut b = dir.syncing("b");
     sync(&mut a);
+    sync(&mut e);
     sync(&mut b);
     sync(&mut a);
-    a.create_notebook("One edit").unwrap();
+    sync(&mut e);
+    let at = std::time::Instant::now();
+    a.create_notebook("Before").unwrap();
+    let edit_alone = at.elapsed();
     sync(&mut a);
     let one_edit = a.last_sync_duration_ms().unwrap();
     for i in 0..1000 {
@@ -794,19 +923,50 @@ fn measure_syncs_on_the_ui_thread() {
         sync(&mut b);
     }
     let files = op_files(&dir.folder());
-    sync(&mut a);
-    let merged_1000 = a.last_sync_duration_ms().unwrap();
+    let caught_up = frames_of_a_sync(&mut a, false);
+    let caught_up_ms = a.last_sync_duration_ms().unwrap();
     assert!(notebook_names(&a).contains(&"Notebook 999".to_string()));
-    sync(&mut a);
-    let nothing_new = a.last_sync_duration_ms().unwrap();
+    let edited = frames_of_a_sync(&mut e, true);
+    assert!(notebook_names(&e).contains(&"Notebook 999".to_string()));
+    let nothing_new = frames_of_a_sync(&mut a, false);
     let mut c = dir.syncing("c");
-    sync(&mut c);
-    let joined = c.last_sync_duration_ms().unwrap();
+    let joined = frames_of_a_sync(&mut c, true);
+    let joined_ms = c.last_sync_duration_ms().unwrap();
     assert!(notebook_names(&c).contains(&"Notebook 999".to_string()));
+
+    // A large library: 10,000 Notes on one device, then a new device joins, once with them
+    // in one op file (one merge transaction of 10,000 ops) and once with them in that
+    // device's snapshot (one transaction too).
+    let in_one_file = joined_by_a_new_device(10_000, 1);
+    let in_a_snapshot = joined_by_a_new_device(10_000, 101);
+
     eprintln!(
-        "sync on the UI thread, local folder ({files} op files): one edit {one_edit} ms; \
-         merging 1,000 op files {merged_1000} ms; nothing new {nothing_new} ms; a new device \
-         joining {joined} ms"
+        "sync off the UI thread, local folder ({files} op files), dev profile:\n\
+         - one edit's sync {one_edit} ms; an edit with no sync running {:.2} ms\n\
+         - {} (the sync {caught_up_ms} ms)\n\
+         - {}\n\
+         - {}\n\
+         - {} (the sync {joined_ms} ms)\n\
+         - {} (the sync {} ms)\n\
+         - {} (the sync {} ms)",
+        edit_alone.as_secs_f64() * 1000.0,
+        caught_up.report("catching up with 1,000 op files"),
+        edited.report("catching up with 1,000 op files, editing"),
+        nothing_new.report("nothing new"),
+        joined.report("a new device joining, editing"),
+        in_one_file
+            .0
+            .report("a new device joining 10,000 Notes in one op file, editing"),
+        in_one_file.1,
+        in_a_snapshot
+            .0
+            .report("a new device joining 10,000 Notes in a snapshot, editing"),
+        in_a_snapshot.1,
+    );
+    assert!(
+        caught_up.max_tick() < std::time::Duration::from_millis(16),
+        "a frame stalled: {:?}",
+        caught_up.max_tick()
     );
 }
 
