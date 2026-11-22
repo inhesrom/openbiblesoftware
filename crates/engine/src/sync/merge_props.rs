@@ -50,7 +50,7 @@ use obs_store::{
 
 use super::folder::MemSyncFolder;
 use super::merge::{Outcome, merge_folder};
-use super::merge_tests::Dir;
+use super::merge_tests::{Dir, files_of, view};
 use super::ops::{Op, read_ops_after, write_pending_ops};
 
 /// Cases each CI run checks.
@@ -115,6 +115,7 @@ const RESOURCES: &[&str] = &["kjv", "web", "bsb", "lsv", "sblgnt"];
 /// The built-in style Highlights move to when theirs is deleted (never deleted itself).
 const KEPT_STYLE: &str = "yellow";
 const COLLECTIONS: &str = "library.collections";
+const TAGS: &str = "library.tags";
 /// Values of the Collections that are not a list this app reads (D7).
 const DAMAGED: &[&str] = &["not a list", r#"[{"name":"Dup"},{"name":"Dup"}]"#];
 
@@ -163,6 +164,10 @@ struct Stats {
     fixed: usize,
     /// Parents back after a device moved or deleted its child of them (D3's second case).
     maker_left: usize,
+    /// The review's targeted Q1 and D7 sequences run whole ([`World::q1_step`],
+    /// [`World::d7_step`]).
+    q1_steps: usize,
+    d7_steps: usize,
 }
 
 impl Stats {
@@ -218,13 +223,70 @@ impl World {
         fix(Some(self.now + self.offsets[d]));
     }
 
-    fn sync(&mut self, d: usize) {
+    /// Device `d` writes its ops and merges: often everything in the folder, else what a
+    /// partly synced folder shows it (each other device's files, or only its first few).
+    fn sync(&mut self, d: usize, rng: &mut Rng) {
+        if rng.below(3) == 0 {
+            let mut seen = Vec::new();
+            for e in 0..self.devices.len() {
+                if e != d {
+                    let files = self.files(e);
+                    let k = match rng.below(3) {
+                        0 => files.len(),
+                        _ => rng.below(files.len() + 1),
+                    };
+                    seen.extend(files.into_iter().take(k));
+                }
+            }
+            self.sync_seeing(d, &seen);
+        } else {
+            self.sync_all(d);
+        }
+    }
+
+    /// Device `d` writes its ops and merges every other device's.
+    fn sync_all(&mut self, d: usize) {
         write_pending_ops(&self.devices[d], &self.folder).unwrap();
         let report = merge_folder(&self.devices[d], &self.folder).unwrap();
+        self.merged(d, &report);
+    }
+
+    /// Device `d` writes its ops and merges only the op files `seen` (device id, number), as
+    /// a folder its cloud has not brought the rest of shows them.
+    fn sync_seeing(&mut self, d: usize, seen: &[(String, u64)]) {
+        write_pending_ops(&self.devices[d], &self.folder).unwrap();
+        let files: Vec<(&str, u64)> = seen.iter().map(|(id, n)| (id.as_str(), *n)).collect();
+        let report = merge_folder(&self.devices[d], &view(&self.folder, &files)).unwrap();
+        self.merged(d, &report);
+    }
+
+    fn merged(&mut self, d: usize, report: &super::merge::MergeReport) {
         assert!(report.stopped.is_empty(), "{report:?}");
-        self.stats.add(&report);
+        self.stats.add(report);
         // What the merge recorded is not this device's change to undo.
         self.devices[d].take_applied_changes();
+    }
+
+    /// Device `e`'s op files in the folder, in order.
+    fn files(&self, e: usize) -> Vec<(String, u64)> {
+        let id = self.devices[e].device_id().unwrap();
+        files_of(&self.folder, &id)
+            .into_iter()
+            .map(|n| (id.clone(), n))
+            .collect()
+    }
+
+    /// Device `d` writes its pending ops to the folder.
+    fn push(&self, d: usize) {
+        write_pending_ops(&self.devices[d], &self.folder).unwrap();
+    }
+
+    /// Device `d`'s last change: what it applied since the last call.
+    fn done(&mut self, d: usize) {
+        let changes = self.devices[d].take_applied_changes();
+        if !changes.is_empty() {
+            self.last[d] = changes;
+        }
     }
 
     /// Sync every device until nothing more is written or merged.
@@ -347,8 +409,187 @@ impl World {
         }
     }
 
+    /// Delete Notebook `nb` on device `d` with its Annotations, or moving them to the
+    /// default (`move_them`), as the app does (`Session::delete_notebook`).
+    fn delete_notebook(&mut self, d: usize, nb: &Notebook, move_them: bool) {
+        let user = &self.devices[d];
+        let default = user.notebooks().unwrap().remove(0);
+        let mut changes: Vec<Change> = user
+            .annotations(Some(&nb.id))
+            .unwrap()
+            .into_iter()
+            .map(|a| {
+                if move_them {
+                    let moved = Annotation {
+                        notebook_id: default.id.clone(),
+                        ..a.clone()
+                    };
+                    Change::update(Row::Annotation(a), Row::Annotation(moved))
+                } else {
+                    Change::delete(Row::Annotation(a))
+                }
+            })
+            .collect();
+        changes.push(Change::delete(Row::Notebook(nb.clone())));
+        user.apply_changes(&changes).unwrap();
+        self.deleted_parents
+            .insert(row_name(&RowKey::Notebook(nb.id.clone())));
+    }
+
+    /// Note `note`'s text edited on device `d`, to a new text.
+    fn edit_text(&mut self, d: usize, note: &Annotation, what: &str) {
+        let body = self.text(what);
+        let after = Annotation {
+            content: Content::Note { body },
+            modified_at: note.modified_at + 1,
+            ..note.clone()
+        };
+        self.devices[d]
+            .apply_changes(&[Change::update(
+                Row::Annotation(note.clone()),
+                Row::Annotation(after),
+            )])
+            .unwrap();
+        self.done(d);
+    }
+
+    /// The S28b-2 review's Q1 sequence (a Sync conflict's copy made for a delete): D edits
+    /// Note N's text, G edits it later, neither syncing; G pushes; X syncs, deletes N (or N's
+    /// Notebook with its Annotations) and pushes; D syncs seeing only X's files (or only G's),
+    /// then everything. The roles are random devices; three are needed.
+    fn q1_step(&mut self, rng: &mut Rng) {
+        if self.devices.len() < 3 {
+            return;
+        }
+        let d = rng.below(3);
+        let g = (d + 1 + rng.below(2)) % 3;
+        let x = 3 - d - g;
+        let has = |e: usize, id: &str| self.devices[e].annotation(id).unwrap().is_some();
+        let notes: Vec<Annotation> = self.devices[d]
+            .annotations(None)
+            .unwrap()
+            .into_iter()
+            .filter(|a| a.is_note() && has(g, &a.id) && has(x, &a.id))
+            .collect();
+        let Some(note) = rng.pick(&notes).cloned() else {
+            return;
+        };
+        self.as_device(d);
+        self.edit_text(d, &note, "q1 by D");
+        self.now += 1 + rng.ms(50);
+        self.as_device(g);
+        let theirs = self.devices[g].annotation(&note.id).unwrap().unwrap();
+        self.edit_text(g, &theirs, "q1 by G");
+        self.push(g);
+        self.now += 1;
+        self.as_device(x);
+        self.sync_all(x);
+        if let Some(a) = self.devices[x].annotation(&note.id).unwrap() {
+            let nb = self.devices[x].notebook(&a.notebook_id).unwrap();
+            match nb {
+                Some(nb) if self.deletable.contains(&nb.id) && rng.below(2) == 0 => {
+                    self.delete_notebook(x, &nb, false);
+                }
+                _ => {
+                    self.child_leaves(x, &a);
+                    self.devices[x]
+                        .apply_changes(&[Change::delete(Row::Annotation(a))])
+                        .unwrap();
+                }
+            }
+            self.done(x);
+        }
+        self.push(x);
+        self.now += 1;
+        self.as_device(d);
+        let first = if rng.below(4) == 0 { g } else { x };
+        let seen = self.files(first);
+        self.sync_seeing(d, &seen);
+        self.sync_all(d);
+        self.stats.q1_steps += 1;
+    }
+
+    /// The S28b-2 review's D7 sequence (held items put back on a merged base in shape): P
+    /// writes the Collections damaged, then in shape again (its base p1); Q, its clock run
+    /// ahead of P's, adds an item at q1 after p1 without syncing; R syncs seeing Q's files
+    /// first, then P's. Three devices are needed.
+    fn d7_step(&mut self, rng: &mut Rng) {
+        if self.devices.len() < 3 {
+            return;
+        }
+        let p = rng.below(3);
+        let q = (p + 1 + rng.below(2)) % 3;
+        let r = 3 - p - q;
+        let in_shape = |e: usize| {
+            self.devices[e]
+                .preference(COLLECTIONS)
+                .unwrap()
+                .is_none_or(|v| collection_items(&v).is_some())
+        };
+        if !in_shape(p) || !in_shape(q) {
+            return;
+        }
+        self.as_device(p);
+        let user = &self.devices[p];
+        let mended = user.preference(COLLECTIONS).unwrap();
+        let damaged = rng.pick(DAMAGED).unwrap();
+        user.set_preference(COLLECTIONS, damaged).unwrap();
+        self.stats.damaged += 1;
+        self.now += 1;
+        self.as_device(p);
+        let mut items: Vec<serde_json::Value> = mended
+            .as_deref()
+            .map(|v| serde_json::from_str(v).unwrap())
+            .unwrap_or_default();
+        let n = self.n;
+        self.n += 1;
+        items.push(serde_json::json!({ "name": format!("Mended {n}"), "n": n }));
+        let user = &self.devices[p];
+        user.set_preference(COLLECTIONS, &serde_json::to_string(&items).unwrap())
+            .unwrap();
+        self.stats.fixed += 1;
+        self.done(p);
+        self.push(p);
+        // Q's clock runs ahead of P's, so its item is later than P's base.
+        let ahead = self.offsets[p].max(self.offsets[q]) + 1 + rng.ms(1_000);
+        fix(Some(self.now + ahead));
+        let user = &self.devices[q];
+        let value = user.preference(COLLECTIONS).unwrap();
+        let mut items: Vec<serde_json::Value> = value
+            .as_deref()
+            .map(|v| serde_json::from_str(v).unwrap())
+            .unwrap_or_default();
+        let name = rng.pick(NAMES).unwrap();
+        if items.iter().any(|it| it["name"] == *name) {
+            return;
+        }
+        let n = self.n;
+        self.n += 1;
+        items.push(serde_json::json!({ "name": name, "n": n }));
+        user.set_preference(COLLECTIONS, &serde_json::to_string(&items).unwrap())
+            .unwrap();
+        self.done(q);
+        self.push(q);
+        self.now += 1;
+        self.as_device(r);
+        let mut seen = self.files(q);
+        self.sync_seeing(r, &seen);
+        seen.extend(self.files(p));
+        self.sync_seeing(r, &seen);
+        self.stats.d7_steps += 1;
+    }
+
     /// One random change on device `d`, planned from what it holds.
     fn change(&mut self, d: usize, rng: &mut Rng) {
+        // A device whose Collections are damaged often writes them in shape again.
+        let damaged = self.devices[d]
+            .preference(COLLECTIONS)
+            .unwrap()
+            .is_some_and(|v| collection_items(&v).is_none());
+        if damaged && rng.below(2) == 0 {
+            self.collections(d, rng);
+            return;
+        }
         let user = &self.devices[d];
         match rng.below(19) {
             0 => {
@@ -399,28 +640,7 @@ impl World {
                 let Some(nb) = rng.pick(&notebooks).cloned() else {
                     return;
                 };
-                let default = user.notebooks().unwrap().remove(0);
-                let move_them = rng.below(2) == 0;
-                let mut changes: Vec<Change> = user
-                    .annotations(Some(&nb.id))
-                    .unwrap()
-                    .into_iter()
-                    .map(|a| {
-                        if move_them {
-                            let moved = Annotation {
-                                notebook_id: default.id.clone(),
-                                ..a.clone()
-                            };
-                            Change::update(Row::Annotation(a), Row::Annotation(moved))
-                        } else {
-                            Change::delete(Row::Annotation(a))
-                        }
-                    })
-                    .collect();
-                changes.push(Change::delete(Row::Notebook(nb.clone())));
-                user.apply_changes(&changes).unwrap();
-                self.deleted_parents
-                    .insert(row_name(&RowKey::Notebook(nb.id)));
+                self.delete_notebook(d, &nb, rng.below(2) == 0);
             }
             3 | 4 => {
                 let holders = self.holders(d);
@@ -600,28 +820,30 @@ impl World {
 
     /// Change the Collections on device `d`: an item changed, added (under a name another
     /// device may add too, D6), removed or moved; or the whole value written damaged, or in
-    /// shape again over a damaged one (D7).
+    /// shape again over a damaged one (D7). The Resource tags are saved with them, as
+    /// `Session::save_collections` does (`"{}"` on a device that has none), sometimes with a
+    /// Resource tagged or untagged.
     fn collections(&mut self, d: usize, rng: &mut Rng) {
         let n = self.n;
         self.n += 1;
         let user = &self.devices[d];
         let value = user.preference(COLLECTIONS).unwrap();
-        let parsed: Option<Vec<serde_json::Value>> = match &value {
-            Some(v) => serde_json::from_str(v).ok(),
-            None => Some(Vec::new()),
-        };
-        if value.is_some() && rng.below(8) == 0 {
-            let damaged = rng.pick(DAMAGED).unwrap();
-            if value.as_deref() != Some(*damaged) {
-                user.set_preference(COLLECTIONS, damaged).unwrap();
-                self.stats.damaged += 1;
-            }
-            return;
-        }
         let in_shape = value
             .as_deref()
-            .is_none_or(|v| parsed.is_some() && !DAMAGED.contains(&v));
-        let mut items = parsed.unwrap_or_default();
+            .is_none_or(|v| collection_items(v).is_some());
+        if value.is_some() && in_shape && rng.below(4) == 0 {
+            let damaged = rng.pick(DAMAGED).unwrap();
+            user.set_preference(COLLECTIONS, damaged).unwrap();
+            self.stats.damaged += 1;
+            return;
+        }
+        let mut items: Vec<serde_json::Value> = value
+            .as_deref()
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+        // A damaged value written in shape again: one item of each name.
+        let mut names = BTreeSet::new();
+        items.retain(|it| names.insert(it["name"].to_string()));
         let i = rng.below(items.len().max(1));
         match rng.below(4) {
             0 if !items.is_empty() => {
@@ -650,6 +872,19 @@ impl World {
                 self.stats.fixed += 1;
             }
         }
+        let mut tags: BTreeMap<String, Vec<String>> = user
+            .preference(TAGS)
+            .unwrap()
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default();
+        if rng.below(3) == 0 {
+            let resource = (*rng.pick(RESOURCES).unwrap()).to_string();
+            if tags.remove(&resource).is_none() {
+                tags.insert(resource, vec![format!("tag {n}")]);
+            }
+        }
+        user.set_preference(TAGS, &serde_json::to_string(&tags).unwrap())
+            .unwrap();
     }
 
     /// Change device `d`'s Highlight styles and palettes: make a palette or a style, or delete
@@ -835,6 +1070,15 @@ fn collection_items(value: &str) -> Option<BTreeMap<String, String>> {
     Some(by_name)
 }
 
+/// A list item's JSON without its `name` (D6 re-adds an item under another name).
+fn without_name(json: &str) -> String {
+    let mut item: serde_json::Value = serde_json::from_str(json).unwrap();
+    if let Some(fields) = item.as_object_mut() {
+        fields.remove("name");
+    }
+    item.to_string()
+}
+
 /// What a Collection is expected to be once settled, when its list has a base (D7): the
 /// row's JSON and clock, or `None` for not there.
 fn expected_item(
@@ -899,10 +1143,11 @@ fn check_case(
         let d = rng.below(n);
         world.now += rng.step();
         world.as_device(d);
-        if rng.below(4) == 0 {
-            world.sync(d);
-        } else {
-            world.edit(d, &mut rng);
+        match rng.below(60) {
+            0 | 1 => world.q1_step(&mut rng),
+            2 | 3 => world.d7_step(&mut rng),
+            n if n % 4 == 0 => world.sync(d, &mut rng),
+            _ => world.edit(d, &mut rng),
         }
     }
     world.settle();
@@ -961,6 +1206,14 @@ fn check_case(
     let mut written_texts = BTreeSet::new();
     let mut seen_texts = BTreeSet::new();
     let mut annotation_ids = BTreeSet::new();
+    // Each Note's texts as ops wrote them, with their clocks; each Sync conflict's copy's
+    // first write (its clock and the row).
+    let mut note_writes: BTreeMap<String, Vec<(String, Hlc)>> = BTreeMap::new();
+    let mut first_copies: BTreeMap<String, (Hlc, Annotation)> = BTreeMap::new();
+    // Each Collection's JSON (without its name) an add op wrote, with its clock, and those an
+    // op that had them replaced or deleted (D6).
+    let mut added_items: Vec<(String, Hlc)> = Vec::new();
+    let mut replaced_items = BTreeSet::new();
     let collections = RowKey::Preference(COLLECTIONS.into());
     // The Collections of every whole value written (their items had no op of their own).
     let mut whole_items = BTreeSet::new();
@@ -971,12 +1224,45 @@ fn check_case(
             annotation_ids.insert(a.id.clone());
             if a.is_note() {
                 written_texts.insert(a.body().to_string());
+                note_writes
+                    .entry(a.id.clone())
+                    .or_default()
+                    .push((a.body().to_string(), op.clock.clone()));
+            }
+            if a.conflict_of.is_some()
+                && first_copies
+                    .get(&a.id)
+                    .is_none_or(|(clock, _)| op.clock < *clock)
+            {
+                first_copies.insert(a.id.clone(), (op.clock.clone(), a.clone()));
             }
         }
+        // A text is seen by an op that deleted its Note or wrote other text over it (not by
+        // one that only moved it).
         if let Some(Row::Annotation(a)) = &op.before
             && a.is_note()
         {
-            seen_texts.insert(a.body().to_string());
+            let replaced = match &op.after {
+                Some(Row::Annotation(after)) => after.body() != a.body(),
+                _ => true,
+            };
+            if replaced {
+                seen_texts.insert(a.body().to_string());
+            }
+        }
+        if let (None, Some(Row::Collection(item))) = (&op.before, &op.after) {
+            added_items.push((without_name(&item.json), op.clock.clone()));
+        }
+        if let Some(Row::Collection(before)) = &op.before {
+            let replaced = match &op.after {
+                Some(Row::Collection(after)) => {
+                    without_name(&after.json) != without_name(&before.json)
+                }
+                _ => true,
+            };
+            if replaced {
+                replaced_items.insert(without_name(&before.json));
+            }
         }
         if key == collections {
             let Some(Row::Preference(p)) = &op.after else {
@@ -1125,6 +1411,43 @@ fn check_case(
     for copy in live.iter().filter(|a| a.conflict_of.is_some()) {
         let of = copy.conflict_of.as_ref().unwrap();
         assert!(annotation_ids.contains(of), "{copy:?} is a copy of no Note");
+        assert!(first_copies.contains_key(&copy.id), "{copy:?} no op wrote");
+    }
+    // Each copy, as first written, holds a text an op wrote to its Note, and its id is the
+    // one that text's clock gives (`conflict_id`).
+    for (id, (_, copy)) in &first_copies {
+        let of = copy.conflict_of.as_ref().unwrap();
+        let from = note_writes
+            .get(of)
+            .into_iter()
+            .flatten()
+            .any(|(text, clock)| {
+                text == copy.body() && super::merge::conflict_id(of, clock) == *id
+            });
+        assert!(
+            from,
+            "{copy:?} holds no text an op wrote to {of} at the clock of its id"
+        );
+    }
+    // Every Collection an add op wrote is live under some name (D6: a device whose own item
+    // lost re-adds it as "Name (2)"), unless an op that had it replaced or deleted it, or the
+    // Collections' base supersedes it (written at or after it, or damaged).
+    let live_items: BTreeSet<String> = world.devices[0]
+        .preference(COLLECTIONS)
+        .unwrap()
+        .and_then(|v| collection_items(&v))
+        .unwrap_or_default()
+        .values()
+        .map(|json| without_name(json))
+        .collect();
+    for (json, clock) in &added_items {
+        let superseded = base_items
+            .as_ref()
+            .is_some_and(|(base, items)| items.is_none() || clock <= base);
+        assert!(
+            live_items.contains(json) || replaced_items.contains(json) || superseded,
+            "the Collection {json} added at {clock} was lost"
+        );
     }
     // No row is there that no op wrote and the devices did not begin with (or, a
     // Collection, that its base holds); one default Notebook, the oldest the devices began
@@ -1194,7 +1517,8 @@ fn run(cases: u64, name: &str) {
         "{cases} cases: ops merged {:?}; files retried after waiting {}; Layouts renamed for a \
          clash {}; default Notebooks demoted {}; Collection items moved {}; undos {}; clocks \
          more than a day ahead not observed {}; recorded {:?}; Collections written damaged {}, \
-         in shape again {}; parents back after their child's maker left them {}",
+         in shape again {}; parents back after their child's maker left them {}; the review's \
+         Q1 sequence {}, D7 sequence {}",
         stats.outcomes,
         stats.retried,
         stats.renamed_layouts,
@@ -1206,6 +1530,8 @@ fn run(cases: u64, name: &str) {
         stats.damaged,
         stats.fixed,
         stats.maker_left,
+        stats.q1_steps,
+        stats.d7_steps,
     );
     for outcome in [
         Outcome::Written,
@@ -1243,6 +1569,8 @@ fn run(cases: u64, name: &str) {
             "a parent back after its child's maker left it",
             stats.maker_left,
         ),
+        ("the review's Q1 sequence", stats.q1_steps),
+        ("the review's D7 sequence", stats.d7_steps),
     ] {
         assert!(n > 0, "no case reached {what}");
     }

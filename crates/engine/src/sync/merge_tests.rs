@@ -140,7 +140,7 @@ fn relabel(f: &SyncedFavorite, label: &str) -> SyncedFavorite {
 
 /// A copy of `from` holding only the op files named, as a device sees the folder when the
 /// others are still arriving.
-fn view(from: &MemSyncFolder, files: &[(&str, u64)]) -> MemSyncFolder {
+pub(super) fn view(from: &MemSyncFolder, files: &[(&str, u64)]) -> MemSyncFolder {
     let to = MemSyncFolder::new();
     for (device, seq) in files {
         let path = op_file_path(device, *seq);
@@ -150,7 +150,7 @@ fn view(from: &MemSyncFolder, files: &[(&str, u64)]) -> MemSyncFolder {
 }
 
 /// Every op file of `device` in `folder`, by number.
-fn files_of(folder: &MemSyncFolder, device: &str) -> Vec<u64> {
+pub(super) fn files_of(folder: &MemSyncFolder, device: &str) -> Vec<u64> {
     let mut seqs: Vec<u64> = folder
         .list(&ops_dir(device))
         .unwrap()
