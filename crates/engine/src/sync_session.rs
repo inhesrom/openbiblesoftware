@@ -46,7 +46,7 @@ const RESTORE_SYNC_UNFINISHED: &str = "The sync before the restore did not finis
      the restore went ahead without it; the Safety backup holds the edits it had not written.";
 
 /// How often, in milliseconds, the frames look for the result of a sync running on its worker.
-const SYNC_POLL_MS: i64 = 50;
+pub(crate) const SYNC_POLL_MS: i64 = 50;
 
 /// Where the Session's sync is between two frames.
 #[derive(Debug, Default)]
@@ -274,6 +274,21 @@ impl Session {
     /// every computer; the app keeps [`PLATFORM`].
     pub fn set_sync_platform(&mut self, platform: &'static str) {
         self.sync.platform = platform;
+    }
+
+    /// Have the worker sync through `folder` rather than the Sync folder's path.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn set_sync_test_folder(
+        &mut self,
+        folder: std::sync::Arc<dyn crate::sync::SyncFolder>,
+    ) {
+        self.sync.test_folder = Some(TestFolder(folder));
+    }
+
+    /// Have a restore wait `wait` for its sync first rather than [`RESTORE_SYNC_WAIT`].
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn set_restore_sync_wait(&mut self, wait: std::time::Duration) {
+        self.sync.restore_wait = wait;
     }
 
     /// Read the Sync folder and the restore's question from the User database just attached
@@ -735,7 +750,12 @@ impl Session {
             return (texts::SYNCING.to_string(), None, false);
         }
         if self.sync.restore_pending {
-            return (texts::RESTORE_TITLE.to_string(), None, true);
+            // A restore whose sync first did not finish says so too.
+            let failed = match &self.sync.last {
+                Some(LastSync::Failed(e)) => Some(e.clone()),
+                _ => None,
+            };
+            return (texts::RESTORE_TITLE.to_string(), failed, true);
         }
         match &self.sync.last {
             Some(LastSync::Failed(e)) => (texts::UNREACHABLE.to_string(), Some(e.clone()), true),
