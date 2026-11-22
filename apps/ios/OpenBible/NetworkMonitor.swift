@@ -6,13 +6,16 @@ import OpenBibleCore
 /// The device's network for the core's download rules (`Network.is_wifi`, #333 "Wi-Fi only by
 /// default"): from `NWPathMonitor`, a path counts as cellular when it uses the cellular
 /// interface, and anything else (Wi-Fi, wired, no network at all) as not cellular, which is
-/// what `URLSessionConfiguration.allowsCellularAccess = false` waits for. The core decides
+/// what `URLSessionConfiguration.allowsCellularAccess = false` waits for. Before the first
+/// path update it is not known (`nil`), which the core counts as not Wi-Fi. The core decides
 /// what to do on each; this only reports which it is.
 @MainActor
 @Observable
 final class NetworkMonitor {
-    /// Not on a cellular path.
-    private(set) var isWiFi = true
+    /// Not on a cellular path; `nil` until the first path update.
+    private(set) var isWiFi: Bool?
+    /// The path changed (the Study set offer says which network it is on).
+    @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var started = false
     /// A test's network instead of the device's (`OBS_TEST_NETWORK`, Debug builds).
@@ -44,7 +47,11 @@ final class NetworkMonitor {
         started = true
         monitor.pathUpdateHandler = { [weak self] path in
             let wifi = !path.usesInterfaceType(.cellular)
-            Task { @MainActor in self?.isWiFi = wifi }
+            Task { @MainActor in
+                guard let self, self.isWiFi != wifi else { return }
+                self.isWiFi = wifi
+                self.onChange?()
+            }
         }
         monitor.start(queue: DispatchQueue(label: "io.github.inhesrom.openbible.network"))
     }

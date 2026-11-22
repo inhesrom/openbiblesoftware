@@ -54,6 +54,26 @@ final class AppCoreTests: XCTestCase {
         XCTAssertEqual(try again.reader(reader: 0).location, "John 3:16")
     }
 
+    /// The system can launch the app for its background downloads' events, which starts the
+    /// core, and the scene can connect while that boot runs: its `start()` waits for the
+    /// same boot, and the reader ends up ready (not left on "Starting…").
+    func testASecondStartDuringABootWaitsForIt() async throws {
+        let folder = folder!
+        let downloads = DownloadCenter(identifier: "io.github.inhesrom.openbible.tests.\(UUID().uuidString)", folder: folder)
+        let app = AppCore(appFolder: { folder }, studySet: nil, downloads: downloads)
+        // The background-session launch (`handleEventsForBackgroundURLSession`) starts it…
+        let background = Task { @MainActor in await app.start() }
+        await Task.yield()
+        guard case .starting = app.state else { return XCTFail("booted before the scene connected") }
+        // …then the scene connects while it boots.
+        let reader = ReaderModel(app: app)
+        await reader.start()
+        XCTAssertEqual(reader.state, .ready)
+        XCTAssertNotNil(app.core)
+        await background.value
+        XCTAssertEqual(app.folder, folder)
+    }
+
     func testABootThatFailsSaysWhy() async throws {
         // A file where the library folder must go.
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

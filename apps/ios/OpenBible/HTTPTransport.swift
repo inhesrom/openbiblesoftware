@@ -39,7 +39,8 @@ enum HTTPStatus {
 /// `apps/openbible/src/fetch.rs` makes it. The core calls it on its job threads, never on
 /// the main thread, so it blocks until the answer is in. No cookie, cache, credential or
 /// identifier beyond the app's version goes with a request; a request to GitHub's API asks
-/// for its JSON format and API version, as GitHub documents.
+/// for its JSON format and API version, as GitHub documents. Release builds fetch `https`
+/// only.
 final class HTTPTransport: Transport, @unchecked Sendable {
     /// GitHub's REST API, whose requests ask for its JSON format (`fetch.rs` `GITHUB_API`).
     static let githubAPI = "https://api.github.com/"
@@ -62,6 +63,13 @@ final class HTTPTransport: Transport, @unchecked Sendable {
 
     func get(url: String) throws -> Data {
         let scheme = url.components(separatedBy: "://").first?.lowercased() ?? ""
+        #if !DEBUG
+            // Release builds: https only (#333; the core's URLs are `https`). Debug tests read
+            // a local mirror over http and `file://`.
+            guard scheme == "https" else {
+                throw TransportError.Network(message: "\(url): unsupported protocol \"\(scheme)\"")
+            }
+        #endif
         switch scheme {
         case "http", "https":
             break

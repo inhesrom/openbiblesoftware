@@ -7,7 +7,8 @@ import os
 /// first-launch Study set offer over the shared core (`docs/dev/mobile-library.md`). Every
 /// row, size, licence, state and question is the core's; this forwards the taps (with the
 /// network `NetworkMonitor` sees and the free bytes the volume reports), starts the
-/// transfers the core plans on `DownloadCenter`, and asks again on `Changed.downloads`.
+/// transfers the core plans on `DownloadCenter`, and asks again on `Changed.library` (Storage
+/// too) and `Changed.downloads` (at most every 0.25 s: each transfer's progress wakes it).
 @MainActor
 @Observable
 final class LibraryModel {
@@ -52,7 +53,15 @@ final class LibraryModel {
     /// The first-launch Study set offer, while the core makes one and its sheet is up.
     var offer: StudySetOffer?
     var question: Question?
+    /// How often the screens were asked again, and how long that took on the main thread
+    /// (DownloadTests measures them during a download).
+    @ObservationIgnored private(set) var refreshes = 0
+    @ObservationIgnored private(set) var refreshTime: Duration = .zero
+    @ObservationIgnored private var lastRefresh: ContinuousClock.Instant?
+    @ObservationIgnored private var downloadsRefreshDue = false
 
+    /// The least time between two refreshes for `Changed.downloads`.
+    static let downloadsInterval: Duration = .milliseconds(250)
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "library")
 
     init(app: AppCore, network: NetworkMonitor = .shared, downloads: DownloadCenter = .shared) {
@@ -65,6 +74,7 @@ final class LibraryModel {
 
     /// The core is ready: show the Study set offer if the core makes one.
     func coreReady() {
+        network.onChange = { [weak self] in self?.networkChanged() }
         network.start()
         refresh()
         #if DEBUG
@@ -113,12 +123,45 @@ final class LibraryModel {
         refresh()
     }
 
-    /// Ask the core again for everything shown.
-    func refresh() {
+    /// `Changed.library`: everything shown, Storage included.
+    func libraryChanged() {
+        refresh()
+    }
+
+    /// `Changed.downloads`: the rows, the banner and the offer, not Storage (it reads every
+    /// Resource's files), and at most once per `downloadsInterval`.
+    func downloadsChanged() {
+        guard !downloadsRefreshDue else { return }
+        let since = lastRefresh.map { ContinuousClock().now - $0 } ?? Self.downloadsInterval
+        guard since < Self.downloadsInterval else { return refresh(storage: false) }
+        downloadsRefreshDue = true
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.downloadsInterval - since)
+            guard let self else { return }
+            self.downloadsRefreshDue = false
+            self.refresh(storage: false)
+        }
+    }
+
+    /// The network changed: the offer says which it is on.
+    func networkChanged() {
+        guard let core, offer != nil else { return }
+        offer = try? core.studySetOffer(network: network.network(core))
+    }
+
+    /// Ask the core again for everything shown (Storage only when `storage`).
+    func refresh(storage withStorage: Bool = true) {
         guard let core else { return }
+        let clock = ContinuousClock()
+        let began = clock.now
+        defer {
+            lastRefresh = clock.now
+            refreshes += 1
+            refreshTime += clock.now - began
+        }
         starter = try? core.starterLibrary()
         openRows = (try? core.openCatalogue(licence: filter)) ?? []
-        storage = try? core.storage()
+        if withStorage { storage = try? core.storage() }
         banner = try? core.downloadBanner()
         useCellular = (try? core.useCellular()) ?? false
         if offer != nil {

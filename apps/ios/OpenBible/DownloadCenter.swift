@@ -17,7 +17,13 @@ import os
 /// Two sessions, one that may use cellular data and one that may not, so a Wi-Fi-only
 /// transfer waits for Wi-Fi whichever of the session's and the request's
 /// `allowsCellularAccess` the system honours. A transfer that finishes while the app is not
-/// running relaunches it in the background (`handleEventsForBackgroundURLSession`).
+/// running relaunches it in the background (`handleEventsForBackgroundURLSession`): the app
+/// folder is known without the core (`AppCore.locateAppFolder`), so a finished file goes
+/// straight to the core's path and resume data is kept before the core is up, and the
+/// system's completion handler waits until every file that came in has been handed to the
+/// core (`attach`), so a suspension or termination right after it loses none.
+///
+/// Release builds transfer `https` only (#333; the core's URLs are `https`).
 final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     /// What a task carries in its `taskDescription`, so it is known again after a relaunch.
     struct Item: Codable, Equatable {
@@ -31,11 +37,16 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         var resumed: Bool
     }
 
-    static let shared = DownloadCenter(identifier: (Bundle.main.bundleIdentifier ?? "openbible") + ".downloads")
+    static let shared = DownloadCenter(
+        identifier: (Bundle.main.bundleIdentifier ?? "openbible") + ".downloads",
+        folder: try? AppCore.locateAppFolder())
 
     /// The two sessions' identifiers: `<identifier>.wifi` and `<identifier>.cellular`.
     let identifier: String
     private let lock = NSLock()
+    /// Held while a finished file is handed to the core and while Cancel tells the core, so
+    /// one of them sees the other (a Cancel tapped as a transfer finishes installs nothing).
+    private let handOff = NSLock()
     private var core: MobileApp?
     private var folder: URL?
     private var wifi: URLSession!
@@ -46,6 +57,9 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     private var files: [String: String] = [:]
     /// Tasks Cancel stopped (`session/taskIdentifier`).
     private var cancelled: Set<String> = []
+    /// The core's (relative) files whose download Cancel stopped, until a transfer of them
+    /// begins again.
+    private var cancelledFiles: Set<String> = []
     /// Tasks whose outcome was handed to the core already.
     private var handled: Set<String> = []
     private var lastProgress: [String: Date] = [:]
@@ -53,13 +67,18 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     private var waiting: [() -> Void] = []
     /// The system's completion handlers for background events, by session identifier.
     private var completions: [String: @Sendable () -> Void] = [:]
+    /// Completion handlers whose events left something in `waiting`: called once it has been
+    /// handed to the core.
+    private var held: [@Sendable () -> Void] = []
 
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "downloads")
     /// How often progress reaches the core, per transfer.
     private static let progressInterval: TimeInterval = 0.25
 
-    init(identifier: String) {
+    /// `folder`: the app folder the core will boot over, when it is known before the core.
+    init(identifier: String, folder: URL? = nil) {
         self.identifier = identifier
+        self.folder = folder
         super.init()
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -88,15 +107,29 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         return URLSession(configuration: config, delegate: delegate, delegateQueue: queue)
     }
 
-    /// The core is ready, over `folder`: what came in before it is handed in now.
+    /// The core is ready, over `folder`: what came in before it is handed in now, then the
+    /// system is told the events it woke the app for are handled.
     func attach(core: MobileApp, folder: URL) {
-        let pending: [() -> Void] = locked {
+        let (pending, release): ([() -> Void], [@Sendable () -> Void]) = locked {
             self.core = core
             self.folder = folder
-            defer { waiting = [] }
-            return waiting
+            defer {
+                waiting = []
+                held = []
+            }
+            return (waiting, held)
         }
         for hand in pending { hand() }
+        for completion in release { DispatchQueue.main.async { completion() } }
+    }
+
+    /// The core could not boot: the system is not kept waiting for it.
+    func coreFailed() {
+        let release: [@Sendable () -> Void] = locked {
+            defer { held = [] }
+            return held
+        }
+        for completion in release { DispatchQueue.main.async { completion() } }
     }
 
     /// The system woke the app for session `identifier`'s events.
@@ -115,11 +148,14 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     }
 
     private func start(_ request: DownloadRequest) {
+        let origin = Self.origin(request.origin)
         guard let file = relative(request.file) else {
+            // The core queued it: it fails there, so its row is not left waiting.
             Self.log.error("download: \(request.file, privacy: .public) is outside the app folder")
+            let item = Item(id: request.resourceId, origin: origin, file: request.file, url: request.url, resumed: false)
+            fail(item, message: "\(request.file) is outside the app's folder")
             return
         }
-        let origin = Self.origin(request.origin)
         let item = Item(id: request.resourceId, origin: origin, file: file, url: request.url, resumed: false)
         let stale: URLSessionDownloadTask? = locked {
             files["\(origin)/\(request.resourceId)"] = file
@@ -142,6 +178,13 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
             fail(item, message: "\(item.url): not a URL")
             return
         }
+        #if !DEBUG
+            // Release builds: https only (Debug tests use a local http mirror).
+            guard url.scheme?.lowercased() == "https" else {
+                fail(item, message: "\(item.url): unsupported protocol \"\(url.scheme ?? "")\"")
+                return
+            }
+        #endif
         let session = cellular ? self.cellular! : wifi!
         var item = item
         let task: URLSessionDownloadTask
@@ -155,18 +198,24 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
             task = session.downloadTask(with: request)
         }
         task.taskDescription = Self.encode(item)
-        locked { tasks[item.file] = task }
+        locked {
+            tasks[item.file] = task
+            cancelledFiles.remove(item.file)
+        }
         task.resume()
     }
 
     /// Cancel: stop the transfer of `resourceId` and delete its resume data; the core forgets
     /// the download and deletes its file.
     func cancel(resourceId: String, origin: DownloadOrigin, core: MobileApp) throws {
+        handOff.lock()
+        defer { handOff.unlock() }
         let key = "\(Self.origin(origin))/\(resourceId)"
         let (task, file): (URLSessionDownloadTask?, String?) = locked {
             let file = files[key]
             let task = file.flatMap { tasks[$0] }
             if let task { cancelled.insert(Self.key(task)) }
+            if let file { cancelledFiles.insert(file) }
             return (task, file)
         }
         task?.cancel()
@@ -186,8 +235,9 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         let key = Self.key(downloadTask)
         let now = Date()
         let due: Bool = locked {
+            // The last update always goes; with no length known, none is the last.
             if let last = lastProgress[key], now.timeIntervalSince(last) < Self.progressInterval,
-                totalBytesWritten < totalBytesExpectedToWrite
+                totalBytesExpectedToWrite <= 0 || totalBytesWritten < totalBytesExpectedToWrite
             {
                 return false
             }
@@ -198,7 +248,7 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         let total = UInt64(max(totalBytesExpectedToWrite, 0))
         let done = UInt64(max(totalBytesWritten, 0))
         withCore { core in
-            // A transfer the core does not know (from before a relaunch) has no state yet.
+            // A transfer the core does not know (from before a relaunch) is adopted.
             try? core.downloadProgress(
                 resourceId: item.id, origin: Self.origin(item.origin), done: done, total: total)
         }
@@ -219,35 +269,37 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
             return
         }
         // The system deletes `location` when this returns: move it now, to the core's path
-        // when the folder is known, else aside until it is.
-        let held = FileManager.default.temporaryDirectory
-            .appendingPathComponent("download-\(UUID().uuidString)")
+        // (known before the core is up, after a relaunch).
+        guard let destination = path(item.file) else {
+            fail(item, message: "\(item.url): the app's folder is not known")
+            return
+        }
+        let files = FileManager.default
+        try? files.removeItem(at: destination.appendingPathExtension("resume"))
         do {
-            try FileManager.default.moveItem(at: location, to: held)
+            try files.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? files.removeItem(at: destination)
+            try files.moveItem(at: location, to: destination)
         } catch {
             fail(item, message: HTTPStatus.message(HTTPStatus.failure(url: item.url, error)))
             return
         }
-        withCore { [self] core in
-            guard let destination = path(item.file) else { return }
-            let resume = destination.appendingPathExtension("resume")
-            try? FileManager.default.removeItem(at: resume)
+        withCore { [self] core in install(item, at: destination, core: core) }
+    }
+
+    /// Hand the finished file of `item` to the core, unless Cancel stopped its download.
+    private func install(_ item: Item, at destination: URL, core: MobileApp) {
+        handOff.lock()
+        defer { handOff.unlock() }
+        if locked({ cancelledFiles.contains(item.file) }) {
             try? FileManager.default.removeItem(at: destination)
-            do {
-                try FileManager.default.moveItem(at: held, to: destination)
-            } catch {
-                try? FileManager.default.removeItem(at: held)
-                try? core.downloadFailed(
-                    resourceId: item.id, origin: Self.origin(item.origin),
-                    message: HTTPStatus.message(HTTPStatus.failure(url: item.url, error)))
-                return
-            }
-            do {
-                _ = try core.installDownloaded(
-                    resourceId: item.id, path: destination.path, origin: Self.origin(item.origin))
-            } catch {
-                Self.log.error("install \(item.id, privacy: .public): \(AppCore.message(error), privacy: .public)")
-            }
+            return
+        }
+        do {
+            _ = try core.installDownloaded(
+                resourceId: item.id, path: destination.path, origin: Self.origin(item.origin))
+        } catch {
+            Self.log.error("install \(item.id, privacy: .public): \(AppCore.message(error), privacy: .public)")
         }
     }
 
@@ -273,8 +325,21 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        let id = session.configuration.identifier ?? ""
-        let completion: (@Sendable () -> Void)? = locked { completions.removeValue(forKey: id) }
+        finishedEvents(for: session.configuration.identifier ?? "")
+    }
+
+    /// Session `identifier`'s events are all delivered: the system's completion handler is
+    /// called (it may suspend the app then), or, while what they brought waits for the core,
+    /// held until `attach` has handed it in.
+    func finishedEvents(for identifier: String) {
+        let completion: (@Sendable () -> Void)? = locked {
+            guard let completion = completions.removeValue(forKey: identifier) else { return nil }
+            if core == nil && !waiting.isEmpty {
+                held.append(completion)
+                return nil
+            }
+            return completion
+        }
         if let completion { DispatchQueue.main.async { completion() } }
     }
 
@@ -323,7 +388,8 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         }
     }
 
-    private func relative(_ path: String) -> String? {
+    /// `path` relative to the app folder, when it is in it.
+    func relative(_ path: String) -> String? {
         guard let folder = locked({ folder }) else { return nil }
         let root = folder.standardizedFileURL.path + "/"
         let file = URL(fileURLWithPath: path).standardizedFileURL.path
@@ -349,7 +415,7 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         name == "open" ? .open : .starter
     }
 
-    private static func encode(_ item: Item) -> String {
+    static func encode(_ item: Item) -> String {
         (try? JSONEncoder().encode(item)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 

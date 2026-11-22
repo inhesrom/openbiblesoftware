@@ -22,7 +22,7 @@ struct StudySetOfferSheet: View {
                     }
                     if let status = offer.status {
                         HStack(spacing: 8) {
-                            if offer.retry == nil { ProgressView() }
+                            if offer.lookingUp { ProgressView() }
                             Text(status)
                         }
                         .accessibilityElement(children: .combine)

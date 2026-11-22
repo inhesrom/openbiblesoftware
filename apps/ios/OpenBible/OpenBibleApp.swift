@@ -44,7 +44,8 @@ struct OpenBibleApp: App {
             ReaderScreen(model: reader, importer: importer, library: library)
                 .task {
                     reader.onImports = { [importer] in importer.refresh() }
-                    reader.onDownloads = { [library] in library.refresh() }
+                    reader.onLibrary = { [library] in library.libraryChanged() }
+                    reader.onDownloads = { [library] in library.downloadsChanged() }
                     importer.onOpen = { [reader] id in reader.open(bible: id) }
                     await reader.start()
                     importer.coreReady()

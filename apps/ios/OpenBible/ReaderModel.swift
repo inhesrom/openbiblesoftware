@@ -39,7 +39,9 @@ final class ReaderModel {
     private(set) var benchResult = ""
     /// An Import's report changed (`ImportModel` shows it).
     @ObservationIgnored var onImports: (() -> Void)?
-    /// The Library, a download or the Study set offer changed (`LibraryModel` shows them).
+    /// The library changed (`LibraryModel` shows it, Storage too).
+    @ObservationIgnored var onLibrary: (() -> Void)?
+    /// A download or the Study set offer changed (`LibraryModel` shows them).
     @ObservationIgnored var onDownloads: (() -> Void)?
     /// The measurements strip (frames dropped, tile times) under the text.
     var showMeasurements = UserDefaults.standard.bool(forKey: "OBSMeasurements")
@@ -95,7 +97,7 @@ final class ReaderModel {
             view?.refresh()
         case .library:
             if let core { refreshChoices(core) }
-            onDownloads?()
+            onLibrary?()
         case .downloads:
             onDownloads?()
         case .message(let text):
