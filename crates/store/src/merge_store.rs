@@ -162,6 +162,16 @@ impl MergeTx<'_> {
         }
     }
 
+    /// Whether a held write of the device `older` is kept beside a newer held write of the
+    /// same row by `newer`: `older` is one of this device's ids and `newer` neither is that id
+    /// nor came after it in this device's history ([`MergeTx::is_own_after`]). A newer write
+    /// of its own history replaces it by last writer wins with nothing for the own checks to
+    /// keep; so, after a copy, the original's writes under the id it kept are kept one per
+    /// row, not one per write.
+    fn held_beside(&self, older: &str, newer: &str) -> bool {
+        self.is_own(older) && !self.is_own_after(newer, older)
+    }
+
     /// The name the user gave this device (empty until then).
     pub fn device_name(&self) -> Result<String, StoreError> {
         self.tx
@@ -481,22 +491,24 @@ impl MergeTx<'_> {
     /// older by last writer wins once it applies, so a row a later app keeps writing holds one
     /// op, not one per write. A held delete is always kept (it notes its tombstone when it
     /// applies), and so is a write whose op line lacked fields (the older write may hold them),
-    /// and so is this device's own write (by any of its ids): applied before the newer one, in
-    /// clock order, it is what the newer replaces, so the own checks keep it (D6's "Name (2)";
-    /// a list item held while its list was damaged was lost when the newer dropped it).
+    /// and so is an older write of this device's own that the newer did not come after in its
+    /// own history ([`MergeTx::held_beside`]): applied before the newer one, in clock order,
+    /// it is what the newer replaces, so the own checks keep it (D6's "Name (2)"; a list item
+    /// held while its list was damaged was lost when another device's newer write dropped it).
     pub fn hold(&mut self, op: &HeldOp) -> Result<(), StoreError> {
         let (kind, id) = held_key(&op.change);
         if op.change.after.is_some() && op.absent.is_empty() {
-            let own = self.is_own(&op.clock.device_id);
+            let writer = &op.clock.device_id;
             for other in read_held_of(self.tx, kind, &id)? {
                 if other.change.after.is_none() || other.clock == op.clock {
                     continue;
                 }
+                let by = &other.clock.device_id;
                 if other.clock > op.clock {
-                    if other.absent.is_empty() && !own {
+                    if other.absent.is_empty() && !self.held_beside(writer, by) {
                         return Ok(());
                     }
-                } else if !self.is_own(&other.clock.device_id) {
+                } else if !self.held_beside(by, writer) {
                     self.unhold(&other)?;
                 }
             }
