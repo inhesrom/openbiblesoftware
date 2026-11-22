@@ -44,10 +44,11 @@ enum Phase {
     Starting,
 }
 
-/// How the last sync ended.
+/// How the last sync ended (none syncs on wasm).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 enum LastSync {
-    /// It synced, at this time (Unix milliseconds).
+    /// It synced (when: this device's `device.json`).
     Synced,
     /// A newer app set up the Sync folder (rule 6).
     FolderNewer,
@@ -400,6 +401,7 @@ impl Session {
     /// Synced data changed under the Session (a merge): reload what it keeps of it, as at
     /// launch, and have views and Notes searches read it again. Preferences that stay on the
     /// device are not touched.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) fn reload_synced_data(&mut self) {
         if let Some(order) = (self.user.as_ref()).and_then(|u| u.preferred_order().ok()) {
             self.library.set_preferred_order(order);
