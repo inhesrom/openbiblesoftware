@@ -84,7 +84,9 @@ behaves as before (the gallery's goldens are unchanged).
   "(this device)"; a restored or copied device lists its old id as another device), the name.
   Help → Keyboard shortcuts lists Sync now only once a folder is chosen.
 - **Stop syncing** (`sync.stop {confirm: true}`, asked first; while a sync runs it waits for
-  it, "Syncing…" meanwhile, as choosing a folder does) gives the device a new id
+  it, "Syncing…" meanwhile, as choosing a folder does, but at most `STOP_SYNC_WAIT`, 10 s:
+  then the sync is abandoned, writing nothing more, [below](#off-the-ui-thread-s29b), and it
+  stops) gives the device a new id
   (`take_new_device_id`): it records no more ops, its outbox is emptied, a restore's question
   is dropped, its files stay in the folder; then it forgets the folder (in that order, so a
   failure leaves it syncing rather than recording into an outbox nothing reads). Choosing a folder again joins as
@@ -95,8 +97,12 @@ behaves as before (the gallery's goldens are unchanged).
   already running, while the restore **waits on the UI thread** (a restore blocks its frame
   anyway; supervisor decision for S29b), for both at most `RESTORE_SYNC_WAIT` (30 s): then the
   restore goes ahead, the sync left running is abandoned (it writes nothing more, [below](#off-the-ui-thread-s29b)),
-  and Settings → Sync's Details say "The sync before the restore did not finish in time…".
-  The restore puts this device's `sync.folder` back
+  and Settings → Sync's Details say "The sync before the restore did not finish in time…"
+  (`texts::RESTORE_SYNC_UNFINISHED`; when the restore then fails, nothing replaced,
+  `texts::RESTORE_FAILED_SYNC_UNFINISHED`). Choose folder or Stop syncing waiting for a sync
+  when the restore starts applies: before it when that sync ends in the wait (a device that
+  stopped runs no sync first), after it when the restore abandons that sync. The restore puts
+  this device's `sync.folder` (as those left it) back
   after it, whatever the Backup held ([`backups.md`](backups.md#restore)), so a restore never
   starts, stops or moves sync. On a device that was syncing the prompt "Restored from a
   Backup" then shows over the window until **Catch up** (the default, Enter) or **Replace**
@@ -141,7 +147,22 @@ what was merged; a worker that stopped without an outcome (it panicked) is a fai
   outbox rows the sync reserved before them are its; theirs go in the next file) and are synced
   with the next sync, due 30 seconds after the edit as any; a merge transaction reads the rows
   as they are, so an edit committed meanwhile is a local edit to it (last writer wins, a Sync
-  conflict's copy of Note text). A Note editor's save keeps its base-text rule.
+  conflict's copy of Note text). An edit made during a sync is never lost. It is refused, to be
+  made again, only when the same row changed on another device and the merge wrote that
+  meanwhile (the edit's `before`, read outside its transaction, is not the row then:
+  `StoreError::Conflict`); the Note editor turns that case into a Sync conflict's copy (its
+  base-text rule), and a one-shot edit (a Notebook renamed, a Highlight style, a list
+  preference) says it failed. Waiting for the worker's transaction widens that window, which
+  was there before S29b. An edit while a snapshot is due makes it not due
+  ([snapshots](#snapshots)).
+- **Backups during a sync.** SQLite's backup API, which Back up now and the Before-update and
+  Safety backups use (`backup_to`), as the snapshot's copy does (`copy_in_memory`), starts its
+  copy again whenever the other connection commits. A Backup taken while a merge writes
+  therefore restarts at each of the worker's commits and finishes, on the UI thread, once the
+  merge's writes pause; the worker's snapshot copy restarts at each edit the same way.
+- **Stop syncing abandons a sync** still running after `STOP_SYNC_WAIT` (10 s; a folder call
+  that does not come back, such as a hung network disk or an iCloud download), as a restore
+  does, then stops; that worker's thread ends whenever its call returns.
 - **An abandoned sync** (a restore that did not wait for it, above) has its writes refused:
   its connection's commit hook rolls back every transaction from then (a commit let through
   holds the write lock the restore needs, so it is done before the restore copies), and its
@@ -154,7 +175,13 @@ what was merged; a worker that stopped without an outcome (it panicked) is a fai
   1.4–4.7 ms (0.2–0.4 ms with no sync running); a new device joining that folder, edits at most
   4–8 ms; a new device joining a library of 10,000 Notes, the result's frame 4.5–7.6 ms, but
   **an edit made during it waits 0.5–0.9 s** for the one merge transaction (10,000 ops in one
-  op file, or the snapshot: [for later steps](#for-later-steps)).
+  op file, or the snapshot: [for later steps](#for-later-steps)). The frame after the
+  result's, where the views read again what moved `annotations_revision` (`MarkCache`'s
+  Annotations in text, Notebooks and Highlight styles, the Notes Tool's cards, Needs
+  attention's count), measured from S29b's review (three more runs): 0.9–1.2 ms after the
+  1,000-file catch-up, **17–24 ms after a 10,000-Note join** (the same reads as after any
+  Annotation edit there; [for later steps](#for-later-steps)); in those runs the 10,000-Note
+  join's edits waited 0.74–0.85 s.
 - **The worker needs only `SyncFolder: Send + Sync`** (as the trait is), made on its thread
   (`sync_worker::FolderMaker`, crate-private; the desktop's is `FsSyncFolder` at the chosen
   path, checked to be there).
@@ -621,7 +648,10 @@ freed page keeps deleted data, and marked as a rollback-journal file):
 | `sync_held`: ops of files it covers that it could not apply (a joiner starting from it skips those files, so they would be lost otherwise; S28c corrected S28b-2's plan to leave it out) | |
 
 A device writes one **only with an empty outbox**, right after `write_pending_ops`, so it
-covers exactly its own op files up to `seq`. Its first is the join's (`seq` 0 when it joins
+covers exactly its own op files up to `seq`. An edit made while the sync runs (S29b) that puts
+an op in the outbox makes it not due: `write_snapshot_unless_edited` writes none then (it
+checks again after its copy, which may hold the edit), and the sync goes on; one is due again
+after the next op file. Its first is the join's (`seq` 0 when it joins
 with nothing written); later ones when `snapshot_due` says (`SnapshotPolicy`: 100 own op files
 since its newest, or the first of them 30 days old), and whenever its newest in the folder is
 not whole to `read_snapshot` (partly written, changed, damaged), so a device writing few ops or
@@ -763,7 +793,8 @@ wrote its files (`sync_device.rs`, migration 17):
 2. A restore waiting for the user's choice stops here (`NeedsRestoreChoice`).
 3. A copied database takes a new id, before it joins ([above](#restores-and-copies-new-device-ids)).
 4. A device not recording ops joins ([above](#joining)).
-5. Its pending ops are written (`write_pending_ops`), then its snapshot if one is due.
+5. Its pending ops are written (`write_pending_ops`), then its snapshot if one is due (none
+   when an edit made meanwhile has an op in the outbox: [snapshots](#snapshots)).
 6. `merge_folder`: held ops tried again, snapshots, every other device's op files, held ops
    again. What the merge recorded (copies, renames, demotions, restored parents, items kept or
    renamed) is in the outbox and is written at once.
@@ -978,8 +1009,13 @@ Mobile app has no period (`at_launch(false)`).
   wait for the sync running, "Syncing…" meanwhile; a worker that panics is a failed sync and
   the next syncs; a restore whose sync first is held goes ahead after its wait, says so, and
   that sync, let go, changes neither the restored data nor the folder (failing without both
-  the commit hook and the folder's refusal). `measure_syncs_off_the_ui_thread` (ignored)
-  measures.
+  the commit hook and the folder's refusal). From S29b's review: Stop syncing or Choose
+  folder waiting for a held sync when a restore starts stays applied, whether the sync ends in
+  the restore's wait or is abandoned; Stop syncing abandons a held sync after its wait and
+  stops, the sync let go writing nothing; an edit made while `snapshot_due` reads the device's
+  snapshot skips the snapshot, not the sync (failing before with "a snapshot is written only
+  once every op is in an op file"); a worker keeps a fixed clock of the Session's thread.
+  `measure_syncs_off_the_ui_thread` (ignored) measures, the frame after the result's too.
 - `crates/store/tests/sync_clock_db.rs` (S29b): two connections on two threads, the wall
   clock standing still, hand out 400 clocks once each, increasing on each, all in the outbox,
   the first's next passing a clock the second observed; a new id taken on the second is the
@@ -1003,10 +1039,17 @@ Mobile app has no period (`at_launch(false)`).
 
 - **Split the largest merge transactions** (found by S29b): a snapshot, or an op file of
   thousands of ops (a device that made 10,000 changes between syncs), merges in one
-  transaction, about 550 ms for 10,000 Notes on the owner's Mac; an edit the user makes
-  meanwhile waits for it on the UI thread. Merging them in bounded transactions keeps edits
-  under a frame, but touches the merge's all-or-none contract (`merge_snapshot`,
-  `merge_op_file` with its `applied_up_to`).
+  transaction, 0.5–0.9 s for 10,000 Notes on the owner's Mac; an edit the user makes
+  meanwhile waits for it on the UI thread. Past `BUSY_TIMEOUT` (10 s) the edit is refused
+  ("database is locked") rather than waiting longer: a larger library or an iPhone could get
+  there, and the restore's copy into the live database waits up to that long for an abandoned
+  worker's transaction still running. Merging them in bounded transactions keeps edits under a
+  frame and far from that limit, but touches the merge's all-or-none contract
+  (`merge_snapshot`, `merge_op_file` with its `applied_up_to`).
+- **The views' reads after a large merge** (found by S29b's review): the frame after a sync
+  that merged anything re-reads every Annotation in text and the Notes Tool's cards, 17–24 ms
+  at 10,000 Notes (dev profile), as after any Annotation edit; reading only what changed would
+  keep it under a frame.
 - **Known issue (found by S29b, there before it):** the merge property test fails at
   `OBS_MERGE_SEED=20266453` (case 0 of a run from that seed; case 5331 of a 10k run from
   20261122): "the Collection {"n":5} added at 01a3189b1d7d-0000-… was lost". It fails the same
