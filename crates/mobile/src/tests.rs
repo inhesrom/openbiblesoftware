@@ -295,6 +295,30 @@ fn another_bible_in_a_reader_switches_at_the_same_place_and_back_returns() {
 }
 
 #[test]
+fn a_reader_switched_or_replaced_answers_nothing_before_its_next_frame() {
+    let (_root, mut app) = app("stale-window");
+    let r = bsb(&mut app);
+    // Down John 1, where the BSB's blocks are past the WEB excerpt's last.
+    app.navigate(r, "John 1:23").unwrap();
+    let f = frame(&mut app, r, 0.0);
+    let y = f.position + 5.0;
+    assert!(!app.accessibility_items(r).unwrap().is_empty());
+    app.open(r, "web", None).unwrap();
+    assert_eq!(app.hit(r, 40.0, y).unwrap(), None);
+    assert_eq!(app.closest_offset(r, 40.0, y).unwrap(), 0);
+    assert!(app.accessibility_items(r).unwrap().is_empty());
+    assert!(!frame(&mut app, r, 0.0).tiles.is_empty());
+    assert!(!app.accessibility_items(r).unwrap().is_empty());
+    // A new revision of the Resource a reader shows (a Starter update) is another document.
+    app.session
+        .workspace
+        .push_effect(obs_engine::Effect::Replaced("web".into()));
+    app.apply_effects();
+    assert_eq!(app.hit(r, 40.0, y).unwrap(), None);
+    assert!(app.accessibility_items(r).unwrap().is_empty());
+}
+
+#[test]
 fn a_lexicon_reader_goes_to_entry_keys() {
     let (_root, mut app) = app("lexicon");
     app.open(R0, "lexicon", None).unwrap();

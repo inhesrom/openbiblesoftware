@@ -272,9 +272,11 @@ impl MobileApp {
         match self.load_view(tab) {
             Ok(view) => {
                 self.readers[i].view = view;
-                self.readers[i].frame.moved = true;
+                // The old window's blocks are another document's: until the next frame lays
+                // this one out, the text calls find no text (a new FrameState is `moved`).
+                self.readers[i].frame = crate::frame::FrameState::new();
                 self.readers[i].notes_revision = None;
-                // Its blocks are another document's: no tile key of before may be reused.
+                // Nor may any tile key of before be reused.
                 self.new_epoch();
             }
             Err(e) => self.events.message(e.to_string()),
