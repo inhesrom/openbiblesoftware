@@ -1249,7 +1249,7 @@ fn the_merge_cursor_is_committed_per_batch_carried_by_a_backup_and_emptied_by_sn
         snapshot: None,
         ops: 2,
     };
-    assert_eq!(db.merge_cursors().unwrap(), [cursor.clone()]);
+    assert_eq!(db.merge_cursors().unwrap(), std::slice::from_ref(&cursor));
     assert!(db.has_partial_merge().unwrap());
     assert!(
         batch(0, BatchEnd::Done).is_err(),
