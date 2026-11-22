@@ -216,7 +216,10 @@ fn assert_restored_as_held(db: &UserStore, held: &Tables) {
     assert_eq!(restored["op_outbox"], Vec::<String>::new());
     let ids = db.own_device_ids().unwrap();
     for row in held.get("device").into_iter().flatten() {
-        assert!(!row.contains(&ids[0]), "a restore gives the device a new id");
+        assert!(
+            !row.contains(&ids[0]),
+            "a restore gives the device a new id"
+        );
         assert!(
             ids[1..].iter().any(|id| row.contains(id.as_str())),
             "the Backup's id is a former one: {ids:?} {row}"

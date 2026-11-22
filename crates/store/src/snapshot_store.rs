@@ -152,7 +152,10 @@ pub(crate) fn synced_row_keys(c: &Connection) -> Result<Vec<RowKey>, StoreError>
             "SELECT id FROM highlight_styles ORDER BY id",
             RowKey::HighlightStyle,
         ),
-        ("SELECT uid FROM reading_plan ORDER BY uid", RowKey::ReadingPlan),
+        (
+            "SELECT uid FROM reading_plan ORDER BY uid",
+            RowKey::ReadingPlan,
+        ),
         ("SELECT id FROM annotations ORDER BY id", RowKey::Annotation),
         ("SELECT uid FROM favorite ORDER BY uid", RowKey::Favorite),
         ("SELECT id FROM layout ORDER BY id", RowKey::Layout),
@@ -174,10 +177,7 @@ pub(crate) fn synced_row_keys(c: &Connection) -> Result<Vec<RowKey>, StoreError>
     keys.push(RowKey::PreferredOrder);
     let preferences: Vec<(String, String)> = c
         .prepare("SELECT key, value FROM preference ORDER BY key")
-        .and_then(|mut s| {
-            s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect()
-        })
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
         .map_err(sql)?;
     for (key, value) in preferences {
         if !is_synced_preference(&key) {
@@ -308,10 +308,7 @@ impl UserStore {
         };
         let applied: Vec<(String, i64)> = c
             .prepare("SELECT device_id, seq FROM applied_up_to ORDER BY device_id")
-            .and_then(|mut s| {
-                s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                    .collect()
-            })
+            .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
             .map_err(sql)?;
         for (device, seq) in applied {
             out.applied
@@ -589,9 +586,12 @@ impl UserStore {
     /// since on any device) is left alone. Another device's own Note text or list item it
     /// replaces is kept there as a Sync conflict's copy or "Name (2)" (its merge never saw
     /// the snapshot's version replace it). A device whose clock runs ahead of this one's can
-    /// still win with an edit stamped later.
+    /// still win with an edit stamped later. The restore's choice no longer waits.
     pub fn restamp_for_replace(&self) -> Result<(), StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        // The user chose: the restore waits no more, in the same step.
+        tx.execute("UPDATE device SET restore_choice = 0 WHERE id = 1", [])
+            .map_err(sql)?;
         let clock = self.next_clock(&tx)?.encode()?;
         for table in SYNCED_TABLES {
             if *table == "preference" {
@@ -615,10 +615,7 @@ impl UserStore {
         let mut lists = ListItems::default();
         let tombstones: Vec<(String, String)> = tx
             .prepare("SELECT row_table, row_id FROM tombstone")
-            .and_then(|mut s| {
-                s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                    .collect()
-            })
+            .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
             .map_err(sql)?;
         for (kind, id) in tombstones {
             let here = match row_key_of(&kind, &id) {
@@ -678,9 +675,6 @@ impl MergeTx<'_> {
 /// Two columns (text, optional text) of every row `query` returns.
 fn texts2(c: &Connection, query: &str) -> Result<Vec<(String, Option<String>)>, StoreError> {
     c.prepare(query)
-        .and_then(|mut s| {
-            s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect()
-        })
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
         .map_err(sql)
 }

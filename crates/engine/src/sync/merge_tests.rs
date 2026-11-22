@@ -30,6 +30,7 @@ use obs_store::{
 use super::folder::{MemSyncFolder, SyncFolder};
 use super::merge::{MergeReport, Outcome, merge_folder};
 use super::ops::{Op, encode_op_file, op_file_path, ops_dir, write_pending_ops};
+use super::snapshot::{SnapshotFile, newest_snapshot, put_snapshot, snapshot_file};
 
 pub(super) struct Dir(pub(super) PathBuf);
 
@@ -48,34 +49,47 @@ impl Drop for Dir {
     }
 }
 
-/// A Synced device: its User database, recording ops, its default Notebook in its ops (as
-/// joining with a snapshot would put it, plan S28c).
+/// A Synced device: its User database, joined (it records ops), with the snapshot it took
+/// as it joined, which its first push writes before its op files (plan S28c): it brings its
+/// default Notebook to the others.
 struct Device {
     user: UserStore,
     id: String,
+    join: SnapshotFile,
 }
 
 fn device(dir: &Dir, name: &str) -> Device {
     let (user, _) = UserStore::open(&dir.0.join(format!("{name}.db"))).unwrap();
-    user.start_recording_ops().unwrap();
-    let default = user.notebooks().unwrap().remove(0);
-    assert!(default.is_default);
-    user.apply_changes(&[Change::update(
-        Row::Notebook(default.clone()),
-        Row::Notebook(Notebook {
-            modified_at: default.modified_at + 1,
-            ..default
-        }),
-    )])
-    .unwrap();
+    assert!(user.notebooks().unwrap()[0].is_default);
+    user.join_sync().unwrap();
     let id = user.device_id().unwrap();
-    Device { user, id }
+    let join = snapshot_file(&user).unwrap();
+    Device { user, id, join }
+}
+
+/// Write `user`'s join snapshot `join` to `folder` when it has none there, then its pending
+/// ops (a device's op files are merged only after its first snapshot).
+pub(super) fn push_ops(user: &UserStore, join: &SnapshotFile, folder: &dyn SyncFolder) -> Vec<u64> {
+    let id = user.device_id().unwrap();
+    if newest_snapshot(folder, &id).unwrap().is_none() {
+        put_snapshot(folder, &id, join).unwrap();
+    }
+    write_pending_ops(user, folder).unwrap()
+}
+
+/// Note that `user` has met Synced device `device` (merged its join snapshot, holding nothing
+/// new to it), so its hand-written op files merge.
+fn meet(user: &UserStore, device: &str) {
+    user.execute_unchecked(&format!(
+        "INSERT INTO applied_up_to (device_id, seq) VALUES ('{device}', 0)"
+    ))
+    .unwrap();
 }
 
 impl Device {
     /// Write its pending ops to `folder`, then merge every other device's there.
     fn sync(&self, folder: &dyn SyncFolder) -> MergeReport {
-        write_pending_ops(&self.user, folder).unwrap();
+        push_ops(&self.user, &self.join, folder);
         merge_folder(&self.user, folder).unwrap()
     }
 
@@ -85,8 +99,9 @@ impl Device {
         for _ in 0..20 {
             let mut busy = false;
             for d in devices {
-                busy |= !write_pending_ops(&d.user, folder).unwrap().is_empty();
-                busy |= !merge_folder(&d.user, folder).unwrap().merged.is_empty();
+                busy |= !push_ops(&d.user, &d.join, folder).is_empty();
+                let report = merge_folder(&d.user, folder).unwrap();
+                busy |= !report.merged.is_empty() || !report.snapshots.is_empty();
             }
             if !busy {
                 return;
@@ -95,9 +110,9 @@ impl Device {
         panic!("the devices did not settle");
     }
 
-    /// Write its pending ops only.
+    /// Write its pending ops only (and its first snapshot).
     fn push(&self, folder: &dyn SyncFolder) {
-        write_pending_ops(&self.user, folder).unwrap();
+        push_ops(&self.user, &self.join, folder);
     }
 
     fn row(&self, key: &RowKey) -> Option<Row> {
@@ -146,6 +161,12 @@ fn relabel(f: &SyncedFavorite, label: &str) -> SyncedFavorite {
 /// others are still arriving.
 pub(super) fn view(from: &MemSyncFolder, files: &[(&str, u64)]) -> MemSyncFolder {
     let to = MemSyncFolder::new();
+    // Every snapshot is there.
+    for path in from.paths() {
+        if path.contains("/snapshots/") {
+            to.put(&path, &from.get(&path).unwrap());
+        }
+    }
     for (device, seq) in files {
         let path = op_file_path(device, *seq);
         to.put(&path, &from.get(&path).unwrap());
@@ -229,6 +250,7 @@ fn every_merged_clock_is_observed_so_a_later_edit_here_wins() {
         &op_file_path(&ahead, 1),
         &encode_op_file(std::slice::from_ref(&op)).unwrap(),
     );
+    meet(&b.user, &ahead);
     let report = b.sync(&cloud);
     assert_eq!(report.not_observed, 0);
     let key = Row::Favorite(f.clone()).key();
@@ -280,6 +302,8 @@ fn a_clock_more_than_a_day_ahead_is_not_observed_but_its_row_merges() {
         ])
         .unwrap(),
     );
+    meet(&b.user, &ahead);
+    meet(&c.user, &ahead);
     let report = b.sync(&cloud);
     assert_eq!(report.not_observed, 2);
     let key = Row::Favorite(f.clone()).key();
@@ -498,6 +522,7 @@ fn fields_an_op_does_not_carry_are_left_as_they_are() {
         line[side].as_object_mut().unwrap().remove("show_in_text");
     }
     cloud.put(&op_file_path(&older, 1), &raw_op_file(&[line]));
+    meet(&b.user, &older);
     b.sync(&cloud);
     let key = Row::Notebook(nb.clone()).key();
     assert_eq!(
@@ -889,6 +914,7 @@ fn an_older_apps_op_without_conflict_of_keeps_it_here() {
         line[side].as_object_mut().unwrap().remove("conflict_of");
     }
     cloud.put(&op_file_path(&older, 1), &raw_op_file(&[line]));
+    meet(&b.user, &older);
     b.sync(&cloud);
     assert_eq!(annotation_of(&b, &copy.id), Some(edited), "still a copy");
 }
@@ -1201,6 +1227,9 @@ fn a_parents_tombstone_keeps_the_same_row_in_every_order_of_its_deletes() {
     let mut dumps = Vec::new();
     for order in [[0, 1, 2], [2, 1, 0], [1, 0, 2]] {
         let d = device(&dir, &format!("d{}{}{}", order[0], order[1], order[2]));
+        for device in &files {
+            meet(&d.user, device);
+        }
         for i in order {
             merge_folder(&d.user, &view(&cloud, &[(files[i].as_str(), 1)])).unwrap();
         }
@@ -1558,6 +1587,8 @@ fn a_damaged_whole_list_value_holds_later_items_on_every_device_until_it_is_in_s
         &op_file_path(&older, 1),
         &encode_op_file(std::slice::from_ref(&fixed)).unwrap(),
     );
+    meet(&a.user, &older);
+    meet(&b.user, &older);
     Device::settle(&[&a, &b], &cloud);
     let on_top = r#"[{"name":"Fixed","ids":[]},{"name":"Hebrew","ids":["wlc"]}]"#;
     for d in [&a, &b] {
@@ -1640,6 +1671,7 @@ fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
         ])
         .unwrap(),
     );
+    meet(&b.user, &later);
     let report = b.sync(&cloud);
     assert!(report.waiting.is_empty(), "{report:?}");
     assert_eq!(report.merged, [(later.clone(), 1)]);
@@ -1700,6 +1732,7 @@ fn of_a_rows_held_writes_only_the_newest_is_kept() {
     let b = device(&dir, "b");
     let cloud = MemSyncFolder::new();
     cloud.put(&op_file_path(&later, 1), &encode_op_file(&ops).unwrap());
+    meet(&b.user, &later);
     let report = b.sync(&cloud);
     // The delete of a row not here is only noted in its tombstone.
     assert_eq!(report.outcomes.get(&Outcome::Held), Some(&3), "{report:?}");

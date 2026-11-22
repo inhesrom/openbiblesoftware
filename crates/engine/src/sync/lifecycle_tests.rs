@@ -1,0 +1,709 @@
+//! The lifecycle rules (ADR 0022 rules 5–8, plan S28c), one test per rule: two devices on one
+//! disk converge end to end through `sync_now`, and a third joins late from their snapshots;
+//! a late joiner from snapshots alone holds what merging needs (deleted parents' rows, list
+//! bases, Sync conflicts' copies, held ops; what a snapshot never holds is
+//! `obs-store`'s `tests/snapshot_db.rs`); a device's op files wait for
+//! its first snapshot; trimming deletes only own files a snapshot covers, old enough and
+//! merged by every device seen lately, and a device silent longer catches up from the
+//! snapshot; a newer snapshot or folder is left alone; a copied database takes a new id; a
+//! restore gives a new id, waits for the user's choice on a syncing device (not on another),
+//! catches up, or replaces what is in the folder so a third device converges to the restored
+//! data; and a text written under the old id still survives a remote edit that never saw it.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use obs_store::annotation::new_id;
+use obs_store::{Annotation, Change, Content, Notebook, Row, RowKey, UserStore};
+
+use super::folder::{FsSyncFolder, MemSyncFolder, SyncFolder};
+use super::lifecycle::{
+    RestoreChoice, SyncOptions, SyncReport, SyncState, needs_restore_choice, restore_choice,
+    sync_now,
+};
+use super::merge_tests::Dir;
+use super::ops::{OpsStop, op_file_path, op_file_seq, ops_dir};
+use super::snapshot::{SnapshotPolicy, newest_snapshot, snapshots_dir, write_snapshot};
+use super::{DEVICES_DIR, SYNC_JSON};
+
+/// A device's User database in `dir`, named `name`.
+fn open(dir: &Dir, name: &str) -> UserStore {
+    UserStore::open(&dir.0.join(name).join("user.db"))
+        .unwrap()
+        .0
+}
+
+fn options() -> SyncOptions {
+    SyncOptions::new("macos")
+}
+
+/// Sync `user` now, expecting it to sync.
+fn sync(user: &UserStore, folder: &dyn SyncFolder) -> SyncReport {
+    sync_with(user, folder, &options())
+}
+
+fn sync_with(user: &UserStore, folder: &dyn SyncFolder, options: &SyncOptions) -> SyncReport {
+    match sync_now(user, folder, options).unwrap() {
+        SyncState::Synced(report) => *report,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Sync every device until nothing more is written or merged.
+fn settle(devices: &[&UserStore], folder: &dyn SyncFolder) {
+    for _ in 0..20 {
+        let mut busy = false;
+        for user in devices {
+            let report = sync(user, folder);
+            busy |= !report.written.is_empty()
+                || !report.merge.merged.is_empty()
+                || !report.merge.snapshots.is_empty();
+        }
+        if !busy {
+            return;
+        }
+    }
+    panic!("the devices did not settle");
+}
+
+fn converged(devices: &[&UserStore]) {
+    let first = devices[0].synced_dump().unwrap();
+    for user in &devices[1..] {
+        assert_eq!(user.synced_dump().unwrap(), first);
+    }
+}
+
+fn notebook(name: &str) -> Notebook {
+    Notebook {
+        id: new_id(),
+        name: name.into(),
+        is_default: false,
+        show_in_text: true,
+        created_at: 1,
+        modified_at: 1,
+    }
+}
+
+fn note(notebook: &str, body: &str) -> Annotation {
+    Annotation {
+        id: new_id(),
+        notebook_id: notebook.into(),
+        content: Content::Note { body: body.into() },
+        anchor: None,
+        created_at: 1,
+        modified_at: 1,
+        conflict_of: None,
+    }
+}
+
+fn with_text(a: &Annotation, body: &str) -> Annotation {
+    Annotation {
+        content: Content::Note { body: body.into() },
+        modified_at: a.modified_at + 1,
+        ..a.clone()
+    }
+}
+
+fn add(user: &UserStore, row: Row) {
+    user.apply_changes(&[Change::insert(row)]).unwrap();
+}
+
+fn default_notebook(user: &UserStore) -> String {
+    user.notebooks().unwrap().remove(0).id
+}
+
+fn names(user: &UserStore) -> Vec<String> {
+    let mut names: Vec<String> = user
+        .notebooks()
+        .unwrap()
+        .into_iter()
+        .map(|n| n.name)
+        .collect();
+    names.sort();
+    names
+}
+
+fn texts(user: &UserStore) -> Vec<String> {
+    let mut texts: Vec<String> = user
+        .annotations(None)
+        .unwrap()
+        .into_iter()
+        .map(|a| a.body().to_string())
+        .collect();
+    texts.sort();
+    texts
+}
+
+#[test]
+fn two_devices_on_one_disk_converge_end_to_end_and_a_third_joins_late_from_snapshots() {
+    let dir = Dir::new("end-to-end");
+    let folder = FsSyncFolder::new(dir.0.join("cloud"));
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    // Made before either syncs: only their join snapshots bring these to the other.
+    add(&a, Row::Notebook(notebook("Romans")));
+    add(&b, Row::Notebook(notebook("Greek")));
+    let report = sync(&a, &folder);
+    assert!(report.joined && report.snapshot == Some(0), "{report:?}");
+    assert!(a.records_ops().unwrap());
+    sync(&b, &folder);
+    let nb = a.notebooks().unwrap().remove(0).id;
+    add(&a, Row::Annotation(note(&nb, "by A")));
+    add(&b, Row::Notebook(notebook("Hebrew")));
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    for name in ["Romans", "Greek", "Hebrew"] {
+        assert!(names(&a).contains(&name.to_string()), "{name}");
+    }
+    assert!(folder.root().join(SYNC_JSON).is_file());
+    for user in [&a, &b] {
+        let id = user.device_id().unwrap();
+        assert!(newest_snapshot(&folder, &id).unwrap().is_some());
+        assert!(
+            folder
+                .read(&super::device_json_path(&id))
+                .is_ok_and(|j| String::from_utf8_lossy(&j).contains("\"synced_at\""))
+        );
+    }
+
+    // C joins late: it merges A's and B's newest snapshots, then the op files after them.
+    let c = open(&dir, "c");
+    add(&c, Row::Notebook(notebook("Psalms")));
+    let report = sync(&c, &folder);
+    assert_eq!(report.merge.snapshots.len(), 2, "{report:?}");
+    settle(&[&a, &b, &c], &folder);
+    converged(&[&a, &b, &c]);
+    assert!(names(&a).contains(&"Psalms".to_string()));
+    assert_eq!(texts(&c), ["by A"]);
+}
+
+#[test]
+fn a_late_joiner_from_snapshots_holds_what_the_others_hold_deleted_parents_bases_copies_and_held_ops()
+ {
+    let dir = Dir::new("snapshot-carries");
+    let folder = MemSyncFolder::new();
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    sync(&a, &folder);
+    sync(&b, &folder);
+    // A deleted parent's row (D3), a list's base (D7), a Sync conflict's copy (D2).
+    let gone = notebook("Gone");
+    add(&a, Row::Notebook(gone.clone()));
+    a.apply_changes(&[Change::delete(Row::Notebook(gone.clone()))])
+        .unwrap();
+    a.set_preference("library.collections", "not a list")
+        .unwrap();
+    a.set_preference(
+        "library.collections",
+        r#"[{"name":"Greek","ids":[]},{"name":"Hebrew","ids":[]}]"#,
+    )
+    .unwrap();
+    a.set_preference(
+        "library.collections",
+        r#"[{"name":"Greek","ids":["sblgnt"]},{"name":"Hebrew","ids":[]}]"#,
+    )
+    .unwrap();
+    let nb = default_notebook(&a);
+    let n = note(&nb, "first");
+    add(&a, Row::Annotation(n.clone()));
+    settle(&[&a, &b], &folder);
+    b.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "by B")),
+    )])
+    .unwrap();
+    a.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "by A")),
+    )])
+    .unwrap();
+    sync(&a, &folder);
+    sync(&b, &folder);
+    // A held op: a synced preference a later app added, from a device both have met.
+    let later = new_id();
+    let unknown = super::ops::Op {
+        device: later.clone(),
+        clock: obs_store::Hlc {
+            wall_ms: u64::try_from(obs_store::clock::now_ms()).unwrap(),
+            counter: 0,
+            device_id: later.clone(),
+        },
+        before: None,
+        after: Some(Row::Preference(obs_store::SyncedPreference {
+            key: "study.later_app_setting".into(),
+            value: "1".into(),
+        })),
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    folder.put(
+        &op_file_path(&later, 1),
+        &super::ops::encode_op_file(&[unknown]).unwrap(),
+    );
+    for user in [&a, &b] {
+        user.execute_unchecked(&format!(
+            "INSERT INTO applied_up_to (device_id, seq) VALUES ('{later}', 0)"
+        ))
+        .unwrap();
+    }
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    assert_eq!(a.sync_conflicts().unwrap().len(), 1);
+    assert_eq!(a.sync_held().unwrap().len(), 1);
+    // Snapshots of both, then C from them alone: every op file they cover is gone.
+    for user in [&a, &b] {
+        write_snapshot(user, &folder).unwrap();
+        let id = user.device_id().unwrap();
+        for name in folder.list(&ops_dir(&id)).unwrap() {
+            folder.remove(&format!("{}/{name}", ops_dir(&id))).unwrap();
+        }
+    }
+    let c = open(&dir, "c");
+    let report = sync(&c, &folder);
+    assert_eq!(report.merge.snapshots.len(), 2, "{report:?}");
+    assert!(report.merge.stopped.is_empty(), "{report:?}");
+    settle(&[&a, &b, &c], &folder);
+    // C holds everything A and B do, whichever device's snapshot gave it what.
+    let dump = |u: &UserStore| {
+        u.synced_dump()
+            .unwrap()
+            .lines()
+            .filter(|l| !l.contains("My Notebook"))
+            .map(String::from)
+            .collect::<Vec<_>>()
+    };
+    let (da, dc) = (dump(&a), dump(&c));
+    for line in &da {
+        assert!(dc.contains(line), "C lacks {line}");
+    }
+    assert_eq!(c.sync_conflicts().unwrap().len(), 1);
+    assert_eq!(
+        c.sync_held().unwrap().len(),
+        1,
+        "the held op came in a snapshot"
+    );
+    let tombstone = c
+        .row_state(&RowKey::Notebook(gone.id.clone()))
+        .unwrap()
+        .tombstone;
+    assert!(tombstone.is_some());
+    assert!(
+        dc.iter().any(|l| l.contains("Gone")),
+        "the tombstone keeps its row"
+    );
+    converged(&[&a, &b, &c]);
+}
+
+#[test]
+fn op_files_of_a_device_wait_for_its_first_snapshot() {
+    let dir = Dir::new("snapshot-first");
+    let folder = MemSyncFolder::new();
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    add(&a, Row::Notebook(notebook("Before joining")));
+    sync(&a, &folder);
+    add(&a, Row::Notebook(notebook("After joining")));
+    sync(&a, &folder);
+    // B's cloud has brought A's op file but not yet its snapshot.
+    let a_id = a.device_id().unwrap();
+    let partial = MemSyncFolder::new();
+    for path in folder.paths() {
+        if !path.contains("/snapshots/") {
+            partial.put(&path, &folder.get(&path).unwrap());
+        }
+    }
+    let report = sync(&b, &partial);
+    assert_eq!(
+        report.merge.stopped,
+        [(a_id.clone(), 0, OpsStop::NoSnapshot)]
+    );
+    assert!(!names(&b).contains(&"After joining".to_string()));
+    for path in folder.paths() {
+        partial.put(&path, &folder.get(&path).unwrap());
+    }
+    let report = sync(&b, &partial);
+    assert_eq!(report.merge.snapshots, [(a_id, 0)]);
+    assert!(names(&b).contains(&"Before joining".to_string()));
+    assert!(names(&b).contains(&"After joining".to_string()));
+}
+
+/// Options trimming at a test age and writing a snapshot every two files.
+fn trimming(trim_after_ms: i64) -> SyncOptions {
+    SyncOptions {
+        platform: "macos".into(),
+        policy: SnapshotPolicy {
+            after_files: 2,
+            after_ms: i64::MAX,
+            trim_after_ms,
+        },
+    }
+}
+
+#[test]
+fn trimming_never_removes_ops_a_known_device_has_not_applied() {
+    let dir = Dir::new("trim");
+    let folder = MemSyncFolder::new();
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    let day = 24 * 60 * 60 * 1000;
+    let t0 = obs_store::clock::now_ms();
+    obs_store::clock::fix(Some(t0));
+    let opts = trimming(90 * day);
+    let keep_all = trimming(i64::MAX);
+    sync_with(&a, &folder, &opts);
+    sync_with(&b, &folder, &keep_all);
+    let a_id = a.device_id().unwrap();
+    let files = || -> Vec<u64> {
+        let mut seqs: Vec<u64> = folder
+            .list(&ops_dir(&a_id))
+            .unwrap()
+            .iter()
+            .filter_map(|n| op_file_seq(n))
+            .collect();
+        seqs.sort_unstable();
+        seqs
+    };
+    for name in ["One", "Two"] {
+        add(&a, Row::Notebook(notebook(name)));
+        sync_with(&a, &folder, &opts);
+    }
+    sync_with(&b, &folder, &keep_all);
+    for name in ["Three", "Four"] {
+        add(&a, Row::Notebook(notebook(name)));
+        sync_with(&a, &folder, &opts);
+    }
+    assert_eq!(files(), [1, 2, 3, 4]);
+    assert_eq!(newest_snapshot(&folder, &a_id).unwrap().unwrap().0, 4);
+    // 89 days on, B syncs seeing none of A's later files (its cloud has not brought them):
+    // it is seen lately, having merged A's files up to 2.
+    obs_store::clock::fix(Some(t0 + 89 * day));
+    let partial = MemSyncFolder::new();
+    for path in folder.paths() {
+        let later = [3, 4].iter().any(|n| path == op_file_path(&a_id, *n));
+        if !later && !path.contains("/snapshots/") {
+            partial.put(&path, &folder.get(&path).unwrap());
+        }
+    }
+    sync_with(&b, &partial, &keep_all);
+    let b_json = super::device_json_path(&b.device_id().unwrap());
+    folder.put(&b_json, &partial.get(&b_json).unwrap());
+    // 91 days after A wrote them, every file is old enough and covered by A's snapshot, but
+    // B has merged only 1 and 2.
+    obs_store::clock::fix(Some(t0 + 91 * day));
+    let report = sync_with(&a, &folder, &opts);
+    assert_eq!(report.trimmed, [1, 2], "{report:?}");
+    assert_eq!(files(), [3, 4]);
+    // B, silent for more than 90 days, no longer holds them back.
+    obs_store::clock::fix(Some(t0 + 180 * day));
+    add(&a, Row::Notebook(notebook("Five")));
+    let report = sync_with(&a, &folder, &opts);
+    assert_eq!(report.trimmed, [3, 4], "{report:?}");
+    assert_eq!(files(), [5]);
+    // It catches up from A's snapshot, then A's op files after it.
+    let report = sync_with(&b, &folder, &keep_all);
+    assert_eq!(report.merge.snapshots, [(a_id.clone(), 4)], "{report:?}");
+    assert!(report.merge.stopped.is_empty(), "{report:?}");
+    obs_store::clock::fix(None);
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    for name in ["Three", "Four", "Five"] {
+        assert!(names(&b).contains(&name.to_string()), "{name}");
+    }
+}
+
+#[test]
+fn a_newer_snapshot_or_folder_is_left_alone_and_asks_for_an_update() {
+    let dir = Dir::new("newer");
+    let folder = MemSyncFolder::new();
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    sync(&a, &folder);
+    let a_id = a.device_id().unwrap();
+    // A's snapshot as a later app's: its schema is one this build does not read.
+    let (seq, name) = newest_snapshot(&folder, &a_id).unwrap().unwrap();
+    let path = format!("{}/{name}", snapshots_dir(&a_id));
+    let mut bytes = folder.get(&path).unwrap();
+    let later = obs_store::USER_SCHEMA_VERSION + 1;
+    bytes[60..64].copy_from_slice(&later.to_be_bytes());
+    folder.remove(&path).unwrap();
+    let hash = crate::starter::sha256_hex(&bytes);
+    let newer = format!(
+        "{}/{}",
+        snapshots_dir(&a_id),
+        super::snapshot::snapshot_file_name(seq, &hash)
+    );
+    folder.put(&newer, &bytes);
+    let report = sync(&b, &folder);
+    assert_eq!(report.merge.needs_newer_app(), [a_id.clone()]);
+    assert_eq!(folder.get(&newer).unwrap(), bytes, "left alone");
+    assert!(
+        !report.written.is_empty() || b.records_ops().unwrap(),
+        "B still syncs its own"
+    );
+    // A changed snapshot (its hash not its name's) is skipped and read again later.
+    folder.put(&path, b"not a snapshot");
+    folder.remove(&newer).unwrap();
+    let report = sync(&b, &folder);
+    assert!(
+        matches!(
+            &report.merge.stopped[..],
+            [(_, _, OpsStop::SnapshotNotWhole(_))]
+        ),
+        "{report:?}"
+    );
+    // A folder set up by a newer app: nothing is read or written.
+    let other = MemSyncFolder::new();
+    other.put(SYNC_JSON, b"{\"format\":2}\n");
+    assert_eq!(
+        sync_now(&a, &other, &options()).unwrap(),
+        SyncState::FolderNewer { format: 2 }
+    );
+    assert_eq!(other.paths(), [SYNC_JSON.to_string()]);
+}
+
+#[test]
+fn a_copied_database_takes_a_new_id_and_catches_up() {
+    let dir = Dir::new("copied");
+    let folder = MemSyncFolder::new();
+    let a = open(&dir, "a");
+    add(&a, Row::Notebook(notebook("Romans")));
+    sync(&a, &folder);
+    let a_id = a.device_id().unwrap();
+    // The database copied to another computer, then A goes on syncing.
+    let copy = a.copy_in_memory().unwrap();
+    add(&a, Row::Notebook(notebook("On A")));
+    sync(&a, &folder);
+    add(&copy, Row::Notebook(notebook("On the copy")));
+    let report = sync(&copy, &folder);
+    let new = report.new_device_id.clone().unwrap();
+    assert!(new != a_id && report.joined, "{report:?}");
+    assert_eq!(copy.own_device_ids().unwrap(), [new.clone(), a_id.clone()]);
+    // The copy's edit made before it took its id reaches A through its join snapshot.
+    settle(&[&a, &copy], &folder);
+    converged(&[&a, &copy]);
+    assert!(names(&a).contains(&"On the copy".to_string()));
+    assert!(names(&copy).contains(&"On A".to_string()));
+    let mut ids: Vec<String> = folder.list(DEVICES_DIR).unwrap();
+    ids.sort();
+    let mut expected = vec![a_id, new];
+    expected.sort();
+    assert_eq!(ids, expected);
+}
+
+#[test]
+fn a_copy_that_writes_first_leaves_the_original_to_take_a_new_id() {
+    let dir = Dir::new("copied-first");
+    let folder = MemSyncFolder::new();
+    let a = open(&dir, "a");
+    sync(&a, &folder);
+    let a_id = a.device_id().unwrap();
+    let copy = a.copy_in_memory().unwrap();
+    add(&copy, Row::Notebook(notebook("On the copy")));
+    assert!(
+        sync(&copy, &folder).new_device_id.is_none(),
+        "it wrote first"
+    );
+    add(&a, Row::Notebook(notebook("On A")));
+    let report = sync(&a, &folder);
+    assert!(report.new_device_id.is_some(), "{report:?}");
+    assert!(a.device_id().unwrap() != a_id);
+    settle(&[&a, &copy], &folder);
+    converged(&[&a, &copy]);
+    assert!(names(&copy).contains(&"On A".to_string()));
+}
+
+/// Back up `user` to a file in `dir`.
+fn back_up(dir: &Dir, user: &UserStore, name: &str) -> std::path::PathBuf {
+    let path = dir.0.join(format!("{name}.obsbackup"));
+    user.back_up(&path).unwrap();
+    path
+}
+
+#[test]
+fn a_restore_gives_a_new_id_and_on_a_syncing_device_waits_for_the_users_choice() {
+    let dir = Dir::new("restore-wait");
+    let folder = MemSyncFolder::new();
+    let mut a = open(&dir, "a");
+    let backup = back_up(&dir, &a, "before-sync");
+    // Not syncing: a new id, no choice.
+    let first = a.device_id().unwrap();
+    a.restore(&backup).unwrap();
+    assert!(a.device_id().unwrap() != first);
+    assert!(!needs_restore_choice(&a).unwrap());
+    sync(&a, &folder);
+    let backup = back_up(&dir, &a, "syncing");
+    add(&a, Row::Notebook(notebook("After the Backup")));
+    sync(&a, &folder);
+    a.restore(&backup).unwrap();
+    assert!(needs_restore_choice(&a).unwrap());
+    assert!(!a.records_ops().unwrap());
+    assert_eq!(
+        sync_now(&a, &folder, &options()).unwrap(),
+        SyncState::NeedsRestoreChoice
+    );
+    // The choice survives a restart.
+    let path = a.path().to_path_buf();
+    drop(a);
+    let (a, _) = UserStore::open(&path).unwrap();
+    assert!(needs_restore_choice(&a).unwrap());
+    let SyncState::Synced(report) =
+        restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap()
+    else {
+        panic!()
+    };
+    assert!(report.joined);
+    assert!(!needs_restore_choice(&a).unwrap());
+    // Catching up brings back what the Backup did not have.
+    assert!(names(&a).contains(&"After the Backup".to_string()));
+    assert!(restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).is_err());
+}
+
+#[test]
+fn a_restored_database_catches_up_with_the_others_by_default() {
+    let dir = Dir::new("restore-catch-up");
+    let folder = MemSyncFolder::new();
+    let (mut a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    let nb = default_notebook(&a);
+    let kept = note(&nb, "kept");
+    add(&a, Row::Annotation(kept.clone()));
+    settle(&[&a, &b], &folder);
+    let backup = back_up(&dir, &a, "a");
+    // After the Backup: B edits the Note, A deletes a Notebook and adds one.
+    b.apply_changes(&[Change::update(
+        Row::Annotation(kept.clone()),
+        Row::Annotation(with_text(&kept, "edited on B")),
+    )])
+    .unwrap();
+    add(&a, Row::Notebook(notebook("Made on A")));
+    settle(&[&a, &b], &folder);
+    a.restore(&backup).unwrap();
+    assert!(!names(&a).contains(&"Made on A".to_string()));
+    restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    assert!(
+        names(&a).contains(&"Made on A".to_string()),
+        "A's own later edit"
+    );
+    assert_eq!(texts(&a), ["edited on B"]);
+}
+
+#[test]
+fn a_restored_database_with_replace_makes_a_third_device_converge_to_the_restored_state() {
+    let dir = Dir::new("restore-replace");
+    let folder = MemSyncFolder::new();
+    let (mut a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    let nb = default_notebook(&a);
+    let kept = note(&nb, "as backed up");
+    let romans = notebook("Romans");
+    add(&a, Row::Annotation(kept.clone()));
+    add(&a, Row::Notebook(romans.clone()));
+    let deleted = notebook("Deleted before the Backup");
+    add(&a, Row::Notebook(deleted.clone()));
+    settle(&[&a, &b], &folder);
+    a.apply_changes(&[Change::delete(Row::Notebook(deleted.clone()))])
+        .unwrap();
+    settle(&[&a, &b], &folder);
+    let backup = back_up(&dir, &a, "a");
+    // After the Backup: A edits the Note and deletes Romans; B brings the deleted Notebook
+    // back (an undo) and makes a Notebook of its own.
+    a.apply_changes(&[Change::update(
+        Row::Annotation(kept.clone()),
+        Row::Annotation(with_text(&kept, "edited on A after")),
+    )])
+    .unwrap();
+    a.apply_changes(&[Change::delete(Row::Notebook(romans.clone()))])
+        .unwrap();
+    settle(&[&a, &b], &folder);
+    b.apply_changes(&[Change::insert(Row::Notebook(deleted.clone()))])
+        .unwrap();
+    let made_on_b = notebook("Made on B after");
+    add(&b, Row::Notebook(made_on_b.clone()));
+    settle(&[&a, &b], &folder);
+    assert!(names(&b).contains(&"Deleted before the Backup".to_string()));
+
+    a.restore(&backup).unwrap();
+    let report = restore_choice(&a, &folder, RestoreChoice::Replace, &options()).unwrap();
+    assert!(matches!(report, SyncState::Synced(_)));
+    settle(&[&a, &b], &folder);
+    let c = open(&dir, "c");
+    settle(&[&a, &b, &c], &folder);
+    converged(&[&a, &b, &c]);
+    for user in [&a, &b, &c] {
+        let names = names(user);
+        assert!(names.contains(&"Romans".to_string()), "back, as backed up");
+        assert!(
+            !names.contains(&"Deleted before the Backup".to_string()),
+            "deleted, as backed up"
+        );
+        assert!(
+            names.contains(&"Made on B after".to_string()),
+            "never known to the Backup: kept"
+        );
+        assert_eq!(
+            texts(user),
+            ["as backed up"],
+            "A's later text replaced on purpose"
+        );
+    }
+}
+
+#[test]
+fn a_replace_keeps_another_devices_own_unseen_text_as_a_sync_conflict() {
+    let dir = Dir::new("restore-replace-copy");
+    let folder = MemSyncFolder::new();
+    let (mut a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    let nb = default_notebook(&a);
+    let n = note(&nb, "as backed up");
+    add(&a, Row::Annotation(n.clone()));
+    settle(&[&a, &b], &folder);
+    let backup = back_up(&dir, &a, "a");
+    b.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "B's own later text")),
+    )])
+    .unwrap();
+    settle(&[&a, &b], &folder);
+    a.restore(&backup).unwrap();
+    restore_choice(&a, &folder, RestoreChoice::Replace, &options()).unwrap();
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    let in_place = a.annotation(&n.id).unwrap().unwrap();
+    assert_eq!(in_place.body(), "as backed up");
+    let copies = a.sync_conflicts().unwrap();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert_eq!(copies[0].body(), "B's own later text");
+}
+
+#[test]
+fn a_text_written_under_the_old_id_survives_a_remote_edit_that_never_saw_it() {
+    let dir = Dir::new("restore-own");
+    let folder = MemSyncFolder::new();
+    let (mut a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    let nb = default_notebook(&a);
+    let n = note(&nb, "first");
+    add(&a, Row::Annotation(n.clone()));
+    settle(&[&a, &b], &folder);
+    // A writes T and syncs; B, not having synced, edits to V later; A is backed up and then
+    // restored (a new id) before it meets B's edit.
+    a.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "T on A")),
+    )])
+    .unwrap();
+    sync(&a, &folder);
+    let backup = back_up(&dir, &a, "a");
+    b.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "V on B")),
+    )])
+    .unwrap();
+    // B's later V stays in place; A, whose own T lost, would make the copy.
+    let b_report = sync(&b, &folder);
+    assert_eq!(b_report.merge.recorded.conflicts, 0, "{b_report:?}");
+    a.restore(&backup).unwrap();
+    restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    let texts = texts(&a);
+    assert!(texts.contains(&"T on A".to_string()), "{texts:?}");
+    assert!(texts.contains(&"V on B".to_string()), "{texts:?}");
+}

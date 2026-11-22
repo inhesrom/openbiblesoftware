@@ -38,10 +38,10 @@ mod resource_store;
 mod sample;
 #[cfg(not(target_arch = "wasm32"))]
 mod search_index;
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
 mod snapshot_store;
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
 mod sync_clock;
 #[cfg(not(target_arch = "wasm32"))]

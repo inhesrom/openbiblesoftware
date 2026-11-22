@@ -110,6 +110,48 @@ impl UserStore {
             .map_err(sql)
     }
 
+    /// The name the user gave this Synced device (empty until then).
+    pub fn device_name(&self) -> Result<String, StoreError> {
+        self.conn
+            .query_row("SELECT name FROM device WHERE id = 1", [], |r| r.get(0))
+            .map_err(sql)
+    }
+
+    /// Name this Synced device ("Ian's iPhone"), as other devices show it.
+    pub fn set_device_name(&self, name: &str) -> Result<(), StoreError> {
+        self.conn
+            .execute("UPDATE device SET name = ?1 WHERE id = 1", [name])
+            .map(drop)
+            .map_err(sql)
+    }
+
+    /// The last op file of each other Synced device merged here, by id (this device's own
+    /// row, the last of its own written, left out).
+    pub fn merged_devices(&self) -> Result<std::collections::BTreeMap<String, u64>, StoreError> {
+        let own = read_device_id(&self.conn)?;
+        let rows: Vec<(String, i64)> = self
+            .conn
+            .prepare("SELECT device_id, seq FROM applied_up_to ORDER BY device_id")
+            .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
+            .map_err(sql)?;
+        Ok(rows
+            .into_iter()
+            .filter(|(id, _)| *id != own)
+            .map(|(id, seq)| (id, u64::try_from(seq).unwrap_or_default()))
+            .collect())
+    }
+
+    /// The largest op file number reserved for the outbox's ops (`None`: none reserved): with
+    /// the last own op file written, the files under this device's id that it wrote or will
+    /// write again. A file above both was not written here (a copied database, rule 7).
+    pub fn last_reserved_op_file(&self) -> Result<Option<u64>, StoreError> {
+        let seq: Option<i64> = self
+            .conn
+            .query_row("SELECT MAX(file_seq) FROM op_outbox", [], |r| r.get(0))
+            .map_err(sql)?;
+        Ok(seq.and_then(|s| u64::try_from(s).ok()))
+    }
+
     /// Whether this device syncs: it records ops, or a restore's choice is pending.
     pub(crate) fn syncs(&self) -> Result<bool, StoreError> {
         Ok(records_ops(&self.conn, &read_device_id(&self.conn)?)?
