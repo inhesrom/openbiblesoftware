@@ -74,7 +74,7 @@ to Claude Opus 5.5 later on".
 | S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | done (PR #408) |
 | S29c | Sync 3c: merges in bounded transactions; the views read only what a merge changed | AFK | n | S29b (before S31) | migration 19 (`merge_cursor`), batched merge, resume, views' patch reads; an edit during a 10k-Note join under a frame | done (branch mobile/s29c-merge-batches, PR pending) |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 (ships after S29b) | Swift `SyncFolder`, screens | todo |
-| S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S30 | test report, folder list for onboarding | todo |
+| S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S29c, S30 | test report, folder list for onboarding | todo |
 | S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
 | S33 | Before anything permanent: #334, #336, #337, privacy policy URL, release cadence | HITL | n | S12 | decisions recorded, tickets closed, map lines, final bundle id applied | todo |
 | S34 | App Store readiness: `PrivacyInfo.xcprivacy`, icon, Credits, accessibility audit, size, archive + export + validate | AFK | y | S19–S26, S30, S32, S33 | validated archive, review notes, `docs/dev/mobile-release.md` | todo |
@@ -2367,7 +2367,7 @@ under the half they belong to.
 
 - **Goal:** the only test that proves the provider behaviour the research could not: a real iCloud
   Drive round trip.
-- **Type:** HITL. **Xcode:** y. **Size:** S–M. **Depends on:** S29, S29b, S30.
+- **Type:** HITL. **Xcode:** y. **Size:** S–M. **Depends on:** S29, S29b, S29c, S30.
 - **Owner checklist:** pick `Open Bible Sync/` in iCloud Drive on the Mac desktop app and on the
   iPhone; make Highlights/Notes on each; wait; confirm convergence and a deliberate conflict; note
   latency; then (per #332 "Validation") check whether Dropbox, OneDrive and Google Drive folders
