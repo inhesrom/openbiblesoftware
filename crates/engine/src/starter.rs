@@ -55,9 +55,15 @@ pub const RELEASE_DOWNLOADS: &str = crate::credits::PUBLISHED_CHANGES;
 /// User database preference holding the [`StarterState`].
 pub(crate) const STATE_PREF: &str = "starter-library";
 
+/// User database preference holding the released manifest last fetched and the release its
+/// files are pinned to, with [`StarterLibrary::released_leads`] only (the Mobile app, #333):
+/// a launch reads it, so a transfer that finishes after a relaunch is still known. It stays
+/// on the device (ADR 0022 rule 4).
+pub const RELEASED_PREF: &str = "starter-library.released";
+
 /// One Starter Resource as a release manifest lists it. Fields the app does not need (unit
 /// ids) are ignored; the descriptive ones are absent from manifests written before #131.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StarterItem {
     pub resource_id: String,
     pub revision: u32,
@@ -120,7 +126,7 @@ impl StarterItem {
 }
 
 /// `starter-manifest.json`: every Resource one Starter library build shipped.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StarterManifest {
     pub format: u32,
     pub resources: Vec<StarterItem>,
@@ -198,18 +204,46 @@ pub enum ReleasedManifest {
     NoMatch { latest_format: u32 },
 }
 
+/// The folder of a release's files that the format selection pins, from its
+/// [`MANIFEST_FILE`] asset's URL: it must be
+/// `https://github.com/<owner>/<repo>/releases/download/<tag>/` of this app's repository (the
+/// owner and repository of [`RELEASE_DOWNLOADS`]), with a tag free of `/`, `?` and `#`.
+pub fn release_files_base(asset_url: &str) -> Result<String, String> {
+    let refuse = || {
+        format!(
+            "{asset_url} is not the Starter library manifest of a release of this app; it was \
+             not used"
+        )
+    };
+    let repository = RELEASE_DOWNLOADS
+        .strip_suffix("latest/download/")
+        .ok_or_else(refuse)?;
+    let base = asset_url.strip_suffix(MANIFEST_FILE).ok_or_else(refuse)?;
+    let tag = (base.strip_prefix(repository))
+        .and_then(|rest| rest.strip_prefix("download/"))
+        .and_then(|rest| rest.strip_suffix('/'))
+        .ok_or_else(refuse)?;
+    if tag.is_empty() || tag.contains(['/', '?', '#']) {
+        return Err(refuse());
+    }
+    Ok(base.to_string())
+}
+
 /// The manifest of the newest release whose format this app reads (#333, "the Starter
 /// manifest of the release its format version matches"). `latest` is the latest release's
 /// manifest, already fetched. When its format is not [`MANIFEST_FORMAT`], the releases list
 /// at `releases` (the GitHub releases API, [`crate::updates::RELEASES_API`]) is read: newest
 /// first, drafts and pre-releases skipped, at most [`RELEASES_SEARCHED`]; each release's
 /// [`MANIFEST_FILE`] is fetched until one has this format (its files are then pinned to that
-/// release: the asset's folder), stopping at the first older format. `keep_going` returns
-/// `false` to cancel.
+/// release: the asset's folder), stopping at the first older format. With `github` (the list
+/// is GitHub's) an asset's folder must be one of this app's releases
+/// ([`release_files_base`]) or the selection fails; a mirror's or a `file://` list's assets
+/// are its own. `keep_going` returns `false` to cancel.
 pub fn select_release(
     fetch: &dyn Fetch,
     latest: &[u8],
     releases: &str,
+    github: bool,
     keep_going: &mut dyn FnMut() -> bool,
 ) -> Result<ReleasedManifest, String> {
     let text = String::from_utf8_lossy(latest);
@@ -238,15 +272,20 @@ pub fn select_release(
         let Some(asset) = release.asset(MANIFEST_FILE) else {
             continue;
         };
-        let Some(base) = asset.url.strip_suffix(MANIFEST_FILE) else {
-            continue;
+        let base = if github {
+            release_files_base(&asset.url)?
+        } else {
+            match asset.url.strip_suffix(MANIFEST_FILE) {
+                Some(base) => base.to_string(),
+                None => continue,
+            }
         };
         let text = String::from_utf8_lossy(&get(&asset.url, keep_going)?).into_owned();
         match manifest_format(&text)? {
             MANIFEST_FORMAT => {
                 return Ok(ReleasedManifest::Found {
                     manifest: StarterManifest::parse(&text)?,
-                    base: Some(base.to_string()),
+                    base: Some(base),
                 });
             }
             older if older < MANIFEST_FORMAT => return no_match,
@@ -314,6 +353,45 @@ pub struct StarterDownload {
     pub total: u64,
 }
 
+/// An install of files the Mobile app downloaded ([`Session::add_starter_from_files`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileInstall {
+    pub job: JobId,
+    pub ids: Vec<String>,
+    pub phase: FileInstallPhase,
+}
+
+/// Where an install of downloaded files stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileInstallPhase {
+    /// Reading the files and checking each against its sha256.
+    Verifying,
+    /// Every file is verified: being put in place.
+    Installing,
+    /// In the library.
+    Installed,
+    /// Nothing was added: why, in words.
+    Failed(String),
+}
+
+impl FileInstallPhase {
+    /// Verifying or installing.
+    pub fn is_running(&self) -> bool {
+        matches!(
+            self,
+            FileInstallPhase::Verifying | FileInstallPhase::Installing
+        )
+    }
+}
+
+/// What [`RELEASED_PREF`] holds.
+#[derive(Debug, Serialize, Deserialize)]
+struct SavedRelease {
+    manifest: StarterManifest,
+    /// [`StarterLibrary::files_base`] when the format selection pinned an earlier release.
+    base: Option<String>,
+}
+
 /// What [`Session::sync_starter_library`] did at launch.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StarterSync {
@@ -355,6 +433,8 @@ pub struct StarterLibrary {
     released_base: Option<String>,
     /// No release has a manifest this app reads: the app must be updated first.
     needs_app_update: bool,
+    /// The installs of downloaded files ([`Session::add_starter_from_files`]).
+    file_installs: Vec<FileInstall>,
 }
 
 /// What Retry does again after a failure or a cancel.
@@ -385,6 +465,7 @@ impl Default for StarterLibrary {
             releases_api: crate::updates::RELEASES_API.to_string(),
             released_base: None,
             needs_app_update: false,
+            file_installs: Vec::new(),
         }
     }
 }
@@ -514,7 +595,20 @@ impl StarterLibrary {
 
     /// Whether a job event belongs to the Starter library.
     fn owns(&self, job: JobId) -> bool {
-        self.checking == Some(job) || self.download.as_ref().is_some_and(|d| d.job == job)
+        self.checking == Some(job)
+            || self.download.as_ref().is_some_and(|d| d.job == job)
+            || self.file_installs.iter().any(|f| f.job == job)
+    }
+
+    /// Where the install of downloaded files that `job` runs stands
+    /// ([`Session::add_starter_from_files`]); kept until [`Self::forget_file_install`].
+    pub fn file_install(&self, job: JobId) -> Option<&FileInstall> {
+        self.file_installs.iter().find(|f| f.job == job)
+    }
+
+    /// Forget a finished install of downloaded files.
+    pub fn forget_file_install(&mut self, job: JobId) {
+        self.file_installs.retain(|f| f.job != job);
     }
 }
 
@@ -645,15 +739,16 @@ fn replaced_file(lib: &Path, id: &str) -> PathBuf {
 }
 
 /// Verify each item's bytes (from `read`, in order) against its sha256, stage them in `lib`,
-/// and only when every one is verified, put them all in place as `<id>.obr`. On any
-/// failure every staged file is removed and every file already put in place is taken back
-/// (an earlier revision it replaced is restored), so nothing is half-added. Returns the new
-/// entries.
+/// and only when every one is verified (`verified` is called then), put them all in place as
+/// `<id>.obr`. On any failure every staged file is removed and every file already put in
+/// place is taken back (an earlier revision it replaced is restored), so nothing is
+/// half-added. Returns the new entries.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn install(
     lib: &Path,
     items: &[StarterItem],
     read: &mut dyn FnMut(&StarterItem) -> Result<Vec<u8>, String>,
+    verified: &mut dyn FnMut(),
 ) -> Result<Vec<LibraryEntry>, String> {
     use obs_store::ResourceStore;
     // Ids become file names: checked before anything touches the disk.
@@ -692,6 +787,7 @@ pub(crate) fn install(
             return Err(format!("{}: {e}", part.display()));
         }
     }
+    verified();
     // Every file is verified: open each before anything is put in place.
     let mut entries = Vec::with_capacity(items.len());
     for (item, part) in items.iter().zip(&staged) {
@@ -1000,6 +1096,7 @@ impl Session {
     pub fn sync_starter_library(&mut self, bundle: Option<&Path>) -> StarterSync {
         let mut out = StarterSync::default();
         self.load_starter_state();
+        self.load_released_manifest();
         if let Some(dir) = bundle
             && let Err(e) = self.starter.set_bundle(dir)
         {
@@ -1092,10 +1189,15 @@ impl Session {
             .clone()
             .ok_or("No bundled Starter library")?;
         let lib = self.library_dir()?;
-        let entries = install(&lib, items, &mut |item| {
-            let path = bundle.join(format!("{}.obr", item.resource_id));
-            std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
-        })?;
+        let entries = install(
+            &lib,
+            items,
+            &mut |item| {
+                let path = bundle.join(format!("{}.obr", item.resource_id));
+                std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
+            },
+            &mut || {},
+        )?;
         for item in items {
             copy_bundle_extras(&bundle, &lib, &item.resource_id);
         }
@@ -1168,22 +1270,27 @@ impl Session {
         let ids: Vec<String> = items.iter().map(|i| i.resource_id.clone()).collect();
         let job = self.jobs().submit_fn("Starter library", move |ctx| {
             let mut before = 0u64;
-            install(&lib, &items, &mut |item| {
-                let url = format!("{base}{}.obr", item.resource_id);
-                let bytes = fetch
-                    .get(&url, &mut |done, _| {
-                        ctx.progress(before + done.min(item.bytes), total);
-                        !ctx.is_cancelled()
-                    })
-                    .map_err(|e| match e {
-                        obs_formats::sword_repo::FetchError::Cancelled => {
-                            "Download cancelled".to_string()
-                        }
-                        e => format!("{url}: {e}"),
-                    })?;
-                before += item.bytes;
-                Ok(bytes)
-            })
+            install(
+                &lib,
+                &items,
+                &mut |item| {
+                    let url = format!("{base}{}.obr", item.resource_id);
+                    let bytes = fetch
+                        .get(&url, &mut |done, _| {
+                            ctx.progress(before + done.min(item.bytes), total);
+                            !ctx.is_cancelled()
+                        })
+                        .map_err(|e| match e {
+                            obs_formats::sword_repo::FetchError::Cancelled => {
+                                "Download cancelled".to_string()
+                            }
+                            e => format!("{url}: {e}"),
+                        })?;
+                    before += item.bytes;
+                    Ok(bytes)
+                },
+                &mut || {},
+            )
             .map(Installed)
         });
         self.starter.download = Some(StarterDownload {
@@ -1197,28 +1304,52 @@ impl Session {
     }
 
     /// Add Starter Resources from files already downloaded (the Mobile app's background
-    /// transfers, #333): `files` names the file of each of `items` by Resource id. Each is
-    /// checked against its sha256 and put in place as [`Self::add_starter`]'s download is, all
-    /// or nothing, and joins the Library the same way (Removed ones are no longer removed).
-    /// A file is a download: it is deleted once read, whatever happens next, so a failure
-    /// (a sha256 mismatch among them) is retried by downloading it again. Returns the ids.
+    /// transfers, #333): `files` names the file of each of `items` by Resource id. A job
+    /// checks each against its sha256 and puts them in place as [`Self::add_starter`]'s
+    /// download does, all or nothing, off the caller's thread; when it finishes they join the
+    /// Library the same way (Removed ones are no longer removed). Where it stands is
+    /// [`StarterLibrary::file_install`] of the job returned. A file is a download: it is
+    /// deleted once read, whatever happens next, so a failure (a sha256 mismatch among them)
+    /// is retried by downloading it again.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn add_starter_from_files(
         &mut self,
         items: &[StarterItem],
         files: &[(String, PathBuf)],
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<JobId, String> {
+        check_resource_ids(items)?;
         let lib = self.library_dir()?;
-        let entries = install(&lib, items, &mut |item| {
-            let path = (files.iter())
-                .find(|(id, _)| *id == item.resource_id)
-                .map(|(_, p)| p)
-                .ok_or_else(|| format!("No downloaded file for {}", item.resource_id))?;
-            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
-            let _ = std::fs::remove_file(path);
-            bytes
-        })?;
-        Ok(self.starter_added(entries))
+        let ids: Vec<String> = items.iter().map(|i| i.resource_id.clone()).collect();
+        let items = items.to_vec();
+        let files = files.to_vec();
+        let job = self
+            .jobs()
+            .submit_fn("Starter library install", move |ctx| {
+                install(
+                    &lib,
+                    &items,
+                    &mut |item| {
+                        let path = (files.iter())
+                            .find(|(id, _)| *id == item.resource_id)
+                            .map(|(_, p)| p)
+                            .ok_or_else(|| {
+                                format!("No downloaded file for {}", item.resource_id)
+                            })?;
+                        let bytes =
+                            std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
+                        let _ = std::fs::remove_file(path);
+                        bytes
+                    },
+                    &mut || ctx.phase("Installing"),
+                )
+                .map(Installed)
+            });
+        self.starter.file_installs.push(FileInstall {
+            job,
+            ids,
+            phase: FileInstallPhase::Verifying,
+        });
+        Ok(job)
     }
 
     /// What one click adds of Mobile set `set`: [`Self::starter_wanted`] in that set (missing
@@ -1241,13 +1372,14 @@ impl Session {
         let fetch = self.fetch();
         if self.starter.released_leads {
             let releases = format!("{}?per_page={RELEASES_SEARCHED}", self.starter.releases_api);
+            let github = self.starter.releases_api == crate::updates::RELEASES_API;
             let job = self
                 .jobs()
                 .submit_fn("Starter library manifest", move |ctx| {
                     let latest = fetch
                         .get(&url, &mut |_, _| !ctx.is_cancelled())
                         .map_err(|e| format!("{url}: {e}"))?;
-                    select_release(fetch.as_ref(), &latest, &releases, &mut || {
+                    select_release(fetch.as_ref(), &latest, &releases, github, &mut || {
                         !ctx.is_cancelled()
                     })
                 });
@@ -1284,12 +1416,12 @@ impl Session {
         self.check_starter_release()
     }
 
-    /// Whether `resource_id` is part of the Starter library download in flight.
+    /// Whether `resource_id` is part of the Starter library download in flight, or of an
+    /// install of downloaded files ([`Self::add_starter_from_files`]) not finished yet.
     pub fn is_starter_downloading(&self, resource_id: &str) -> bool {
-        self.starter
-            .download
-            .as_ref()
-            .is_some_and(|d| d.ids.iter().any(|id| id == resource_id))
+        let has = |ids: &[String]| ids.iter().any(|id| id == resource_id);
+        self.starter.download.as_ref().is_some_and(|d| has(&d.ids))
+            || (self.starter.file_installs.iter()).any(|f| has(&f.ids) && f.phase.is_running())
     }
 
     /// Retry: do the last failed or cancelled attempt again, with the same Starter Resources
@@ -1309,6 +1441,48 @@ impl Session {
         }
     }
 
+    /// Keep the released manifest and its pinned files on this device ([`RELEASED_PREF`]).
+    fn save_released_manifest(&mut self) {
+        let (Some(user), Some(manifest)) = (&self.user, &self.starter.released) else {
+            return;
+        };
+        let saved = SavedRelease {
+            manifest: manifest.clone(),
+            base: self.starter.released_base.clone(),
+        };
+        let result = serde_json::to_string(&saved)
+            .map_err(|e| e.to_string())
+            .and_then(|json| user.set_preference(RELEASED_PREF, &json));
+        if let Err(e) = result {
+            self.workspace.push_effect(crate::Effect::Message(format!(
+                "Could not save the Starter library list: {e}"
+            )));
+        }
+    }
+
+    /// With [`StarterLibrary::released_leads`], at launch: the released manifest last fetched
+    /// on this device, and its pinned files, until a check fetches it again. One of another
+    /// format, or that does not parse, is ignored.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_released_manifest(&mut self) {
+        if !self.starter.released_leads || self.starter.released.is_some() {
+            return;
+        }
+        let saved = (self.user.as_ref())
+            .and_then(|u| u.preference(RELEASED_PREF).ok().flatten())
+            .and_then(|json| serde_json::from_str::<SavedRelease>(&json).ok())
+            .filter(|s| {
+                s.manifest.format == MANIFEST_FORMAT
+                    && check_resource_ids(&s.manifest.resources).is_ok()
+                    && s.base.as_ref().is_none_or(|b| b.ends_with('/'))
+            });
+        if let Some(saved) = saved {
+            self.starter.released = Some(saved.manifest);
+            self.starter.released_base = saved.base;
+            self.starter.remerge();
+        }
+    }
+
     /// Apply what the released manifest check found (released leads).
     fn released_manifest(&mut self, found: ReleasedManifest) {
         match found {
@@ -1316,6 +1490,17 @@ impl Session {
                 self.starter.released = Some(manifest);
                 self.starter.released_base = base;
                 self.starter.needs_app_update = false;
+                self.save_released_manifest();
+            }
+            ReleasedManifest::NoMatch { latest_format } if latest_format < MANIFEST_FORMAT => {
+                // This app is ahead of the releases (a test build): updating it cannot help.
+                self.starter.needs_app_update = false;
+                self.starter.error = Some(format!(
+                    "The latest release of the Starter library has manifest format \
+                     {latest_format}, older than this version of the app reads (format \
+                     {MANIFEST_FORMAT}). It can be downloaded once a release of format \
+                     {MANIFEST_FORMAT} is published."
+                ));
             }
             ReleasedManifest::NoMatch { latest_format } => {
                 self.starter.needs_app_update = true;
@@ -1329,12 +1514,37 @@ impl Session {
         self.starter.remerge();
     }
 
+    /// Apply an event of an install of downloaded files: the Resources join the Library when
+    /// it finishes.
+    fn file_install_event(&mut self, job: JobId, kind: JobEventKind) {
+        let phase = match kind {
+            JobEventKind::Phase(_) => FileInstallPhase::Installing,
+            JobEventKind::Finished(out) => match out.downcast::<Installed>() {
+                Ok(installed) => {
+                    self.starter_added(installed.0);
+                    FileInstallPhase::Installed
+                }
+                Err(_) => FileInstallPhase::Failed("The install gave no Resources".into()),
+            },
+            JobEventKind::Failed(e) => FileInstallPhase::Failed(e),
+            JobEventKind::Cancelled => FileInstallPhase::Failed("Install cancelled".into()),
+            _ => return,
+        };
+        if let Some(f) = self.starter.file_installs.iter_mut().find(|f| f.job == job) {
+            f.phase = phase;
+        }
+    }
+
     /// Apply Starter library job events; return the rest.
     pub(crate) fn poll_starter(&mut self, events: Vec<JobEvent>) -> Vec<JobEvent> {
         let mut other = Vec::new();
         for event in events {
             if !self.starter.owns(event.id) {
                 other.push(event);
+                continue;
+            }
+            if self.starter.file_install(event.id).is_some() {
+                self.file_install_event(event.id, event.kind);
                 continue;
             }
             let checking = self.starter.checking == Some(event.id);

@@ -51,11 +51,11 @@ pub const SYNCED_PREFERENCES: &[&str] = &[
 /// The preferences that stay on each device: display preferences (View settings and fonts,
 /// Own Text sizes, the Custom theme, the toolbar, Keyboard shortcuts, Home), the Search
 /// history and Recent searches, the Command box's recent entries, Removed Starter Resources,
-/// what belongs to the Resources installed here (Import reports, confirmed Attributions), the
-/// app's own settings (updates, Log level, the tour), the Copy verses options last used, the
-/// last Notebook used and the Visual filters (they need ids that are the same on every device
-/// before they can sync, S27b). Entries ending in `/` or `.` are prefixes, as in
-/// [`SYNCED_PREFERENCES`].
+/// the released Starter library list last fetched (the Mobile app), what belongs to the
+/// Resources installed here (Import reports, confirmed Attributions), the app's own settings
+/// (updates, Log level, the tour), the Copy verses options last used, the last Notebook used
+/// and the Visual filters (they need ids that are the same on every device before they can
+/// sync, S27b). Entries ending in `/` or `.` are prefixes, as in [`SYNCED_PREFERENCES`].
 pub const DEVICE_PREFERENCES: &[&str] = &[
     "view",
     "view.resource_text_sizes",
@@ -68,6 +68,7 @@ pub const DEVICE_PREFERENCES: &[&str] = &[
     "search.recent.",
     "command-box.recent",
     "starter-library",
+    "starter-library.released",
     "import-report/",
     "resource-attribution/",
     "updates",

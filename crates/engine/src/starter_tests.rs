@@ -11,7 +11,9 @@ use obs_model::{Key, Origin, Resource, ResourceType};
 use obs_scripture::Book;
 use serde_json::json;
 
-use crate::starter::{StarterManifest, StarterStatus, bundle_candidates, features};
+use crate::starter::{
+    FileInstallPhase, StarterManifest, StarterStatus, bundle_candidates, features,
+};
 use crate::sword_repo::{Fetch, FetchError, LocalFetch, Progress, file_url};
 use crate::testing::bibles::{bible, v};
 use crate::*;
@@ -865,10 +867,15 @@ fn an_unsafe_id_never_touches_a_file_outside_the_library() {
         vec![item("web"), item("web")],
         vec![item("web"), item("/tmp/victim")],
     ] {
-        let e = starter::install(&lab.lib(), &items, &mut |_| {
-            reads += 1;
-            Ok(bytes.clone())
-        })
+        let e = starter::install(
+            &lab.lib(),
+            &items,
+            &mut |_| {
+                reads += 1;
+                Ok(bytes.clone())
+            },
+            &mut || {},
+        )
         .unwrap_err();
         assert!(
             e.contains("Resource id") || e.contains("more than once"),
@@ -1317,8 +1324,8 @@ fn a_newer_released_revision_of_a_bundled_resource_is_downloaded_not_taken_from_
     );
 }
 
-/// Files the app downloaded itself are checked and installed as a download is, and deleted
-/// once read; a sha256 mismatch adds nothing.
+/// Files the app downloaded itself are checked and installed as a download is, on a job
+/// (Verifying, then Installing), and deleted once read; a sha256 mismatch adds nothing.
 #[test]
 fn starter_files_downloaded_by_the_app_are_verified_installed_and_deleted() {
     let lab = Lab::new("leads-files");
@@ -1335,10 +1342,23 @@ fn starter_files_downloaded_by_the_app_are_verified_installed_and_deleted() {
     // A mismatch: the BDB's file is not the one the manifest names.
     let bad = downloads.join("bdb.obr");
     std::fs::write(&bad, b"not an obr").unwrap();
-    let err = s
+    let job = s
         .add_starter_from_files(std::slice::from_ref(&bdb), &[("bdb".into(), bad.clone())])
-        .unwrap_err();
+        .unwrap();
+    let phase = |s: &Session, job| s.starter.file_install(job).unwrap().phase.clone();
+    assert_eq!(phase(&s, job), FileInstallPhase::Verifying);
+    assert!(
+        s.is_starter_downloading("bdb"),
+        "removing it now would be undone"
+    );
+    settle(&mut s);
+    let FileInstallPhase::Failed(err) = phase(&s, job) else {
+        panic!("{:?}", phase(&s, job))
+    };
     assert!(err.contains("bdb.obr failed verification"), "{err}");
+    assert!(!s.is_starter_downloading("bdb"));
+    s.starter.forget_file_install(job);
+    assert!(s.starter.file_install(job).is_none());
     assert!(!bad.exists(), "the mismatched download is deleted");
     assert!(s.library.get("bdb").is_none());
     assert!(
@@ -1353,8 +1373,20 @@ fn starter_files_downloaded_by_the_app_are_verified_installed_and_deleted() {
         std::fs::copy(lab.release().join(format!("{id}.obr")), &to).unwrap();
         files.push((id.to_string(), to));
     }
-    let ids = s.add_starter_from_files(&[tbesh, bdb], &files).unwrap();
-    assert_eq!(ids, ["tbesh", "bdb"]);
+    let job = s.add_starter_from_files(&[tbesh, bdb], &files).unwrap();
+    assert_eq!(s.starter.file_install(job).unwrap().ids, ["tbesh", "bdb"]);
+    // Event by event: verified, then in place.
+    s.jobs().pump(64);
+    let mut seen = Vec::new();
+    for event in s.jobs().drain_events() {
+        assert!(s.poll_starter(vec![event]).is_empty(), "the install's own");
+        seen.push(phase(&s, job));
+    }
+    assert!(
+        seen.ends_with(&[FileInstallPhase::Installing, FileInstallPhase::Installed]),
+        "{seen:?}"
+    );
+    assert_eq!(phase(&s, job), FileInstallPhase::Installed);
     for (_, f) in &files {
         assert!(!f.exists(), "{} deleted once read", f.display());
     }
@@ -1475,6 +1507,121 @@ fn with_no_release_of_this_format_the_app_must_be_updated() {
     assert!(!d.starter.needs_app_update());
     let error = d.starter.error().unwrap();
     assert!(error.contains("format 2 (this app reads 1)"), "{error}");
+}
+
+/// The latest release is of an older manifest format than this app reads (a test build
+/// ahead of the releases): not "update the app", which cannot help.
+#[test]
+fn a_latest_release_older_than_this_apps_format_is_not_update_the_app() {
+    let lab = Lab::new("leads-older-format");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    with_format(&lab.release(), &library, starter::MANIFEST_FORMAT - 1);
+    let mut s = lab.mobile_launch();
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert!(!s.starter.needs_app_update());
+    let error = s.starter.error().unwrap();
+    assert!(!error.contains("Update the app"), "{error}");
+    assert!(
+        error.contains("older than this version of the app reads"),
+        "{error}"
+    );
+    assert_eq!(row_ids(&s), ["bsb", "strongs-hebrew"]);
+}
+
+/// A release's files are pinned only to this app's own release downloads,
+/// `https://github.com/<owner>/<repo>/releases/download/<tag>/`.
+#[test]
+fn only_this_apps_release_downloads_are_pinned_as_a_releases_files() {
+    let ok = "https://github.com/inhesrom/openbiblesoftware/releases/download/v0.3.0/";
+    assert_eq!(
+        starter::release_files_base(&format!("{ok}{}", starter::MANIFEST_FILE)),
+        Ok(ok.to_string())
+    );
+    assert!(ok.starts_with(crate::updates::RELEASE_DOWNLOADS));
+    for bad in [
+        "http://github.com/inhesrom/openbiblesoftware/releases/download/v0.3.0/",
+        "https://github.com/someone/openbiblesoftware/releases/download/v0.3.0/",
+        "https://github.com/inhesrom/other/releases/download/v0.3.0/",
+        "https://example.com/inhesrom/openbiblesoftware/releases/download/v0.3.0/",
+        "https://github.com/inhesrom/openbiblesoftware/releases/download//",
+        "https://github.com/inhesrom/openbiblesoftware/releases/download/v1/../x/",
+        "https://github.com/inhesrom/openbiblesoftware/releases/download/v1?x=/",
+        "https://github.com/inhesrom/openbiblesoftware/releases/download/v1#x/",
+        "https://github.com/inhesrom/openbiblesoftware/releases/latest/download/",
+        "file:///tmp/v0.3.0/",
+    ] {
+        let url = format!("{bad}{}", starter::MANIFEST_FILE);
+        let e = starter::release_files_base(&url).unwrap_err();
+        assert!(
+            e.contains("not the Starter library manifest of a release"),
+            "{e}"
+        );
+    }
+    assert!(
+        starter::release_files_base(&format!("{ok}other.json")).is_err(),
+        "not the manifest asset"
+    );
+    // GitHub's list naming another place: refused before it is fetched. A mirror's or a
+    // `file://` list's (the test seam) is its own.
+    let lab = Lab::new("leads-pin");
+    let library = testing::mobile_starter_library();
+    let older = lab.root.join("v0.2.0");
+    testing::write_mobile_starter_bundle(&older, &library);
+    let releases = lab.root.join("releases.json");
+    write_releases(&releases, &[("v0.2.0", &older, false, false)]);
+    let latest = json!({ "format": starter::MANIFEST_FORMAT + 1, "resources": [] }).to_string();
+    let list = file_url(&releases);
+    let e = starter::select_release(&FileServer, latest.as_bytes(), &list, true, &mut || true)
+        .unwrap_err();
+    assert!(
+        e.contains("not the Starter library manifest of a release"),
+        "{e}"
+    );
+    let found = starter::select_release(&FileServer, latest.as_bytes(), &list, false, &mut || true)
+        .unwrap();
+    assert!(
+        matches!(&found, starter::ReleasedManifest::Found { base: Some(b), .. }
+            if *b == format!("{}/", file_url(&older))),
+        "{found:?}"
+    );
+}
+
+/// The Mobile app keeps the released manifest and its pinned files on the device: the next
+/// launch lists the release's rows and downloads from the same release before any check.
+/// The desktop neither reads nor writes it.
+#[test]
+fn the_released_manifest_and_its_pinned_files_are_kept_for_the_next_launch() {
+    let lab = Lab::new("leads-kept");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    with_format(&lab.release(), &library, starter::MANIFEST_FORMAT + 1);
+    let older = lab.root.join("v0.2.0");
+    testing::write_mobile_starter_bundle(&older, &library);
+    write_releases(
+        &lab.root.join("releases.json"),
+        &[
+            ("v0.3.0", &lab.release(), false, false),
+            ("v0.2.0", &older, false, false),
+        ],
+    );
+    let mut s = lab.mobile_launch();
+    assert!(s.starter.released().is_none());
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    let pinned = format!("{}/", file_url(&older));
+    assert_eq!(s.starter.files_base(), pinned);
+    drop(s);
+    let s = lab.mobile_launch();
+    assert!(!s.starter.is_checking(), "nothing fetched at launch");
+    assert!(s.starter.released().is_some());
+    assert_eq!(s.starter_rows().len(), library.len());
+    assert_eq!(s.starter.files_base(), pinned);
+    drop(s);
+    let (d, _) = lab.launch(Some(&lab.bundle()));
+    assert!(d.starter.released().is_none());
+    assert_eq!(row_ids(&d), ["bsb", "strongs-hebrew"]);
 }
 
 /// Library → Storage: each Resource's `.obr`, Search index and alias bytes; whether a
