@@ -126,6 +126,11 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(order, order.sorted(), "\(order)")
         shot(app, "s24-offer", dark: true)
         try audit(app)
+        XCUIDevice.shared.appearance = .dark
+        sleep(1)
+        try audit(app)
+        XCUIDevice.shared.appearance = .light
+        sleep(1)
 
         // Slow enough (about 45 s in all) that the transfers outlast the app's time in the
         // background before it is suspended.

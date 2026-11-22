@@ -41,7 +41,10 @@ struct StudySetOfferSheet: View {
                             .accessibilityIdentifier("offer.retry")
                         }
                         Button { model.offerDownload() } label: {
-                            Text(offer.download).frame(maxWidth: .infinity)
+                            // The page's colour on the label colour, light or dark.
+                            Text(offer.download)
+                                .foregroundStyle(Color(.systemBackground))
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(offer.size == nil)
