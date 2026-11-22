@@ -12,7 +12,8 @@
 //! the merge (`merge_store.rs`) lets an edit the delete did not see bring the row back;
 //! 15 → 16 adds Sync conflicts' copies, deleted parents' rows and the ops held back; 16 → 17
 //! the ids this database had before (a restore or a copy gives it a new one, rule 7) and the
-//! choice a restore on a syncing device waits for.
+//! choice a restore on a syncing device waits for; 17 → 18 the order those ids were given up;
+//! 18 → 19 where a merge done in batches stands.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -290,6 +291,22 @@ pub(crate) const SCHEMA_18: &str = "
 ALTER TABLE former_device ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
 UPDATE former_device SET seq = (
     SELECT COUNT(*) FROM former_device AS f WHERE f.device_id <= former_device.device_id
+);
+";
+
+/// Migration 18 → 19 (ADR 0022, S29c: merges in batches).
+///
+/// - `merge_cursor`: where the merge of another device's op file or snapshot stands while
+///   its batches are committed one by one (`merge_store.rs`): per device, the op file being
+///   merged (`seq`, `snapshot` `NULL`), or the snapshot by its file name (`snapshot`) and the
+///   op files it covers (`seq`), and how many of its ops are merged (`ops`). The row goes
+///   with the file's last batch, which also moves `applied_up_to`.
+pub(crate) const SCHEMA_19: &str = "
+CREATE TABLE merge_cursor (
+    device_id TEXT PRIMARY KEY,
+    seq       INTEGER NOT NULL,
+    snapshot  TEXT,
+    ops       INTEGER NOT NULL
 );
 ";
 

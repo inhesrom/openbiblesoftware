@@ -182,7 +182,7 @@ fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
 
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 13);
-    assert_eq!(USER_SCHEMA_VERSION, 18);
+    assert_eq!(USER_SCHEMA_VERSION, 19);
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let copy = report.migration_backup.unwrap();
     assert!(copy.to_string_lossy().contains(".v13-"));
@@ -193,7 +193,13 @@ fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
     for (table, rows) in &before {
         assert_eq!(&after[table], rows, "{table}");
     }
-    for table in ["item_clock", "op_outbox", "sync_held", "former_device"] {
+    for table in [
+        "item_clock",
+        "op_outbox",
+        "sync_held",
+        "former_device",
+        "merge_cursor",
+    ] {
         assert_eq!(after[table], Vec::<String>::new(), "{table}");
     }
     // A tombstone from before schema 15 covers up to its own clock (`NULL`).
@@ -570,7 +576,7 @@ fn former_ids_keep_the_order_they_were_given_up_through_migration_18_restores_an
     v17.back_up(&backup).unwrap();
     drop(v17);
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 18);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     assert_eq!(
         former_seqs(&dir.db()),
         [format!("{older} 1"), format!("{newer} 2")]

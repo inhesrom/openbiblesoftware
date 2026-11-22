@@ -332,6 +332,7 @@ fn trimming(trim_after_ms: i64) -> SyncOptions {
             after_ms: i64::MAX,
             trim_after_ms,
         },
+        batch: crate::sync::merge::MergeBatch::default(),
     }
 }
 
