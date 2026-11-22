@@ -794,3 +794,39 @@ fn a_former_ids_files_merge_op_by_op_when_a_snapshot_of_a_device_met_after_the_b
     assert!(texts.contains(&"T on A".to_string()), "{texts:?}");
     assert!(texts.contains(&"V on C".to_string()), "{texts:?}");
 }
+
+#[test]
+fn a_replace_over_a_list_base_keeps_another_devices_collection_made_after_the_backup() {
+    let dir = Dir::new("restore-replace-base");
+    let folder = MemSyncFolder::new();
+    let (mut a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    // The Collections get a base (D7): once written not in their shape, then in it.
+    a.set_preference("library.collections", "not a list")
+        .unwrap();
+    a.set_preference("library.collections", r#"[{"name":"Greek","ids":[]}]"#)
+        .unwrap();
+    settle(&[&a, &b], &folder);
+    let backup = back_up(&dir, &a, "a");
+    // After the Backup, B adds a Collection of its own.
+    b.set_preference(
+        "library.collections",
+        r#"[{"name":"Greek","ids":[]},{"name":"Made on B","ids":[]}]"#,
+    )
+    .unwrap();
+    settle(&[&a, &b], &folder);
+    a.restore(&backup).unwrap();
+    restore_choice(&a, &folder, RestoreChoice::Replace, &options()).unwrap();
+    settle(&[&a, &b], &folder);
+    let c = open(&dir, "c");
+    settle(&[&a, &b, &c], &folder);
+    converged(&[&a, &b, &c]);
+    for user in [&a, &b, &c] {
+        let value = user.preference("library.collections").unwrap().unwrap();
+        assert!(value.contains("\"Greek\""), "{value}");
+        assert!(
+            value.contains("\"Made on B\""),
+            "never known to the Backup: {value}"
+        );
+    }
+}

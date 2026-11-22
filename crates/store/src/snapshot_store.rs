@@ -579,8 +579,10 @@ impl UserStore {
 
     /// Give this database (a Backup restored, before it joins) new clocks so that its snapshot
     /// wins everywhere (ADR 0022 rule 7, "replace"): every row of Synced data, every item
-    /// clock and list base, and every tombstone of a row that is not here, with what it
-    /// covers, get the next clock. A row the restored data holds then replaces every version
+    /// clock, the base of a list whose value is not in its shape, and every tombstone of a
+    /// row that is not here, with what it covers, get the next clock. The base of a list in
+    /// its shape keeps its clock, so another device's item made since (later than the base)
+    /// is a row the restored data never knew, and stays. A row the restored data holds then replaces every version
     /// another device has; a row it deleted is deleted everywhere; a row it never knew (made
     /// since on any device) is left alone. Another device's own Note text or list item it
     /// replaces is kept there as a Sync conflict's copy or "Name (2)" (its merge never saw
@@ -621,8 +623,31 @@ impl UserStore {
             }
         }
         stamp_unclocked(&tx, &clock)?;
-        tx.execute("UPDATE item_clock SET clock = ?1", [&clock])
-            .map_err(sql)?;
+        tx.execute(
+            "UPDATE item_clock SET clock = ?1 WHERE row_table <> ?2",
+            params![clock, LIST_BASE_TABLE],
+        )
+        .map_err(sql)?;
+        // A list's base stays as it is while its value is in its list's shape: the items,
+        // re-stamped, go on top of it, and another device's item the restored data never
+        // knew (later than the base) stays. A value not in shape is its base: re-stamped, it
+        // replaces what the others hold.
+        for key in texts(
+            &tx,
+            &format!("SELECT row_id FROM item_clock WHERE row_table = '{LIST_BASE_TABLE}'"),
+        )? {
+            let Some(list) = ListPreference::of_key(&key) else {
+                continue;
+            };
+            let value = read_preference(&tx, &key)?;
+            if value.is_some() && list.items(value.as_deref()).is_none() {
+                tx.execute(
+                    "UPDATE item_clock SET clock = ?1 WHERE row_table = ?2 AND row_id = ?3",
+                    params![clock, LIST_BASE_TABLE, key],
+                )
+                .map_err(sql)?;
+            }
+        }
         let mut lists = ListItems::default();
         let tombstones: Vec<(String, String)> = tx
             .prepare("SELECT row_table, row_id FROM tombstone")
