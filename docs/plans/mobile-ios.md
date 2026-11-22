@@ -72,7 +72,7 @@ to Claude Opus 5.5 later on".
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | done (PR #404) |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | done (PR #407) |
 | S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | done (PR #408) |
-| S29c | Sync 3c: merges in bounded transactions; the views read only what a merge changed | AFK | n | S29b (before S31) | migration 19 (`merge_cursor`), batched merge, resume, views' patch reads; an edit during a 10k-Note join under a frame | done (branch mobile/s29c-merge-batches, PR pending) |
+| S29c | Sync 3c: merges in bounded transactions; the views read only what a merge changed | AFK | n | S29b (before S31) | migration 19 (`merge_cursor`), batched merge, resume, views' patch reads; an edit during a 10k-Note join under a frame | done (PR #412) |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 (ships after S29b) | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S29c, S30 | test report, folder list for onboarding | todo |
 | S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
