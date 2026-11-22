@@ -158,16 +158,20 @@ fn unsafe_exception(root: &Path) -> Result<Vec<String>> {
 }
 
 /// In one file: how many times [`UNSAFE_IMPL`] appears (with `#[allow(unsafe_code)]` on the
-/// line before), and every other line with the keyword `unsafe` or an `allow(unsafe_code)`.
-/// Comments are not code.
+/// line before), and every other line with the word `unsafe` or `unsafe_code` (any `allow`,
+/// `expect` or other spelling of the lint). A `//` comment is not code, unless a `"` comes
+/// before it on the line (it may be in a string, `"http://"`).
 fn unsafe_violations(file: &str, text: &str) -> (usize, Vec<String>) {
     let code: Vec<&str> = (text.lines())
-        .map(|l| l.split("//").next().unwrap_or_default().trim())
+        .map(|l| match l.find("//") {
+            Some(i) if !l[..i].contains('"') => l[..i].trim(),
+            _ => l.trim(),
+        })
         .collect();
-    let keyword = |line: &str| {
-        line.match_indices("unsafe").any(|(i, _)| {
+    let has_word = |line: &str, w: &str| {
+        line.match_indices(w).any(|(i, _)| {
             let before = line[..i].chars().next_back();
-            let after = line[i + "unsafe".len()..].chars().next();
+            let after = line[i + w.len()..].chars().next();
             let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
             !word(before) && !word(after)
         })
@@ -181,7 +185,7 @@ fn unsafe_violations(file: &str, text: &str) -> (usize, Vec<String>) {
         if allowed {
             found += 1;
         } else if allow_for_it {
-        } else if keyword(line) || line.contains("allow(unsafe_code)") {
+        } else if has_word(line, "unsafe") || has_word(line, "unsafe_code") {
             bad.push(format!(
                 "{file}:{}: `unsafe` outside the one allowed impl (ADR 0021): {line}",
                 i + 1
@@ -438,7 +442,7 @@ mod tests {
 
     #[test]
     fn unsafe_outside_the_one_impl_fails() {
-        let ok = "// unsafe in a comment\n#[allow(unsafe_code)]\nunsafe impl<UT> uniffi::FfiConverter<UT> for TilePixels {\n}\nlet unsafe_code = 1;\n";
+        let ok = "// unsafe in a comment\n#[allow(unsafe_code)]\nunsafe impl<UT> uniffi::FfiConverter<UT> for TilePixels {\n}\nlet not_unsafe = 1; // unsafe_code\n";
         assert_eq!(unsafe_violations("a.rs", ok), (1, Vec::new()));
         let block = "fn f() { unsafe { g() } }\n";
         assert_eq!(unsafe_violations("a.rs", block).1.len(), 1);
@@ -450,6 +454,16 @@ mod tests {
         assert_eq!(unsafe_violations("a.rs", crate_wide).1.len(), 1);
         let other_impl = "#[allow(unsafe_code)]\nunsafe impl Send for X {}\n";
         assert_eq!(unsafe_violations("a.rs", other_impl).1.len(), 2);
+        for spelling in [
+            "#[allow(dead_code, unsafe_code)]\n",
+            "#[allow(unsafe_code, reason = \"x\")]\n",
+            "#[expect(unsafe_code)]\n",
+            "#![expect(unsafe_code)]\n",
+        ] {
+            assert_eq!(unsafe_violations("a.rs", spelling).1.len(), 1, "{spelling}");
+        }
+        let in_a_string = "let u = \"http://x\"; unsafe { g() }\n";
+        assert_eq!(unsafe_violations("a.rs", in_a_string).1.len(), 1);
     }
 
     #[test]
