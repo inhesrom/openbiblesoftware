@@ -114,10 +114,13 @@ pub struct MergeTx<'a> {
     tx: &'a Connection,
     lists: ListItems,
     device_id: String,
+    /// This device's id and its former ones (`sync_device.rs`): a clock naming any of them is
+    /// this device's own.
+    own_ids: Vec<String>,
     recording: bool,
     /// The Changes [`MergeTx::record`] applied, for the test-support recorder.
     #[cfg(feature = "test-support")]
-    recorded: Vec<Change>,
+    pub(crate) recorded: Vec<Change>,
     /// Where `recorded` stood at each open savepoint ([`MergeTx::begin_op`]).
     #[cfg(feature = "test-support")]
     marks: Vec<usize>,
@@ -127,6 +130,23 @@ impl MergeTx<'_> {
     /// This device's id.
     pub fn device_id(&self) -> &str {
         &self.device_id
+    }
+
+    /// The connection the merge writes through.
+    pub(crate) fn conn(&self) -> &Connection {
+        self.tx
+    }
+
+    /// Read the list preferences' items again at their next use (they were written past
+    /// [`ListItems`]).
+    pub(crate) fn forget_lists(&mut self) {
+        self.lists = ListItems::default();
+    }
+
+    /// Whether a clock naming `device` is this device's own: its id, or one this database had
+    /// before a restore or a copy gave it a new one (ADR 0022 rule 7).
+    pub fn is_own(&self, device: &str) -> bool {
+        self.own_ids.iter().any(|id| id == device)
     }
 
     /// The name the user gave this device (empty until then).
@@ -643,7 +663,8 @@ impl MergeTx<'_> {
     }
 
     /// List item `row` (a Collection, Copy preset or Saved search) under the first of
-    /// "`name` (2)", "`name` (3)" … that no item of its list here has.
+    /// "`name` (2)", "`name` (3)" … that no item of its list here has, nor holds an op of
+    /// (an item held while its list's value was damaged comes back under its name).
     pub fn renamed_for_clash(&mut self, row: &Row) -> Result<Option<Row>, StoreError> {
         let name = match row {
             Row::Collection(i) | Row::CopyPreset(i) | Row::SavedSearch(i) => i.name.clone(),
@@ -654,7 +675,7 @@ impl MergeTx<'_> {
             let Some(renamed) = renamed_item(row, &candidate) else {
                 return Ok(None);
             };
-            if self.state(&renamed.key())?.row.is_none() {
+            if self.state(&renamed.key())?.row.is_none() && !self.is_held(&renamed.key())? {
                 return Ok(Some(renamed));
             }
         }
@@ -727,21 +748,27 @@ impl UserStore {
     /// [`MergeTx::state`]).
     pub fn row_state(&self, key: &RowKey) -> Result<RowState, StoreError> {
         let own = read_device_id(&self.conn)?;
-        self.merge_tx(&self.conn, own, false).state(key)
+        self.merge_tx(&self.conn, own, false)?.state(key)
     }
 
-    fn merge_tx<'a>(&'a self, tx: &'a Connection, own: String, recording: bool) -> MergeTx<'a> {
-        MergeTx {
+    pub(crate) fn merge_tx<'a>(
+        &'a self,
+        tx: &'a Connection,
+        own: String,
+        recording: bool,
+    ) -> Result<MergeTx<'a>, StoreError> {
+        Ok(MergeTx {
             store: self,
             tx,
             lists: ListItems::default(),
+            own_ids: crate::sync_device::read_own_ids(tx)?,
             device_id: own,
             recording,
             #[cfg(feature = "test-support")]
             recorded: Vec::new(),
             #[cfg(feature = "test-support")]
             marks: Vec::new(),
-        }
+        })
     }
 
     /// The ops of other devices held here, by clock ([`HeldOp`]): what Needs attention lists
@@ -777,7 +804,7 @@ impl UserStore {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
         let own = read_device_id(&tx)?;
         let recording = records_ops(&tx, &own)?;
-        let mut m = self.merge_tx(&tx, own, recording);
+        let mut m = self.merge_tx(&tx, own, recording)?;
         let out = merge(&mut m)?;
         #[cfg(feature = "test-support")]
         let recorded = std::mem::take(&mut m.recorded);
@@ -974,7 +1001,7 @@ impl UserStore {
             .into());
         }
         let recording = records_ops(&tx, &own)?;
-        let mut m = self.merge_tx(&tx, own, recording);
+        let mut m = self.merge_tx(&tx, own, recording)?;
         let out = merge(&mut m)?;
         #[cfg(feature = "test-support")]
         let recorded = std::mem::take(&mut m.recorded);

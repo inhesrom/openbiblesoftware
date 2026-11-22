@@ -78,6 +78,21 @@ impl UserStore {
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
             .map_err(|e| not_a_backup(&e.to_string()))?;
         drop(src);
+        Self::check_backup(conn, path)
+    }
+
+    /// The Backup read into the in-memory database `conn` (from the file at `path`, or a
+    /// snapshot's bytes), checked and migrated as [`UserStore::open_backup`] says.
+    pub(crate) fn check_backup(
+        mut conn: Connection,
+        path: &Path,
+    ) -> Result<(UserStore, u32), StoreError> {
+        let not_a_backup = |why: &str| {
+            StoreError::Corrupt(format!(
+                "{} is not a backup of your data: {why}",
+                path.display()
+            ))
+        };
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(sql)?;
         let app_id: i32 = conn
@@ -237,18 +252,22 @@ impl UserStore {
     /// Replace everything in this database with `backup`, a Backup [`UserStore::open_backup`]
     /// read into memory. The file it was read from is not read again, so what is restored is
     /// the copy the caller checked, whatever has happened to the file since (#258). A Safety
-    /// backup of the database as it was is taken first; its path is returned.
+    /// backup of the database as it was is taken first; its path is returned. The restored
+    /// database gets a new Synced device id (ADR 0022 rule 7, `sync_device.rs`).
     pub fn restore_from(&mut self, backup: &UserStore) -> Result<PathBuf, StoreError> {
         let page_size = |c: &Connection| -> Result<i64, StoreError> {
             c.query_row("PRAGMA page_size", [], |r| r.get(0))
                 .map_err(sql)
         };
         let live = page_size(&self.conn)?;
+        // The Backup is staged in a copy, given the device's new id there (ADR 0022 rule 7),
+        // and then copied page by page in one transaction: the restored data, the new id, the
+        // former ids, the empty outbox and a pending choice arrive together or not at all.
         // Pages copy only between databases of one page size. A Backup made with another is
         // rebuilt with this database's in a file beside it (an in-memory database cannot
         // change its page size).
-        let rebuilt = if page_size(&backup.conn)? == live {
-            None
+        let staged = if page_size(&backup.conn)? == live {
+            Staged::Memory(backup.copy_in_memory()?)
         } else {
             std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
             let file = ScratchFile(
@@ -265,14 +284,34 @@ impl UserStore {
                 .map_err(sql)?;
             c.pragma_update(None, "page_size", live).map_err(sql)?;
             c.execute_batch("VACUUM").map_err(sql)?;
-            // The connection is closed before the file is removed: fields drop in order.
-            Some((c, file))
+            Staged::File {
+                conn: c,
+                _file: file,
+            }
         };
-        let source = rebuilt.as_ref().map_or(&backup.conn, |(c, _)| c);
+        let source = match &staged {
+            Staged::Memory(store) => &store.conn,
+            Staged::File { conn, .. } => conn,
+        };
+        let syncing = self.syncs()?;
+        let own = crate::sync_device::read_own_ids(&self.conn)?;
+        // A restored device is a new Synced device. Its own ids stay its own; the Backup's
+        // (and the Backup's former ones) only when the Backup is of this device's own
+        // (`sync_device.rs`). On a device that was syncing, the restore waits for the user to
+        // choose to catch up or replace.
+        let tx = source.unchecked_transaction().map_err(sql)?;
+        let mut former = own.clone();
+        if own.contains(&crate::sync_clock::read_device_id(&tx)?) {
+            former.extend(crate::sync_device::read_own_ids(&tx)?);
+        }
+        tx.execute("DELETE FROM former_device", []).map_err(sql)?;
+        crate::sync_device::renew_device_id(&tx, &former, syncing)?;
+        tx.commit().map_err(sql)?;
         let safety = self.safety_backup()?;
         rusqlite::backup::Backup::new(source, &mut self.conn)
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
             .map_err(sql)?;
+        drop(staged);
         self.reseed_clock();
         Ok(safety)
     }
@@ -399,6 +438,16 @@ impl UserStore {
 
 /// A file [`UserStore::new_scratch_file`] created, removed when dropped however the work on
 /// it ended, so an error part way never leaves it behind.
+/// A Backup staged for a restore: a copy in memory, or rebuilt in a file at this database's
+/// page size (the connection is closed before the file is removed: fields drop in order).
+enum Staged {
+    Memory(UserStore),
+    File {
+        conn: Connection,
+        _file: ScratchFile,
+    },
+}
+
 struct ScratchFile(PathBuf);
 
 impl Drop for ScratchFile {
@@ -444,8 +493,6 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
             .collect();
         return Err(format!("it is damaged ({})", rows.join("; ")));
     }
-    let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
-    migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;
     let objects = |c: &Connection| -> rusqlite::Result<Vec<(String, String)>> {
         c.prepare(
             "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -459,15 +506,14 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
             .collect()
     };
     let have = objects(conn).map_err(|e| format!("it is damaged ({e})"))?;
-    for (kind, name) in objects(&reference).map_err(|e| e.to_string())? {
-        if !have.iter().any(|(k, n)| *k == kind && *n == name) {
+    for (kind, name, wanted) in reference_schema()? {
+        if !have.iter().any(|(k, n)| k == kind && n == name) {
             return Err(format!("it has no {kind} `{name}`"));
         }
         if kind != "table" {
             continue;
         }
-        let found = columns(conn, &name).map_err(|e| format!("it is damaged ({e})"))?;
-        let wanted = columns(&reference, &name).map_err(|e| e.to_string())?;
+        let found = columns(conn, name).map_err(|e| format!("it is damaged ({e})"))?;
         if let Some(missing) = wanted.iter().find(|c| !found.contains(c)) {
             return Err(format!("its table `{name}` has no column `{missing}`"));
         }
@@ -491,6 +537,42 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("its Notes search index is damaged ({e})"))?;
     Ok(())
+}
+
+/// One object of a User database's schema: its type, its name and (a table's) its columns.
+type SchemaObject = (String, String, Vec<String>);
+
+/// Every table, column, index and trigger of a database freshly migrated to this build's
+/// version: `(type, name, columns)`, the columns of a table only. Made once per process (it
+/// is the same every time), since restores and snapshots check against it often (S28c).
+fn reference_schema() -> Result<&'static [SchemaObject], String> {
+    static SCHEMA: std::sync::OnceLock<Result<Vec<SchemaObject>, String>> =
+        std::sync::OnceLock::new();
+    let made = SCHEMA.get_or_init(|| {
+        let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
+        migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;
+        let objects: Vec<(String, String)> = reference
+            .prepare(
+                "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
+            .map_err(|e| e.to_string())?;
+        objects
+            .into_iter()
+            .map(|(kind, name)| {
+                let columns: Vec<String> = if kind == "table" {
+                    reference
+                        .prepare("SELECT name FROM pragma_table_info(?1)")
+                        .and_then(|mut s| s.query_map([&name], |r| r.get(0))?.collect())
+                        .map_err(|e| e.to_string())?
+                } else {
+                    Vec::new()
+                };
+                Ok((kind, name, columns))
+            })
+            .collect()
+    });
+    made.as_deref().map_err(Clone::clone)
 }
 
 /// Whether `a` and `b` name one file, existing or not.

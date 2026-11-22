@@ -187,6 +187,16 @@ pub enum OpsStop {
     NotWhole(String),
     /// A newer app wrote it: update the app to sync with this device (ADR 0022 rule 6).
     Newer { format: u32 },
+    /// The device has not been met here, and its first snapshot, which none of its op files
+    /// is merged before, has not arrived (S28c).
+    NoSnapshot,
+    /// The snapshot to merge first is only in the cloud; it is downloading.
+    SnapshotNotDownloaded,
+    /// The snapshot to merge first is incomplete, changed or damaged; why. It is read again
+    /// next time.
+    SnapshotNotWhole(String),
+    /// A newer app wrote the snapshot to merge first: update the app to sync with this device.
+    SnapshotNewer { format: u32 },
 }
 
 /// A device's op files read in order after the last one applied: each whole one, and, when
@@ -265,7 +275,8 @@ pub fn read_ops_after(
 /// Write this device's ops waiting in the User database's outbox to op files in `folder`,
 /// one file for each reserved batch; returns the numbers written. A file an earlier try
 /// wrote but did not note written (it stopped half way) is kept when it has the same bytes,
-/// and is [`SyncError::Damaged`] when it has others (an op file never changes once written);
+/// and is [`SyncError::OwnFileDiffers`] when it has others (an op file never changes once
+/// written; a copy of this database wrote it, which `sync_now` takes a new id for);
 /// nothing is noted written then.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn write_pending_ops(
@@ -292,11 +303,7 @@ pub fn write_pending_ops(
             .map_err(|e| super::SyncError::Damaged(format!("an op that is not JSON: {e}")))?;
         match folder.read(&path) {
             Ok(old) if old == bytes => {}
-            Ok(_) => {
-                return Err(super::SyncError::Damaged(format!(
-                    "{path} is in the Sync folder with other ops than it was reserved for; it is left as it is"
-                )));
-            }
+            Ok(_) => return Err(super::SyncError::OwnFileDiffers(path)),
             Err(FolderError::NotFound(_)) => folder.write_new(&path, &bytes)?,
             Err(e) => return Err(e.into()),
         }

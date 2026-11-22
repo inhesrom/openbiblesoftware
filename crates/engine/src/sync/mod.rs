@@ -4,16 +4,23 @@
 //! - `sync.json`: the folder's format version, written once by the first device;
 //! - `devices/<device-id>/device.json`: the device's name, platform and app version, the only
 //!   file a device ever writes again (its own, whole);
-//! - `devices/<device-id>/ops/<seq>.jsonl`: its op files ([`ops`]), each written once.
+//! - `devices/<device-id>/ops/<seq>.jsonl`: its op files ([`ops`]), each written once;
+//! - `devices/<device-id>/snapshots/<seq>-<sha256>.obsbackup`: its newest snapshot
+//!   ([`snapshot`]), a Backup of its Synced data covering its op files up to `seq`.
 //!
 //! [`folder`] is how the engine reaches the folder, [`clock`] the hybrid logical clock every
-//! op carries, [`merge`] how other devices' ops are merged here (ADR 0022 rule 3). Sync
-//! conflicts of Note text and the rules for deleted parents (plan S28b-2), snapshots and when
-//! sync runs (S28c) are later steps'. `docs/dev/sync.md` documents the files and the merge.
+//! op carries, [`merge`] how other devices' ops and snapshots are merged here (ADR 0022 rule
+//! 3), [`snapshot`] snapshots and trimming (rule 5), [`lifecycle`] a sync and the device-id
+//! rules (`sync_now`, the restore choice, rules 6–7), [`schedule`] when sync runs (rule 8).
+//! `docs/dev/sync.md` documents the files, the merge and the contract the shells use.
 
 pub mod clock;
 pub mod folder;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod lifecycle;
 // The merge writes the User database, which is SQLite: not on wasm (`obs-store`).
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod lifecycle_tests;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod merge;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -21,9 +28,13 @@ mod merge_props;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod merge_tests;
 pub mod ops;
+pub mod schedule;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod snapshot;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -31,6 +42,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(test, feature = "test-support"))]
 pub use folder::MemSyncFolder;
 pub use folder::{FolderError, FsSyncFolder, SyncFolder};
+#[cfg(not(target_arch = "wasm32"))]
+pub use lifecycle::{
+    RestoreChoice, SyncOptions, SyncReport, SyncState, needs_restore_choice, restore_choice,
+    sync_now,
+};
+pub use schedule::SyncSchedule;
 
 /// The folder in the Sync folder that holds every file of ours.
 pub const SYNC_ROOT: &str = "Open Bible Sync";
@@ -51,6 +68,10 @@ pub enum SyncError {
     /// The file at this path is only in the cloud (a placeholder); its download has started,
     /// and the next sync reads it.
     NotDownloaded(String),
+    /// This device's own op file at this path, reserved here and not yet noted written, is in
+    /// the Sync folder with other ops: another copy of this database wrote it under the same
+    /// id (ADR 0022 rule 7). It is left as it is.
+    OwnFileDiffers(String),
 }
 
 impl fmt::Display for SyncError {
@@ -60,6 +81,10 @@ impl fmt::Display for SyncError {
             SyncError::Store(e) => e.fmt(f),
             SyncError::Damaged(why) => f.write_str(why),
             SyncError::NotDownloaded(path) => write!(f, "{path} is still downloading"),
+            SyncError::OwnFileDiffers(path) => write!(
+                f,
+                "{path} is in the Sync folder with other ops than it was reserved for; it is left as it is"
+            ),
         }
     }
 }
@@ -141,6 +166,13 @@ pub struct DeviceJson {
     pub platform: String,
     /// The version of the app that last wrote it.
     pub app_version: String,
+    /// The last of each other device's op files it has merged, by device id (S28c): a device
+    /// trims none of its own op files another device seen lately has not merged.
+    #[serde(default)]
+    pub applied: BTreeMap<String, u64>,
+    /// When it last synced (Unix milliseconds, its own wall clock), if it has.
+    #[serde(default)]
+    pub synced_at: Option<i64>,
 }
 
 impl DeviceJson {
@@ -152,6 +184,8 @@ impl DeviceJson {
             name: name.to_string(),
             platform: platform.to_string(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
+            applied: BTreeMap::new(),
+            synced_at: None,
         }
     }
 }

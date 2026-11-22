@@ -399,7 +399,7 @@ fn an_op_file_already_there_with_other_bytes_is_left_and_not_noted_written() {
     for _ in 0..2 {
         assert!(matches!(
             write_pending_ops(&user, &folder),
-            Err(SyncError::Damaged(why)) if why.contains(&path)
+            Err(SyncError::OwnFileDiffers(at)) if at == path
         ));
     }
     assert_eq!(folder.0.get(&path).unwrap(), other, "left as it is");
@@ -517,7 +517,7 @@ fn a_device_rewrites_only_its_own_device_json_and_reads_every_other() {
     assert_eq!(
         text,
         format!(
-            "{{\"format\":1,\"device\":\"{me}\",\"name\":\"Study Mac\",\"platform\":\"macos\",\"app_version\":\"{}\"}}\n",
+            "{{\"format\":1,\"device\":\"{me}\",\"name\":\"Study Mac\",\"platform\":\"macos\",\"app_version\":\"{}\",\"applied\":{{}},\"synced_at\":null}}\n",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -538,7 +538,10 @@ fn a_device_rewrites_only_its_own_device_json_and_reads_every_other() {
     );
     let find = |id: &str| devices.iter().find(|d| d.id == id).unwrap().file.clone();
     assert_eq!(find(&me).unwrap(), renamed);
-    assert_eq!(find(&phone).unwrap().name, "Ian's iPhone");
+    // One from before S28c's `applied` and `synced_at` still reads, with neither.
+    let phone_file = find(&phone).unwrap();
+    assert_eq!(phone_file.name, "Ian's iPhone");
+    assert!(phone_file.applied.is_empty() && phone_file.synced_at.is_none());
     assert!(find(&broken).is_err());
 }
 

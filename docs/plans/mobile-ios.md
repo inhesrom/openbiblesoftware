@@ -69,7 +69,7 @@ to Claude Opus 5.5 later on".
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | done (PR #362) |
 | S28b-1 | Sync 2b-1 (Rust): merge rules (LWW, edit beats delete, absent fields, Readings, Preferred order, two defaults, Layout "(2)") + property tests | AFK | n | S28a | `sync/merge.rs`, migration 15, 10k-case property tests | done (PR #370) |
 | S28b-2 | Sync 2b-2 (Rust): Note-text Sync conflicts, deleted parents, list items of one name, a list's whole value | AFK | n | S28b-1 | `conflict_of`, parent rows in tombstones, `sync_held`, wider property tests | done (PR #402) |
-| S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | todo |
+| S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | done (PR #404) |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S30 | test report, folder list for onboarding | todo |
@@ -1819,13 +1819,147 @@ under the half they belong to.
   `row_clock`, added by the review fixes), the lists' bases
   (`item_clock ('preference', key)`, their items at the base's clock) and
   `annotations.conflict_of`, and be merged by the same rules (a whole list value as a base,
-  `MergeTx::write_list_base`); `sync_held` stays out of them (each device's own). The merge's
+  `MergeTx::write_list_base`); `sync_held` stays out of them (each device's own). **Corrected
+  by S28c (supervisor decision D1):** snapshots keep `sync_held`: its ops are in files the
+  snapshot's `applied_up_to` says it covers, so a device starting from the snapshot skips
+  those files and would never see them otherwise. The merge's
   "own row" checks (D2's copy, D6's rename and its kept item against an unseen delete, D4's
   demotion) go by the clock's device id, so after
   a restore gives the device a new id its older rows are not its own any more: decide whether
   that is acceptable (the other device's edit then wins in place with no copy) or the restore
   re-stamps them. `sync_now` should retry held ops (`merge_folder` does) and a sync that
   recorded anything (copies, restores, renames) should write again.
+
+- **Outcome (2026-11-23, branch `mobile/s28c-sync-lifecycle`):** `USER_SCHEMA_VERSION` 17.
+  **Owner decisions (via supervisor):** **D1** a snapshot is a SQLite file in the Backup format
+  (`OBSU`, `user_version`), made in memory from a copy with History, the Last session, the
+  remembered Resource names, the outbox, the former ids and every preference that is not
+  Synced data emptied, then `VACUUM`ed (no freed page leaves the device), at
+  `devices/<id>/snapshots/<seq>-<sha256>.obsbackup` (`seq` the own op files covered, the hash
+  of its bytes, since the Backup format has none); it keeps every synced table with clocks,
+  tombstones whole (covers, a parent's row with `row_covers` and `row_clock`), item clocks with
+  positions and list bases, `conflict_of`, `device`, `applied_up_to` (the clocks it covers) and
+  **`sync_held`** (deviation from S28b-2's bullet, corrected above); a newer `user_version` is
+  left alone with "update the app". **D2** an own op file is trimmed when the newest own
+  snapshot covers it, its last op is over 90 days old, and every device seen within 90 days
+  (`device.json` gains `applied` and `synced_at`, format 1 unchanged) has merged it; tombstones
+  are never trimmed. **D3** a restore gives a new id; `applied_up_to` is kept (the restored
+  state's view; the old own id's row becomes "merged up to" of that id), the outbox emptied,
+  `sync_held` kept; on a syncing device `device.restore_choice` waits for `restore_choice`
+  (`sync_now` returns `NeedsRestoreChoice`); Catch up = join + sync; Replace = new clocks, then
+  join: rows the restored data holds win everywhere, rows it deleted are deleted everywhere,
+  rows the Backup never knew are kept, another device's own unseen text or item becomes a
+  Sync conflict copy or "(2)" (ADR 0006 and rule 7 together: the stop-and-ask answered); a
+  restore on a non-syncing device: new id, no prompt; a copied database: new id and an
+  automatic catch-up. **D4** migration 17 `former_device` (the pre-restore id and its former
+  ones, plus the Backup's id only when it is one of them, since the review fixes; or the
+  copy's), counted as own by every own check (D2 copy, D6 rename and keep, D4
+  demotion). **Shipped:** store `sync_device.rs` (`own_device_ids`, `take_new_device_id`,
+  `renew_device_id` run by `restore_from`, the restore choice, the device name,
+  `merged_devices`, `last_reserved_op_file`), `snapshot_store.rs` (`snapshot_bytes` and
+  `open_snapshot` in memory through rusqlite's `serialize` feature, no new crate and
+  `Cargo.lock` unchanged; `snapshot_contents`, `merge_snapshot`, `merged_up_to`,
+  `has_pending_ops`, `join_sync`, `restamp_for_replace`, `keep_base_positions`), migration
+  16 → 17, the restore check's reference schema made once per process (a restore and a
+  snapshot read each migrated a fresh database before); engine `sync/snapshot.rs` (names,
+  write, read, `snapshot_ops`, merge, `snapshot_due` with `SnapshotPolicy`,
+  `trim_own_op_files`), `sync/lifecycle.rs` (`sync_now`, `needs_restore_choice`,
+  `restore_choice`, `SyncState`, `SyncReport`, `SyncOptions`, the copied-database check,
+  `SyncError::OwnFileDiffers`), `sync/schedule.rs` (`SyncSchedule`, `next_sync_due`: launch,
+  resume, request, 30 s after the first unsynced edit, 5 minutes on the desktop);
+  `merge_folder` merges the snapshots it needs first and no op file of a device before its
+  first snapshot (unless another device's snapshot covers it); the merge's own checks use
+  `MergeTx::is_own`; `docs/dev/sync.md` final (Contract, Data, Evidence),
+  `docs/dev/backups.md`. **Deviation from the deliverables:** `sync/lifecycle.rs` beside
+  `snapshot.rs` and `schedule.rs`, for `sync_now` and the device-id rules. **Join order:**
+  S28a's "write the snapshot, then `start_recording_ops`" became `join_sync` (every row without
+  a clock stamped, then recording), followed in the same sync by the first snapshot, and a
+  recording device with no snapshot in the folder writes one at its next sync, so a stop
+  between the two never leaves rows unsent. **Found by the property tests (fixed,
+  documented):** a snapshot's versions must count as not having seen this device's own (an
+  approved D1 detail, "seen when the snapshot covers every own file", lost an item when a
+  device whose clock ran ahead had written its version before merging this one's; reported to
+  the supervisor), so merging another's snapshot can make a copy no one needed, which is safe;
+  Replace's clock must pass every clock the restored data holds, even one far ahead (else a
+  snapshot covering a far-ahead device's files held older rows, and the devices that met that
+  device through it never got them); a delete's covers must not be taken from the row here; a
+  device met through another's snapshot no longer waits for its own; from the 10k runs, a
+  former id's op that loses to a version not its own (an edit merged before it) must keep its
+  text or item, as the device that wrote it would have (`merge::former_own_lost`; former ids'
+  files are merged first), and a snapshot's base positions must recompose the stored list.
+  **Tests:** store
+  `snapshot_db.rs` (2: nothing that stays on the device is in a snapshot, which reads back with
+  every row clocked and parents first; the join), `sync_clock_db.rs` (restores give a new id,
+  empty the outbox and keep every other table; migration 17); engine `lifecycle_tests` (13, one
+  per rule: two `FsSyncFolder` devices converge end to end and a third joins late; a late joiner
+  from snapshots alone holds tombstone rows, bases, copies and held ops; op files wait for the
+  first snapshot; trimming; a newer or changed snapshot and a newer folder; a copied database,
+  and a copy writing first; the restore choice across a restart; catch up; Replace making a
+  third device converge to the restored state; Replace keeping another device's own text as a
+  copy; the old id's text surviving, also merged after the edit that never saw it),
+  `schedule` (4); the S28a/S28b helpers join for real
+  (`merge_tests::push_ops`, `meet` for hand-written files); `merge_props` widened (real joins,
+  a third late; `sync_now` at a small policy, so snapshots and trimming; Backups restored with
+  both choices; D3's maker-left sequence; invariants over an archive of every op file and
+  snapshot ever written; what a Replace discards on purpose need not survive). Mutation checks:
+  former ids not own (props and 2 unit tests), Replace's clock not after every clock held
+  (props), a device met through another's snapshot waiting for its own (a unit test), a former
+  id's losing op not kept (a unit test). A 1k run (9.3 s, was 4 s: every join writes a snapshot
+  that every other device reads) reached: written 44,840, superseded 17,414, covered 118, edit
+  kept 305, delete noted 529, parent kept 30, held 27; late joins 308, snapshots merged 4,178
+  (46 for files trimmed), own files trimmed 138, restores catching up 34, replacing 35, D3
+  sequences 49 (parents back after their child's maker left them 47). A 10k run (94 s) reached:
+  written 448,639, superseded 180,273, covered 1,523, edit kept 3,264, delete noted 6,139,
+  parent kept 231, held 331; conflict copies 529, parents restored 688, items renamed 1,045,
+  items kept 19; late joins 3,043, snapshots merged 42,027 (676 for files trimmed), own files
+  trimmed 1,512, restores catching up 388, replacing 420. 10k runs with seeds 7, 424242,
+  99999999, 1, 31337 and 2026 green (about 94 s each). Measured: `cargo xtask ci` green
+  (12 m 18 s, 2,425 tests passed, 43 ignored); `cargo test -p obs-store --all-features` 160
+  passed; `cargo test -p obs-engine sync` 68 passed, 1 ignored (12.8 s); clippy (`-D
+  warnings`) and the wasm check clean. **Not done:** S29 and S30's screens; only
+  own op files are trimmed, so a restored or copied device leaves its old id's files in the
+  folder for good. S29's entry gained an "Added by S28c" bullet.
+  **Review fixes (2026-11-24, review BLOCK, every finding applied):** **P0** `merge_snapshot`
+  no longer moves `applied_up_to` of any own id (current or former, `is_own`), so a former
+  id's files merge op by op and its text survives a snapshot of a device met after the
+  Backup. **P1** Replace leaves the base of a list in its shape at its clock (a value not in
+  shape is still re-stamped), so another device's Collection made after the Backup stays.
+  **P1** the copied-database check runs on a device not syncing yet too: any op file or
+  snapshot under its id makes it take a new id before it joins. **P1** a restore stages the
+  Backup in a copy, gives it the new id, former ids, empty outbox and pending choice there,
+  then copies pages in one transaction. **P2 (supervisor decision)** a restore keeps the
+  device's own ids and adds the Backup's id only when it is one of them (a Backup of another
+  device's does not make that device's ops own); the Backup's own former ids come with it
+  then, and not otherwise. **P2** a snapshot's `notes_fts` is emptied before `VACUUM`
+  (`DELETE` + `optimize`: `delete-all` is refused on an index with its own content).
+  **P2** `SyncSchedule::synced(started, finished)` keeps a sync due for an edit made while it
+  ran. **P2** an own snapshot that fails `read_snapshot` is written again (each sync reads its
+  newest own snapshot), replacing a damaged file of its name. **P2** the property tests excuse
+  only what a Replace's own ids wrote after its Backup, check that a Collection another joined
+  device held and the Backup never knew stays, and run the review's (a) a Backup before a late
+  join restored catching up, (b) a copied database, joined or not, (c) Backups with the
+  Collections on a base, (d) an own snapshot damaged and written again. **P2** a v16 Backup
+  restore test. **Found by the 10k runs and fixed:** a clash rename ("Name (2)") could take
+  the name an own item was held under while its list was damaged, losing that item when it
+  came back (seen through a copy's former id); `renamed_for_clash` now skips held names.
+  **Documented cost:** a whole Collections value not in its shape written after the Backup
+  stays the base after a Replace (the list stays damaged, its items held, until a value in
+  shape is written; nothing lost). Mutation checks (each fails without its fix): P0 (a
+  lifecycle test, the props' late Backup), Replace's base (a lifecycle test, the props'
+  never-known check), the copy before joining (a lifecycle test, the props' copy), the atomic
+  restore (a store test whose new-id step fails: without staging the Backup's data stayed
+  under its old id), the former-id rule (two store tests), `notes_fts` (the raw-bytes test),
+  the schedule (a unit test), the damaged snapshot (a lifecycle test for the check and for the
+  same-name file, the props' mend), the held name (a store test, a 10k seed). Tests added:
+  lifecycle 4 (17 in all), store `sync_clock_db` 5, `snapshot_db` 1, `schedule` 1. Measured
+  on a Mac also building S23: 1k props 15–23 s (16.6 s before the sequences on the same load),
+  10k with the default seed and seeds 7, 424242, 31337 and 2026 green (145–191 s each; the
+  default reached late joins 3,001, snapshots merged 58,710, Backups before a late join
+  restored 551, databases copied 4,353, Backups on a base 2,304, snapshots written again
+  3,708, restores catching up 953, replacing 371); `cargo test -p obs-store --all-features`
+  166 passed; `cargo test -p obs-engine sync` 73 passed, 1 ignored; clippy clean;
+  `cargo xtask ci` green (8 m 20 s; 2,436 tests passed, 43 ignored; fmt, layers, assets,
+  licenses, clippy, a11y, test, wasm).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 
@@ -1850,6 +1984,15 @@ under the half they belong to.
   (`UserStore::sync_conflicts()`, each `conflict_of` naming the Note in place) before sync can
   be turned on for users: until then a copy looks like an ordinary Note. It should also list
   the held ops (`UserStore::sync_held()`, each with why it is held).
+- **Added by S28c (supervisor):** a Backup restore on a syncing device runs `sync_now` first
+  when the folder is reachable, so edits never written reach the folder before the restore
+  replaces them (`Session::restore_backup` cannot reach the folder), and only then restores.
+  After it, `sync_now` returns `SyncState::NeedsRestoreChoice` (and `needs_restore_choice` is
+  true, across a restart) until the prompt calls `restore_choice(CatchUp | Replace)`; Catch up
+  is the default. Render `SyncState::FolderNewer` and `report.merge.needs_newer_app()` (per
+  device "update the app"), the device name (`UserStore::set_device_name`), and drive
+  `SyncSchedule` (`at_launch(true)` on the desktop). The contract is `docs/dev/sync.md`
+  "Contract".
 
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
