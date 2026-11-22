@@ -663,7 +663,8 @@ impl MergeTx<'_> {
     }
 
     /// List item `row` (a Collection, Copy preset or Saved search) under the first of
-    /// "`name` (2)", "`name` (3)" … that no item of its list here has.
+    /// "`name` (2)", "`name` (3)" … that no item of its list here has, nor holds an op of
+    /// (an item held while its list's value was damaged comes back under its name).
     pub fn renamed_for_clash(&mut self, row: &Row) -> Result<Option<Row>, StoreError> {
         let name = match row {
             Row::Collection(i) | Row::CopyPreset(i) | Row::SavedSearch(i) => i.name.clone(),
@@ -674,7 +675,7 @@ impl MergeTx<'_> {
             let Some(renamed) = renamed_item(row, &candidate) else {
                 return Ok(None);
             };
-            if self.state(&renamed.key())?.row.is_none() {
+            if self.state(&renamed.key())?.row.is_none() && !self.is_held(&renamed.key())? {
                 return Ok(Some(renamed));
             }
         }

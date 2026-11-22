@@ -539,6 +539,39 @@ fn a_v16_backup_restores_into_17_with_its_id_a_former_one_and_no_choice_waiting(
 }
 
 #[test]
+fn a_name_held_for_a_damaged_list_is_not_free_for_a_clash_rename() {
+    let dir = Dir::new("held-name");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    db.set_preference("library.collections", r#"[{"name":"Study","n":1}]"#)
+        .unwrap();
+    let item = |name: &str, n: u32| {
+        Row::Collection(obs_store::SyncedListItem {
+            name: name.into(),
+            position: 0,
+            json: format!(r#"{{"n":{n},"name":"{name}"}}"#),
+        })
+    };
+    // "Study (2)" waits in `sync_held` (its list was damaged when it came).
+    let clock = add_notebook(&db, "Clock");
+    let renamed = db
+        .merge_held(|tx| {
+            tx.hold(&HeldOp {
+                clock,
+                change: Change::insert(item("Study (2)", 3)),
+                before_clock: None,
+                absent: Vec::new(),
+                why: "the list was damaged".into(),
+            })?;
+            tx.renamed_for_clash(&item("Study", 1))
+        })
+        .unwrap();
+    let Some(Row::Collection(renamed)) = renamed else {
+        panic!("{renamed:?}");
+    };
+    assert_eq!(renamed.name, "Study (3)", "the held item keeps its name");
+}
+
+#[test]
 fn every_database_has_a_device_id_from_open_and_from_open_backup() {
     let dir = Dir::new("device");
     // A v13 database and a Backup of it without the device row (only migration 12 → 13
