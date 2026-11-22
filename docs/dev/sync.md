@@ -21,12 +21,12 @@ shells render the states and words of the engine and hold no rule. Terms are in 
 | `obs-engine` | `sync/clock.rs` | Re-exports `obs_store::Hlc`: the store stamps rows itself (its own writes, such as `save_layout`, plan their Changes), so the clock lives there. |
 | `obs-engine` | `sync/ops.rs` | `Op`, `encode_op_file`, `decode_op_file`, `read_ops_after`, `write_pending_ops`. |
 | `obs-engine` | `sync/merge.rs` | The merge rules (`merge_op`) and `merge_folder`, which tries the held ops again, merges the snapshots it needs and every other device's op files not merged yet. |
-| `obs-engine` | `sync/snapshot.rs` | Snapshot names, `write_snapshot`, `read_snapshot`, `snapshot_ops`, `merge_snapshot`, `snapshot_due` (`SnapshotPolicy`), `trim_own_op_files`. |
+| `obs-engine` | `sync/snapshot.rs` | Snapshot names, `write_snapshot` (`write_snapshot_unless_edited`), `read_snapshot`, `snapshot_ops`, `merge_snapshot`, `snapshot_due` (`SnapshotPolicy`), `trim_own_op_files`. |
 | `obs-engine` | `sync/lifecycle.rs` | `sync_now`, `needs_restore_choice`, `restore_choice` (`RestoreChoice`), `SyncOptions`, `SyncReport`, `SyncState`; the copied-database check. |
 | `obs-engine` | `sync/schedule.rs` | `SyncSchedule` and `next_sync_due` (ADR 0022 rule 8). Compiles everywhere. |
 | `obs-engine` | `sync/mod.rs` | Paths, `sync.json` (`ensure_sync_json`), `device.json` (`write_device_json`, `read_devices`), `SyncError`. |
 | `obs-engine` | `sync/texts.rs` | Every word the shells show of Sync (S29, owner-approved through the supervisor): onboarding, folder guidance per platform, status lines, device rows, the restore prompt, the Sync conflict's text and actions, held ops' lines. Compiles everywhere; S30 shows the same. |
-| `obs-engine` | `sync_worker.rs` | S29b: `SyncWorker` (a sync or a restore's choice on a thread of its own, on a second connection), `RESTORE_SYNC_WAIT`, the folder it refuses once abandoned. |
+| `obs-engine` | `sync_worker.rs` | S29b: `SyncWorker` (a sync or a restore's choice on a thread of its own, on a second connection), `RESTORE_SYNC_WAIT`, `STOP_SYNC_WAIT`, the folder it refuses once abandoned. |
 | `obs-engine` | `sync_session.rs` | The desktop Session's sync (S29): the Sync folder (`SYNC_FOLDER_PREF`), the `SyncSchedule`, `Session::sync_tick`, `sync_panel`, `sync_indicator`, `sync_restore_pending`, `sync_held_lines`, `resolve_sync_conflict` (`ConflictChoice`), the restore's hooks, commands `sync.*`. |
 | `obs-ui-egui` | `shell/sync_ui.rs` | Settings → Sync, the menu bar's status indicator, the restore prompt, the frame's tick; Needs attention's parts are in `shell/notes_tab.rs`. |
 
