@@ -497,9 +497,26 @@ impl State {
             return;
         };
         if ed.text != ed.saved {
-            let params = json!({ "id": ed.id, "body": ed.text, "continue": ed.saved_once });
+            // Saved over the text it started from: a Note a sync changed meanwhile keeps the
+            // other device's text, and this text goes into a Sync conflict's copy (ADR 0022).
+            let params = json!({
+                "id": ed.id,
+                "body": ed.text,
+                "base": ed.saved,
+                "continue": ed.saved_once,
+            });
             match self.session.run("annotation.edit", &params) {
-                Ok(_) => {
+                Ok(out) => {
+                    if let Some(copy) = out["annotation"]["id"].as_str()
+                        && copy != ed.id
+                    {
+                        // The editor goes on in the copy, where its text is.
+                        ed.id = copy.to_string();
+                        ed.focus = !finished;
+                        if ed.place == EditPlace::NotesTool {
+                            self.session.notes.reveal = Some((ed.id.clone(), false));
+                        }
+                    }
                     ed.saved = ed.text.clone();
                     ed.saved_once = true;
                     ed.error = None;
@@ -648,10 +665,9 @@ impl State {
                         ));
                         ui.add_space(space::XS);
                         let r = row(ui, attention, "Needs attention", self.notes_ui.attention as u64)
-                            .on_hover_text(
-                                "Annotations whose text was not found after their Resource \
-                                 changed, and Sync conflicts",
-                            );
+                            .on_hover_text(obs_engine::sync::texts::needs_attention_hover(
+                                self.session.sync_folder().is_some(),
+                            ));
                         if r.clicked() {
                             run.push(("notes.notebook", json!({ "value": "attention" })));
                         }
@@ -1080,16 +1096,17 @@ impl State {
     }
 
     /// A Sync conflict's copy's actions (plan S29): Keep this version, Keep the other, Keep
-    /// both, Combine; each is one undo step. Either Note being edited stops being edited, as
-    /// for Delete.
+    /// both, Combine; each is one undo step. The Note being edited saves first (the text typed
+    /// in the copy is what the action keeps); one whose save was refused stays open, and the
+    /// action waits.
     fn conflict_actions(&mut self, ui: &mut Ui, card: &Card, run: &mut Vec<(&'static str, Value)>) {
         let a = &card.annotation;
         ui.horizontal_wrapped(|ui| {
-            for choice in obs_engine::ConflictChoice::ALL {
-                if ui.button(choice.label()).clicked() {
-                    let edited = self.notes_ui.editing.as_ref().map(|e| e.id.as_str());
-                    if edited.is_some_and(|e| e == a.id || Some(e) == a.conflict_of.as_deref()) {
-                        self.notes_ui.editing = None;
+            for (choice, label) in card.conflict_actions {
+                if ui.button(*label).clicked() {
+                    self.save_card_edit(true);
+                    if self.notes_ui.editing.is_some() {
+                        continue;
                     }
                     run.push((
                         "sync.resolve_conflict",

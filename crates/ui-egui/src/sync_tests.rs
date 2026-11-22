@@ -3,7 +3,8 @@
 //! databases choose one folder there (the native folder dialog injected) and converge; after
 //! a Backup is restored on a syncing window its prompt shows, and Catch up and Replace both
 //! work; a Sync conflict's copy is in Needs attention with its four actions and the changes
-//! held back are listed. The gallery's Sync surfaces are drawn by [`sync_tabs`] and
+//! held back are listed; an autosave after a merge changed its Note keeps both texts, and
+//! Combine clicked while typing in the copy keeps the typed text. The gallery's Sync surfaces are drawn by [`sync_tabs`] and
 //! [`sync_dialogs`]. `UPDATE_PREVIEWS=1` writes `sync-*.ppm` to `target/previews/`.
 
 use std::path::{Path, PathBuf};
@@ -338,6 +339,134 @@ fn a_sync_conflict_and_a_change_waiting_are_in_needs_attention() {
         None
     );
     assert!(!shows(&h, texts::KEEP_BOTH));
+}
+
+/// Where Note card `id`'s body was drawn in the Notes Tool.
+fn card_body(h: &Harness, id: &str) -> egui::Rect {
+    (h.shell.st.notes_ui.drawn.iter())
+        .find(|c| c.id == id)
+        .and_then(|c| c.body)
+        .unwrap_or_else(|| panic!("no card body for {id}"))
+}
+
+/// Click Note card `id`'s body and replace its text by typing `text`.
+fn retype(h: &mut Harness, id: &str, text: &str) {
+    h.click(card_body(h, id).center());
+    assert_eq!(
+        h.shell.st.notes_ui.editing.as_ref().map(|e| e.id.as_str()),
+        Some(id)
+    );
+    h.events.push(egui::Event::Key {
+        key: egui::Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.frame();
+    type_text(h, text);
+}
+
+fn type_text(h: &mut Harness, text: &str) {
+    h.events.push(egui::Event::Text(text.into()));
+    h.frame();
+}
+
+/// The Note card being edited, if any.
+fn edited(h: &Harness) -> Option<String> {
+    h.shell.st.notes_ui.editing.as_ref().map(|e| e.id.clone())
+}
+
+fn autosave(h: &mut Harness) {
+    h.time += crate::shell::notes_tab::AUTOSAVE_SECS + 0.2;
+    h.frames(3);
+}
+
+/// A Note card being typed in when a sync merges another device's edit of its Note: the
+/// next autosave keeps the other device's text in place and the typed text as a Sync
+/// conflict's copy, where the typing goes on; the other device gets both.
+#[test]
+fn an_autosave_after_a_merge_changed_the_note_keeps_both_texts() {
+    let dir = temp("autosave-merge");
+    let folder = dir.join("folder");
+    let mut a = window(&dir.join("a/user.db"), &folder);
+    let mut b = window(&dir.join("b/user.db"), &folder);
+    choose_folder(&mut a);
+    choose_folder(&mut b);
+    a.shell.run(
+        "annotation.note",
+        &json!({ "passage": "Gen 1:1", "body": "In the beginning" }),
+    );
+    sync_now(&mut a);
+    sync_now(&mut b);
+    let note = a.shell.st.session.annotations(None).unwrap().remove(0);
+    a.shell.run("tool.notes", &json!({}));
+    a.frames(5);
+    retype(&mut a, &note.id, "Typed on A");
+    // B's edit reaches A while its card is still being typed in, before the autosave.
+    b.shell.run(
+        "annotation.edit",
+        &json!({ "id": note.id, "body": "Edited on B" }),
+    );
+    sync_now(&mut b);
+    a.shell.run("sync.now", &json!({}));
+    a.frames(4);
+    let body = |h: &Harness, id: &str| {
+        h.shell
+            .st
+            .session
+            .annotation(id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    assert_eq!(body(&a, &note.id), "Edited on B", "the merge");
+    assert_eq!(edited(&a).as_deref(), Some(note.id.as_str()));
+    autosave(&mut a);
+    assert_eq!(body(&a, &note.id), "Edited on B", "not written over");
+    let copies = a.shell.st.session.sync_conflicts();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    let copy = &copies[0];
+    assert_eq!(copy.body(), "Typed on A");
+    assert_eq!(copy.conflict_of.as_deref(), Some(note.id.as_str()));
+    assert_eq!(
+        edited(&a).as_deref(),
+        Some(copy.id.as_str()),
+        "the editor went on in the copy"
+    );
+    // The typing goes on there.
+    a.frames(2);
+    assert!(a.ctx.text_edit_focused(), "the copy's editor has the keys");
+    type_text(&mut a, ", and more");
+    autosave(&mut a);
+    assert_eq!(body(&a, &copy.id), "Typed on A, and more");
+    assert_eq!(body(&a, &note.id), "Edited on B");
+    // Needs attention offers its four actions; B gets both texts.
+    needs_attention(&mut a);
+    assert!(shows(&a, texts::COMBINE), "{:?}", a.texts());
+    sync_now(&mut a);
+    sync_now(&mut b);
+    assert_eq!(note_texts(&b), ["Edited on B", "Typed on A, and more"]);
+}
+
+/// Text typed in a Sync conflict's copy and Combine clicked before the autosave: the typed
+/// text is what is combined.
+#[test]
+fn combine_clicked_while_typing_in_the_copy_keeps_the_typed_text() {
+    let dir = temp("combine-typing");
+    let folder = dir.join("folder");
+    let mut h = window(&dir.join("a/user.db"), &folder);
+    choose_folder(&mut h);
+    let (note, copy) = conflicted_note(&mut h);
+    needs_attention(&mut h);
+    retype(&mut h, &copy.id, "Beginnings: typed just now.");
+    h.click_text(texts::COMBINE);
+    h.frames(3);
+    assert_eq!(
+        h.shell.st.session.annotation(&note.id).unwrap().body(),
+        "Beginnings: the heavens first.\n\nBeginnings: typed just now."
+    );
+    assert!(h.shell.st.session.annotation(&copy.id).is_err());
 }
 
 // ---------------------------------------------------------------------------------------

@@ -146,7 +146,10 @@ impl State {
             } else {
                 theme::c().muted
             };
-            ui.add(egui::Label::new(RichText::new(&panel.status).color(colour)).wrap());
+            // A failure is said once, by its notice below.
+            if panel.details.is_none() {
+                ui.add(egui::Label::new(RichText::new(&panel.status).color(colour)).wrap());
+            }
         });
         if let Some(details) = &panel.details {
             crate::components::error_notice(ui, texts::UNREACHABLE, details);
