@@ -1917,7 +1917,7 @@ this in addition to its own lines):
   - **Measured.** Simulator (iOS 27.2, Debug app, `[profile.ios]` core): a background run
     over the 18 Starter library Resources outside the Bundled set without indexes (345 MB of
     library) builds all 18 in 8.4 s on an iPhone 17 and 8.8 s on an iPad Air 11-inch (M4).
-    `xcodebuild test`, all 26 tests (5 new, 1 extended), iPhone 17 8 min 38 s, iPad 9 min
+    `xcodebuild test`, all 26 tests (4 new, 1 extended), iPhone 17 8 min 38 s, iPad 9 min
     33 s, both passing with the Import files placed and `TEST_RUNNER_OBS_STUDY_SET_DIR`.
     Host: a threaded `step_background()` ends within `BACKGROUND_STEP` + 0.4 s and other calls
     are answered in under 0.3 s while it runs (`apps/obs-ffi/tests/background.rs`).
