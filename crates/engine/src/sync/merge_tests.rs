@@ -1788,7 +1788,7 @@ fn a_copys_originals_older_write_is_not_held_beside_this_devices_own_item() {
         .iter()
         .map(|h| h.clock.device_id.clone())
         .collect();
-    assert_eq!(held, [a.id.clone()], "A's own Read only");
+    assert_eq!(held, std::slice::from_ref(&a.id), "A's own Read only");
     let report = merge_folder(&a.user, &cloud).unwrap();
     assert_eq!(report.recorded.items_renamed, 0, "{report:?}");
     assert_eq!(
@@ -2116,7 +2116,10 @@ fn of_a_former_ids_held_writes_only_the_newest_is_kept() {
                 "INSERT INTO former_device (device_id, seq) VALUES ('{later}', 1)"
             ))
             .unwrap();
-        assert_eq!(d.user.own_device_ids().unwrap()[1..], [later.clone()]);
+        assert_eq!(
+            &d.user.own_device_ids().unwrap()[1..],
+            std::slice::from_ref(&later)
+        );
     };
     let b = device(&dir, "b");
     former(&b);
