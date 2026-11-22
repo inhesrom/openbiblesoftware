@@ -320,85 +320,36 @@ pub fn snapshot_ops(contents: &SnapshotContents) -> Vec<SnapshotOp> {
     out
 }
 
-/// Whether the snapshot `contents` saw this device's own version `state` of a row: its clock
-/// is this device's current id's, the snapshot covers every op file this device has written,
-/// and the row has no op still in the outbox. A version under a former id is taken as not
-/// seen (a Sync conflict's copy no one needed is safe; a lost text is not).
-fn saw_own_version(
-    contents: &SnapshotContents,
-    own: &str,
-    written: u64,
-    outbox: &[(String, String)],
-    key: &RowKey,
-    clock: Option<&Hlc>,
-) -> bool {
-    let Some(clock) = clock else {
-        return false;
-    };
-    if clock.device_id != own {
-        return false;
-    }
-    let (kind, id) = key.tombstone();
-    contents.applied.get(own).copied().unwrap_or(0) >= written
-        && !outbox.iter().any(|(k, i)| k == kind && *i == id)
-}
-
 /// Merge another device's snapshot (its `contents`, covering its op files up to `seq`) in one
 /// transaction that notes it merged (`UserStore::merge_snapshot`). Its rows merge by the same
-/// rules as ops (`merge_keyed`); a row here that is this device's own takes the snapshot's
-/// version as seen (the op's `before`) only when the snapshot covered every op file this
-/// device wrote ([`saw_own_version`]), else as an unseen version, which may make a Sync
-/// conflict's copy or a "Name (2)" (safe).
+/// rules as ops (`merge_keyed`), each as a version this device's own rows were not seen by: a
+/// snapshot does not say what each of its versions replaced, and a version later by its clock
+/// may still have been written before its device merged this one's (a clock running ahead).
+/// So this device's own Note text or list item that a snapshot's version replaces is kept as
+/// a Sync conflict's copy or "Name (2)", even when the other device had seen it (a copy no
+/// one needed, which is safe; a lost text is not).
 pub fn merge_snapshot(
     user: &UserStore,
     seq: u64,
     contents: &SnapshotContents,
     report: &mut MergeReport,
 ) -> Result<(), MergeError> {
-    let own = user.device_id()?;
-    let written = user.applied_up_to(&own)?;
-    let outbox = user.outbox_rows()?;
     let ops = snapshot_ops(contents);
     let mut outcomes = Vec::with_capacity(ops.len());
     let mut not_observed = 0;
     let mut recorded = Recorded::default();
     user.merge_snapshot(&contents.device, seq, &contents.applied, |tx| {
         for snapshot_op in &ops {
-            let mut op = snapshot_op.op.clone();
+            let op = &snapshot_op.op;
             if !user.observe_clock(&op.clock) {
                 not_observed += 1;
-            }
-            // The rows whose own versions the merge keeps when another's replaces them unseen
-            // (a Note's text, a list item of one name).
-            let own_checked = matches!(
-                snapshot_op.key,
-                RowKey::Annotation(_)
-                    | RowKey::Collection(_)
-                    | RowKey::CopyPreset(_)
-                    | RowKey::SavedSearch(_)
-            );
-            if !snapshot_op.held && own_checked {
-                let here = tx.state(&snapshot_op.key)?;
-                if here.row.is_some()
-                    && saw_own_version(
-                        contents,
-                        &own,
-                        written,
-                        &outbox,
-                        &snapshot_op.key,
-                        here.clock.as_ref(),
-                    )
-                {
-                    op.before = here.row.clone();
-                    op.before_clock = here.clock.clone();
-                }
             }
             tx.begin_op()?;
             let mut by_op = Recorded::default();
             let merged = if snapshot_op.held {
-                merge_op(tx, &op, &[], &mut by_op)
+                merge_op(tx, op, &[], &mut by_op)
             } else {
-                merge_keyed(tx, &op, &snapshot_op.key, &[], &mut by_op)
+                merge_keyed(tx, op, &snapshot_op.key, &[], &mut by_op)
             };
             match merged {
                 Ok(outcome) => {
@@ -414,7 +365,7 @@ pub fn merge_snapshot(
                 }
                 Err(MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why))) => {
                     tx.end_op(false)?;
-                    tx.hold(&super::merge::held_of(&op, why))?;
+                    tx.hold(&super::merge::held_of(op, why))?;
                     outcomes.push(Outcome::Held);
                 }
                 Err(e) => {

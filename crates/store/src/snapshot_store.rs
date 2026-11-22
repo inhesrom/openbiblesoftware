@@ -24,7 +24,6 @@ use std::collections::BTreeMap;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::annotation::{Row, RowKey};
-use crate::backup_store::ScratchFile;
 use crate::error::StoreError;
 use crate::hlc::Hlc;
 use crate::merge_store::{HeldOp, MergeTx};
@@ -258,9 +257,11 @@ fn stamp_unclocked(c: &Connection, clock: &str) -> Result<(), StoreError> {
 
 impl UserStore {
     /// The bytes of a snapshot of this database (module docs): a Backup holding only Synced
-    /// data and what merging it needs, written through a scratch file in the backups folder.
+    /// data and what merging it needs. Made in memory: a copy, emptied of what stays on the
+    /// device, vacuumed, and marked as a rollback-journal file (as [`UserStore::back_up`]
+    /// marks a Backup), so it opens as one file.
     pub fn snapshot_bytes(&self) -> Result<Vec<u8>, StoreError> {
-        let copy = self.copy_in_memory()?;
+        let mut copy = self.copy_in_memory()?;
         for table in SNAPSHOT_EMPTIED {
             copy.conn
                 .execute(&format!("DELETE FROM {table}"), [])
@@ -276,27 +277,35 @@ impl UserStore {
         copy.conn
             .execute_batch("UPDATE device SET restore_choice = 0; VACUUM;")
             .map_err(sql)?;
-        std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
-        let file = ScratchFile(self.new_scratch_file(
-            &self.backup_dir().join(".snapshot-writing"),
-            crate::backup::BACKUP_EXTENSION,
-        )?);
-        copy.back_up(&file.0)?;
-        std::fs::read(&file.0).map_err(StoreError::Io)
+        let mut bytes = copy
+            .conn
+            .serialize(rusqlite::MAIN_DB)
+            .map_err(sql)?
+            .to_vec();
+        // The file format's write and read versions (offsets 18 and 19): 1, a rollback
+        // journal, not 2 (WAL), whatever the copy had.
+        if let Some(versions) = bytes.get_mut(18..20) {
+            versions.copy_from_slice(&[1, 1]);
+        }
+        Ok(bytes)
     }
 
     /// The snapshot `bytes` read as a User database in memory, migrated to this build's
     /// format, with the format version it was written in: checked as a Backup is
     /// ([`UserStore::open_backup`]), so one that is not whole is refused, and one of a newer
-    /// format is [`StoreError::NewerFormat`]. Read through a scratch file in the backups folder.
+    /// format is [`StoreError::NewerFormat`].
     pub fn open_snapshot(&self, bytes: &[u8]) -> Result<(UserStore, u32), StoreError> {
-        std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
-        let file = ScratchFile(self.new_scratch_file(
-            &self.backup_dir().join(".snapshot-reading"),
-            crate::backup::BACKUP_EXTENSION,
-        )?);
-        std::fs::write(&file.0, bytes).map_err(StoreError::Io)?;
-        UserStore::open_backup(&file.0)
+        let not_whole = |why: String| {
+            StoreError::Corrupt(format!("the snapshot is not a backup of your data: {why}"))
+        };
+        if bytes.len() < 100 || !bytes.starts_with(b"SQLite format 3\0") {
+            return Err(not_whole("it is not a SQLite file".into()));
+        }
+        let mut conn = Connection::open_in_memory().map_err(sql)?;
+        // Its own copy of the bytes, which it may grow (a migration writes).
+        conn.deserialize_read_exact(rusqlite::MAIN_DB, bytes, bytes.len(), false)
+            .map_err(|e| not_whole(e.to_string()))?;
+        UserStore::check_backup(conn, &self.path)
     }
 
     /// What this database (a snapshot [`UserStore::open_snapshot`] read) holds for the merge.
@@ -585,14 +594,26 @@ impl UserStore {
     /// another device has; a row it deleted is deleted everywhere; a row it never knew (made
     /// since on any device) is left alone. Another device's own Note text or list item it
     /// replaces is kept there as a Sync conflict's copy or "Name (2)" (its merge never saw
-    /// the snapshot's version replace it). A device whose clock runs ahead of this one's can
-    /// still win with an edit stamped later. The restore's choice no longer waits.
+    /// the snapshot's version replace it). The new clock comes after every clock the data
+    /// holds, even one far ahead, so a snapshot that covers another device's files still holds
+    /// rows as new as theirs; an edit the restored data never saw, from a device whose clock
+    /// runs ahead of this one's, can still win. The restore's choice no longer waits.
     pub fn restamp_for_replace(&self) -> Result<(), StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
         // The user chose: the restore waits no more, in the same step.
         tx.execute("UPDATE device SET restore_choice = 0 WHERE id = 1", [])
             .map_err(sql)?;
-        let clock = self.next_clock(&tx)?.encode()?;
+        // After every clock the data holds, even one far ahead (which the device's own clock
+        // does not follow): a snapshot covering another device's files must hold rows as new
+        // as theirs.
+        let next = self.next_clock(&tx)?;
+        let clock = match crate::sync_clock::largest_held_clock(&tx)? {
+            Some(held) if held >= next.tick() => {
+                Hlc::next(Some(held), crate::clock::now_ms(), &next.device_id)?
+            }
+            _ => next,
+        }
+        .encode()?;
         for table in SYNCED_TABLES {
             if *table == "preference" {
                 continue;

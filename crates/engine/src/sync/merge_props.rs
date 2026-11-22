@@ -59,10 +59,12 @@ use obs_store::{
     Tombstone, UserStore,
 };
 
-use super::folder::MemSyncFolder;
+use super::folder::{FolderError, MemSyncFolder, SyncFolder};
+use super::lifecycle::{RestoreChoice, SyncOptions, SyncState, restore_choice, sync_now};
 use super::merge::{Outcome, merge_folder};
-use super::merge_tests::{Dir, files_of, view};
-use super::ops::{Op, read_ops_after, write_pending_ops};
+use super::merge_tests::{Dir, files_of, push_ops, view};
+use super::ops::{Op, OpFileRead, decode_op_file, write_pending_ops};
+use super::snapshot::{SnapshotFile, SnapshotPolicy, snapshot_file, snapshot_ops};
 
 /// Cases each CI run checks.
 const CI_CASES: u64 = 1_000;
@@ -130,10 +132,41 @@ const TAGS: &str = "library.tags";
 /// Values of the Collections that are not a list this app reads (D7).
 const DAMAGED: &[&str] = &["not a list", r#"[{"name":"Dup"},{"name":"Dup"}]"#];
 
+/// The Sync folder of a case, keeping every op file and snapshot ever written to it
+/// (trimming and newer snapshots delete them from the folder; the invariants read every one).
+struct ArchivingFolder {
+    folder: MemSyncFolder,
+    archive: std::sync::Mutex<BTreeMap<String, Vec<u8>>>,
+}
+
+impl SyncFolder for ArchivingFolder {
+    fn list(&self, dir: &str) -> Result<Vec<String>, FolderError> {
+        self.folder.list(dir)
+    }
+    fn read(&self, path: &str) -> Result<Vec<u8>, FolderError> {
+        self.folder.read(path)
+    }
+    fn write_new(&self, path: &str, bytes: &[u8]) -> Result<(), FolderError> {
+        if path.contains("/ops/") || path.contains("/snapshots/") {
+            self.archive
+                .lock()
+                .unwrap()
+                .insert(path.to_string(), bytes.to_vec());
+        }
+        self.folder.write_new(path, bytes)
+    }
+    fn remove(&self, path: &str) -> Result<(), FolderError> {
+        self.folder.remove(path)
+    }
+    fn ensure_available(&self, path: &str) -> Result<bool, FolderError> {
+        self.folder.ensure_available(path)
+    }
+}
+
 /// One case's devices and the folder they share.
 struct World {
     devices: Vec<UserStore>,
-    folder: MemSyncFolder,
+    folder: ArchivingFolder,
     /// Notebooks the generator made (not a device's default): it may delete them.
     deletable: BTreeSet<String>,
     /// Highlight styles and palettes the generator made: it may delete them.
@@ -152,6 +185,20 @@ struct World {
     offsets: Vec<i64>,
     /// Each device's last change (the Changes its edit applied), for its undo.
     last: Vec<Vec<Change>>,
+    /// Each device's join snapshot not yet in the folder (its first push writes it before its
+    /// op files); `None` before it joins or once written.
+    joins: Vec<Option<SnapshotFile>>,
+    /// Whether each device has joined (it records ops).
+    joined: Vec<bool>,
+    /// Each device's Backup (a copy of its database), to restore later.
+    backups: Vec<Option<UserStore>>,
+    /// Note texts and Collections (their JSON without the name) a device discarded on purpose
+    /// by restoring a Backup without them and replacing what is in the folder: they need not
+    /// survive.
+    discarded_texts: BTreeSet<String>,
+    discarded_items: BTreeSet<String>,
+    /// How this case writes snapshots and trims (small, so they happen).
+    options: SyncOptions,
     /// What the merges did, over every case of a run.
     stats: Stats,
 }
@@ -179,6 +226,17 @@ struct Stats {
     /// [`World::d7_step`]).
     q1_steps: usize,
     d7_steps: usize,
+    /// D3's second case run whole ([`World::d3_step`]).
+    d3_steps: usize,
+    /// S28c: devices joined after the others had synced, snapshots merged (and of them, of a
+    /// device met before: its files trimmed), own op files trimmed, Backups restored with
+    /// each choice.
+    late_joins: usize,
+    snapshots_merged: usize,
+    snapshots_after_trim: usize,
+    trimmed: usize,
+    catch_ups: usize,
+    replaces: usize,
 }
 
 impl Stats {
@@ -197,8 +255,8 @@ impl Stats {
     }
 }
 
-/// A device copied from `template` with an id and default Notebook of its own, recording
-/// ops, its default Notebook in its ops (as joining with a snapshot would put it, plan S28c).
+/// A device copied from `template` with an id and default Notebook of its own (written as
+/// its own edit before it records ops, so only its join snapshot brings it to the others).
 fn device(template: &UserStore, rng: &mut Rng) -> UserStore {
     let user = template.copy_in_memory().unwrap();
     user.execute_unchecked(&format!("UPDATE device SET device_id = '{}'", new_id()))
@@ -209,7 +267,6 @@ fn device(template: &UserStore, rng: &mut Rng) -> UserStore {
         1_000 + rng.below(3)
     ))
     .unwrap();
-    user.start_recording_ops().unwrap();
     let default = user.notebooks().unwrap().remove(0);
     user.apply_changes(&[Change::update(
         Row::Notebook(default.clone()),
@@ -235,9 +292,129 @@ impl World {
         fix(Some(self.now + self.offsets[d]));
     }
 
+    /// Device `d` joins now if it has not (plan S28c): it records ops from now on, and its
+    /// snapshot of what it holds goes out with its first push.
+    fn join(&mut self, d: usize) {
+        if self.joined[d] {
+            return;
+        }
+        let user = &self.devices[d];
+        user.join_sync().unwrap();
+        self.joins[d] = Some(snapshot_file(user).unwrap());
+        self.joined[d] = true;
+        if self.joined.iter().filter(|j| **j).count() > 1
+            && !self.folder.archive.lock().unwrap().is_empty()
+        {
+            self.stats.late_joins += 1;
+        }
+    }
+
+    /// Device `d` writes its join snapshot (if not yet) and its pending ops.
+    fn push_device(&mut self, d: usize) -> Vec<u64> {
+        self.join(d);
+        let user = &self.devices[d];
+        let written = match &self.joins[d] {
+            Some(join) => push_ops(user, join, &self.folder),
+            None => write_pending_ops(user, &self.folder).unwrap(),
+        };
+        self.joins[d] = None;
+        written
+    }
+
+    /// Device `d` syncs as the app does (`sync_now`): it also writes its snapshots and trims
+    /// its own op files, at this case's small policy.
+    fn sync_now(&mut self, d: usize) {
+        self.push_device(d);
+        let met = self.met(d);
+        let report = match sync_now(&self.devices[d], &self.folder, &self.options).unwrap() {
+            SyncState::Synced(report) => report,
+            other => panic!("device {d}: {other:?}"),
+        };
+        self.stats.trimmed += report.trimmed.len();
+        self.merged(d, &report.merge, &met);
+    }
+
+    /// What device `d` has merged of each other device's (none: not met).
+    fn met(&self, d: usize) -> BTreeMap<String, Option<u64>> {
+        let user = &self.devices[d];
+        self.devices
+            .iter()
+            .map(|e| e.device_id().unwrap())
+            .chain(user.merged_devices().unwrap().into_keys())
+            .map(|id| {
+                let seq = user.merged_up_to(&id).unwrap();
+                (id, seq)
+            })
+            .collect()
+    }
+
+    /// Device `d` takes a Backup of its database, or restores the one it took and chooses to
+    /// catch up or replace (ADR 0022 rule 7). What a replace discards on purpose (the Note
+    /// texts and Collections it holds that the Backup does not) need not survive.
+    fn backup_or_restore(&mut self, d: usize, rng: &mut Rng) {
+        if !self.joined[d] {
+            return;
+        }
+        let Some(backup) = self.backups[d].take().filter(|_| rng.below(2) == 0) else {
+            self.backups[d] = Some(self.devices[d].copy_in_memory().unwrap());
+            return;
+        };
+        self.push_device(d);
+        let choice = if rng.below(2) == 0 {
+            RestoreChoice::CatchUp
+        } else {
+            RestoreChoice::Replace
+        };
+        if choice == RestoreChoice::Replace {
+            let texts = |u: &UserStore| -> BTreeSet<String> {
+                u.annotations(None)
+                    .unwrap()
+                    .iter()
+                    .filter(|a| a.is_note())
+                    .map(|a| a.body().to_string())
+                    .collect()
+            };
+            let items = |u: &UserStore| -> BTreeSet<String> {
+                u.preference(COLLECTIONS)
+                    .unwrap()
+                    .and_then(|v| collection_items(&v))
+                    .unwrap_or_default()
+                    .values()
+                    .map(|j| without_name(j))
+                    .collect()
+            };
+            let (now_texts, now_items) = (texts(&self.devices[d]), items(&self.devices[d]));
+            let (then_texts, then_items) = (texts(&backup), items(&backup));
+            self.discarded_texts
+                .extend(now_texts.difference(&then_texts).cloned());
+            self.discarded_items
+                .extend(now_items.difference(&then_items).cloned());
+        }
+        self.devices[d].restore_from(&backup).unwrap();
+        let met = self.met(d);
+        let report =
+            match restore_choice(&self.devices[d], &self.folder, choice, &self.options).unwrap() {
+                SyncState::Synced(report) => report,
+                other => panic!("device {d}: {other:?}"),
+            };
+        match choice {
+            RestoreChoice::CatchUp => self.stats.catch_ups += 1,
+            RestoreChoice::Replace => self.stats.replaces += 1,
+        }
+        self.last[d].clear();
+        self.joins[d] = None;
+        self.stats.trimmed += report.trimmed.len();
+        self.merged(d, &report.merge, &met);
+    }
+
     /// Device `d` writes its ops and merges: often everything in the folder, else what a
-    /// partly synced folder shows it (each other device's files, or only its first few).
+    /// partly synced folder shows it (each other device's files, or only its first few), and
+    /// sometimes as the app does, trimming too.
     fn sync(&mut self, d: usize, rng: &mut Rng) {
+        if rng.below(4) == 0 {
+            self.sync_now(d);
+            return;
+        }
         if rng.below(3) == 0 {
             let mut seen = Vec::new();
             for e in 0..self.devices.len() {
@@ -258,23 +435,37 @@ impl World {
 
     /// Device `d` writes its ops and merges every other device's.
     fn sync_all(&mut self, d: usize) {
-        write_pending_ops(&self.devices[d], &self.folder).unwrap();
+        self.push_device(d);
+        let met = self.met(d);
         let report = merge_folder(&self.devices[d], &self.folder).unwrap();
-        self.merged(d, &report);
+        self.merged(d, &report, &met);
     }
 
     /// Device `d` writes its ops and merges only the op files `seen` (device id, number), as
-    /// a folder its cloud has not brought the rest of shows them.
+    /// a folder its cloud has not brought the rest of shows them (every snapshot is there).
     fn sync_seeing(&mut self, d: usize, seen: &[(String, u64)]) {
-        write_pending_ops(&self.devices[d], &self.folder).unwrap();
+        self.push_device(d);
+        let met = self.met(d);
         let files: Vec<(&str, u64)> = seen.iter().map(|(id, n)| (id.as_str(), *n)).collect();
-        let report = merge_folder(&self.devices[d], &view(&self.folder, &files)).unwrap();
-        self.merged(d, &report);
+        let report = merge_folder(&self.devices[d], &view(&self.folder.folder, &files)).unwrap();
+        self.merged(d, &report, &met);
     }
 
-    fn merged(&mut self, d: usize, report: &super::merge::MergeReport) {
+    /// Device `d` merged (`report`), having merged `met` of each device before.
+    fn merged(
+        &mut self,
+        d: usize,
+        report: &super::merge::MergeReport,
+        met: &BTreeMap<String, Option<u64>>,
+    ) {
         assert!(report.stopped.is_empty(), "{report:?}");
         self.stats.add(report);
+        self.stats.snapshots_merged += report.snapshots.len();
+        self.stats.snapshots_after_trim += report
+            .snapshots
+            .iter()
+            .filter(|(id, _)| met.get(id).is_some_and(Option::is_some))
+            .count();
         // What the merge recorded is not this device's change to undo.
         self.devices[d].take_applied_changes();
     }
@@ -282,15 +473,15 @@ impl World {
     /// Device `e`'s op files in the folder, in order.
     fn files(&self, e: usize) -> Vec<(String, u64)> {
         let id = self.devices[e].device_id().unwrap();
-        files_of(&self.folder, &id)
+        files_of(&self.folder.folder, &id)
             .into_iter()
             .map(|n| (id.clone(), n))
             .collect()
     }
 
     /// Device `d` writes its pending ops to the folder.
-    fn push(&self, d: usize) {
-        write_pending_ops(&self.devices[d], &self.folder).unwrap();
+    fn push(&mut self, d: usize) {
+        self.push_device(d);
     }
 
     /// Device `d`'s last change: what it applied since the last call.
@@ -308,12 +499,12 @@ impl World {
             for d in 0..self.devices.len() {
                 self.now += 1;
                 self.as_device(d);
-                let user = &self.devices[d];
-                busy |= !write_pending_ops(user, &self.folder).unwrap().is_empty();
-                let report = merge_folder(user, &self.folder).unwrap();
+                busy |= !self.push_device(d).is_empty();
+                let met = self.met(d);
+                let report = merge_folder(&self.devices[d], &self.folder).unwrap();
                 assert!(report.waiting.is_empty(), "{report:?}");
-                busy |= !report.merged.is_empty();
-                self.stats.add(&report);
+                busy |= !report.merged.is_empty() || !report.snapshots.is_empty();
+                self.merged(d, &report, &met);
             }
             if !busy {
                 return;
@@ -519,6 +710,68 @@ impl World {
         self.sync_seeing(d, &seen);
         self.sync_all(d);
         self.stats.q1_steps += 1;
+    }
+
+    /// D3's second case (a parent restored for a child its maker then moved or deleted): X
+    /// deletes a Notebook both it and M have, with its Annotations, and pushes; M, not having
+    /// met the delete, adds a Note to it, then moves the Note to its default Notebook or
+    /// deletes it, and syncs. The Notebook comes back on every device (the others restored it
+    /// for the Note), so M must take it back too.
+    fn d3_step(&mut self, rng: &mut Rng) {
+        let n = self.devices.len();
+        let x = rng.below(n);
+        let m = (x + 1 + rng.below(n - 1)) % n;
+        let shared: Vec<Notebook> = self.devices[x]
+            .notebooks()
+            .unwrap()
+            .into_iter()
+            .filter(|nb| {
+                self.deletable.contains(&nb.id)
+                    && self.devices[m].notebook(&nb.id).unwrap().is_some()
+            })
+            .collect();
+        let Some(nb) = rng.pick(&shared).cloned() else {
+            return;
+        };
+        self.as_device(x);
+        self.delete_notebook(x, &nb, false);
+        self.done(x);
+        self.push(x);
+        self.now += 1;
+        self.as_device(m);
+        let body = self.text("d3 by M");
+        let a = Annotation {
+            id: new_id(),
+            notebook_id: nb.id.clone(),
+            content: Content::Note { body },
+            anchor: None,
+            created_at: 7,
+            modified_at: 7,
+            conflict_of: None,
+        };
+        self.devices[m]
+            .apply_changes(&[Change::insert(Row::Annotation(a.clone()))])
+            .unwrap();
+        self.done(m);
+        self.push(m);
+        self.child_leaves(m, &a);
+        let default = self.devices[m].notebooks().unwrap().remove(0);
+        let leave = if rng.below(2) == 0 {
+            Change::update(
+                Row::Annotation(a.clone()),
+                Row::Annotation(Annotation {
+                    notebook_id: default.id,
+                    modified_at: 8,
+                    ..a
+                }),
+            )
+        } else {
+            Change::delete(Row::Annotation(a))
+        };
+        self.devices[m].apply_changes(&[leave]).unwrap();
+        self.done(m);
+        self.sync_all(m);
+        self.stats.d3_steps += 1;
     }
 
     /// The S28b-2 review's D7 sequence (held items put back on a merged base in shape): P
@@ -1017,14 +1270,32 @@ impl World {
     }
 }
 
-/// Every op every device wrote.
-fn every_op(folder: &MemSyncFolder, devices: &[UserStore]) -> Vec<Op> {
+/// Every op every device wrote, with the row it is about and whether it is a snapshot's
+/// (`true`): each op file's ops, then each
+/// snapshot's rows, tombstones and held ops as the ops they merge as (`snapshot_ops`), from
+/// `archive` (every op file and snapshot ever written; `reader` opens the snapshots).
+fn every_op(archive: &BTreeMap<String, Vec<u8>>, reader: &UserStore) -> Vec<(RowKey, Op, bool)> {
     let mut ops = Vec::new();
-    for user in devices {
-        let read = read_ops_after(folder, &user.device_id().unwrap(), 0).unwrap();
-        assert!(read.stopped.is_none());
-        for (_, file) in read.files {
-            ops.extend(file);
+    for (path, bytes) in archive {
+        if path.contains("/ops/") {
+            let OpFileRead::Whole(file) = decode_op_file(bytes) else {
+                panic!("{path} is not whole");
+            };
+            ops.extend(
+                file.into_iter()
+                    .map(|op| (op.change().key().unwrap(), op, false)),
+            );
+        }
+    }
+    for (path, bytes) in archive {
+        if path.contains("/snapshots/") {
+            let (snapshot, _) = reader.open_snapshot(bytes).unwrap();
+            let contents = snapshot.snapshot_contents().unwrap();
+            ops.extend(
+                snapshot_ops(&contents)
+                    .into_iter()
+                    .map(|s| (s.key, s.op, true)),
+            );
         }
     }
     ops
@@ -1047,6 +1318,10 @@ fn comparable(row: &Row) -> Row {
 /// every run starts from the same one; and the name (`kind/id`) of every row it holds.
 fn template(dir: &Dir) -> (UserStore, BTreeSet<String>) {
     fix(Some(TEMPLATE_MS));
+    // The first snapshot read in a process makes its reference schema once (taking an id),
+    // before any seeded id is taken, so every run of a seed takes the same ids.
+    let (warm, _) = UserStore::open(&dir.0.join("warm.db")).unwrap();
+    warm.open_snapshot(&warm.snapshot_bytes().unwrap()).unwrap();
     seed_ids(Some(0));
     let (template, _) = UserStore::open(&dir.0.join("template.db")).unwrap();
     let names = template
@@ -1137,9 +1412,21 @@ fn check_case(
             user
         })
         .collect();
+    // Snapshots every few own op files; own op files trimmed once a few seconds old.
+    let options = SyncOptions {
+        platform: "test".into(),
+        policy: SnapshotPolicy {
+            after_files: 1 + u64::try_from(rng.below(3)).unwrap(),
+            after_ms: 1_000 + rng.ms(20_000),
+            trim_after_ms: 1_000 + rng.ms(30_000),
+        },
+    };
     let mut world = World {
         devices,
-        folder: MemSyncFolder::new(),
+        folder: ArchivingFolder {
+            folder: MemSyncFolder::new(),
+            archive: Default::default(),
+        },
         deletable: BTreeSet::new(),
         made_styles: BTreeSet::new(),
         made_palettes: BTreeSet::new(),
@@ -1149,8 +1436,22 @@ fn check_case(
         now,
         offsets,
         last: vec![Vec::new(); n],
+        joins: vec![None; n],
+        joined: vec![false; n],
+        backups: (0..n).map(|_| None).collect(),
+        discarded_texts: BTreeSet::new(),
+        discarded_items: BTreeSet::new(),
+        options,
         stats: std::mem::take(stats),
     };
+    // Most devices join at once; the others join late, at their first sync, with what they
+    // made before (only their snapshot brings it to the others).
+    for d in 0..n {
+        if d == 0 || rng.below(3) != 0 {
+            world.as_device(d);
+            world.join(d);
+        }
+    }
     for _ in 0..(10 + rng.below(40)) {
         let d = rng.below(n);
         world.now += rng.step();
@@ -1158,6 +1459,8 @@ fn check_case(
         match rng.below(60) {
             0 | 1 => world.q1_step(&mut rng),
             2 | 3 => world.d7_step(&mut rng),
+            7 => world.d3_step(&mut rng),
+            5 | 6 => world.backup_or_restore(d, &mut rng),
             n if n % 4 == 0 => world.sync(d, &mut rng),
             _ => world.edit(d, &mut rng),
         }
@@ -1183,8 +1486,9 @@ fn check_case(
         .count();
     *stats = std::mem::take(&mut world.stats);
 
+    let ops = every_op(&world.folder.archive.lock().unwrap(), &world.devices[0]);
     if let Ok(filter) = std::env::var("OBS_MERGE_TRACE") {
-        for op in every_op(&world.folder, &world.devices) {
+        for (_, op, _) in &ops {
             let line = serde_json::to_string(&op).unwrap();
             if line.contains(&filter) {
                 eprintln!("{line}");
@@ -1229,8 +1533,10 @@ fn check_case(
     let collections = RowKey::Preference(COLLECTIONS.into());
     // The Collections of every whole value written (their items had no op of their own).
     let mut whole_items = BTreeSet::new();
-    for op in every_op(&world.folder, &world.devices) {
-        let key = op.change().key().unwrap();
+    // Rows a device made and deleted before it joined: only its snapshot's tombstone has them.
+    let mut deleted_before_joining = BTreeSet::new();
+    let mut deleted_in_files = BTreeSet::new();
+    for (key, op, from_snapshot) in ops {
         let name = row_name(&key);
         if let Some(Row::Annotation(a)) = &op.after {
             annotation_ids.insert(a.id.clone());
@@ -1295,6 +1601,11 @@ fn check_case(
                 }
             }
             None => {
+                if from_snapshot {
+                    deleted_before_joining.insert(name.clone());
+                } else {
+                    deleted_in_files.insert(name.clone());
+                }
                 let (_, t) = deleted.entry(name).or_insert((
                     key,
                     Tombstone {
@@ -1310,11 +1621,13 @@ fn check_case(
     let base_items: Option<(Hlc, Option<BTreeMap<String, String>>)> = base
         .as_ref()
         .map(|(clock, value)| (clock.clone(), collection_items(value)));
-    // Deletes of rows never written in an op (made before the devices recorded) are left
-    // out: none are generated. A Collection may have come in a whole value.
+    // A row deleted is one an op or snapshot wrote, or a Collection of a whole value, or one
+    // a device made and deleted before it joined (only its snapshot's tombstone has it).
     for name in deleted.keys() {
+        let before_joining =
+            deleted_before_joining.contains(name) && !deleted_in_files.contains(name);
         assert!(
-            newest.contains_key(name) || whole_items.contains(name),
+            newest.contains_key(name) || whole_items.contains(name) || before_joining,
             "{name} deleted, never written"
         );
     }
@@ -1416,7 +1729,9 @@ fn check_case(
         .collect();
     for text in &written_texts {
         assert!(
-            live_texts.contains(text) || seen_texts.contains(text),
+            live_texts.contains(text)
+                || seen_texts.contains(text)
+                || world.discarded_texts.contains(text),
             "the Note text “{text}” was lost"
         );
     }
@@ -1457,7 +1772,10 @@ fn check_case(
             .as_ref()
             .is_some_and(|(base, items)| items.is_none() || clock <= base);
         assert!(
-            live_items.contains(json) || replaced_items.contains(json) || superseded,
+            live_items.contains(json)
+                || replaced_items.contains(json)
+                || superseded
+                || world.discarded_items.contains(json),
             "the Collection {json} added at {clock} was lost"
         );
     }
@@ -1530,7 +1848,8 @@ fn run(cases: u64, name: &str) {
          clash {}; default Notebooks demoted {}; Collection items moved {}; undos {}; clocks \
          more than a day ahead not observed {}; recorded {:?}; Collections written damaged {}, \
          in shape again {}; parents back after their child's maker left them {}; the review's \
-         Q1 sequence {}, D7 sequence {}",
+         Q1 sequence {}, D7 sequence {}, D3 sequence {}; late joins {}, snapshots merged {} ({} for files \
+         trimmed), own op files trimmed {}, restores catching up {}, replacing {}",
         stats.outcomes,
         stats.retried,
         stats.renamed_layouts,
@@ -1544,6 +1863,13 @@ fn run(cases: u64, name: &str) {
         stats.maker_left,
         stats.q1_steps,
         stats.d7_steps,
+        stats.d3_steps,
+        stats.late_joins,
+        stats.snapshots_merged,
+        stats.snapshots_after_trim,
+        stats.trimmed,
+        stats.catch_ups,
+        stats.replaces,
     );
     for outcome in [
         Outcome::Written,
@@ -1583,6 +1909,19 @@ fn run(cases: u64, name: &str) {
         ),
         ("the review's Q1 sequence", stats.q1_steps),
         ("the review's D7 sequence", stats.d7_steps),
+        (
+            "D3's sequence of a child's maker leaving it",
+            stats.d3_steps,
+        ),
+        ("a device joining late", stats.late_joins),
+        ("a snapshot merged", stats.snapshots_merged),
+        (
+            "a snapshot merged for op files trimmed",
+            stats.snapshots_after_trim,
+        ),
+        ("an own op file trimmed", stats.trimmed),
+        ("a restore that catches up", stats.catch_ups),
+        ("a restore that replaces", stats.replaces),
     ] {
         assert!(n > 0, "no case reached {what}");
     }

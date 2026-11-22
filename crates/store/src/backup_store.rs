@@ -78,6 +78,21 @@ impl UserStore {
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
             .map_err(|e| not_a_backup(&e.to_string()))?;
         drop(src);
+        Self::check_backup(conn, path)
+    }
+
+    /// The Backup read into the in-memory database `conn` (from the file at `path`, or a
+    /// snapshot's bytes), checked and migrated as [`UserStore::open_backup`] says.
+    pub(crate) fn check_backup(
+        mut conn: Connection,
+        path: &Path,
+    ) -> Result<(UserStore, u32), StoreError> {
+        let not_a_backup = |why: &str| {
+            StoreError::Corrupt(format!(
+                "{} is not a backup of your data: {why}",
+                path.display()
+            ))
+        };
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(sql)?;
         let app_id: i32 = conn
@@ -194,11 +209,7 @@ impl UserStore {
     /// file being written, and return its path. A file already there is never touched, and
     /// a name that is this database or SQLite's files beside it is skipped, so removing the
     /// scratch file afterwards can only remove what this call created.
-    pub(crate) fn new_scratch_file(
-        &self,
-        base: &Path,
-        extension: &str,
-    ) -> Result<PathBuf, StoreError> {
+    fn new_scratch_file(&self, base: &Path, extension: &str) -> Result<PathBuf, StoreError> {
         let base = base.as_os_str().to_string_lossy().into_owned();
         let mut last = None;
         for n in 0..1000u32 {
@@ -412,7 +423,7 @@ impl UserStore {
 
 /// A file [`UserStore::new_scratch_file`] created, removed when dropped however the work on
 /// it ended, so an error part way never leaves it behind.
-pub(crate) struct ScratchFile(pub(crate) PathBuf);
+struct ScratchFile(PathBuf);
 
 impl Drop for ScratchFile {
     fn drop(&mut self) {
@@ -457,8 +468,6 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
             .collect();
         return Err(format!("it is damaged ({})", rows.join("; ")));
     }
-    let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
-    migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;
     let objects = |c: &Connection| -> rusqlite::Result<Vec<(String, String)>> {
         c.prepare(
             "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -472,15 +481,14 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
             .collect()
     };
     let have = objects(conn).map_err(|e| format!("it is damaged ({e})"))?;
-    for (kind, name) in objects(&reference).map_err(|e| e.to_string())? {
-        if !have.iter().any(|(k, n)| *k == kind && *n == name) {
+    for (kind, name, wanted) in reference_schema()? {
+        if !have.iter().any(|(k, n)| k == kind && n == name) {
             return Err(format!("it has no {kind} `{name}`"));
         }
         if kind != "table" {
             continue;
         }
-        let found = columns(conn, &name).map_err(|e| format!("it is damaged ({e})"))?;
-        let wanted = columns(&reference, &name).map_err(|e| e.to_string())?;
+        let found = columns(conn, name).map_err(|e| format!("it is damaged ({e})"))?;
         if let Some(missing) = wanted.iter().find(|c| !found.contains(c)) {
             return Err(format!("its table `{name}` has no column `{missing}`"));
         }
@@ -504,6 +512,39 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("its Notes search index is damaged ({e})"))?;
     Ok(())
+}
+
+/// Every table, column, index and trigger of a database freshly migrated to this build's
+/// version: `(type, name, columns)`, the columns of a table only. Made once per process (it
+/// is the same every time), since restores and snapshots check against it often (S28c).
+fn reference_schema() -> Result<&'static [(String, String, Vec<String>)], String> {
+    static SCHEMA: std::sync::OnceLock<Result<Vec<(String, String, Vec<String>)>, String>> =
+        std::sync::OnceLock::new();
+    let made = SCHEMA.get_or_init(|| {
+        let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
+        migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;
+        let objects: Vec<(String, String)> = reference
+            .prepare(
+                "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
+            .map_err(|e| e.to_string())?;
+        objects
+            .into_iter()
+            .map(|(kind, name)| {
+                let columns: Vec<String> = if kind == "table" {
+                    reference
+                        .prepare("SELECT name FROM pragma_table_info(?1)")
+                        .and_then(|mut s| s.query_map([&name], |r| r.get(0))?.collect())
+                        .map_err(|e| e.to_string())?
+                } else {
+                    Vec::new()
+                };
+                Ok((kind, name, columns))
+            })
+            .collect()
+    });
+    made.as_deref().map_err(Clone::clone)
 }
 
 /// Whether `a` and `b` name one file, existing or not.

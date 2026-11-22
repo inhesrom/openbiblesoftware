@@ -143,6 +143,26 @@ fn largest_clock(c: &Connection, now_ms: i64) -> Result<Option<(u64, u16)>, Stor
     Ok(largest)
 }
 
+/// The largest wall time and counter of any clock in the database that parses, however far
+/// ahead it is (a restore's replace must pass every clock its data holds, S28c).
+pub(crate) fn largest_held_clock(c: &Connection) -> Result<Option<(u64, u16)>, StoreError> {
+    let glob = clock_glob();
+    let mut largest = None;
+    for table in clocked_tables(c)? {
+        let clock: Option<String> = c
+            .query_row(
+                &format!("SELECT MAX(clock) FROM {table} WHERE clock GLOB ?1"),
+                [&glob],
+                |r| r.get(0),
+            )
+            .map_err(sql)?;
+        if let Some(tick) = clock.as_deref().and_then(Hlc::parse).map(|h| h.tick()) {
+            largest = largest.max(Some(tick));
+        }
+    }
+    Ok(largest)
+}
+
 /// This device's id; [`StoreError::Corrupt`] when there is none or it is not a UUID
 /// (`ensure_device` at open replaces both).
 pub(crate) fn read_device_id(c: &Connection) -> Result<String, StoreError> {

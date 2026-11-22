@@ -20,7 +20,7 @@ obs-search.workspace = true
 # rusqlite's bundled C SQLite does not build for wasm32-unknown-unknown; the .obr backend
 # is native-only until a sqlite-wasm-rs backend lands (#12 rule 5).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rusqlite = { workspace = true, features = ["backup"] }
+rusqlite = { workspace = true, features = ["backup", "serialize"] }
 # Whether a Backup or Export destination is the User database itself, by any path (hard links
 # included, which Windows' std offers no stable way to tell, #217).
 same-file = "1"
