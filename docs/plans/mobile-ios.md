@@ -1805,7 +1805,8 @@ this in addition to its own lines):
     --test library` (3, 1 new), `cargo test -p obs-store --test sync_schema_db`; `cargo
     xtask ios build --sim-only`, `xcodegen generate`, the iPhone and iPad runs above;
     previews `docs/previews/ios/s24-*.png`; `cargo xtask gallery` unchanged; `cargo xtask
-    ci` (see the PR: the known `find_bar` flake failed one run and passed alone).
+    ci` green (a first run hit the known `find_bar` flake, which passed alone and on the
+    second full run).
 
 #### S25 — On-device index builds, `BGProcessingTask`, Storage, backup exclusion
 
