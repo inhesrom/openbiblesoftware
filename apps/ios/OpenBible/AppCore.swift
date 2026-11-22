@@ -88,10 +88,19 @@ final class AppCore {
 
     /// The app's own folder for the core: Application Support/OpenBible.
     nonisolated static func appFolder() throws -> URL {
-        try FileManager.default.url(
+        let support = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
-            create: true
-        ).appendingPathComponent("OpenBible", isDirectory: true)
+            create: true)
+        #if DEBUG
+            // Test harness: UI tests that add to the library (ImportTests) boot in a folder of
+            // their own, made afresh, so the app's own library stays as other tests expect it.
+            if let name = ProcessInfo.processInfo.environment["OBS_TEST_APP_FOLDER"] {
+                let folder = support.appendingPathComponent(name, isDirectory: true)
+                try? FileManager.default.removeItem(at: folder)
+                return folder
+            }
+        #endif
+        return support.appendingPathComponent("OpenBible", isDirectory: true)
     }
 
     /// The Bundled set inside the app (`project.yml` copies it as `starter`).

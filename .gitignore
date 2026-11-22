@@ -14,6 +14,8 @@
 # project from apps/ios/project.yml; `cargo xtask ios build` writes the XCFramework and the
 # generated Swift into the local package.
 /apps/ios/*.xcodeproj
+# XcodeGen writes the app's Info.plist from project.yml's `info` (S26).
+/apps/ios/OpenBible/Info.plist
 /apps/ios/Packages/OpenBibleCore/ObsFFI.xcframework/
 /apps/ios/Packages/OpenBibleCore/Sources/Generated/
 /apps/ios/Packages/OpenBibleCore/.build/

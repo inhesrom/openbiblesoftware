@@ -79,7 +79,9 @@ fn a_usfm_zip_imports_with_its_report_and_the_copy_is_deleted() {
     let licence = section(&view, "Licence");
     assert!(licence.warning);
     assert!(licence.lines[0].starts_with("Licence: unknown"));
-    assert!(section(&view, "Source files and Bible books").lines.len() >= 10);
+    let files = section(&view, "Source files and Bible books");
+    assert!(files.lines.len() >= 10);
+    assert!(files.collapsed && !licence.collapsed && !summary.collapsed);
     assert!(view.status.starts_with("Search index"), "{}", view.status);
     assert!(
         !dest.exists() && !dest.parent().unwrap().exists(),
@@ -211,6 +213,17 @@ fn refusals_say_why_in_plain_words_and_delete_the_copy() {
         view.failure.as_deref(),
         Some("This zip holds several SWORD modules. Zip one module, then import it.")
     );
+    // The shell could not copy the picked file.
+    let dest = app.import_destination("locked.usfm").unwrap();
+    let import = app.import_copy_failed(&dest, "permission denied").unwrap();
+    let view = app.import_report(import).unwrap();
+    assert_eq!(view.state, ImportState::Failed);
+    assert_eq!(
+        view.failure.as_deref(),
+        Some("The app could not read that file, so nothing was added to your Library.")
+    );
+    assert_eq!(view.details.as_deref(), Some("permission denied"));
+    assert!(!dest.parent().unwrap().exists());
     // A path the core did not name is refused and left alone.
     let other = root.join("elsewhere.usfm");
     std::fs::write(&other, "\\id GEN\n").unwrap();

@@ -31,6 +31,8 @@ pub struct ReportSection {
     pub lines: Vec<String>,
     /// Whether the lines warn (no licence found).
     pub warning: bool,
+    /// Whether it starts folded, its title alone shown.
+    pub collapsed: bool,
 }
 
 /// The Import report of one picked file (`obs_mobile::ImportReportView`).
@@ -67,6 +69,7 @@ impl From<obs_mobile::ImportReportView> for ImportReport {
                     title: s.title,
                     lines: s.lines,
                     warning: s.warning,
+                    collapsed: s.collapsed,
                 })
                 .collect(),
         }
@@ -88,6 +91,12 @@ impl MobileApp {
     /// as its report moves on.
     pub fn start_import(&self, path: String) -> Result<u64, MobileError> {
         self.with(|a| a.start_import(&PathBuf::from(path)))
+    }
+
+    /// The shell could not copy the picked file to `path` (the file `import_destination`
+    /// named): its Import fails, `error` under Details. Returns the Import's number.
+    pub fn import_copy_failed(&self, path: String, error: String) -> Result<u64, MobileError> {
+        self.with(|a| a.import_copy_failed(&PathBuf::from(path), &error))
     }
 
     /// Import `import`'s report.

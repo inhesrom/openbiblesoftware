@@ -40,6 +40,9 @@ pub struct ReportSection {
     pub lines: Vec<String>,
     /// Whether the lines warn (no licence found).
     pub warning: bool,
+    /// Whether it starts folded, its title alone shown (as the desktop's report folds its
+    /// warnings, dropped markup and files).
+    pub collapsed: bool,
 }
 
 /// The Import report of one picked file, as the report sheet shows it.
@@ -96,6 +99,9 @@ enum PickedState {
 /// What the app imports, for a file of another kind (the picker offers only these).
 pub const IMPORT_KINDS: &str = "The app imports USFM books (.usfm, .sfm), a zip of USFM books \
      or of one SWORD module (.zip), and Resource files (.obr).";
+
+/// The plain words for a picked file the shell could not copy into the app.
+const COPY_FAILED: &str = "The app could not read that file, so nothing was added to your Library.";
 
 /// The plain words for a `.obr` the library cannot read.
 const NOT_A_RESOURCE: &str =
@@ -165,6 +171,24 @@ impl MobileApp {
         }
         self.events.push(Changed::Imports);
         Ok(self.picked[i].id)
+    }
+
+    /// The shell could not copy the picked file to `path` (the file
+    /// [`Self::import_destination`] named): its Import fails with `error` under Details.
+    /// Returns the Import's number.
+    pub fn import_copy_failed(&mut self, path: &Path, error: &str) -> Result<u64, MobileError> {
+        let Some(picked) = (self.picked.iter_mut()).find(|p| p.file == path) else {
+            return Err(MobileError::Failed(format!(
+                "{} is not a file the app named for an Import",
+                path.display()
+            )));
+        };
+        if matches!(picked.state, PickedState::Named) {
+            picked.state = PickedState::Refused(COPY_FAILED.to_string(), error.to_string());
+            let _ = std::fs::remove_dir_all(&picked.folder);
+            self.events.push(Changed::Imports);
+        }
+        Ok(picked.id)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -382,6 +406,14 @@ fn section(title: &str, lines: Vec<String>) -> ReportSection {
         title: title.to_string(),
         lines,
         warning: false,
+        collapsed: false,
+    }
+}
+
+fn folded(title: &str, lines: Vec<String>) -> ReportSection {
+    ReportSection {
+        collapsed: true,
+        ..section(title, lines)
     }
 }
 
@@ -405,6 +437,7 @@ fn report_sections(report: &ImportReport) -> Vec<ReportSection> {
             "Licence recorded from the source.".to_string()
         }],
         warning: report.license_missing,
+        collapsed: false,
     };
     let warnings = if report.warnings.is_empty() {
         vec!["No other warnings.".to_string()]
@@ -429,9 +462,9 @@ fn report_sections(report: &ImportReport) -> Vec<ReportSection> {
     vec![
         section("Summary", summary),
         licence,
-        section(&format!("Warnings ({})", report.warnings.len()), warnings),
-        section(&format!("Dropped markup ({dropped})"), markup),
-        section("Source files and Bible books", files),
+        folded(&format!("Warnings ({})", report.warnings.len()), warnings),
+        folded(&format!("Dropped markup ({dropped})"), markup),
+        folded("Source files and Bible books", files),
     ]
 }
 

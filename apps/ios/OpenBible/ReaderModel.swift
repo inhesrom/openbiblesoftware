@@ -37,6 +37,8 @@ final class ReaderModel {
     private(set) var books: [BookChapters] = []
     private(set) var metricsText = ""
     private(set) var benchResult = ""
+    /// An Import's report changed (`ImportModel` shows it).
+    @ObservationIgnored var onImports: (() -> Void)?
     /// The measurements strip (frames dropped, tile times) under the text.
     var showMeasurements = UserDefaults.standard.bool(forKey: "OBSMeasurements")
     private(set) var coldStart: Duration?
@@ -93,6 +95,8 @@ final class ReaderModel {
             if let core { refreshChoices(core) }
         case .message(let text):
             Self.log.info("core: \(text, privacy: .public)")
+        case .imports:
+            onImports?()
         default:
             break
         }
