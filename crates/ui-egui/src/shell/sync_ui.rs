@@ -25,6 +25,9 @@ pub(crate) struct SyncUi {
     confirming_stop: bool,
     /// The device's name as typed, while its field has the keyboard.
     name: Option<String>,
+    /// The Settings Tab the status indicator opened, to show Sync in once it is drawn (its
+    /// per-Tab state is made when the Workspace's effects are applied, after the click).
+    pub(super) show_in: Option<obs_engine::TabId>,
 }
 
 impl State {
@@ -67,15 +70,12 @@ impl State {
     /// Open Settings showing Sync.
     fn show_sync_settings(&mut self) {
         let opened = self.run("app.settings", &json!({}));
-        if let Some(tab) = opened.and_then(|v| v["tab"].as_u64()) {
-            self.tabs.entry(obs_engine::TabId(tab)).or_default().filter =
-                texts::SECTION.to_string();
-        }
+        self.sync_ui.show_in = (opened.and_then(|v| v["tab"].as_u64())).map(obs_engine::TabId);
     }
 
     /// Settings → Sync: what Sync is and Choose Sync folder…, or, once a folder is chosen,
-    /// the restore's question, the folder, this device's name, Sync now with the status, the
-    /// Synced devices and Stop syncing.
+    /// the folder, this device's name, Sync now with the status (after a restore: "Restored
+    /// from a Backup", answered in its prompt), the Synced devices and Stop syncing.
     pub(super) fn sync_setting(&mut self, ui: &mut Ui) -> Run {
         let panel = self.session.sync_panel(obs_store::clock::now_ms());
         let Some(folder) = panel.folder.clone() else {
@@ -95,10 +95,6 @@ impl State {
             return None;
         };
         let mut run: Run = None;
-        if panel.restore_pending {
-            run = run.or(restore_question(ui));
-            ui.add_space(space::M);
-        }
         if let Some(newer) = panel.folder_newer {
             crate::components::notice_frame(theme::c().warn).show(ui, |ui| {
                 ui.add(egui::Label::new(RichText::new(newer).color(theme::c().ink)).wrap());
@@ -116,7 +112,11 @@ impl State {
             });
             ui.add_space(space::M);
         }
-        ui.label(RichText::new(texts::FOLDER_LABEL).strong().color(theme::c().ink));
+        ui.label(
+            RichText::new(texts::FOLDER_LABEL)
+                .strong()
+                .color(theme::c().ink),
+        );
         ui.add(
             egui::Label::new(RichText::new(folder).monospace().color(theme::c().ink))
                 .selectable(true)
@@ -153,7 +153,11 @@ impl State {
         }
         if !panel.devices.is_empty() {
             ui.add_space(space::M);
-            ui.label(RichText::new(texts::DEVICES_LABEL).strong().color(theme::c().ink));
+            ui.label(
+                RichText::new(texts::DEVICES_LABEL)
+                    .strong()
+                    .color(theme::c().ink),
+            );
             for device in &panel.devices {
                 let r = ui.add(
                     egui::Label::new(RichText::new(&device.line).color(theme::c().ink)).wrap(),
@@ -172,7 +176,9 @@ impl State {
         }
         ui.add_space(space::M);
         if self.sync_ui.confirming_stop {
-            ui.add(egui::Label::new(RichText::new(texts::STOP_CONFIRM).color(theme::c().warn)).wrap());
+            ui.add(
+                egui::Label::new(RichText::new(texts::STOP_CONFIRM).color(theme::c().warn)).wrap(),
+            );
             ui.horizontal(|ui| {
                 if ui
                     .button(texts::STOP_SYNCING)
@@ -187,7 +193,10 @@ impl State {
                 }
             });
         } else if ui
-            .add(crate::components::button(format!("{}…", texts::STOP_SYNCING)))
+            .add(crate::components::button(format!(
+                "{}…",
+                texts::STOP_SYNCING
+            )))
             .clicked()
         {
             self.sync_ui.confirming_stop = true;
@@ -197,7 +206,11 @@ impl State {
 
     /// This device's name: typed in place, saved on Enter or when the field lets go.
     fn device_name_field(&mut self, ui: &mut Ui, saved: &str) -> Run {
-        let mut text = self.sync_ui.name.clone().unwrap_or_else(|| saved.to_string());
+        let mut text = self
+            .sync_ui
+            .name
+            .clone()
+            .unwrap_or_else(|| saved.to_string());
         let r = ui.add(
             crate::components::text_field(&mut text)
                 .hint_text(texts::DEVICE_NAME_PLACEHOLDER)
@@ -231,7 +244,7 @@ impl State {
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 ui.set_max_width(size::PROSE);
-                run = restore_buttons(ui, true);
+                run = restore_buttons(ui);
             });
         if let Some((id, params)) = run {
             self.run(id, &params);
@@ -239,29 +252,16 @@ impl State {
     }
 }
 
-/// The restore's question inside Settings → Sync, in a notice.
-fn restore_question(ui: &mut Ui) -> Run {
-    let mut run = None;
-    crate::components::notice_frame(theme::c().warn).show(ui, |ui| {
-        ui.label(
-            RichText::new(texts::RESTORE_TITLE)
-                .strong()
-                .color(theme::c().ink),
-        );
-        run = restore_buttons(ui, false);
-    });
-    run
-}
-
-/// The restore's body and its two buttons; Catch up is the default (Enter, in the prompt).
-fn restore_buttons(ui: &mut Ui, enter_catches_up: bool) -> Run {
+/// The restore's body and its two buttons; Catch up is the default (Enter, unless a text
+/// field has the keyboard).
+fn restore_buttons(ui: &mut Ui) -> Run {
     let mut run = None;
     ui.add(egui::Label::new(RichText::new(texts::RESTORE_BODY).color(theme::c().ink)).wrap());
     ui.add_space(space::M);
     ui.horizontal(|ui| {
         let catch_up = ui.add(crate::components::button(texts::CATCH_UP).selected(true));
         if catch_up.clicked()
-            || (enter_catches_up && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            || (!ui.ctx().text_edit_focused() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
         {
             run = Some(("sync.restore_choice", json!({ "choice": "catch_up" })));
         }

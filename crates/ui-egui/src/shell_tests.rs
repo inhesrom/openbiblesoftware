@@ -3603,8 +3603,6 @@ mod icon_previews;
 
 #[path = "backups_tests.rs"]
 mod backups;
-#[path = "sync_tests.rs"]
-mod sync;
 #[path = "collections_tests.rs"]
 mod collections;
 #[path = "command_box_tests.rs"]
@@ -3619,6 +3617,8 @@ mod find_bar;
 mod motion;
 #[path = "report_problem_tests.rs"]
 mod report_problem;
+#[path = "sync_tests.rs"]
+mod sync;
 #[path = "tour_tests.rs"]
 mod tour;
 #[path = "update_notice_tests.rs"]

@@ -23,7 +23,8 @@ struct Dir(PathBuf);
 
 impl Dir {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("obs-sync-session-{name}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("obs-sync-session-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("folder")).unwrap();
         Self(root)
@@ -44,8 +45,11 @@ impl Dir {
     /// A Session on its own User database `name`, syncing through the folder.
     fn syncing(&self, name: &str) -> Session {
         let mut s = self.session(name);
-        s.run("sync.choose_folder", &json!({ "path": self.folder().to_string_lossy() }))
-            .unwrap();
+        s.run(
+            "sync.choose_folder",
+            &json!({ "path": self.folder().to_string_lossy() }),
+        )
+        .unwrap();
         s
     }
 }
@@ -63,7 +67,11 @@ fn now() -> i64 {
 /// Sync now, as Sync now does: "Syncing…" for a frame, then the sync.
 fn sync(s: &mut Session) {
     s.run("sync.now", &json!({})).unwrap();
-    assert_eq!(s.sync_tick(now()), Some(0), "a requested sync is due at once");
+    assert_eq!(
+        s.sync_tick(now()),
+        Some(0),
+        "a requested sync is due at once"
+    );
     assert!(s.sync_panel(now()).syncing);
     assert_eq!(s.sync_panel(now()).status, texts::SYNCING);
     s.sync_tick(now());
@@ -91,8 +99,11 @@ fn add_note(s: &mut Session, body: &str) -> Annotation {
         modified_at: 1,
         conflict_of: None,
     };
-    s.commit("New Note", vec![Change::insert(Row::Annotation(note.clone()))])
-        .unwrap();
+    s.commit(
+        "New Note",
+        vec![Change::insert(Row::Annotation(note.clone()))],
+    )
+    .unwrap();
     note
 }
 
@@ -122,7 +133,10 @@ fn without_a_sync_folder_nothing_syncs_and_nothing_shows() {
         !(s.key_bindings().iter()).any(|b| b.id.starts_with("sync.")),
         "Help → Keyboard shortcuts lists nothing of Sync"
     );
-    assert!(!store(&s).records_ops().unwrap(), "nothing is recorded for a Sync folder");
+    assert!(
+        !store(&s).records_ops().unwrap(),
+        "nothing is recorded for a Sync folder"
+    );
     assert!(std::fs::read_dir(dir.folder()).unwrap().next().is_none());
     // A restore leaves it so.
     let backup = dir.0.join("b.obsbackup");
@@ -150,7 +164,10 @@ fn two_sessions_converge_through_one_folder_and_list_each_other() {
     assert!(notebook_names(&a).contains(&"From B".to_string()));
 
     let panel = a.sync_panel(now());
-    assert_eq!(panel.folder.as_deref(), Some(&*dir.folder().to_string_lossy()));
+    assert_eq!(
+        panel.folder.as_deref(),
+        Some(&*dir.folder().to_string_lossy())
+    );
     assert_eq!(panel.device_name, "Study Mac");
     assert_eq!(panel.status, "Last synced just now");
     assert!(!panel.warn);
@@ -168,7 +185,11 @@ fn two_sessions_converge_through_one_folder_and_list_each_other() {
         .map(|b| b.id)
         .filter(|id| id.starts_with("sync."))
         .collect();
-    assert_eq!(keys, ["sync.now"], "Sync now can have a key once this device syncs");
+    assert_eq!(
+        keys,
+        ["sync.now"],
+        "Sync now can have a key once this device syncs"
+    );
     let indicator = a.sync_indicator(now()).unwrap();
     assert_eq!(indicator.text, "Last synced just now");
     assert!(!indicator.warn);
@@ -192,7 +213,11 @@ fn an_edit_makes_a_sync_due_thirty_seconds_on_and_the_period_is_five_minutes() {
     a.create_notebook("Edited").unwrap();
     let due = a.sync_tick(t).unwrap();
     assert!(due <= 30_000 && due > 20_000, "{due}");
-    assert_eq!(a.sync_tick(t + 30_000), Some(0), "due 30 seconds after the edit");
+    assert_eq!(
+        a.sync_tick(t + 30_000),
+        Some(0),
+        "due 30 seconds after the edit"
+    );
     a.sync_tick(t + 30_000);
     assert!(!store(&a).has_pending_ops().unwrap(), "the edit went out");
 }
@@ -205,18 +230,29 @@ fn a_restore_on_a_syncing_device_syncs_first_keeps_its_folder_and_catching_up_wo
     a.create_notebook("Before sync").unwrap();
     let backup = dir.0.join("before.obsbackup");
     back_up(&mut a, &backup);
-    a.run("sync.choose_folder", &json!({ "path": dir.folder().to_string_lossy() }))
-        .unwrap();
+    a.run(
+        "sync.choose_folder",
+        &json!({ "path": dir.folder().to_string_lossy() }),
+    )
+    .unwrap();
     sync(&mut a);
     // Not synced yet when the restore comes: the restore syncs it first.
     a.create_notebook("Written just before").unwrap();
     assert!(store(&a).has_pending_ops().unwrap());
     restore(&mut a, &backup);
-    assert_eq!(a.sync_folder(), Some(dir.folder().as_path()), "the folder is kept");
+    assert_eq!(
+        a.sync_folder(),
+        Some(dir.folder().as_path()),
+        "the folder is kept"
+    );
     assert!(a.sync_restore_pending());
     assert!(a.is_enabled("sync.restore_choice"));
     assert_eq!(a.sync_panel(now()).status, texts::RESTORE_TITLE);
-    assert_eq!(a.sync_tick(now()), None, "nothing syncs until the user answers");
+    assert_eq!(
+        a.sync_tick(now()),
+        None,
+        "nothing syncs until the user answers"
+    );
     assert!(!notebook_names(&a).contains(&"Written just before".to_string()));
     let mut b = dir.syncing("b");
     sync(&mut b);
@@ -279,7 +315,11 @@ fn a_restore_never_takes_the_backups_sync_folder() {
     back_up(&mut a, &backup);
     a.run("sync.stop", &json!({ "confirm": true })).unwrap();
     restore(&mut a, &backup);
-    assert_eq!(a.sync_folder(), None, "this device stopped syncing; the Backup does not restart it");
+    assert_eq!(
+        a.sync_folder(),
+        None,
+        "this device stopped syncing; the Backup does not restart it"
+    );
     assert!(!a.sync_restore_pending());
     assert_eq!(a.sync_tick(now()), None);
 }
@@ -301,8 +341,11 @@ fn stop_syncing_records_nothing_more_and_choosing_again_joins_as_a_new_device() 
     a.create_notebook("Unsynced").unwrap();
     assert!(!store(&a).has_pending_ops().unwrap(), "nothing is recorded");
     // Its files stay; choosing the folder again joins as a new device and sends everything.
-    a.run("sync.choose_folder", &json!({ "path": dir.folder().to_string_lossy() }))
-        .unwrap();
+    a.run(
+        "sync.choose_folder",
+        &json!({ "path": dir.folder().to_string_lossy() }),
+    )
+    .unwrap();
     sync(&mut a);
     assert_eq!(a.sync_panel(now()).devices.len(), 2);
     let mut b = dir.syncing("b");
@@ -382,7 +425,10 @@ fn a_sync_conflicts_copy_is_in_needs_attention_with_its_four_actions() {
 
     run(holder, ConflictChoice::KeepBoth);
     assert_eq!(holder.annotation(&copy.id).unwrap().conflict_of, None);
-    assert!(holder.note_cards("").unwrap().is_empty(), "nothing needs attention");
+    assert!(
+        holder.note_cards("").unwrap().is_empty(),
+        "nothing needs attention"
+    );
     holder.undo().unwrap();
     assert_eq!(holder.note_cards("").unwrap().len(), 1);
 
@@ -392,7 +438,11 @@ fn a_sync_conflicts_copy_is_in_needs_attention_with_its_four_actions() {
         format!("{}\n\n{}", in_place.body(), copy.body())
     );
     assert!(holder.annotation(&copy.id).is_err());
-    assert_eq!(holder.notes.reveal, Some((n.id.clone(), true)), "opened to edit");
+    assert_eq!(
+        holder.notes.reveal,
+        Some((n.id.clone(), true)),
+        "opened to edit"
+    );
     // The other device takes the resolution like any edit.
     sync(holder);
     sync(other);
@@ -439,7 +489,11 @@ fn held_ops_are_listed_in_needs_attention_with_why() {
         "{}",
         lines[0]
     );
-    assert!(lines[0].ends_with(". It is tried again at every sync."), "{}", lines[0]);
+    assert!(
+        lines[0].ends_with(". It is tried again at every sync."),
+        "{}",
+        lines[0]
+    );
     assert_eq!(a.needs_attention_count(), 1);
 }
 
@@ -448,7 +502,11 @@ fn a_folder_not_there_or_set_up_by_a_newer_app_says_so() {
     let dir = Dir::new("problems");
     let mut a = dir.syncing("a");
     std::fs::create_dir_all(dir.folder().join(crate::sync::SYNC_ROOT)).unwrap();
-    std::fs::write(dir.folder().join(crate::sync::SYNC_JSON), b"{\"format\":99}\n").unwrap();
+    std::fs::write(
+        dir.folder().join(crate::sync::SYNC_JSON),
+        b"{\"format\":99}\n",
+    )
+    .unwrap();
     sync(&mut a);
     let panel = a.sync_panel(now());
     assert_eq!(panel.folder_newer, Some(texts::FOLDER_NEWER));
@@ -457,8 +515,11 @@ fn a_folder_not_there_or_set_up_by_a_newer_app_says_so() {
 
     let gone = dir.0.join("gone");
     std::fs::create_dir_all(&gone).unwrap();
-    a.run("sync.choose_folder", &json!({ "path": gone.to_string_lossy() }))
-        .unwrap();
+    a.run(
+        "sync.choose_folder",
+        &json!({ "path": gone.to_string_lossy() }),
+    )
+    .unwrap();
     std::fs::remove_dir_all(&gone).unwrap();
     sync(&mut a);
     let panel = a.sync_panel(now());
@@ -467,5 +528,8 @@ fn a_folder_not_there_or_set_up_by_a_newer_app_says_so() {
     assert!(panel.details.unwrap().contains("is not there"));
     assert!(!gone.exists(), "nothing is made where the folder was");
     let t = now();
-    assert!(a.sync_tick(t).unwrap() > 0, "tried again later, not every frame");
+    assert!(
+        a.sync_tick(t).unwrap() > 0,
+        "tried again later, not every frame"
+    );
 }

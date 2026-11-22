@@ -1082,12 +1082,7 @@ impl State {
     /// A Sync conflict's copy's actions (plan S29): Keep this version, Keep the other, Keep
     /// both, Combine; each is one undo step. Either Note being edited stops being edited, as
     /// for Delete.
-    fn conflict_actions(
-        &mut self,
-        ui: &mut Ui,
-        card: &Card,
-        run: &mut Vec<(&'static str, Value)>,
-    ) {
+    fn conflict_actions(&mut self, ui: &mut Ui, card: &Card, run: &mut Vec<(&'static str, Value)>) {
         let a = &card.annotation;
         ui.horizontal_wrapped(|ui| {
             for choice in obs_engine::ConflictChoice::ALL {
@@ -1666,4 +1661,3 @@ impl State {
         }
     }
 }
-

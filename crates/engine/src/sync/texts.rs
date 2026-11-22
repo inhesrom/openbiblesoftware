@@ -89,9 +89,7 @@ pub fn conflict_attention(reference: &str) -> String {
 
 /// One held op in Needs attention: `device` sent it, `what` it changes, `why` it waits.
 pub fn held_line(device: &str, what: &str, why: &str) -> String {
-    format!(
-        "A change from {device} to {what} is waiting: {why}. It is tried again at every sync."
-    )
+    format!("A change from {device} to {what} is waiting: {why}. It is tried again at every sync.")
 }
 
 /// What a held op changes, for [`held_line`]: "the Collection “Gospels”", "a Note".
@@ -181,7 +179,11 @@ mod tests {
         assert_eq!(ago(now, now - 125_000), "2 minutes ago");
         assert_eq!(ago(now, now - 3 * 3_600_000), "3 hours ago");
         assert_eq!(ago(now, now - 4 * 86_400_000), "4 days ago");
-        assert_eq!(ago(now, now + 9_000), "just now", "a clock ahead is not in the future");
+        assert_eq!(
+            ago(now, now + 9_000),
+            "just now",
+            "a clock ahead is not in the future"
+        );
     }
 
     #[test]

@@ -78,7 +78,12 @@ fn choose_folder(h: &mut Harness) {
     let tab = settings_on_sync(h);
     h.click_text(texts::CHOOSE_FOLDER);
     until(h, "the first sync", |h| {
-        h.shell.st.session.sync_panel(now()).status.starts_with("Last synced")
+        h.shell
+            .st
+            .session
+            .sync_panel(now())
+            .status
+            .starts_with("Last synced")
     });
     h.shell.run("tab.close", &json!({ "tab": tab.0 }));
     h.frames(2);
@@ -126,10 +131,18 @@ fn two_windows_converge_through_one_folder_and_the_restore_prompt_takes_both_ans
     let folder = dir.join("folder");
     let mut a = window(&dir.join("a/user.db"), &folder);
     let mut b = window(&dir.join("b/user.db"), &folder);
-    a.shell.run("sync.device_name", &json!({ "name": "Study Mac" }));
+    a.shell
+        .run("sync.device_name", &json!({ "name": "Study Mac" }));
     choose_folder(&mut a);
     choose_folder(&mut b);
     assert!(indicator_shown(&a), "{:?}", a.texts());
+    // The indicator opens Settings showing Sync.
+    a.click_text(&crate::icons::Icon::Sync.marker());
+    a.frames(3);
+    assert!(shows(&a, texts::DEVICES_LABEL), "{:?}", a.texts());
+    assert!(!shows(&a, "TEXT AND FONTS"), "only Sync: {:?}", a.texts());
+    let settings = a.tab_id("Settings");
+    a.shell.run("tab.close", &json!({ "tab": settings.0 }));
     a.shell.run(
         "annotation.note",
         &json!({ "passage": "Gen 1:1", "body": "In the beginning" }),
@@ -139,7 +152,11 @@ fn two_windows_converge_through_one_folder_and_the_restore_prompt_takes_both_ans
     assert_eq!(note_texts(&b), ["In the beginning"]);
     settings_on_sync(&mut b);
     assert!(shows(&b, texts::DEVICES_LABEL));
-    assert!(shows(&b, "Study Mac · macOS · last seen just now"), "{:?}", b.texts());
+    assert!(
+        shows(&b, "Study Mac · macOS · last seen just now"),
+        "{:?}",
+        b.texts()
+    );
     preview(&b, "sync-settings-kittest");
 
     // A Backup, then an edit both windows have, then the Backup restored on A.
@@ -156,12 +173,16 @@ fn two_windows_converge_through_one_folder_and_the_restore_prompt_takes_both_ans
     assert_eq!(note_texts(&b), ["In the beginning, edited"]);
     a.shell
         .run("data.restore", &json!({ "path": backup.to_string_lossy() }));
-    until(&mut a, "the restore's prompt", |h| shows(h, texts::RESTORE_TITLE));
+    until(&mut a, "the restore's prompt", |h| {
+        shows(h, texts::RESTORE_TITLE)
+    });
     assert!(shows(&a, texts::RESTORE_BODY) && shows(&a, texts::REPLACE));
     preview(&a, "sync-restore-prompt-kittest");
     assert_eq!(note_texts(&a), ["In the beginning"]);
     a.click_text(texts::CATCH_UP);
-    until(&mut a, "the prompt to go", |h| !shows(h, texts::RESTORE_TITLE));
+    until(&mut a, "the prompt to go", |h| {
+        !shows(h, texts::RESTORE_TITLE)
+    });
     assert_eq!(
         note_texts(&a),
         ["In the beginning, edited"],
@@ -171,12 +192,20 @@ fn two_windows_converge_through_one_folder_and_the_restore_prompt_takes_both_ans
     // Again, and Replace: the Backup's text everywhere.
     a.shell
         .run("data.restore", &json!({ "path": backup.to_string_lossy() }));
-    until(&mut a, "the restore's prompt", |h| shows(h, texts::RESTORE_TITLE));
+    until(&mut a, "the restore's prompt", |h| {
+        shows(h, texts::RESTORE_TITLE)
+    });
     a.click_text(texts::REPLACE);
-    until(&mut a, "the prompt to go", |h| !shows(h, texts::RESTORE_TITLE));
+    until(&mut a, "the prompt to go", |h| {
+        !shows(h, texts::RESTORE_TITLE)
+    });
     assert_eq!(note_texts(&a), ["In the beginning"]);
     sync_now(&mut b);
-    assert_eq!(note_texts(&b), ["In the beginning"], "B took the restored data");
+    assert_eq!(
+        note_texts(&b),
+        ["In the beginning"],
+        "B took the restored data"
+    );
     // The restores kept A's Sync folder.
     assert_eq!(a.shell.st.session.sync_folder(), Some(folder.as_path()));
 }
@@ -225,7 +254,15 @@ fn held_change(h: &mut Harness, folder: &Path) {
     let path = folder.join(obs_engine::sync::ops::op_file_path(&later, 1));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, obs_engine::sync::ops::encode_op_file(&[op]).unwrap()).unwrap();
-    let store = h.shell.st.session.user.as_ref().unwrap().user_store().unwrap();
+    let store = h
+        .shell
+        .st
+        .session
+        .user
+        .as_ref()
+        .unwrap()
+        .user_store()
+        .unwrap();
     store
         .execute_unchecked(&format!(
             "INSERT INTO applied_up_to (device_id, seq) VALUES ('{later}', 0)"
@@ -237,7 +274,8 @@ fn held_change(h: &mut Harness, folder: &Path) {
 
 fn needs_attention(h: &mut Harness) {
     h.shell.run("tool.notes", &json!({}));
-    h.shell.run("notes.notebook", &json!({ "value": "attention" }));
+    h.shell
+        .run("notes.notebook", &json!({ "value": "attention" }));
     h.frames(5);
 }
 
@@ -275,7 +313,15 @@ fn a_sync_conflict_and_a_change_waiting_are_in_needs_attention() {
     preview(&h, "sync-needs-attention-kittest");
     h.click_text(texts::KEEP_THIS);
     h.frames(3);
-    let body = |h: &Harness, id: &str| h.shell.st.session.annotation(id).unwrap().body().to_string();
+    let body = |h: &Harness, id: &str| {
+        h.shell
+            .st
+            .session
+            .annotation(id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
     assert_eq!(body(&h, &note.id), copy.body());
     assert!(h.shell.st.session.annotation(&copy.id).is_err());
     assert!(!shows(&h, texts::KEEP_THIS), "the conflict is resolved");
@@ -285,7 +331,10 @@ fn a_sync_conflict_and_a_change_waiting_are_in_needs_attention() {
     assert!(shows(&h, texts::KEEP_BOTH));
     h.click_text(texts::KEEP_BOTH);
     h.frames(3);
-    assert_eq!(h.shell.st.session.annotation(&copy.id).unwrap().conflict_of, None);
+    assert_eq!(
+        h.shell.st.session.annotation(&copy.id).unwrap().conflict_of,
+        None
+    );
     assert!(!shows(&h, texts::KEEP_BOTH));
 }
 
@@ -307,8 +356,11 @@ fn gallery_syncing(h: &mut Harness, folder: &Path) {
     s.set_sync_platform("macos");
     s.run("sync.device_name", &json!({ "name": "Study Mac" }))
         .unwrap();
-    s.run("sync.choose_folder", &json!({ "path": folder.to_string_lossy() }))
-        .unwrap();
+    s.run(
+        "sync.choose_folder",
+        &json!({ "path": folder.to_string_lossy() }),
+    )
+    .unwrap();
     h.frames(4);
 }
 
@@ -328,7 +380,10 @@ fn gallery_iphone(h: &Harness, folder: &Path) {
         .run("sync.device_name", &json!({ "name": "Ian's iPhone" }))
         .unwrap();
     phone
-        .run("sync.choose_folder", &json!({ "path": folder.to_string_lossy() }))
+        .run(
+            "sync.choose_folder",
+            &json!({ "path": folder.to_string_lossy() }),
+        )
         .unwrap();
     phone.request_sync();
     phone.sync_tick(now());
@@ -354,7 +409,10 @@ pub(super) fn sync_tabs() -> Vec<super::a11y_audit::Overlay> {
                 gallery_syncing(h, &folder);
                 settings_on_sync(h);
             },
-            |h| shows(h, texts::DEVICES_LABEL) && shows(h, "Ian's iPhone · iOS · last seen just now"),
+            |h| {
+                shows(h, texts::DEVICES_LABEL)
+                    && shows(h, "Ian's iPhone · iOS · last seen just now")
+            },
         ),
         (
             "Needs attention, a Sync conflict and a change waiting",

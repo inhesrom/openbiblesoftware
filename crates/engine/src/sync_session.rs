@@ -304,7 +304,11 @@ impl Session {
     ) -> Result<crate::sync::SyncState, crate::sync::SyncError> {
         let store = self.sync_store()?;
         let fs = reachable(folder)?;
-        crate::sync::sync_now(store, &fs, &crate::sync::SyncOptions::new(self.sync.platform))
+        crate::sync::sync_now(
+            store,
+            &fs,
+            &crate::sync::SyncOptions::new(self.sync.platform),
+        )
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -407,6 +411,8 @@ impl Session {
         self.load_copy_verses();
         self.load_collections();
         self.load_saved_searches();
+        // Word forms (a synced setting) is read again when next asked for.
+        self.bible_search.forget_recent();
         self.annotations_revision += 1;
         self.rerun_searches_of_user_data();
         if let NotesFilter::Notebook(id) = &self.notes.filter
@@ -461,7 +467,9 @@ impl Session {
     pub fn set_sync_device_name(&mut self, name: &str) -> Result<(), String> {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(store) = (self.user.as_ref()).and_then(|u| u.user_store()) {
-            return store.set_device_name(name.trim()).map_err(|e| e.to_string());
+            return store
+                .set_device_name(name.trim())
+                .map_err(|e| e.to_string());
         }
         let _ = name;
         Err("There is no User database".into())
@@ -471,7 +479,11 @@ impl Session {
     /// then a sync.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn choose_restore(&mut self, choice: crate::sync::RestoreChoice) -> Result<(), String> {
-        let folder = self.sync.folder.clone().ok_or("This device does not sync")?;
+        let folder = self
+            .sync
+            .folder
+            .clone()
+            .ok_or("This device does not sync")?;
         let started = obs_store::clock::now_ms();
         let result = (|| {
             let store = self.sync_store()?;
@@ -606,7 +618,9 @@ impl Session {
         self.sync.folder.as_ref()?;
         let (text, _, warn) = self.sync_status(now_ms);
         let warn = warn || !self.sync.newer_app.is_empty();
-        let text = if !self.sync.newer_app.is_empty() && !matches!(self.sync.last, Some(LastSync::Failed(_))) {
+        let text = if !self.sync.newer_app.is_empty()
+            && !matches!(self.sync.last, Some(LastSync::Failed(_)))
+        {
             texts::NEEDS_NEWER_APP.to_string()
         } else {
             text
@@ -670,7 +684,11 @@ impl Session {
 
     /// Resolve the Sync conflict whose copy is `id`, as one undo step (it syncs like any
     /// edit). Combine opens the Note in place in the Notes Tool to edit.
-    pub fn resolve_sync_conflict(&mut self, id: &str, choice: ConflictChoice) -> Result<(), String> {
+    pub fn resolve_sync_conflict(
+        &mut self,
+        id: &str,
+        choice: ConflictChoice,
+    ) -> Result<(), String> {
         let copy = self.annotation(id)?;
         let Some(of) = copy.conflict_of.clone() else {
             return Err("This Note is not a Sync conflict".into());
@@ -722,7 +740,9 @@ impl Session {
 
 /// The Sync folder at `folder`, when it is there.
 #[cfg(not(target_arch = "wasm32"))]
-fn reachable(folder: &std::path::Path) -> Result<crate::sync::FsSyncFolder, crate::sync::SyncError> {
+fn reachable(
+    folder: &std::path::Path,
+) -> Result<crate::sync::FsSyncFolder, crate::sync::SyncError> {
     if folder.is_dir() {
         Ok(crate::sync::FsSyncFolder::new(folder))
     } else {
@@ -760,7 +780,11 @@ fn failed(command: &'static str, message: impl ToString) -> CommandError {
     }
 }
 
-fn required<'a>(command: &'static str, p: &Params<'a>, name: &str) -> Result<&'a str, CommandError> {
+fn required<'a>(
+    command: &'static str,
+    p: &Params<'a>,
+    name: &str,
+) -> Result<&'a str, CommandError> {
     p.str(name)
         .ok_or_else(|| failed(command, format!("no {name} given")))
 }

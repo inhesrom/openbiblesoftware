@@ -62,6 +62,11 @@ impl State {
     }
 
     pub(super) fn settings_body(&mut self, ui: &mut Ui, tab: TabId) {
+        // Opened by Sync's status indicator: it shows Sync (plan S29).
+        if self.sync_ui.show_in == Some(tab) {
+            self.sync_ui.show_in = None;
+            self.tabs.entry(tab).or_default().filter = obs_engine::sync::texts::SECTION.to_string();
+        }
         let query = (self.tabs.get(&tab))
             .map(|t| t.filter.trim().to_lowercase())
             .unwrap_or_default();

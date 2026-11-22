@@ -320,13 +320,11 @@ pub use search_views::{
     ResultsView, SearchAnalysis, chart_bars,
 };
 pub use session::{JobMode, Session};
-pub use sync_session::{
-    ConflictChoice, SYNC_FOLDER_PREF, SyncDeviceRow, SyncIndicator, SyncPanel,
-};
 pub use settings::{
     SETTINGS, Setting, SettingKind, SettingsSection, setting_asking_first, setting_by_id,
     setting_matches, settings_matching,
 };
+pub use sync_session::{ConflictChoice, SYNC_FOLDER_PREF, SyncDeviceRow, SyncIndicator, SyncPanel};
 pub use timeline::{Emphasis, Timeline, TimelineEntry, TimelineView};
 pub use toolbar::{
     BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,

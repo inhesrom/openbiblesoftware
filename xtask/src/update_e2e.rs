@@ -514,7 +514,7 @@ fn run_until_restart(
 }
 
 /// Build the app as `version` and copy it into `dir`.
-fn build(root: &Path, version: Option<&str>, dir: &Path) -> Result<PathBuf> {
+pub(crate) fn build(root: &Path, version: Option<&str>, dir: &Path) -> Result<PathBuf> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let mut cmd = Command::new(&cargo);
     cmd.args(["build", "--locked", "-p", "openbible"])
@@ -665,7 +665,7 @@ fn serve_release(tag: &str, archive: &Path, download_time: Duration) -> Result<S
 
 /// The app at `app` with every data path under `data` and the release source at `base`
 /// (`None`: GitHub's).
-fn command(app: &Path, data: &Path, base: Option<&str>) -> Command {
+pub(crate) fn command(app: &Path, data: &Path, base: Option<&str>) -> Command {
     let home = data.join("home");
     let _ = fs::create_dir_all(&home);
     let mut cmd = Command::new(app);
@@ -701,7 +701,7 @@ fn command(app: &Path, data: &Path, base: Option<&str>) -> Command {
     cmd
 }
 
-fn log_text(logs: &Path) -> String {
+pub(crate) fn log_text(logs: &Path) -> String {
     fs::read_to_string(logs.join(obs_engine::diagnostics::LOG_FILE)).unwrap_or_default()
 }
 
@@ -818,7 +818,7 @@ fn convert_shots(work: &Work) -> Result<Vec<String>> {
 }
 
 /// The app's `P6 w h 255\n` screenshot as an RGB PNG.
-fn ppm_to_png(ppm: &Path, png: &Path) -> Result<()> {
+pub(crate) fn ppm_to_png(ppm: &Path, png: &Path) -> Result<()> {
     let bytes = fs::read(ppm)?;
     let header_end = bytes
         .iter()

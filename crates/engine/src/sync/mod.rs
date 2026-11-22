@@ -30,11 +30,11 @@ mod merge_props;
 mod merge_tests;
 pub mod ops;
 pub mod schedule;
-pub mod texts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod snapshot;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
+pub mod texts;
 
 use std::collections::BTreeMap;
 use std::fmt;
