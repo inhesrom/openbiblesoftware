@@ -71,6 +71,9 @@ struct FolderDeviceRow {
 /// The Session's sync: the folder, the schedule and what the last sync found.
 #[derive(Debug)]
 pub struct SessionSync {
+    /// The platform `device.json` names and whose folder guidance Settings shows
+    /// ([`PLATFORM`]; the gallery draws one platform's on every computer).
+    platform: &'static str,
     folder: Option<PathBuf>,
     schedule: SyncSchedule,
     phase: Phase,
@@ -90,6 +93,7 @@ pub struct SessionSync {
 impl Default for SessionSync {
     fn default() -> Self {
         Self {
+            platform: PLATFORM,
             folder: None,
             schedule: SyncSchedule::at_launch(true),
             phase: Phase::Idle,
@@ -201,6 +205,13 @@ impl Session {
         self.sync.folder.as_deref()
     }
 
+    /// Sync as an app on `platform` (`macos`, `windows`, `linux`, `ios`): its `device.json` and
+    /// the folder guidance Settings shows. Tests and the gallery draw one platform's words on
+    /// every computer; the app keeps [`PLATFORM`].
+    pub fn set_sync_platform(&mut self, platform: &'static str) {
+        self.sync.platform = platform;
+    }
+
     /// Read the Sync folder and the restore's question from the User database just attached
     /// (at launch, and after a restore): a sync is due now, as at launch.
     pub(crate) fn load_sync(&mut self) {
@@ -209,6 +220,7 @@ impl Session {
             .filter(|p| !p.trim().is_empty())
             .map(PathBuf::from);
         self.sync = SessionSync {
+            platform: self.sync.platform,
             folder,
             ..SessionSync::default()
         };
@@ -292,7 +304,7 @@ impl Session {
     ) -> Result<crate::sync::SyncState, crate::sync::SyncError> {
         let store = self.sync_store()?;
         let fs = reachable(folder)?;
-        crate::sync::sync_now(store, &fs, &crate::sync::SyncOptions::new(PLATFORM))
+        crate::sync::sync_now(store, &fs, &crate::sync::SyncOptions::new(self.sync.platform))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -468,7 +480,7 @@ impl Session {
                 store,
                 &fs,
                 choice,
-                &crate::sync::SyncOptions::new(PLATFORM),
+                &crate::sync::SyncOptions::new(self.sync.platform),
             )
         })();
         let failed = result.as_ref().err().map(ToString::to_string);
@@ -514,7 +526,11 @@ impl Session {
                     d.name.clone()
                 };
                 let seen = d.synced_at.map(|at| texts::ago(now_ms, at));
-                let platform = if this { PLATFORM } else { d.platform.as_str() };
+                let platform = if this {
+                    self.sync.platform
+                } else {
+                    d.platform.as_str()
+                };
                 let mut line = texts::device_line(&name, platform, seen.as_deref());
                 if this {
                     line.push_str(&format!(" ({})", texts::THIS_DEVICE));
@@ -533,7 +549,7 @@ impl Session {
             .collect();
         devices.sort_by_key(|d| !d.this_device);
         SyncPanel {
-            guidance: texts::folder_guidance(PLATFORM),
+            guidance: texts::folder_guidance(self.sync.platform),
             folder: (self.sync.folder.as_ref()).map(|f| f.display().to_string()),
             device_name: self.sync_device_name(),
             status,

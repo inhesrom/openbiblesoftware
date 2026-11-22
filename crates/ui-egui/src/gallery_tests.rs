@@ -177,9 +177,12 @@ fn surfaces() -> Vec<Surface> {
     let lists = [
         (Section::Tabs, super::library_rows::library_rows()),
         (Section::Tabs, super::library_wording::library_wording()),
+        // Settings → Sync and Needs attention's Sync conflicts (plan S29).
+        (Section::Tabs, super::sync::sync_tabs()),
         (Section::PanesMenusAndWindows, every_overlay()),
         (Section::PanesMenusAndWindows, menus_and_toolbar()),
         (Section::DialogsAndPopovers, dialogs_and_popovers()),
+        (Section::DialogsAndPopovers, super::sync::sync_dialogs()),
         (Section::MenusAndChoosers, menus_and_choosers()),
         (Section::States, super::pane_states::pane_states()),
         (Section::ReadingText, reading_text()),
@@ -2164,6 +2167,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/update_notice.rs",
         "egui::Window::new(",
         &["update-available"],
+    ),
+    (
+        "shell/sync_ui.rs",
+        "egui::Window::new(",
+        &["sync-restore-prompt"],
     ),
     (
         "shell/visual_filters_window.rs",
