@@ -271,8 +271,20 @@ pub struct SnapshotOp {
     pub held: bool,
 }
 
+/// What a snapshot's merge cursor at op `at` of `ops` checks before a resume goes on from it
+/// ([`obs_store::MergeCursor::fingerprint`]): how many ops [`snapshot_ops`] listed, and the
+/// key and clock of op `at − 1`. A build that lists a snapshot's ops in another order or
+/// number than the build that stopped its merge finds another, and merges it from its first.
+pub(crate) fn cursor_fingerprint(ops: &[SnapshotOp], at: usize) -> String {
+    match at.checked_sub(1).and_then(|i| ops.get(i)) {
+        Some(last) => format!("{} {:?} {}", ops.len(), last.key, last.op.clock),
+        None => ops.len().to_string(),
+    }
+}
+
 /// The ops a snapshot's contents merge as, in order: the rows (parents first) but list items,
-/// the lists' bases, the list items, the tombstones, the held ops. Rows with no clock (none
+/// the lists' bases, the list items, the tombstones, the held ops. A merge cursor counts them
+/// in this order, and checks it ([`cursor_fingerprint`]). Rows with no clock (none
 /// after a join stamps them) are left out.
 pub fn snapshot_ops(contents: &SnapshotContents) -> Vec<SnapshotOp> {
     let device = &contents.device;
@@ -360,7 +372,9 @@ pub fn snapshot_ops(contents: &SnapshotContents) -> Vec<SnapshotOp> {
 /// merged this one's (a clock running ahead). So this device's own Note text or list item that
 /// a snapshot's version replaces is kept as a Sync conflict's copy or "Name (2)", even when the
 /// other device had seen it (a copy no one needed, which is safe; a lost text is not). One
-/// whose ops might wait (`may_wait`) merges what is left in one transaction.
+/// whose ops might wait (`may_wait`) merges what is left in one transaction. A cursor whose
+/// fingerprint does not match these ops ([`cursor_fingerprint`]) is dropped, and the snapshot
+/// merges from its first op.
 pub(crate) fn merge_snapshot(
     user: &UserStore,
     seq: u64,
@@ -371,9 +385,21 @@ pub(crate) fn merge_snapshot(
 ) -> Result<(), MergeError> {
     let ops = snapshot_ops(contents);
     let device = contents.device.as_str();
-    let mut from = (user.merge_cursor(device)?)
-        .filter(|c| c.seq == seq && c.snapshot.as_deref() == Some(name))
-        .map_or(0, |c| c.ops);
+    let cursor = (user.merge_cursor(device)?)
+        .filter(|c| c.seq == seq && c.snapshot.as_deref() == Some(name));
+    let mut from = match cursor {
+        Some(c) => {
+            let at = usize::try_from(c.ops).unwrap_or(usize::MAX);
+            if c.fingerprint.as_deref() == Some(cursor_fingerprint(&ops, at).as_str()) {
+                c.ops
+            } else {
+                user.drop_merge_cursor(device)?;
+                report.cursors_dropped += 1;
+                0
+            }
+        }
+        None => 0,
+    };
     let mut whole: Option<bool> = None;
     let mut committed = from > 0;
     let mut counted = false;
@@ -426,7 +452,7 @@ pub(crate) fn merge_snapshot(
                 BatchEnd::At(i as u64)
             };
             done.touched = tx.take_touched();
-            Ok::<_, MergeError>((end, end))
+            Ok::<_, MergeError>((end, end, cursor_fingerprint(&ops, i)))
         });
         if whole == Some(true) && !counted {
             counted = true;
@@ -435,7 +461,7 @@ pub(crate) fn merge_snapshot(
         let end = match end {
             Ok(end) => end,
             Err(e) => {
-                if committed && matches!(e, MergeError::Waits(_)) {
+                if committed && e.waits() {
                     report.split_waits += 1;
                 }
                 return Err(e);

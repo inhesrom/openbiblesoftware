@@ -299,14 +299,19 @@ UPDATE former_device SET seq = (
 /// - `merge_cursor`: where the merge of another device's op file or snapshot stands while
 ///   its batches are committed one by one (`merge_store.rs`): per device, the op file being
 ///   merged (`seq`, `snapshot` `NULL`), or the snapshot by its file name (`snapshot`) and the
-///   op files it covers (`seq`), and how many of its ops are merged (`ops`). The row goes
-///   with the file's last batch, which also moves `applied_up_to`.
+///   op files it covers (`seq`), and how many of its ops are merged (`ops`); the order the
+///   merges started in (`started`, so a resume finishes them in that order); and, for a
+///   snapshot, what its op `ops − 1` was (`fingerprint`, so a resume that lists the
+///   snapshot's ops otherwise drops the cursor). The row goes with the file's last batch,
+///   which also moves `applied_up_to`.
 pub(crate) const SCHEMA_19: &str = "
 CREATE TABLE merge_cursor (
-    device_id TEXT PRIMARY KEY,
-    seq       INTEGER NOT NULL,
-    snapshot  TEXT,
-    ops       INTEGER NOT NULL
+    device_id   TEXT PRIMARY KEY,
+    seq         INTEGER NOT NULL,
+    snapshot    TEXT,
+    ops         INTEGER NOT NULL,
+    started     INTEGER NOT NULL,
+    fingerprint TEXT
 );
 ";
 

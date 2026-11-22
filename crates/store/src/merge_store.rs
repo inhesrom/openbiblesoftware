@@ -131,6 +131,9 @@ pub struct MergeCursor {
     pub snapshot: Option<String>,
     /// How many of its ops are merged (a snapshot's as the engine's `snapshot_ops` lists them).
     pub ops: u64,
+    /// A snapshot's: what the engine's `snapshot_ops` listed as its op `ops − 1` (and how
+    /// many it listed), which a resume checks before it goes on from `ops`.
+    pub fingerprint: Option<String>,
 }
 
 /// Where a batch of a merge ended.
@@ -1171,7 +1174,7 @@ impl UserStore {
                 tx.execute("DELETE FROM merge_cursor WHERE device_id = ?1", [device])
                     .map_err(sql)?;
             }
-            BatchEnd::At(ops) => write_merge_cursor(&tx, device, seq, None, ops)?,
+            BatchEnd::At(ops) => write_merge_cursor(&tx, device, seq, None, ops, None)?,
         }
         tx.commit().map_err(sql)?;
         #[cfg(feature = "test-support")]
@@ -1188,18 +1191,18 @@ impl UserStore {
         read_merge_cursor(&self.conn, device)
     }
 
-    /// Every merge partly done (S29c), by device.
+    /// Every merge partly done (S29c), in the order they started.
     pub fn merge_cursors(&self) -> Result<Vec<MergeCursor>, StoreError> {
         if self.schema_version()? < CURSOR_SCHEMA {
             return Ok(Vec::new());
         }
-        let rows: Vec<(String, i64, Option<String>, i64)> = self
+        let rows: Vec<CursorRow> = self
             .conn
-            .prepare("SELECT device_id, seq, snapshot, ops FROM merge_cursor ORDER BY device_id")
-            .and_then(|mut s| {
-                s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-                    .collect()
-            })
+            .prepare(
+                "SELECT device_id, seq, snapshot, ops, fingerprint FROM merge_cursor
+                 ORDER BY started, device_id",
+            )
+            .and_then(|mut s| s.query_map([], cursor_row)?.collect())
             .map_err(sql)?;
         Ok(rows.into_iter().map(cursor_of).collect())
     }
@@ -1227,6 +1230,19 @@ impl UserStore {
             .map_err(sql)?;
         tx.commit().map_err(sql)
     }
+
+    /// Forget every merge partly done: this device leaves its Sync folder (Stop syncing, or
+    /// another folder chosen), and a cursor names a file in that folder only. Each file
+    /// merges from its first op if it is met again.
+    pub fn drop_merge_cursors(&self) -> Result<(), StoreError> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Ok(());
+        }
+        self.conn
+            .execute("DELETE FROM merge_cursor", [])
+            .map(drop)
+            .map_err(sql)
+    }
 }
 
 /// An op file number as SQLite stores it.
@@ -1234,13 +1250,21 @@ pub(crate) fn cursor_number(seq: u64) -> Result<i64, StoreError> {
     i64::try_from(seq).map_err(|_| StoreError::Rejected(format!("op file number {seq}")))
 }
 
+/// A `merge_cursor` row, as read: device, seq, snapshot, ops, fingerprint.
+type CursorRow = (String, i64, Option<String>, i64, Option<String>);
+
+fn cursor_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CursorRow> {
+    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+}
+
 /// A `merge_cursor` row.
-fn cursor_of((device, seq, snapshot, ops): (String, i64, Option<String>, i64)) -> MergeCursor {
+fn cursor_of((device, seq, snapshot, ops, fingerprint): CursorRow) -> MergeCursor {
     MergeCursor {
         device,
         seq: u64::try_from(seq).unwrap_or_default(),
         snapshot,
         ops: u64::try_from(ops).unwrap_or_default(),
+        fingerprint,
     }
 }
 
@@ -1249,31 +1273,41 @@ pub(crate) fn read_merge_cursor(
     c: &Connection,
     device: &str,
 ) -> Result<Option<MergeCursor>, StoreError> {
-    c.prepare_cached("SELECT device_id, seq, snapshot, ops FROM merge_cursor WHERE device_id = ?1")
-        .and_then(|mut s| {
-            s.query_row([device], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            })
-            .optional()
-        })
-        .map(|row| row.map(cursor_of))
-        .map_err(sql)
+    c.prepare_cached(
+        "SELECT device_id, seq, snapshot, ops, fingerprint FROM merge_cursor WHERE device_id = ?1",
+    )
+    .and_then(|mut s| s.query_row([device], cursor_row).optional())
+    .map(|row| row.map(cursor_of))
+    .map_err(sql)
 }
 
 /// Commit where the merge of `device`'s op file `seq` (or the snapshot `snapshot` covering
-/// its files up to `seq`) stands: its first `ops` ops merged.
+/// its files up to `seq`, its op `ops − 1` being `fingerprint`) stands: its first `ops` ops
+/// merged. A cursor of a file not named before takes the next `started`, after every other.
 pub(crate) fn write_merge_cursor(
     c: &Connection,
     device: &str,
     seq: u64,
     snapshot: Option<&str>,
     ops: u64,
+    fingerprint: Option<&str>,
 ) -> Result<(), StoreError> {
     c.execute(
-        "INSERT INTO merge_cursor (device_id, seq, snapshot, ops) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT (device_id) DO UPDATE SET seq = excluded.seq, snapshot = excluded.snapshot,
-             ops = excluded.ops",
-        params![device, cursor_number(seq)?, snapshot, cursor_number(ops)?],
+        "INSERT INTO merge_cursor (device_id, seq, snapshot, ops, started, fingerprint)
+         VALUES (?1, ?2, ?3, ?4, (SELECT coalesce(max(started), 0) + 1 FROM merge_cursor), ?5)
+         ON CONFLICT (device_id) DO UPDATE SET
+             started = CASE WHEN merge_cursor.seq = excluded.seq
+                             AND merge_cursor.snapshot IS excluded.snapshot
+                        THEN merge_cursor.started ELSE excluded.started END,
+             seq = excluded.seq, snapshot = excluded.snapshot, ops = excluded.ops,
+             fingerprint = excluded.fingerprint",
+        params![
+            device,
+            cursor_number(seq)?,
+            snapshot,
+            cursor_number(ops)?,
+            fingerprint
+        ],
     )
     .map(drop)
     .map_err(sql)

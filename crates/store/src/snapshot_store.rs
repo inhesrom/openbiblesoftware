@@ -499,9 +499,10 @@ impl UserStore {
     /// ids, its current one and its former ones (ADR 0022 rule 7): a former id's files are
     /// this device's own history, merged op by op so that its own checks see each op (a text
     /// of its own another device's version replaced is kept as a copy), not taken as covered by
-    /// another device's snapshot. A cursor of a file those cover goes with it. All of the batch,
-    /// or (`merge` fails) none of it.
-    #[allow(clippy::too_many_arguments)]
+    /// another device's snapshot. A cursor of a file those cover goes with it. `merge` also
+    /// returns the cursor's [`crate::MergeCursor::fingerprint`] (its op before where the batch
+    /// ended), kept when the batch is not the last. All of the batch, or (`merge` fails) none
+    /// of it.
     pub fn merge_snapshot_batch<T, E: From<StoreError>>(
         &self,
         device: &str,
@@ -509,7 +510,7 @@ impl UserStore {
         name: &str,
         applied: &BTreeMap<String, u64>,
         from: u64,
-        merge: impl FnOnce(&mut MergeTx<'_>) -> Result<(T, BatchEnd), E>,
+        merge: impl FnOnce(&mut MergeTx<'_>) -> Result<(T, BatchEnd, String), E>,
     ) -> Result<T, E> {
         if self.schema_version()? < CURSOR_SCHEMA {
             return Err(
@@ -535,13 +536,13 @@ impl UserStore {
         }
         let recording = records_ops(&tx, &own)?;
         let mut m = self.merge_tx(&tx, own.clone(), recording)?;
-        let (out, end) = merge(&mut m)?;
+        let (out, end, fingerprint) = merge(&mut m)?;
         #[cfg(feature = "test-support")]
         let recorded = std::mem::take(&mut m.recorded);
         let own_ids: Vec<String> = applied.keys().filter(|id| m.is_own(id)).cloned().collect();
         drop(m);
         if let BatchEnd::At(ops) = end {
-            write_merge_cursor(&tx, device, seq, Some(name), ops)?;
+            write_merge_cursor(&tx, device, seq, Some(name), ops, Some(&fingerprint))?;
         } else {
             tx.execute(
                 "INSERT INTO applied_up_to (device_id, seq) VALUES (?1, ?2)

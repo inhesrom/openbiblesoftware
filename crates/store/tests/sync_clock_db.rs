@@ -1248,6 +1248,7 @@ fn the_merge_cursor_is_committed_per_batch_carried_by_a_backup_and_emptied_by_sn
         seq: 1,
         snapshot: None,
         ops: 2,
+        fingerprint: None,
     };
     assert_eq!(db.merge_cursors().unwrap(), std::slice::from_ref(&cursor));
     assert!(db.has_partial_merge().unwrap());
@@ -1303,4 +1304,54 @@ fn the_merge_cursor_is_committed_per_batch_carried_by_a_backup_and_emptied_by_sn
     db.restore(&v18_backup).unwrap();
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     assert!(db.merge_cursors().unwrap().is_empty());
+}
+
+/// From S29c's review: merge cursors come back in the order their merges started, not by
+/// device (P2-2), a cursor moved on keeping its place and one started again going last; a
+/// snapshot's keeps its fingerprint (P2-1); `drop_merge_cursors` (Stop syncing, another folder
+/// chosen) forgets them all.
+#[test]
+fn merge_cursors_come_back_in_the_order_their_merges_started_and_go_all_at_once() {
+    let dir = Dir::new("merge-cursor-order");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    db.join_sync().unwrap();
+    // UUIDv7s: `late`'s id sorts after `early`'s, and its merge starts first.
+    let early = new_id();
+    let late = new_id();
+    assert!(late > early);
+    let file = |from: u64, end: BatchEnd| {
+        db.merge_op_file_batch(&late, 1, from, |_| Ok::<_, StoreError>(((), end)))
+    };
+    file(0, BatchEnd::At(2)).unwrap();
+    let name = "3-abc.obsbackup";
+    db.merge_snapshot_batch(&early, 3, name, &BTreeMap::new(), 0, |_| {
+        Ok::<_, StoreError>(((), BatchEnd::At(5), "fingerprint 5".to_string()))
+    })
+    .unwrap();
+    let order = |db: &UserStore| -> Vec<String> {
+        (db.merge_cursors().unwrap().into_iter())
+            .map(|c| c.device)
+            .collect()
+    };
+    assert_eq!(order(&db), [late.clone(), early.clone()]);
+    assert_eq!(
+        db.merge_cursor(&early).unwrap().unwrap(),
+        MergeCursor {
+            device: early.clone(),
+            seq: 3,
+            snapshot: Some(name.into()),
+            ops: 5,
+            fingerprint: Some("fingerprint 5".into()),
+        }
+    );
+    // Moved on, it keeps its place.
+    file(2, BatchEnd::At(4)).unwrap();
+    assert_eq!(order(&db), [late.clone(), early.clone()]);
+    // Dropped and started again, it goes after the other.
+    db.drop_merge_cursor(&late).unwrap();
+    file(0, BatchEnd::At(1)).unwrap();
+    assert_eq!(order(&db), [early.clone(), late.clone()]);
+    db.drop_merge_cursors().unwrap();
+    assert!(db.merge_cursors().unwrap().is_empty());
+    assert!(!db.has_partial_merge().unwrap());
 }

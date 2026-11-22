@@ -1165,7 +1165,9 @@ impl crate::sync::SyncFolder for WatchedFolder {
     fn write_new(&self, path: &str, bytes: &[u8]) -> Result<(), crate::sync::FolderError> {
         self.note("write_new", path);
         if path.ends_with("/device.json")
-            && self.fails_device_json.load(std::sync::atomic::Ordering::SeqCst)
+            && self
+                .fails_device_json
+                .load(std::sync::atomic::Ordering::SeqCst)
         {
             return Err(crate::sync::FolderError::Io("the provider failed".into()));
         }
@@ -1818,7 +1820,11 @@ fn after_a_sync_that_failed_having_merged_the_next_sync_has_the_views_read_every
         "the sync failed: {:?}",
         b.sync_panel(now()).status
     );
-    assert_eq!(b.annotations_revision(), before, "a failed sync reloads nothing");
+    assert_eq!(
+        b.annotations_revision(),
+        before,
+        "a failed sync reloads nothing"
+    );
     assert!(
         b.annotation(&notes[5].id).is_err(),
         "the merge was committed"
@@ -1842,4 +1848,137 @@ fn after_a_sync_that_failed_having_merged_the_next_sync_has_the_views_read_every
     edit_note(&mut a, &notes[8], "and again on A");
     sync(&mut a);
     sync_patching_the_views(&mut b);
+}
+
+/// Stop `s`'s merge of the folder after two batches of three ops, as a crash would: the
+/// cursor it leaves.
+fn merge_stopped_inside_a_file(s: &Session, folder: &Path) -> obs_store::MergeCursor {
+    let batch = crate::sync::merge::MergeBatch {
+        stop_after: Some(2),
+        ..crate::sync::merge::MergeBatch::of_ops(3)
+    };
+    let fs = crate::sync::FsSyncFolder::new(folder);
+    assert!(matches!(
+        crate::sync::merge::merge_folder_with(store(s), &fs, &batch),
+        Err(crate::sync::SyncError::Store(
+            obs_store::StoreError::Cancelled
+        ))
+    ));
+    let mut cursors = store(s).merge_cursors().unwrap();
+    assert_eq!(cursors.len(), 1);
+    cursors.remove(0)
+}
+
+/// From S29c's review (P1-2): a cursor names a file of one Sync folder, so Stop syncing and
+/// choosing another folder forget a merge partly done. Choosing the folder again after Stop
+/// syncing joins as a new device: its snapshot is written and the file merges from its first
+/// op.
+#[test]
+fn stop_syncing_and_choosing_another_folder_forget_a_merge_partly_done() {
+    let dir = Dir::new("cursor-stop");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    for i in 0..30 {
+        add_note(&mut a, &format!("Note {i}"));
+    }
+    sync(&mut a);
+    merge_stopped_inside_a_file(&b, &dir.folder());
+    b.run("sync.stop", &json!({ "confirm": true })).unwrap();
+    assert!(store(&b).merge_cursors().unwrap().is_empty());
+    b.run(
+        "sync.choose_folder",
+        &json!({ "path": dir.folder().to_string_lossy() }),
+    )
+    .unwrap();
+    sync(&mut b);
+    assert_eq!(b.sync_panel(now()).details, None);
+    let fs = crate::sync::FsSyncFolder::new(dir.folder());
+    let b_id = store(&b).device_id().unwrap();
+    assert!(
+        crate::sync::snapshot::newest_snapshot(&fs, &b_id)
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(b.annotations(None).unwrap().len(), 30);
+    // Another folder chosen: the cursor goes with the folder left.
+    for i in 30..40 {
+        add_note(&mut a, &format!("Note {i}"));
+    }
+    sync(&mut a);
+    merge_stopped_inside_a_file(&b, &dir.folder());
+    let other = dir.0.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    b.run(
+        "sync.choose_folder",
+        &json!({ "path": other.to_string_lossy() }),
+    )
+    .unwrap();
+    assert!(store(&b).merge_cursors().unwrap().is_empty());
+    sync(&mut b);
+    assert_eq!(b.sync_panel(now()).details, None);
+    let other_fs = crate::sync::FsSyncFolder::new(&other);
+    assert!(
+        crate::sync::snapshot::newest_snapshot(&other_fs, &b_id)
+            .unwrap()
+            .is_some()
+    );
+}
+
+/// A merge stopped between batches inside an op file that is then damaged (S29c review,
+/// P1-2): as a damaged file does on a device without a cursor, it stops its device's merge,
+/// with the same `stopped` report and status line; the cursor is kept, read again next sync.
+#[test]
+fn a_cursor_at_a_damaged_file_stops_its_devices_merge_as_a_damaged_file_does() {
+    let dir = Dir::new("cursor-damaged");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    let mut c = dir.syncing("c");
+    sync(&mut a);
+    sync(&mut b);
+    sync(&mut c);
+    // B meets C.
+    sync(&mut b);
+    for i in 0..30 {
+        add_note(&mut a, &format!("Note {i}"));
+    }
+    sync(&mut a);
+    let cursor = merge_stopped_inside_a_file(&b, &dir.folder());
+    // A's file, cut short.
+    let a_id = store(&a).device_id().unwrap();
+    assert_eq!(cursor.device, a_id);
+    let path = (dir.folder()).join(crate::sync::ops::op_file_path(&a_id, cursor.seq));
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::write(&path, &bytes[..bytes.len() / 2]).unwrap();
+    sync(&mut b);
+    sync(&mut c);
+    let (b_panel, c_panel) = (b.sync_panel(now()), c.sync_panel(now()));
+    assert_eq!(
+        (&b_panel.status, &b_panel.details, b_panel.warn),
+        (&c_panel.status, &c_panel.details, c_panel.warn)
+    );
+    assert_eq!(b_panel.details, None, "the sync did not fail");
+    let fs = crate::sync::FsSyncFolder::new(dir.folder());
+    let stopped = |s: &Session| {
+        crate::sync::merge::merge_folder(store(s), &fs)
+            .unwrap()
+            .stopped
+    };
+    let found = stopped(&b);
+    assert_eq!(found, stopped(&c));
+    assert!(
+        matches!(
+            found.as_slice(),
+            [(device, seq, crate::sync::ops::OpsStop::NotWhole(_))]
+                if *device == a_id && *seq == cursor.seq
+        ),
+        "{found:?}"
+    );
+    assert_eq!(store(&b).merge_cursors().unwrap(), [cursor]);
+    // Whole again: B finishes from its cursor, and has every Note.
+    std::fs::write(&path, &bytes).unwrap();
+    sync(&mut b);
+    assert!(store(&b).merge_cursors().unwrap().is_empty());
+    assert_eq!(b.annotations(None).unwrap().len(), 30);
 }

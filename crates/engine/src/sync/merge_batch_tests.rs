@@ -4,6 +4,9 @@
 //! losing nothing; a Backup taken while a merge stood between batches catches up from its
 //! cursor, and Replace merges that file again from its first op; a file that might wait
 //! merges whole and waits as before; a snapshot is not written while a merge is partly done.
+//! From S29c's review: a cursor whose device has nothing in the folder is dropped and the
+//! snapshot written; one at a file not downloaded waits for it, then finishes, the snapshot
+//! following; a snapshot's cursor whose fingerprint does not match is dropped.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -16,6 +19,7 @@ use super::folder::MemSyncFolder;
 use super::lifecycle::{RestoreChoice, SyncOptions, SyncState, restore_choice, sync_now};
 use super::merge::{MergeBatch, merge_folder_with};
 use super::merge_tests::{Dir, files_of, view};
+use super::ops::{OpsStop, op_file_path};
 use super::snapshot::{SnapshotPolicy, newest_snapshot};
 
 /// The wall clock the tests run at (Unix ms), so two merges record the same clocks.
@@ -391,6 +395,129 @@ fn no_snapshot_is_written_while_a_merge_is_partly_done() {
         super::snapshot::write_snapshot_unless_edited(&c, &folder).unwrap(),
         None
     );
+}
+
+/// From S29c's review (P1-2): a merge stopped in one Sync folder, then this device syncing
+/// through another where the cursor's device has nothing (a folder chosen since, a Backup
+/// made in another folder's sync): the cursor is dropped, and the snapshot is written.
+#[test]
+fn a_cursor_whose_device_has_nothing_in_the_folder_is_dropped_and_the_snapshot_is_written() {
+    let dir = Dir::new("batches-other-folder");
+    let folder = MemSyncFolder::new();
+    let batch = options(MergeBatch::of_ops(3));
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    many_notes(&a, "Study", 30);
+    sync(&a, &folder, &batch);
+    sync_stopped(&b, &folder, 2);
+    assert!(b.has_partial_merge().unwrap());
+    let fresh = MemSyncFolder::new();
+    let report = sync(&b, &fresh, &batch);
+    assert_eq!(report.merge.cursors_dropped, 1);
+    assert!(b.merge_cursors().unwrap().is_empty());
+    assert!(report.snapshot.is_some(), "the snapshot no longer waits");
+    assert!(
+        newest_snapshot(&fresh, &b.device_id().unwrap())
+            .unwrap()
+            .is_some()
+    );
+}
+
+/// A merge stopped between batches inside an op file that then is only in the cloud (S29c
+/// review, P1-2): as a file not downloaded does, it stops its device's merge, reported, and
+/// the cursor is kept, the snapshot waiting; once the file downloads the merge finishes from
+/// the cursor and the snapshot is written.
+#[test]
+fn a_cursor_at_a_file_not_downloaded_finishes_once_it_downloads_and_the_snapshot_follows() {
+    let dir = Dir::new("batches-not-downloaded");
+    let folder = MemSyncFolder::new();
+    // A snapshot is due after every op file.
+    let often = SyncOptions {
+        policy: SnapshotPolicy {
+            after_files: 1,
+            after_ms: i64::MAX,
+            trim_after_ms: i64::MAX,
+        },
+        ..options(MergeBatch::of_ops(3))
+    };
+    let (a, b) = (open(&dir, "a"), open(&dir, "b"));
+    settle(&[&a, &b], &folder);
+    many_notes(&a, "Study", 30);
+    sync(&a, &folder, &often);
+    sync_stopped(&b, &folder, 2);
+    let cursor = b.merge_cursors().unwrap().remove(0);
+    let a_id = a.device_id().unwrap();
+    let path = op_file_path(&a_id, cursor.seq);
+    folder.keep_in_cloud(&path);
+    // B's own edit: its op file makes a snapshot due.
+    many_notes(&b, "B's", 1);
+    let report = sync(&b, &folder, &often);
+    assert_eq!(report.merge.resumed, 0);
+    assert!(
+        (report.merge.stopped).contains(&(a_id.clone(), cursor.seq, OpsStop::NotDownloaded)),
+        "{:?}",
+        report.merge.stopped
+    );
+    assert!(!report.written.is_empty());
+    assert_eq!(report.snapshot, None, "it waits for the merge partly done");
+    assert_eq!(b.merge_cursors().unwrap(), std::slice::from_ref(&cursor));
+    folder.download(&path);
+    let report = sync(&b, &folder, &often);
+    assert_eq!(report.merge.resumed, 1);
+    assert!(report.merge.merged.contains(&(a_id, cursor.seq)));
+    assert!(b.merge_cursors().unwrap().is_empty());
+    assert!(report.snapshot.is_some(), "written once the merge is done");
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+    assert_eq!(note_texts(&b).len(), 31);
+}
+
+/// A snapshot's cursor records what `snapshot_ops` listed before it (S29c review, P2-1): a
+/// resume that finds another op there (a later build listing a snapshot's ops otherwise)
+/// drops it and merges the snapshot from its first op, ending as a whole merge does.
+#[test]
+fn a_snapshot_cursor_whose_ops_are_listed_otherwise_is_dropped_and_the_snapshot_merges_whole() {
+    let dir = Dir::new("batches-fingerprint");
+    let folder = MemSyncFolder::new();
+    // A snapshot after every op file, so A's Notes are in one.
+    let batch = SyncOptions {
+        policy: SnapshotPolicy {
+            after_files: 1,
+            after_ms: i64::MAX,
+            trim_after_ms: i64::MAX,
+        },
+        ..options(MergeBatch::of_ops(3))
+    };
+    let a = open(&dir, "a");
+    sync(&a, &folder, &batch);
+    many_notes(&a, "Study", 30);
+    sync(&a, &folder, &batch);
+    // C joins and stops inside A's snapshot.
+    let c = open(&dir, "c");
+    sync_stopped(&c, &folder, 3);
+    let cursor = c.merge_cursors().unwrap().remove(0);
+    assert!(cursor.snapshot.is_some());
+    let fingerprint = cursor.fingerprint.clone().unwrap();
+    // The op count (30 Notes and more), then op k − 1's key and clock.
+    let count: usize = fingerprint.split(' ').next().unwrap().parse().unwrap();
+    assert!(
+        count > 30 && fingerprint.contains("Annotation"),
+        "{fingerprint}"
+    );
+    // As found: the cursor resumes (checked on a copy).
+    let resumed = c.copy_in_memory().unwrap();
+    let report = merge_folder_with(&resumed, &folder, &MergeBatch::of_ops(3)).unwrap();
+    assert_eq!((report.resumed, report.cursors_dropped), (1, 0));
+    // Listed otherwise: the fingerprint names another op.
+    c.execute_unchecked("UPDATE merge_cursor SET fingerprint = 'another build''s'")
+        .unwrap();
+    let report = merge_folder_with(&c, &folder, &MergeBatch::of_ops(3)).unwrap();
+    assert_eq!(report.cursors_dropped, 1);
+    assert!(c.merge_cursors().unwrap().is_empty());
+    assert_eq!(c.synced_dump().unwrap(), resumed.synced_dump().unwrap());
+    settle(&[&a, &c], &folder);
+    converged(&[&a, &c]);
+    assert_eq!(note_texts(&c).len(), 30);
 }
 
 /// How long a 10,000-Note merge takes in one transaction (as before S29c) and in the app's

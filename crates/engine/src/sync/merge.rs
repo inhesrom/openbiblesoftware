@@ -190,6 +190,19 @@ pub enum MergeError {
     Store(StoreError),
 }
 
+impl MergeError {
+    /// Whether the file waits (merged again later, from where it stands) rather than the
+    /// sync failing: it waits for another device's file, or an op this build cannot apply
+    /// was refused outside the op's own savepoint, which would hold it ([`merge_counted`]).
+    pub(crate) fn waits(&self) -> bool {
+        matches!(
+            self,
+            MergeError::Waits(_)
+                | MergeError::Store(StoreError::Rejected(_) | StoreError::Conflict(_))
+        )
+    }
+}
+
 impl From<StoreError> for MergeError {
     fn from(e: StoreError) -> Self {
         MergeError::Store(e)
@@ -286,7 +299,9 @@ pub struct MergeReport {
     /// transaction because an op of it might wait ([`may_wait`]).
     pub whole: usize,
     /// How many times a file waited after some of its batches were committed: never, when
-    /// [`may_wait`] holds (the property tests check it).
+    /// [`may_wait`] holds (the property tests check it). A refusal outside an op's savepoint
+    /// ([`MergeError::waits`]) after a committed batch counts too: the file waits partly
+    /// merged, as one that waits for another device's would.
     pub split_waits: usize,
     /// Files a stopped merge had partly merged, finished first (S29c).
     pub resumed: usize,
@@ -440,10 +455,13 @@ pub fn merge_folder_with(
 }
 
 /// Finish first every merge that stopped between two batches (a crash, an abandoned worker),
-/// so its ops merge in the order the stopped sync would have merged them. A cursor whose file
-/// is gone (its device wrote a newer snapshot, or trimmed the op file) or is covered already
-/// is dropped: the newer file merges from its first op in its turn. One whose file cannot be
-/// read now (downloading), or that waits, is finished in its turn.
+/// in the order they started, so their ops merge in the order the stopped syncs would have
+/// merged them. A cursor whose file is gone (its device wrote a newer snapshot, or trimmed the
+/// op file) or is covered already is dropped: the newer file merges from its first op in its
+/// turn. So is one whose device has no file in this folder (the cursor came from another Sync
+/// folder: a Backup's). One whose file cannot be read now (downloading, damaged) is kept, as a
+/// damaged file stops its device's merge: read again at every sync, its stop reported in its
+/// turn; one that waits is finished in its turn.
 fn resume_partial(
     user: &UserStore,
     folder: &dyn SyncFolder,
@@ -458,6 +476,15 @@ fn resume_partial(
             report.cursors_dropped += 1;
             continue;
         }
+        let seqs: Vec<u64> = (folder.list(&ops_dir(device))?.iter())
+            .filter_map(|n| op_file_seq(n))
+            .collect();
+        let snapshots = folder.list(&snapshots_dir(device))?;
+        if seqs.is_empty() && !snapshots.iter().any(|n| snapshot_file_seq(n).is_some()) {
+            user.drop_merge_cursor(device)?;
+            report.cursors_dropped += 1;
+            continue;
+        }
         let merged = match &cursor.snapshot {
             None => {
                 if applied.unwrap_or(0) + 1 != cursor.seq {
@@ -465,9 +492,6 @@ fn resume_partial(
                     report.cursors_dropped += 1;
                     continue;
                 }
-                let seqs: Vec<u64> = (folder.list(&ops_dir(device))?.iter())
-                    .filter_map(|n| op_file_seq(n))
-                    .collect();
                 if !seqs.contains(&cursor.seq) {
                     // Trimmed: a later file or a snapshot covering it is there.
                     let replaced = seqs.iter().any(|s| *s > cursor.seq)
@@ -491,10 +515,9 @@ fn resume_partial(
                 }
             }
             Some(name) => {
-                let listed = folder.list(&snapshots_dir(device))?;
-                if !listed.contains(name) {
+                if !snapshots.contains(name) {
                     // Replaced by a newer snapshot of its device.
-                    if listed.iter().any(|n| snapshot_file_seq(n).is_some()) {
+                    if snapshots.iter().any(|n| snapshot_file_seq(n).is_some()) {
                         user.drop_merge_cursor(device)?;
                         report.cursors_dropped += 1;
                     }
@@ -829,7 +852,7 @@ fn merge_file(
         let end = match end {
             Ok(end) => end,
             Err(e) => {
-                if committed && matches!(e, MergeError::Waits(_)) {
+                if committed && e.waits() {
                     report.split_waits += 1;
                 }
                 return Err(e);

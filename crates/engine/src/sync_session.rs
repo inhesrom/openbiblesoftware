@@ -651,7 +651,8 @@ impl Session {
     }
 
     /// Choose the Sync folder: this device syncs through it from now on (the first sync, due
-    /// at once, joins it). While a sync runs, it is chosen once that sync ends.
+    /// at once, joins it). While a sync runs, it is chosen once that sync ends. A merge partly
+    /// done in another folder is forgotten: its cursor names a file there.
     pub fn choose_sync_folder(&mut self, folder: &std::path::Path) -> Result<(), String> {
         if !folder.is_dir() {
             return Err(format!("{} is not a folder", folder.display()));
@@ -661,13 +662,20 @@ impl Session {
             return Ok(());
         }
         let user = self.user_data()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.sync.folder.as_deref() != Some(folder)
+            && let Some(store) = user.user_store()
+        {
+            store.drop_merge_cursors().map_err(|e| e.to_string())?;
+        }
         user.set_preference(SYNC_FOLDER_PREF, &folder.to_string_lossy())?;
         self.load_sync();
         Ok(())
     }
 
     /// Stop syncing: this device records no more ops (a new device id, its outbox emptied, a
-    /// restore's question dropped), then forgets the folder; its files stay in the folder. The
+    /// restore's question dropped, a merge partly done forgotten), then forgets the folder; its
+    /// files stay in the folder. The
     /// new id comes first, so a failure leaves the device syncing as before rather than
     /// recording into an outbox nothing reads. While a sync runs, it stops once that sync
     /// ends, or after [`STOP_SYNC_WAIT`], the sync abandoned (it writes nothing more).
@@ -683,6 +691,7 @@ impl Session {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(store) = user.user_store() {
             store.take_new_device_id().map_err(|e| e.to_string())?;
+            store.drop_merge_cursors().map_err(|e| e.to_string())?;
         }
         user.set_preference(SYNC_FOLDER_PREF, "")?;
         self.load_sync();
