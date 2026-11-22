@@ -3,8 +3,10 @@
 The Rust side of Sync, from plan steps S28a (the file layer), S28b-1 and S28b-2 (the merge,
 [below](#merging)) and S28c (snapshots, trimming, device ids, restores, when sync runs:
 [the contract](#contract)), the desktop's Settings → Sync, status indicator, restore
-prompt and Needs attention from S29 ([below](#the-desktop-s29)), and sync on a worker off the
-UI thread from S29b ([below](#off-the-ui-thread-s29b)); S30 is the iOS screens. The
+prompt and Needs attention from S29 ([below](#the-desktop-s29)), sync on a worker off the
+UI thread from S29b ([below](#off-the-ui-thread-s29b)), and merges in bounded transactions
+with the views reading only what a merge changed from S29c ([below](#merges-in-batches-s29c));
+S30 is the iOS screens. The
 shells render the states and words of the engine and hold no rule. Terms are in [CONTEXT.md](../../CONTEXT.md):
 **Sync folder**, **Synced device**, **Synced data**, **Sync conflict**.
 
@@ -13,15 +15,15 @@ shells render the states and words of the engine and hold no rule. Terms are in 
 | `obs-store` | `hlc.rs` | `Hlc`: the hybrid logical clock, its text form, `Hlc::next`, `MAX_FORWARD_SKEW_MS`. Compiles everywhere. |
 | `obs-store` | `user.rs` | `UserStore::second_connection` (`SecondConnection`: `open`, `refuse_writes`), `BUSY_TIMEOUT`, `UserStore::write_tx` (`BEGIN IMMEDIATE`) and `WriteTurns` (S29b: [off the UI thread](#off-the-ui-thread-s29b)). |
 | `obs-store` | `sync_clock.rs` | From schema 14, `apply_changes` gives each `Change` the next clock and writes it into the row, item or tombstone; while this device records ops, keeps each `Change` with its clock in `op_outbox`. `device_id`, `observe_clock`, `start_recording_ops`, `records_ops`, `reserve_op_files`, `op_file_written`. |
-| `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`), 14 → 15 (`tombstone.covers`, `item_clock.position`), 15 → 16 (`annotations.conflict_of`, `tombstone.row` with `row_covers` and `row_clock`, `sync_held`), 16 → 17 (`former_device`, `device.restore_choice`) and 17 → 18 (`former_device.seq`); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
+| `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`), 14 → 15 (`tombstone.covers`, `item_clock.position`), 15 → 16 (`annotations.conflict_of`, `tombstone.row` with `row_covers` and `row_clock`, `sync_held`), 16 → 17 (`former_device`, `device.restore_choice`), 17 → 18 (`former_device.seq`) and 18 → 19 (`merge_cursor`, S29c); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
 | `obs-store` | `sync_device.rs` | ADR 0022 rule 7: `own_device_ids` (this id and the former ones), `take_new_device_id` (a copied database), `restore_choice_pending`, `clear_restore_choice`, `device_name`, `set_device_name`, `merged_devices`, `last_reserved_op_file`; `renew_device_id`, which `UserStore::restore_from` (`backup_store.rs`) runs after every restore. |
-| `obs-store` | `snapshot_store.rs` | ADR 0022 rule 5: `snapshot_bytes`, `open_snapshot`, `snapshot_contents` (`SnapshotContents`), `merge_snapshot`, `merged_up_to`, `has_pending_ops`, `join_sync`, `restamp_for_replace`, `MergeTx::keep_base_positions`; `SNAPSHOT_EMPTIED`. |
-| `obs-store` | `merge_store.rs` | `UserStore::merge_op_file`: one op file merged in one transaction with its `applied_up_to`; `UserStore::merge_held`: the held ops tried again in one transaction; `MergeTx` (`state`, `write_merged`, `delete_merged`, `note_delete`, `note_item_op`, `note_list_op`, `write_kept`, `record`, `begin_op` / `end_op`, `hold` / `unhold` / `held`, `list_base`, `list_in_shape`, `write_list_base`, `tombstone_row`, `renamed_for_clash`); `row_state`, `applied_up_to`, `sync_held`; `UserStore::sync_conflicts` (`annotation_store.rs`). |
+| `obs-store` | `snapshot_store.rs` | ADR 0022 rule 5: `snapshot_bytes`, `open_snapshot`, `snapshot_contents` (`SnapshotContents`), `merge_snapshot_batch`, `merged_up_to`, `has_pending_ops`, `join_sync`, `restamp_for_replace`, `MergeTx::keep_base_positions`; `SNAPSHOT_EMPTIED`. |
+| `obs-store` | `merge_store.rs` | `UserStore::merge_op_file_batch`: one batch of an op file in one transaction, its last with the file's `applied_up_to`, the others with the merge cursor (`MergeCursor`, `BatchEnd`; `merge_cursors`, `has_partial_merge`, `drop_merge_cursor`, `drop_merge_cursors`; `merge_op_file`, a file in one); `UserStore::merge_held`: held ops tried again in one transaction; `Touched` (`MergeTx::take_touched`): what a merge wrote, for the views; `MergeTx` (`state`, `write_merged`, `delete_merged`, `note_delete`, `note_item_op`, `note_list_op`, `write_kept`, `record`, `begin_op` / `end_op`, `hold` / `unhold` / `held`, `list_base`, `list_in_shape`, `write_list_base`, `tombstone_row`, `renamed_for_clash`); `row_state`, `applied_up_to`, `sync_held`; `UserStore::sync_conflicts` (`annotation_store.rs`). |
 | `obs-engine` | `sync/folder.rs` | `SyncFolder` (`list`, `read`, `write_new`, `remove`, `ensure_available`), `FsSyncFolder` (`std::fs`, the desktop's), `MemSyncFolder` (tests, feature `test-support`). The Mobile app implements `SyncFolder` in Swift (S30). |
 | `obs-engine` | `sync/clock.rs` | Re-exports `obs_store::Hlc`: the store stamps rows itself (its own writes, such as `save_layout`, plan their Changes), so the clock lives there. |
 | `obs-engine` | `sync/ops.rs` | `Op`, `encode_op_file`, `decode_op_file`, `read_ops_after`, `write_pending_ops`. |
-| `obs-engine` | `sync/merge.rs` | The merge rules (`merge_op`) and `merge_folder`, which tries the held ops again, merges the snapshots it needs and every other device's op files not merged yet. |
-| `obs-engine` | `sync/snapshot.rs` | Snapshot names, `write_snapshot` (`write_snapshot_unless_edited`), `read_snapshot`, `snapshot_ops`, `merge_snapshot`, `snapshot_due` (`SnapshotPolicy`), `trim_own_op_files`. |
+| `obs-engine` | `sync/merge.rs` | The merge rules (`merge_op`) and `merge_folder` (`merge_folder_with` a `MergeBatch`, S29c), which finishes a merge a stopped sync left, tries the held ops again, merges the snapshots it needs and every other device's op files not merged yet, in batches (`may_wait`: whole when an op might wait). |
+| `obs-engine` | `sync/snapshot.rs` | Snapshot names, `write_snapshot` (`write_snapshot_unless_edited`), `read_snapshot`, `snapshot_ops`, `merge_snapshot` (in batches), `snapshot_due` (`SnapshotPolicy`), `trim_own_op_files`. |
 | `obs-engine` | `sync/lifecycle.rs` | `sync_now`, `needs_restore_choice`, `restore_choice` (`RestoreChoice`), `SyncOptions`, `SyncReport`, `SyncState`; the copied-database check. |
 | `obs-engine` | `sync/schedule.rs` | `SyncSchedule` and `next_sync_due` (ADR 0022 rule 8). Compiles everywhere. |
 | `obs-engine` | `sync/mod.rs` | Paths, `sync.json` (`ensure_sync_json`), `device.json` (`write_device_json`, `read_devices`), `SyncError`. |
@@ -76,7 +78,8 @@ behaves as before (the gallery's goldens are unchanged).
   at launch (Preferred order, Guide arrangements, Favorites, Reading plans, Copy presets,
   Collections, Saved searches, Word forms), moves `annotations_revision`, runs Notes searches
   again and re-anchors as at launch (`reload_synced_data`); preferences that stay on the device
-  are not touched. The undo history is kept: a step whose rows a merge changed is refused as
+  are not touched. When the merge changed only a few Annotations (S29c), the text's Annotations
+  and the Notes Tool's cards read only those ([below](#merges-in-batches-s29c)). The undo history is kept: a step whose rows a merge changed is refused as
   stale and the history cleared, as before.
 - **The status indicator** (`Session::sync_indicator`) and **Settings → Sync**
   (`Session::sync_panel`): the status line, the error behind it (Details), `FolderNewer`, each
@@ -175,16 +178,149 @@ what was merged; a worker that stopped without an outcome (it panicked) is a fai
   1.4–4.7 ms (0.2–0.4 ms with no sync running); a new device joining that folder, edits at most
   4–8 ms; a new device joining a library of 10,000 Notes, the result's frame 4.5–7.6 ms, but
   **an edit made during it waits 0.5–0.9 s** for the one merge transaction (10,000 ops in one
-  op file, or the snapshot: [for later steps](#for-later-steps)). The frame after the
+  op file, or the snapshot; S29c's batches made it 4.7 ms: [below](#merges-in-batches-s29c)). The frame after the
   result's, where the views read again what moved `annotations_revision` (`MarkCache`'s
   Annotations in text, Notebooks and Highlight styles, the Notes Tool's cards, Needs
   attention's count), measured from S29b's review (three more runs): 0.9–1.2 ms after the
   1,000-file catch-up, **17–24 ms after a 10,000-Note join** (the same reads as after any
-  Annotation edit there; [for later steps](#for-later-steps)); in those runs the 10,000-Note
-  join's edits waited 0.74–0.85 s.
+  Annotation edit there; S29c: 9.9–11.9 ms, and 2.4–2.9 ms for a small sync there,
+  [below](#merges-in-batches-s29c)); in those runs the 10,000-Note join's edits waited
+  0.74–0.85 s.
 - **The worker needs only `SyncFolder: Send + Sync`** (as the trait is), made on its thread
   (`sync_worker::FolderMaker`, crate-private; the desktop's is `FsSyncFolder` at the chosen
   path, checked to be there).
+
+## Merges in batches (S29c)
+
+S29b left one merge transaction per op file or snapshot: 0.5–0.9 s for a snapshot or op file
+of 10,000 Notes, and an edit on the UI thread waited for all of it (past `BUSY_TIMEOUT`, 10 s,
+it would be refused). From S29c an op file, a snapshot and the held ops' retry merge in
+**batches**, each its own write transaction (`BEGIN IMMEDIATE`), so `WriteTurns` lets a waiting
+edit in between two of them: it waits for one batch, not the file.
+
+- **A batch** (`merge::MergeBatch`) ends after the op that takes its merge work past the
+  budget (`MERGE_BATCH_BUDGET`, 4 ms) or past `max_ops` (unbounded in the app; the tests force
+  1–3), and holds at least one op. The ops, their order, each op's savepoint and every rule
+  are the unsplit merge's; a batch boundary changes only when the work is committed. D3's
+  "the rows its op file deleted with it" is still read from the whole file.
+- **All or none, per file.** `applied_up_to` moves only with a file's last batch, as before.
+  Each earlier batch commits, with its rows, where the merge stands: the **merge cursor**
+  (migration 19, `merge_cursor`: per other device, the op file being merged, or the snapshot
+  by its file name (its `seq` and hash) and the op files it covers, and how many of its ops,
+  a snapshot's as `snapshot_ops` lists them, are merged; `started`, the order the merges
+  started in; and a snapshot's `fingerprint`, below). The snapshot's own last batch moves
+  `applied_up_to` for its device and the others it covers, and raises the lists' clocks, as
+  the one transaction did. A merge of another source of that device than the cursor names
+  starts at its first op and replaces the cursor.
+- **A file that might wait merges whole.** A file waits (rolled back, merged after the other
+  devices' files) when an op needs a row only another device's file brings, or deletes this
+  device's default Notebook. Waiting after some batches were committed would merge its first
+  ops before those other files and the rest after them: an order the unsplit merge never
+  makes, so a Sync conflict's copy or a "(2)" could differ. So before its first batch the
+  merge checks the ops it is about to merge (`merge::may_wait`): every write's parents (an
+  Annotation's Notebook and Highlight style, a style's palette, a Reading's plan) are here, or
+  deleted here (restored from the tombstone's row, whose own parents are checked the same
+  way, or held when it keeps none), or held here, or written by an earlier op of the same
+  file that no op before it deletes; no op deletes the default Notebook or a Notebook an op
+  before it writes as a default; no op lacks fields (an older app's, whose missing fields come
+  from the row here). Rows here only ever leave with a tombstone, so what is known before the
+  first batch stays known after it. When the check fails, the file (or what is left of it)
+  merges in one transaction, as before S29c, and may wait as before
+  (`MergeReport::whole`). A join from a snapshot, parents first, passes it.
+- **A crash or an abandon between batches** (the app quits, the worker abandoned by a restore
+  or Stop syncing, its commits refused) leaves the batches committed and the cursor where
+  they end. The next `merge_folder` **finishes it first**, before the held ops' retry and every
+  other file, so the ops merge in the order the interrupted sync would have merged them, from
+  the op after the last committed; then it syncs as usual. Two cursors (a crash, the file
+  unreadable at the next sync, a second crash) are finished in the order their merges started
+  (`merge_cursor.started`; a cursor moved on keeps its place), not by device. Redoing a file
+  from its first op is not idempotent (a former id's list item that loses is renamed again
+  "(3)"), so no op is merged twice.
+- **A cursor's file that cannot be read** (still downloading, or damaged: cut short, changed)
+  is handled as such a file is without a cursor (supervisor decision, S29c review): the cursor
+  is kept, the file read again at every sync with no count of failures, and its device's
+  merge stops there, reported in `MergeReport::stopped` (`OpsStop::NotDownloaded`,
+  `NotWhole`, `SnapshotNotDownloaded`, `SnapshotNotWhole`) as for any device, the status line
+  the same ("Last synced …"). Once it reads whole the merge goes on from the cursor. While it
+  lasts this device writes no snapshot (below), so its own snapshots and trims wait and its op
+  files after its newest snapshot stay in the folder. The case where that holds back a join's
+  first snapshot: a Backup taken between two batches, restored on this device (or a copy of
+  its database) in the same folder: its new id joins, and that join's snapshot waits for the
+  cursor's file, so the other devices meanwhile report `NoSnapshot` for the new id and merge
+  none of its files.
+- **The cursor's file is gone** (supervisor decision 2): the device it names wrote a newer
+  snapshot (the cursor's snapshot is no longer listed, another is), or trimmed the op file
+  (no longer listed, a later file or a snapshot covering it is), or `applied_up_to` already
+  covers it (another device's snapshot did). The cursor is dropped and the newer file merges
+  from its first op, as a snapshot merges after files were trimmed: the rows the old file's
+  batches brought settle by last writer wins. This is the one case where a Sync conflict's
+  copy or a "(n)" can differ from the unsplit merge (one no one needed, never a loss), and it
+  needs a crash and the file replaced before the next sync. So is a cursor dropped when:
+  - **its device has no file in this folder** (no op file, no snapshot): the cursor came from
+    another Sync folder (a Backup taken there, restored here). Kept, it would hold back this
+    device's snapshots for good (S29c review, P1-2);
+  - **this device leaves its folder**: Stop syncing and choosing another folder empty
+    `merge_cursor` (`UserStore::drop_merge_cursors`), as a cursor names a file of one folder;
+    choosing the same folder again keeps it;
+  - **a snapshot's ops are listed otherwise.** The cursor counts ops in `snapshot_ops`' order,
+    which a later build could change (parents first, the lists' bases …). Each batch that is
+    not the last stores a `fingerprint` with the cursor: how many ops `snapshot_ops` listed and
+    the key and clock of the last op merged (`snapshot::cursor_fingerprint`). A resume that
+    finds another drops the cursor and merges the snapshot from its first op, rather than skip
+    some ops and apply others twice. Op files need none: their ops are in the file's order.
+- **The held ops' retry** runs in batches too, in the same clock order, over the list read at
+  its start. `sync_held` is its own cursor: an op that applies leaves it in the same batch.
+- **No snapshot while a merge is partly done** (`snapshot_due` says not due,
+  `write_snapshot_unless_edited` writes none): it would hold the first batches' rows without
+  covering their file. The merge that finishes it comes first in the same sync, so the
+  snapshot is written at its step 7 (unless the cursor's file cannot be read, above).
+- **A refusal after a committed batch.** An op this build cannot apply is held inside its own
+  savepoint (`merge_counted`), so its file goes on. A `Rejected` or `Conflict` raised outside
+  it (the store's own checks of where the batch starts, writing a list's base positions or
+  clocks) after some batches of the file were committed leaves the file partly merged and
+  waiting, as a wait would: it is tried again later in the merge and at every sync, from its
+  cursor, and counted in `MergeReport::split_waits` like a wait (the props assert none; none
+  of these is known to be reachable from a well-formed file).
+- **The cursor in Backups and restores.** Snapshots hold `merge_cursor` empty; a Backup keeps
+  it, consistent with its rows. A restore that catches up finishes the Backup's partly merged
+  file from where it stood; Replace (`restamp_for_replace`) empties it (the restored data
+  replaces every version, and the file merges again from its first op on top of it).
+  Migrations 18 and 19 both come with the sync stack (the merge fix and S29c), so a snapshot
+  or Backup this build writes is "newer" to a build at 18.
+- **What a merge touched.** `MergeReport::touched` names the Annotations a merge wrote,
+  deleted or recorded, and whether it touched a Notebook, Highlight style or palette or the
+  active palette. After a sync, the Session's reload says which Annotations changed
+  (`Session::annotations_changed_since`) when those are all it changed and they are few
+  (at most `ANNOTATIONS_PATCH_LIMIT`, `crate::annotations`); the text's Annotations
+  (`MarkCache`) and the Notes Tool's cards then read only those and patch what they hold (the
+  cards read in full while one is edited, to keep their order); Needs attention's count is one
+  SQL count. Any other change of `annotations_revision` reads everything, as before. A sync
+  that fails or is abandoned may have committed batches or whole files first, and its
+  `touched` is lost with it: it marks the views stale (`SessionSync::views_stale`), and the
+  next sync that succeeds reloads everything, whether it merged anything or not (Stop syncing
+  that abandons a sync reloads at once, as no sync follows).
+- **Measured** (owner's Mac, `measure_syncs_off_the_ui_thread` and
+  `measure_merge_batches_against_one_transaction`, local folder, frames of 16 ms, an edit at
+  every frame; dev profile, then release): a new device joining 10,000 Notes, **the longest
+  edit 4.7 ms** in one op file and in a snapshot alike (p50 0.1–0.5 ms; S29b: 0.5–0.9 s), the
+  sync 1.3–1.5 s in 112–119 batches; then all 10,000 edited in one op file, the longest edit
+  5.6–6.1 ms (in one transaction it would wait the whole merge, 4.8 s); the 1,000-file catch-up's
+  longest edit 1.3–3.8 ms. No frame's sync work over 4.9 ms. None of those files merged whole.
+  The batches' commits cost 3–4% (a 10,000-Note join 450 → 466–472 ms, 10,000 updates 4.80 →
+  4.91–4.96 s). An edit at every frame slows a large merge (`WriteTurns` gives each waiting
+  edit 20 ms): the 10,000-update catch-up took 14 s of wall time against 5 s of merge work. The
+  views' reads the frame after: 2.4–2.9 ms when a 10,000-Note library merges one edited and one
+  added Note (only those read); 9.9–11.9 ms when the merge changed all 10,000 (read whole, S29b's
+  17–24 ms less the second read of every Annotation Needs attention's count made).
+- **Note edits merged** (S29c's review): 95% of a Note update's merge was finding the Note's
+  old `notes_fts` entry by `annotation_id`, a column the index does not index, so every entry
+  was read (sampled with `sample`). `delete_note_entry` now finds it through the index by up to
+  eight words of its old text, then the id among those, and reads every entry only when those
+  words do not find it (an entry made from other text). Measured with
+  `measure_merge_batches_against_one_transaction` (dev profile, owner's Mac), 10,000 Notes
+  edited in one op file: one transaction 4,926 → 1,311–1,314 ms, in batches 5,067 →
+  1,365–1,374 ms (1,115 → 315 batches); the join is unchanged (440–451 ms). The UI's own Note
+  edits and deletes take the same path.
 
 ## Data
 
@@ -371,9 +507,10 @@ history, the id it gave up last first, each after its snapshot when it is met th
 [restores and copies](#restores-and-copies-new-device-ids)),
 then the other [snapshots](#snapshots) it needs (of a device not met yet, or whose op files after the
 last merged here are gone), then every other device's op files after its `applied_up_to`, in
-order (`read_ops_after`). Each file is merged by
-`UserStore::merge_op_file` in one transaction that also moves `applied_up_to` on: all of it
-or none. A file with an op that needs a row not here yet (another device's file brings it:
+order (`read_ops_after`). Each file is merged in batches, each a transaction
+(`UserStore::merge_op_file_batch`, S29c), the last of which moves `applied_up_to` on: all of
+it or none, a merge stopped between two batches going on where it stood
+([merges in batches](#merges-in-batches-s29c)). A file with an op that needs a row not here yet (another device's file brings it:
 an Annotation's Notebook, a Highlight's new style, a style's palette, a Reading's plan)
 **waits**: it is rolled back, the other devices' files are merged, and it is tried again, pass
 after pass while any file merges, then at the next sync (`MergeReport::waiting`, `retried`).
@@ -694,8 +831,8 @@ one deletes its older snapshots, and replaces a damaged file of its own name.
 | X met up to `a` | `a + 1` is in the folder | Its op files, as before |
 | X met up to `a` | `a + 1` is gone (trimmed), a snapshot covering more | X's newest snapshot, then its op files after it |
 
-Merging a snapshot (`snapshot::merge_snapshot`, one transaction through
-`UserStore::merge_snapshot`) turns it into the ops it stands for (`snapshot_ops`) and merges
+Merging a snapshot (`snapshot::merge_snapshot`, in batches through
+`UserStore::merge_snapshot_batch`, the last noting it merged, S29c) turns it into the ops it stands for (`snapshot_ops`) and merges
 them by the same rules and the same code as op files (`merge_keyed`), parents first: each row a
 write at its clock; each list's base a whole-value write at the base's clock, holding the
 base's items still at that clock (their stored positions kept, `MergeTx::keep_base_positions`),
@@ -843,7 +980,8 @@ wrote its files (`sync_device.rs`, migrations 17 and 18):
 4. A device not recording ops joins ([above](#joining)).
 5. Its pending ops are written (`write_pending_ops`), then its snapshot if one is due (none
    when an edit made meanwhile has an op in the outbox: [snapshots](#snapshots)).
-6. `merge_folder`: held ops tried again, the former ids' snapshots (those it needs) and op
+6. `merge_folder`: a merge a stopped sync left between two batches finished (S29c), held ops
+   tried again, the former ids' snapshots (those it needs) and op
    files (the last given up first), the other snapshots, every other device's op files, held ops again. What the merge recorded (copies, renames, demotions, restored parents, items kept or
    renamed) is in the outbox and is written at once.
 7. A snapshot if one is now due; its own op files that may go are trimmed; its `device.json`
@@ -1084,6 +1222,47 @@ Mobile app has no period (`at_launch(false)`).
   9000000, 10000000, 11111111, 22222222, 33333333, 44444444, 20261122); 1,000 cases take
   about 23 s, 10,000 about 240–350 s on the owner's Mac with two runs at once.
 
+- **S29c** (merges in batches): `crates/engine/src/sync/merge_batch_tests.rs`: a merge stopped
+  every two batches of three ops goes on where it stood each time and ends with the unsplit
+  merge's `synced_dump`, Sync conflicts and Notes (a copy, D2; a kept parent, D3; 40 Notes added,
+  edited and deleted); a cursor inside a snapshot its device then replaced is dropped and the
+  newer merges from its start, converging with every Note; a Backup taken between batches
+  restores with its cursor, Catch up finishes that file first (its snapshot written once it is
+  done) and Replace empties it, both converging; a file whose Notes need a Notebook only another
+  device's file brings merges whole, commits nothing and waits, then merges after it; no snapshot
+  is written while a merge is partly done. `crates/store/tests/sync_clock_db.rs`: the cursor is
+  committed per batch, a batch from another op is refused, the last drops it and notes the file;
+  a Backup carries it, a snapshot holds none, a restore brings it back, Replace empties it, a v18
+  Backup restores with none. `merge_props.rs`: every case merges in batches of 1–3 ops (its own
+  generator, so a seed's edits are those it made before S29c), a fifth of the random syncs stop
+  after 1–6 batches (a crash), and the run must reach a stop, one inside a snapshot, a stopped
+  file finished first and a file merged whole; no file may wait after a batch was committed.
+  Per 1,000 cases about 100,000 batches, 570 stops (370 in a snapshot), 360 files finished first,
+  40 cursors dropped, 28 files merged whole; per 10,000 at seeds 20266453, 891, 7744, 1 and 42
+  (all green, 220–260 s each) 980,000–990,000 batches, about 5,500 stops, 3,300–3,400 finished
+  first, 320–350 dropped, 170–290 merged whole of about 86,000 snapshots and 1.4 million ops
+  merged. `sync_session_tests.rs`: after a sync that changed only Annotations the patched text
+  Annotations and cards equal a whole read (both card orders, a Sync conflict's copy, its Note
+  then deleted elsewhere), and a merge touching a Notebook reads everything;
+  `an_edit_during_a_10k_note_join_waits_for_one_batch_of_the_merge_not_the_file` (under
+  100 ms; 4.7 ms on the owner's Mac). Mutation checks: `may_wait` always false fails the 1,000
+  props (a file waits after a batch) and the whole-file unit test; the cards not reading a copy
+  whose Note changed fails the views test.
+  From S29c's review: `merge_batch_tests.rs`: a cursor whose device has nothing in the folder
+  (another folder's) is dropped and the snapshot written; one at an op file kept in the cloud
+  stops its device's merge (`NotDownloaded`), keeps the cursor and the snapshot waits, then
+  finishes once it downloads and the snapshot is written; a snapshot cursor whose fingerprint
+  names another op is dropped and the snapshot merges from its first op, as the resume would
+  have ended. `sync_clock_db.rs`: cursors come back in the order their merges started (one
+  moved on keeps its place, one started again goes last), a snapshot's with its fingerprint,
+  and `drop_merge_cursors` empties them. `sync_session_tests.rs`: a sync whose merge is
+  committed but whose `device.json` write fails, then a sync of one Note: the views read
+  everything and equal a whole read (patched with only that Note they would not; checked by
+  disabling the flag), and the sync after patches again; Stop syncing forgets a merge partly
+  done, choosing the folder again joins with a snapshot and every Note, and choosing another
+  folder forgets one too; a cursor at an op file cut short stops its device's merge with the
+  same `stopped` report and status line as a device without a cursor, and finishes once the
+  file is whole.
 - `crates/engine/src/sync_session_tests.rs` (S29): without a Sync folder nothing syncs, shows
   or is recorded, and a restore leaves it so; two Sessions converge through one folder and list
   each other; an edit makes a sync due 30 seconds on, else the period; a restore on a syncing
@@ -1129,19 +1308,21 @@ Mobile app has no period (`at_launch(false)`).
 
 ## For later steps
 
-- **Split the largest merge transactions** (found by S29b): a snapshot, or an op file of
-  thousands of ops (a device that made 10,000 changes between syncs), merges in one
-  transaction, 0.5–0.9 s for 10,000 Notes on the owner's Mac; an edit the user makes
-  meanwhile waits for it on the UI thread. Past `BUSY_TIMEOUT` (10 s) the edit is refused
-  ("database is locked") rather than waiting longer: a larger library or an iPhone could get
-  there, and the restore's copy into the live database waits up to that long for an abandoned
-  worker's transaction still running. Merging them in bounded transactions keeps edits under a
-  frame and far from that limit, but touches the merge's all-or-none contract
-  (`merge_snapshot`, `merge_op_file` with its `applied_up_to`).
-- **The views' reads after a large merge** (found by S29b's review): the frame after a sync
-  that merged anything re-reads every Annotation in text and the Notes Tool's cards, 17–24 ms
-  at 10,000 Notes (dev profile), as after any Annotation edit; reading only what changed would
-  keep it under a frame.
+- **Merges in batches** and **the views' reads after a merge**, found by S29b, are S29c's
+  ([above](#merges-in-batches-s29c)). Left from them:
+  - A merge of 10,000 Note updates is still about three times a merge of 10,000 inserts
+    (1.3 s against 0.45 s; 4.8 s before the review's fix above). What is left is `notes_fts`:
+    each update's lookup is a full-text query, which first writes the index's pending entries
+    to disk as a segment of their own, so every op makes a segment and FTS5 merges them as it
+    goes. Finding an entry without a query needs its rowid by Annotation: a table from
+    Annotation id to `notes_fts` rowid kept with every write of the index (or `notes_fts`'s
+    rowid kept equal to a stable integer of the Annotation's), a schema change for a later step.
+  - After a merge that changed many Annotations (a join), the views still read every one, about
+    10–12 ms at 10,000 Notes; the marks of each open Resource are made again from all of them
+    as after any edit.
+  - Other single transactions a large library makes: the join's stamping (`join_sync`),
+    Replace's `restamp_for_replace`, and the outbox's reserve and noting written are each one
+    statement per table, not measured at 10,000 rows on an iPhone.
 - **S30:** Needs attention lists the Sync conflicts and held ops as the desktop does
   (`texts`, `Session::sync_held_lines`, `resolve_sync_conflict`); render `SyncState`
   (`needs_newer_app` per device, `FolderNewer`, `NeedsRestoreChoice` with Catch up as the

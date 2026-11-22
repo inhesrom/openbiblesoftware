@@ -20,15 +20,15 @@
 //!    (`snapshot::snapshot_due`: none yet, or enough written since), unless an edit made
 //!    meanwhile has an op in the outbox (S29b: the user edits while the sync runs): then the
 //!    snapshot is not due yet.
-//! 6. Every other device's snapshots and op files are merged (`merge::merge_folder`); what the
-//!    merge recorded (a Sync conflict's copy, a rename, a restored parent …) is written at once.
+//! 6. Every other device's snapshots and op files are merged (`merge::merge_folder_with`, in
+//!    batches: a file a stopped sync partly merged is finished first); what the merge recorded (a Sync conflict's copy, a rename, a restored parent …) is written at once.
 //! 7. A snapshot again if one is now due, then this device's own op files that may go are
 //!    trimmed (`snapshot::trim_own_op_files`), and its `device.json` (name, platform, app
 //!    version, what it has merged of each device, when it synced) is written when it changed.
 
 use obs_store::{StoreError, UserStore};
 
-use super::merge::{MergeReport, merge_folder};
+use super::merge::{MergeBatch, MergeReport, merge_folder_with};
 use super::ops::{op_file_seq, ops_dir, write_pending_ops};
 use super::snapshot::{
     SnapshotPolicy, snapshot_due, snapshot_file_seq, snapshots_dir, trim_own_op_files,
@@ -43,14 +43,17 @@ pub struct SyncOptions {
     pub platform: String,
     /// When it writes snapshots and trims its op files.
     pub policy: SnapshotPolicy,
+    /// How its merge splits files into batches (S29c).
+    pub batch: MergeBatch,
 }
 
 impl SyncOptions {
-    /// The options of an app on `platform`, with the default snapshot policy.
+    /// The options of an app on `platform`, with the default snapshot policy and batches.
     pub fn new(platform: &str) -> Self {
         Self {
             platform: platform.to_string(),
             policy: SnapshotPolicy::default(),
+            batch: MergeBatch::default(),
         }
     }
 }
@@ -194,7 +197,7 @@ pub fn sync_now(
     if snapshot_due(user, folder, &options.policy, now)? {
         report.snapshot = write_snapshot_unless_edited(user, folder)?;
     }
-    report.merge = merge_folder(user, folder)?;
+    report.merge = merge_folder_with(user, folder, &options.batch)?;
     if user.has_pending_ops()? {
         report.written.extend(write_pending_ops(user, folder)?);
     }

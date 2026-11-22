@@ -27,7 +27,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::annotation::{Row, RowKey};
 use crate::error::StoreError;
 use crate::hlc::Hlc;
-use crate::merge_store::{HeldOp, MergeTx};
+use crate::merge_store::{
+    BatchEnd, CURSOR_SCHEMA, HeldOp, MergeTx, cursor_number, read_merge_cursor, write_merge_cursor,
+};
 use crate::preference_items::ListPreference;
 use crate::sync_clock::{LIST_BASE_TABLE, read_device_id, read_row_clock, records_ops};
 use crate::sync_schema::{SYNCED_TABLES, is_synced_preference};
@@ -36,13 +38,15 @@ use crate::user::{UserStore, sql};
 
 /// The tables a snapshot holds empty: what stays on the device (History, the Last session,
 /// the Resources' remembered names) and what is this database's own (its outbox of ops not
-/// yet written, the ids it had before).
+/// yet written, the ids it had before, where a merge in batches stands: none is written while
+/// one is partly done).
 pub const SNAPSHOT_EMPTIED: &[&str] = &[
     "history",
     "last_session",
     "resource_names",
     "op_outbox",
     "former_device",
+    "merge_cursor",
 ];
 
 /// A row of Synced data in a snapshot, with its clock (`None`: changed before clocks).
@@ -485,21 +489,34 @@ impl UserStore {
         Ok(out)
     }
 
-    /// Merge a snapshot of another Synced device `device` that covers its op files up to `seq`
-    /// and, for every device, `applied` (its `applied_up_to`) with `merge`, in one
-    /// transaction that also notes it merged: `device` merged up to `seq`, and every other
-    /// device up to the larger of what is noted here and what the snapshot covers, but this
-    /// device's own ids, its current one and its former ones (ADR 0022 rule 7): a former id's
-    /// files are this device's own history, merged op by op so that its own checks see each
-    /// op (a text of its own another device's version replaced is kept as a copy), not taken
-    /// as covered by another device's snapshot. All of it, or (`merge` fails) none.
-    pub fn merge_snapshot<T, E: From<StoreError>>(
+    /// Merge one batch of the snapshot `name` of another Synced device `device`, which covers
+    /// its op files up to `seq` and, for every device, `applied` (its `applied_up_to`), with
+    /// `merge`, from its op `from` (where its merge stands: 0, or the [`crate::MergeCursor`]
+    /// committed with its batch before), in one transaction (S29c). `merge` says where the
+    /// batch ended. A batch that is not the last commits the cursor at its end. The last also
+    /// notes the snapshot merged: `device` merged up to `seq`, and every other device up to
+    /// the larger of what is noted here and what the snapshot covers, but this device's own
+    /// ids, its current one and its former ones (ADR 0022 rule 7): a former id's files are
+    /// this device's own history, merged op by op so that its own checks see each op (a text
+    /// of its own another device's version replaced is kept as a copy), not taken as covered by
+    /// another device's snapshot. A cursor of a file those cover goes with it. `merge` also
+    /// returns the cursor's [`crate::MergeCursor::fingerprint`] (its op before where the batch
+    /// ended), kept when the batch is not the last. All of the batch, or (`merge` fails) none
+    /// of it.
+    pub fn merge_snapshot_batch<T, E: From<StoreError>>(
         &self,
         device: &str,
         seq: u64,
+        name: &str,
         applied: &BTreeMap<String, u64>,
-        merge: impl FnOnce(&mut MergeTx<'_>) -> Result<T, E>,
+        from: u64,
+        merge: impl FnOnce(&mut MergeTx<'_>) -> Result<(T, BatchEnd, String), E>,
     ) -> Result<T, E> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Err(
+                StoreError::Rejected("this User database is too old to merge".into()).into(),
+            );
+        }
         let tx = self.write_tx()?;
         let own = read_device_id(&tx)?;
         if device == own {
@@ -508,31 +525,50 @@ impl UserStore {
             )
             .into());
         }
+        let at = read_merge_cursor(&tx, device)?
+            .filter(|c| c.seq == seq && c.snapshot.as_deref() == Some(name))
+            .map_or(0, |c| c.ops);
+        if at != from {
+            return Err(StoreError::Rejected(format!(
+                "snapshot {name} of {device} is merged up to its op {at}, not {from}"
+            ))
+            .into());
+        }
         let recording = records_ops(&tx, &own)?;
         let mut m = self.merge_tx(&tx, own.clone(), recording)?;
-        let out = merge(&mut m)?;
+        let (out, end, fingerprint) = merge(&mut m)?;
         #[cfg(feature = "test-support")]
         let recorded = std::mem::take(&mut m.recorded);
         let own_ids: Vec<String> = applied.keys().filter(|id| m.is_own(id)).cloned().collect();
         drop(m);
-        let as_i64 = |seq: u64| {
-            i64::try_from(seq).map_err(|_| StoreError::Rejected(format!("op file number {seq}")))
-        };
-        tx.execute(
-            "INSERT INTO applied_up_to (device_id, seq) VALUES (?1, ?2)
-             ON CONFLICT (device_id) DO UPDATE SET seq = max(seq, excluded.seq)",
-            params![device, as_i64(seq)?],
-        )
-        .map_err(sql)?;
-        for (other, seq) in applied {
-            if own_ids.contains(other) || other == device || !crate::annotation::is_valid_id(other)
-            {
-                continue;
-            }
+        if let BatchEnd::At(ops) = end {
+            write_merge_cursor(&tx, device, seq, Some(name), ops, Some(&fingerprint))?;
+        } else {
             tx.execute(
                 "INSERT INTO applied_up_to (device_id, seq) VALUES (?1, ?2)
                  ON CONFLICT (device_id) DO UPDATE SET seq = max(seq, excluded.seq)",
-                params![other, as_i64(*seq)?],
+                params![device, cursor_number(seq)?],
+            )
+            .map_err(sql)?;
+            for (other, seq) in applied {
+                if own_ids.contains(other)
+                    || other == device
+                    || !crate::annotation::is_valid_id(other)
+                {
+                    continue;
+                }
+                tx.execute(
+                    "INSERT INTO applied_up_to (device_id, seq) VALUES (?1, ?2)
+                     ON CONFLICT (device_id) DO UPDATE SET seq = max(seq, excluded.seq)",
+                    params![other, cursor_number(*seq)?],
+                )
+                .map_err(sql)?;
+            }
+            // Its own cursor, and that of every file it now covers.
+            tx.execute(
+                "DELETE FROM merge_cursor WHERE device_id = ?1 OR seq <= (
+                     SELECT a.seq FROM applied_up_to a WHERE a.device_id = merge_cursor.device_id)",
+                [device],
             )
             .map_err(sql)?;
         }
@@ -604,6 +640,9 @@ impl UserStore {
         // The user chose: the restore waits no more, in the same step.
         tx.execute("UPDATE device SET restore_choice = 0 WHERE id = 1", [])
             .map_err(sql)?;
+        // A file the Backup's merge had partly done merges again from its first op, on top of
+        // the restored data, which replaces every version (S29c).
+        tx.execute("DELETE FROM merge_cursor", []).map_err(sql)?;
         // After every clock the data holds, even one far ahead (which the device's own clock
         // does not follow): a snapshot covering another device's files must hold rows as new
         // as theirs.

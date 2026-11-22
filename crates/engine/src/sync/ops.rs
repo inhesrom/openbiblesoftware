@@ -223,6 +223,16 @@ pub fn read_ops_after(
     device: &str,
     applied: u64,
 ) -> Result<DeviceOps, FolderError> {
+    read_op_files(folder, device, applied, usize::MAX)
+}
+
+/// [`read_ops_after`], reading at most `max_files` files.
+pub fn read_op_files(
+    folder: &dyn SyncFolder,
+    device: &str,
+    applied: u64,
+    max_files: usize,
+) -> Result<DeviceOps, FolderError> {
     let dir = ops_dir(device);
     let mut seqs: Vec<u64> = folder
         .list(&dir)?
@@ -234,6 +244,9 @@ pub fn read_ops_after(
     let mut out = DeviceOps::default();
     let mut expected = applied + 1;
     for seq in seqs {
+        if out.files.len() >= max_files {
+            return Ok(out);
+        }
         if seq != expected {
             out.stopped = Some((expected, OpsStop::Missing));
             return Ok(out);

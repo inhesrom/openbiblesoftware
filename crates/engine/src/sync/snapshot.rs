@@ -24,10 +24,10 @@
 //!   `applied`). A device silent for longer catches up from snapshots. Tombstones are never
 //!   trimmed: they are kept for good in every database and snapshot.
 
-use obs_store::{Hlc, Row, RowKey, SnapshotContents, StoreError, UserStore, list_key_of};
+use obs_store::{BatchEnd, Hlc, Row, RowKey, SnapshotContents, StoreError, UserStore, list_key_of};
 
 use super::folder::FolderError;
-use super::merge::{MergeError, MergeReport, Outcome, Recorded, merge_keyed, merge_op};
+use super::merge::{BatchDone, Batches, MergeError, MergeReport, Outcome, may_wait, merge_counted};
 use super::ops::{Op, decode_op_file, op_file_path, op_file_seq, ops_dir};
 use super::{DEVICES_DIR, SyncError, SyncFolder};
 
@@ -141,13 +141,15 @@ pub fn snapshot_file(user: &UserStore) -> Result<SnapshotFile, SyncError> {
     })
 }
 
-/// This device's snapshot now, or `None` when its outbox has ops.
+/// This device's snapshot now, or `None` when its outbox has ops or a merge is partly done.
 fn snapshot_file_unless_edited(user: &UserStore) -> Result<Option<SnapshotFile>, SyncError> {
     let device = user.device_id()?;
     if !user.records_ops()? {
         return Err(StoreError::Rejected("this device does not record ops".into()).into());
     }
-    if user.has_pending_ops()? {
+    // Nor while a merge is partly done (S29c): it would hold the first batches' rows without
+    // covering their file. The merge finishing it comes first at the next sync.
+    if user.has_pending_ops()? || user.has_partial_merge()? {
         return Ok(None);
     }
     let seq = user.applied_up_to(&device)?;
@@ -269,8 +271,20 @@ pub struct SnapshotOp {
     pub held: bool,
 }
 
+/// What a snapshot's merge cursor at op `at` of `ops` checks before a resume goes on from it
+/// ([`obs_store::MergeCursor::fingerprint`]): how many ops [`snapshot_ops`] listed, and the
+/// key and clock of op `at − 1`. A build that lists a snapshot's ops in another order or
+/// number than the build that stopped its merge finds another, and merges it from its first.
+pub(crate) fn cursor_fingerprint(ops: &[SnapshotOp], at: usize) -> String {
+    match at.checked_sub(1).and_then(|i| ops.get(i)) {
+        Some(last) => format!("{} {:?} {}", ops.len(), last.key, last.op.clock),
+        None => ops.len().to_string(),
+    }
+}
+
 /// The ops a snapshot's contents merge as, in order: the rows (parents first) but list items,
-/// the lists' bases, the list items, the tombstones, the held ops. Rows with no clock (none
+/// the lists' bases, the list items, the tombstones, the held ops. A merge cursor counts them
+/// in this order, and checks it ([`cursor_fingerprint`]). Rows with no clock (none
 /// after a join stamps them) are left out.
 pub fn snapshot_ops(contents: &SnapshotContents) -> Vec<SnapshotOp> {
     let device = &contents.device;
@@ -350,76 +364,124 @@ pub fn snapshot_ops(contents: &SnapshotContents) -> Vec<SnapshotOp> {
     out
 }
 
-/// Merge another device's snapshot (its `contents`, covering its op files up to `seq`) in one
-/// transaction that notes it merged (`UserStore::merge_snapshot`). Its rows merge by the same
-/// rules as ops (`merge_keyed`), each as a version this device's own rows were not seen by: a
-/// snapshot does not say what each of its versions replaced, and a version later by its clock
-/// may still have been written before its device merged this one's (a clock running ahead).
-/// So this device's own Note text or list item that a snapshot's version replaces is kept as
-/// a Sync conflict's copy or "Name (2)", even when the other device had seen it (a copy no
-/// one needed, which is safe; a lost text is not).
-pub fn merge_snapshot(
+/// Merge another device's snapshot `name` (its `contents`, covering its op files up to `seq`)
+/// in batches (`UserStore::merge_snapshot_batch`, S29c), from where its merge stands; the last
+/// notes it merged. Its rows merge by the same rules as ops (`merge_keyed`), each as a version
+/// this device's own rows were not seen by: a snapshot does not say what each of its versions
+/// replaced, and a version later by its clock may still have been written before its device
+/// merged this one's (a clock running ahead). So this device's own Note text or list item that
+/// a snapshot's version replaces is kept as a Sync conflict's copy or "Name (2)", even when the
+/// other device had seen it (a copy no one needed, which is safe; a lost text is not). One
+/// whose ops might wait (`may_wait`) merges what is left in one transaction. A cursor whose
+/// fingerprint does not match these ops ([`cursor_fingerprint`]) is dropped, and the snapshot
+/// merges from its first op.
+pub(crate) fn merge_snapshot(
     user: &UserStore,
     seq: u64,
+    name: &str,
     contents: &SnapshotContents,
     report: &mut MergeReport,
+    batches: &Batches<'_>,
 ) -> Result<(), MergeError> {
     let ops = snapshot_ops(contents);
-    let mut outcomes = Vec::with_capacity(ops.len());
-    let mut not_observed = 0;
-    let mut recorded = Recorded::default();
-    user.merge_snapshot(&contents.device, seq, &contents.applied, |tx| {
-        for snapshot_op in &ops {
-            let op = &snapshot_op.op;
-            if !user.observe_clock(&op.clock) {
-                not_observed += 1;
-            }
-            tx.begin_op()?;
-            let mut by_op = Recorded::default();
-            let merged = if snapshot_op.held {
-                merge_op(tx, op, &[], &mut by_op)
+    let device = contents.device.as_str();
+    let cursor = (user.merge_cursor(device)?)
+        .filter(|c| c.seq == seq && c.snapshot.as_deref() == Some(name));
+    let mut from = match cursor {
+        Some(c) => {
+            let at = usize::try_from(c.ops).unwrap_or(usize::MAX);
+            if c.fingerprint.as_deref() == Some(cursor_fingerprint(&ops, at).as_str()) {
+                c.ops
             } else {
-                merge_keyed(tx, op, &snapshot_op.key, &[], &mut by_op)
-            };
-            match merged {
-                Ok(outcome) => {
-                    if outcome == Outcome::Written
-                        && let RowKey::Preference(list) = &snapshot_op.key
-                        && !snapshot_op.base_items.is_empty()
-                    {
-                        tx.keep_base_positions(list, &op.clock, &snapshot_op.base_items)?;
-                    }
-                    tx.end_op(true)?;
-                    recorded.add(&by_op);
-                    outcomes.push(outcome);
-                }
-                Err(MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why))) => {
-                    tx.end_op(false)?;
-                    tx.hold(&super::merge::held_of(op, why))?;
-                    outcomes.push(Outcome::Held);
-                }
-                Err(e) => {
-                    tx.end_op(false)?;
-                    return Err(e);
-                }
+                user.drop_merge_cursor(device)?;
+                report.cursors_dropped += 1;
+                0
             }
         }
-        for (list, clock) in &contents.list_clocks {
-            tx.note_list_op(list, clock)?;
+        None => 0,
+    };
+    let mut whole: Option<bool> = None;
+    let mut committed = from > 0;
+    let mut counted = false;
+    loop {
+        let mut done = BatchDone::default();
+        let start = usize::try_from(from).unwrap_or(usize::MAX);
+        let end = user.merge_snapshot_batch(device, seq, name, &contents.applied, from, |tx| {
+            let rest = ops.get(start..).unwrap_or_default();
+            let all = match whole {
+                Some(all) => all,
+                None => {
+                    let all = may_wait(
+                        tx,
+                        rest.iter().map(|s| {
+                            let key = if s.held {
+                                s.op.change().key()
+                            } else {
+                                Some(s.key.clone())
+                            };
+                            (key, &s.op)
+                        }),
+                    )?;
+                    whole = Some(all);
+                    all
+                }
+            };
+            let mut budget = batches.start(all);
+            let mut i = start;
+            while let Some(snapshot_op) = ops.get(i) {
+                let op = &snapshot_op.op;
+                let key = (!snapshot_op.held).then_some(&snapshot_op.key);
+                let outcome = merge_counted(user, tx, op, key, &[], &mut done)?;
+                if outcome == Outcome::Written
+                    && let RowKey::Preference(list) = &snapshot_op.key
+                    && !snapshot_op.base_items.is_empty()
+                {
+                    tx.keep_base_positions(list, &op.clock, &snapshot_op.base_items)?;
+                }
+                i += 1;
+                if budget.spent() {
+                    break;
+                }
+            }
+            let end = if i >= ops.len() {
+                for (list, clock) in &contents.list_clocks {
+                    tx.note_list_op(list, clock)?;
+                }
+                BatchEnd::Done
+            } else {
+                BatchEnd::At(i as u64)
+            };
+            done.touched = tx.take_touched();
+            Ok::<_, MergeError>((end, end, cursor_fingerprint(&ops, i)))
+        });
+        if whole == Some(true) && !counted {
+            counted = true;
+            report.whole += 1;
         }
-        Ok::<(), MergeError>(())
-    })?;
-    for outcome in outcomes {
-        *report.outcomes.entry(outcome).or_default() += 1;
+        let end = match end {
+            Ok(end) => end,
+            Err(e) => {
+                if committed && e.waits() {
+                    report.split_waits += 1;
+                }
+                return Err(e);
+            }
+        };
+        committed = true;
+        done.add_to(report);
+        batches.committed(report)?;
+        match end {
+            BatchEnd::Done => {
+                report.snapshots.push((device.to_string(), seq));
+                return Ok(());
+            }
+            BatchEnd::At(next) => from = next,
+        }
     }
-    report.not_observed += not_observed;
-    report.recorded.add(&recorded);
-    report.snapshots.push((contents.device.clone(), seq));
-    Ok(())
 }
 
 /// Whether this device should write a new snapshot now (`policy`): it records ops, its outbox
-/// is empty, and it has none in the folder, or its newest there is not whole
+/// is empty, no merge is partly done (S29c), and it has none in the folder, or its newest there is not whole
 /// ([`read_snapshot`]), or it has written `after_files` op files since its newest, or the
 /// first of them is older than `after_ms` at `now_ms`.
 pub fn snapshot_due(
@@ -429,7 +491,7 @@ pub fn snapshot_due(
     now_ms: i64,
 ) -> Result<bool, SyncError> {
     let device = user.device_id()?;
-    if !user.records_ops()? || user.has_pending_ops()? {
+    if !user.records_ops()? || user.has_pending_ops()? || user.has_partial_merge()? {
         return Ok(false);
     }
     let written = user.applied_up_to(&device)?;

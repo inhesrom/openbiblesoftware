@@ -20,6 +20,14 @@
 //!
 //! [`MergeTx::begin_op`] and [`MergeTx::end_op`] put each op in a savepoint, so one that fails
 //! leaves nothing of itself behind.
+//!
+//! An op file or snapshot merges in batches (S29c), each its own transaction
+//! ([`UserStore::merge_op_file_batch`], [`UserStore::merge_snapshot_batch`]): a batch that is
+//! not its file's last commits where the merge stands ([`MergeCursor`], `merge_cursor`), and
+//! the last moves `applied_up_to` and drops it, so a file is still merged all or none, and a
+//! merge stopped between two batches goes on from the op after the last committed.
+
+use std::collections::BTreeSet;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -108,11 +116,81 @@ pub fn list_key_of(key: &RowKey) -> Option<String> {
     }
 }
 
-/// One op file's merge, in one transaction ([`UserStore::merge_op_file`]).
+/// The first schema with the merge cursor (`merge_cursor`): a merge in batches.
+pub(crate) const CURSOR_SCHEMA: u32 = 19;
+
+/// Where the merge of another device's op file or snapshot stands after some of its batches
+/// were committed (`merge_cursor`, schema 19).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeCursor {
+    /// The device whose file it is.
+    pub device: String,
+    /// The op file being merged, or the op files the snapshot covers.
+    pub seq: u64,
+    /// The snapshot's file name (`<seq>-<sha256>.obsbackup`), when it is one.
+    pub snapshot: Option<String>,
+    /// How many of its ops are merged (a snapshot's as the engine's `snapshot_ops` lists them).
+    pub ops: u64,
+    /// A snapshot's: what the engine's `snapshot_ops` listed as its op `ops − 1` (and how
+    /// many it listed), which a resume checks before it goes on from `ops`.
+    pub fingerprint: Option<String>,
+}
+
+/// Where a batch of a merge ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchEnd {
+    /// The file's last op is merged: so is the file.
+    Done,
+    /// The file's ops before this one are merged; its next batch starts at it.
+    At(u64),
+}
+
+/// What a merge wrote, for the views that read it again (S29c): the Annotations it wrote,
+/// deleted or recorded, and whether it changed what they are shown with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Touched {
+    /// The ids of the Annotations written or deleted.
+    pub annotations: BTreeSet<String>,
+    /// A Notebook, Highlight style or palette, or the active Highlight palette was written or
+    /// deleted.
+    pub annotation_views: bool,
+}
+
+impl Touched {
+    /// Add what `other` touched.
+    pub fn add(&mut self, other: Touched) {
+        self.annotations.extend(other.annotations);
+        self.annotation_views |= other.annotation_views;
+    }
+
+    /// Note that `change` was applied.
+    fn note(&mut self, change: &Change) {
+        for row in [&change.before, &change.after].into_iter().flatten() {
+            match row.key() {
+                RowKey::Annotation(id) => {
+                    self.annotations.insert(id);
+                }
+                RowKey::Notebook(_) | RowKey::HighlightStyle(_) | RowKey::HighlightPalette(_) => {
+                    self.annotation_views = true;
+                }
+                RowKey::Preference(key) if key.starts_with("highlights.") => {
+                    self.annotation_views = true;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// One op file's merge, or one batch of it, in one transaction
+/// ([`UserStore::merge_op_file_batch`]).
 pub struct MergeTx<'a> {
     store: &'a UserStore,
     tx: &'a Connection,
     lists: ListItems,
+    /// What its writes touched (an op undone by its savepoint included: reading an
+    /// Annotation again that did not change is harmless).
+    touched: Touched,
     device_id: String,
     /// This device's id and its former ones (`sync_device.rs`): a clock naming any of them is
     /// this device's own.
@@ -130,6 +208,11 @@ impl MergeTx<'_> {
     /// This device's id.
     pub fn device_id(&self) -> &str {
         &self.device_id
+    }
+
+    /// What this transaction's writes touched so far, taken.
+    pub fn take_touched(&mut self) -> Touched {
+        std::mem::take(&mut self.touched)
     }
 
     /// The connection the merge writes through.
@@ -239,6 +322,7 @@ impl MergeTx<'_> {
         clock: &Hlc,
         covers: Option<&Hlc>,
     ) -> Result<(), StoreError> {
+        self.touched.note(change);
         let columns = self.store.sync_columns(self.tx)?;
         self.store.apply_one(
             self.tx,
@@ -265,12 +349,14 @@ impl MergeTx<'_> {
         clock: &Hlc,
         covers: Option<&Hlc>,
     ) -> Result<(), StoreError> {
+        let change = Change::delete(here.clone());
+        self.touched.note(&change);
         let columns = self.store.sync_columns(self.tx)?;
         self.store.apply_one(
             self.tx,
             &mut self.lists,
             columns,
-            &Change::delete(here.clone()),
+            &change,
             &Stamp::Merged {
                 clock,
                 covers,
@@ -384,6 +470,7 @@ impl MergeTx<'_> {
     /// keeping its clock: not an edit of its own, so not kept in the outbox. The default
     /// Notebook may stop being the default.
     pub fn write_kept(&mut self, change: &Change) -> Result<(), StoreError> {
+        self.touched.note(change);
         let columns = self.store.sync_columns(self.tx)?;
         self.store.apply_one(
             self.tx,
@@ -417,6 +504,7 @@ impl MergeTx<'_> {
             after: kept,
         };
         for change in changes {
+            self.touched.note(change);
             self.store
                 .apply_one(self.tx, &mut self.lists, columns, change, &stamp, true)?;
         }
@@ -803,6 +891,7 @@ impl UserStore {
             store: self,
             tx,
             lists: ListItems::default(),
+            touched: Touched::default(),
             own_ids: crate::sync_device::read_own_ids(tx)?,
             device_id: own,
             recording,
@@ -1022,7 +1111,23 @@ impl UserStore {
         seq: u64,
         merge: impl FnOnce(&mut MergeTx<'_>) -> Result<T, E>,
     ) -> Result<T, E> {
-        if self.schema_version()? < HELD_SCHEMA {
+        self.merge_op_file_batch(device, seq, 0, |tx| Ok((merge(tx)?, BatchEnd::Done)))
+    }
+
+    /// Merge one batch of op file `seq` of another Synced device `device` with `merge`, from
+    /// its op `from` (where its merge stands: 0, or the [`MergeCursor`] committed with its
+    /// batch before), in one transaction (S29c). `merge` says where the batch ended: the
+    /// file's last batch also notes the file applied and drops the cursor; another commits
+    /// the cursor at its end. All of the batch or (`merge` fails) none of it. `seq` must be
+    /// the next one after [`UserStore::applied_up_to`], so a device's ops are applied in order.
+    pub fn merge_op_file_batch<T, E: From<StoreError>>(
+        &self,
+        device: &str,
+        seq: u64,
+        from: u64,
+        merge: impl FnOnce(&mut MergeTx<'_>) -> Result<(T, BatchEnd), E>,
+    ) -> Result<T, E> {
+        if self.schema_version()? < CURSOR_SCHEMA {
             return Err(
                 StoreError::Rejected("this User database is too old to merge".into()).into(),
             );
@@ -1042,23 +1147,168 @@ impl UserStore {
             ))
             .into());
         }
+        let at = read_merge_cursor(&tx, device)?
+            .filter(|c| c.seq == seq && c.snapshot.is_none())
+            .map_or(0, |c| c.ops);
+        if at != from {
+            return Err(StoreError::Rejected(format!(
+                "op file {seq} of {device} is merged up to its op {at}, not {from}"
+            ))
+            .into());
+        }
         let recording = records_ops(&tx, &own)?;
         let mut m = self.merge_tx(&tx, own, recording)?;
-        let out = merge(&mut m)?;
+        let (out, end) = merge(&mut m)?;
         #[cfg(feature = "test-support")]
         let recorded = std::mem::take(&mut m.recorded);
         drop(m);
-        let seq_i64 = i64::try_from(seq)
-            .map_err(|_| StoreError::Rejected(format!("op file number {seq}")))?;
-        tx.execute(
-            "INSERT INTO applied_up_to (device_id, seq) VALUES (?1, ?2)
-             ON CONFLICT (device_id) DO UPDATE SET seq = excluded.seq",
-            params![device, seq_i64],
-        )
-        .map_err(sql)?;
+        let seq_i64 = cursor_number(seq)?;
+        match end {
+            BatchEnd::Done => {
+                tx.execute(
+                    "INSERT INTO applied_up_to (device_id, seq) VALUES (?1, ?2)
+                     ON CONFLICT (device_id) DO UPDATE SET seq = excluded.seq",
+                    params![device, seq_i64],
+                )
+                .map_err(sql)?;
+                tx.execute("DELETE FROM merge_cursor WHERE device_id = ?1", [device])
+                    .map_err(sql)?;
+            }
+            BatchEnd::At(ops) => write_merge_cursor(&tx, device, seq, None, ops, None)?,
+        }
         tx.commit().map_err(sql)?;
         #[cfg(feature = "test-support")]
         self.recorded.borrow_mut().extend(recorded);
         Ok(out)
     }
+
+    /// Where the merge of `device`'s op file or snapshot stands, when some of its batches
+    /// were committed and its last was not (S29c).
+    pub fn merge_cursor(&self, device: &str) -> Result<Option<MergeCursor>, StoreError> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Ok(None);
+        }
+        read_merge_cursor(&self.conn, device)
+    }
+
+    /// Every merge partly done (S29c), in the order they started.
+    pub fn merge_cursors(&self) -> Result<Vec<MergeCursor>, StoreError> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Ok(Vec::new());
+        }
+        let rows: Vec<CursorRow> = self
+            .conn
+            .prepare(
+                "SELECT device_id, seq, snapshot, ops, fingerprint FROM merge_cursor
+                 ORDER BY started, device_id",
+            )
+            .and_then(|mut s| s.query_map([], cursor_row)?.collect())
+            .map_err(sql)?;
+        Ok(rows.into_iter().map(cursor_of).collect())
+    }
+
+    /// Whether a merge is partly done: some batches of a file committed, not its last.
+    pub fn has_partial_merge(&self) -> Result<bool, StoreError> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Ok(false);
+        }
+        self.conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM merge_cursor)", [], |r| {
+                r.get(0)
+            })
+            .map_err(sql)
+    }
+
+    /// Forget where the merge of `device`'s file stands: the file is gone (its device wrote a
+    /// newer snapshot, or trimmed it), so the newer one merges from its first op.
+    pub fn drop_merge_cursor(&self, device: &str) -> Result<(), StoreError> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Ok(());
+        }
+        let tx = self.write_tx()?;
+        tx.execute("DELETE FROM merge_cursor WHERE device_id = ?1", [device])
+            .map_err(sql)?;
+        tx.commit().map_err(sql)
+    }
+
+    /// Forget every merge partly done: this device leaves its Sync folder (Stop syncing, or
+    /// another folder chosen), and a cursor names a file in that folder only. Each file
+    /// merges from its first op if it is met again.
+    pub fn drop_merge_cursors(&self) -> Result<(), StoreError> {
+        if self.schema_version()? < CURSOR_SCHEMA {
+            return Ok(());
+        }
+        self.conn
+            .execute("DELETE FROM merge_cursor", [])
+            .map(drop)
+            .map_err(sql)
+    }
+}
+
+/// An op file number as SQLite stores it.
+pub(crate) fn cursor_number(seq: u64) -> Result<i64, StoreError> {
+    i64::try_from(seq).map_err(|_| StoreError::Rejected(format!("op file number {seq}")))
+}
+
+/// A `merge_cursor` row, as read: device, seq, snapshot, ops, fingerprint.
+type CursorRow = (String, i64, Option<String>, i64, Option<String>);
+
+fn cursor_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CursorRow> {
+    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+}
+
+/// A `merge_cursor` row.
+fn cursor_of((device, seq, snapshot, ops, fingerprint): CursorRow) -> MergeCursor {
+    MergeCursor {
+        device,
+        seq: u64::try_from(seq).unwrap_or_default(),
+        snapshot,
+        ops: u64::try_from(ops).unwrap_or_default(),
+        fingerprint,
+    }
+}
+
+/// Where the merge of `device`'s file stands, if some of its batches were committed.
+pub(crate) fn read_merge_cursor(
+    c: &Connection,
+    device: &str,
+) -> Result<Option<MergeCursor>, StoreError> {
+    c.prepare_cached(
+        "SELECT device_id, seq, snapshot, ops, fingerprint FROM merge_cursor WHERE device_id = ?1",
+    )
+    .and_then(|mut s| s.query_row([device], cursor_row).optional())
+    .map(|row| row.map(cursor_of))
+    .map_err(sql)
+}
+
+/// Commit where the merge of `device`'s op file `seq` (or the snapshot `snapshot` covering
+/// its files up to `seq`, its op `ops − 1` being `fingerprint`) stands: its first `ops` ops
+/// merged. A cursor of a file not named before takes the next `started`, after every other.
+pub(crate) fn write_merge_cursor(
+    c: &Connection,
+    device: &str,
+    seq: u64,
+    snapshot: Option<&str>,
+    ops: u64,
+    fingerprint: Option<&str>,
+) -> Result<(), StoreError> {
+    c.execute(
+        "INSERT INTO merge_cursor (device_id, seq, snapshot, ops, started, fingerprint)
+         VALUES (?1, ?2, ?3, ?4, (SELECT coalesce(max(started), 0) + 1 FROM merge_cursor), ?5)
+         ON CONFLICT (device_id) DO UPDATE SET
+             started = CASE WHEN merge_cursor.seq = excluded.seq
+                             AND merge_cursor.snapshot IS excluded.snapshot
+                        THEN merge_cursor.started ELSE excluded.started END,
+             seq = excluded.seq, snapshot = excluded.snapshot, ops = excluded.ops,
+             fingerprint = excluded.fingerprint",
+        params![
+            device,
+            cursor_number(seq)?,
+            snapshot,
+            cursor_number(ops)?,
+            fingerprint
+        ],
+    )
+    .map(drop)
+    .map_err(sql)
 }

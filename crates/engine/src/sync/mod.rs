@@ -25,6 +25,8 @@ mod lifecycle_tests;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod merge;
 #[cfg(all(test, not(target_arch = "wasm32")))]
+mod merge_batch_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod merge_props;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod merge_tests;

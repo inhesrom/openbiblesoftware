@@ -785,7 +785,11 @@ fn op_files(folder: &Path) -> usize {
 struct Frames {
     ticks: Vec<std::time::Duration>,
     after: std::time::Duration,
+    /// Whether the views read only what the merge changed (S29c), not everything.
+    patched: bool,
     edits: Vec<std::time::Duration>,
+    /// The merge's batches, and how many times a file merged whole (S29c).
+    batches: (usize, usize),
 }
 
 impl Frames {
@@ -801,11 +805,16 @@ impl Frames {
         let last = self.ticks.last().map_or(0.0, ms);
         let mut line = format!(
             "{what}: {} frames, sync work a frame max {:.2} ms (the result's frame {last:.2} ms, \
-             the views' reads the frame after {:.2} ms), p50 {:.3} ms; histogram <1 {} | 1-2 {} \
-             | 2-4 {} | 4-8 {} | 8-16 {} | >=16 {}",
+             the views' reads the frame after {:.2} ms, {}), p50 {:.3} ms; histogram <1 {} | \
+             1-2 {} | 2-4 {} | 4-8 {} | 8-16 {} | >=16 {}; {} batches, {} merged whole",
             ticks.len(),
             ticks.last().copied().unwrap_or(0.0),
             ms(&self.after),
+            if self.patched {
+                "only what changed"
+            } else {
+                "everything"
+            },
             ticks.get(ticks.len() / 2).copied().unwrap_or(0.0),
             counts[0],
             counts[1],
@@ -813,6 +822,8 @@ impl Frames {
             counts[3],
             counts[4],
             counts[5],
+            self.batches.0,
+            self.batches.1,
         );
         if !self.edits.is_empty() {
             let mut edits: Vec<f64> = self.edits.iter().map(ms).collect();
@@ -834,16 +845,21 @@ impl Frames {
 
 /// Sync now, as the app's frames run it (one each 16 ms) until the sync's result is taken,
 /// timing each frame's sync work and then what the views read again at the frame after
-/// (`MarkCache` and the Notes Tool's cards, with Needs attention's count, once the reload
-/// moved `annotations_revision`), and with `edit` making a Notebook at every frame while it
-/// runs.
+/// (`MarkCache` and the Notes Tool's cards, with the Notebooks' counts and Needs attention's
+/// count, once the reload moved `annotations_revision`: only the Annotations the merge
+/// changed when the Session says which, S29c), and with `edit` making a Notebook at every
+/// frame while it runs. The views hold what they read before the sync.
 fn frames_of_a_sync(s: &mut Session, edit: bool) -> Frames {
     let frame = std::time::Duration::from_millis(16);
     let mut frames = Frames {
         ticks: Vec::new(),
         after: std::time::Duration::ZERO,
+        patched: false,
         edits: Vec::new(),
+        batches: (0, 0),
     };
+    let held = s.annotations_revision();
+    let (mut in_text, mut cards) = views_read_whole(s);
     s.run("sync.now", &json!({})).unwrap();
     loop {
         let start = std::time::Instant::now();
@@ -853,13 +869,25 @@ fn frames_of_a_sync(s: &mut Session, edit: bool) -> Frames {
         let _ = s.sync_indicator(now());
         frames.ticks.push(start.elapsed());
         if !syncing {
+            // An edit during the sync moved the revision too: then the views read everything.
             let start = std::time::Instant::now();
-            let _ = s.annotations_in_text().unwrap();
-            let _ = s.notebooks().unwrap();
-            let _ = s.highlight_styles().unwrap();
-            let _ = s.note_cards("").unwrap();
+            match s.annotations_changed_since(Some(held)).cloned() {
+                Some(ids) => {
+                    s.patch_annotations_in_text(&mut in_text, &ids).unwrap();
+                    s.patch_note_cards(&mut cards, &ids, "").unwrap();
+                    frames.patched = true;
+                }
+                None => {
+                    let _ = s.annotations_in_text().unwrap();
+                    let _ = s.notebooks().unwrap();
+                    let _ = s.highlight_styles().unwrap();
+                    let _ = s.note_cards("").unwrap();
+                }
+            }
+            let _ = s.notebook_counts().unwrap();
             let _ = s.needs_attention_count();
             frames.after = start.elapsed();
+            frames.batches = s.last_sync_batches().unwrap_or_default();
             return frames;
         }
         if edit {
@@ -878,6 +906,18 @@ fn frames_of_a_sync(s: &mut Session, edit: bool) -> Frames {
 /// A device makes `notes` Notes over `files` op files (one sync each), then a new device
 /// joins, editing at every frame: its frames, and how long its sync took (ms).
 fn joined_by_a_new_device(notes: usize, files: usize) -> (Frames, i64) {
+    let (frames, ms, _, _) = joined_then_caught_up(notes, files, false);
+    (frames, ms)
+}
+
+/// [`joined_by_a_new_device`], and then (`more`) the library device edits one Note and adds
+/// one, and the new device syncs, not editing (the views reading only those two); and then
+/// it edits every Note (one op file of `notes` ops), and the new device catches up, editing.
+fn joined_then_caught_up(
+    notes: usize,
+    files: usize,
+    more: bool,
+) -> (Frames, i64, Option<Frames>, Option<(Frames, i64)>) {
     let dir = Dir::new(&format!("measure-{notes}-{files}"));
     let mut l = dir.syncing("library");
     sync(&mut l);
@@ -909,7 +949,38 @@ fn joined_by_a_new_device(notes: usize, files: usize) -> (Frames, i64) {
             .count(),
         notes
     );
-    (frames, n.last_sync_duration_ms().unwrap())
+    let joined_ms = n.last_sync_duration_ms().unwrap();
+    if !more {
+        return (frames, joined_ms, None, None);
+    }
+    let all = l.annotations(None).unwrap();
+    edit_note(&mut l, &all[17], "edited on the library device");
+    add_note(&mut l, "added on the library device");
+    sync(&mut l);
+    let small = frames_of_a_sync(&mut n, false);
+    let changes: Vec<Change> = (l.annotations(None).unwrap().into_iter())
+        .filter(|a| a.is_note())
+        .map(|a| {
+            let after = Annotation {
+                content: Content::Note {
+                    body: format!("{} (edited)", a.body()),
+                },
+                modified_at: a.modified_at + 1,
+                ..a.clone()
+            };
+            Change::update(Row::Annotation(a), Row::Annotation(after))
+        })
+        .collect();
+    store(&l).apply_changes(&changes).unwrap();
+    sync(&mut l);
+    let caught_up = frames_of_a_sync(&mut n, true);
+    let caught_up_ms = n.last_sync_duration_ms().unwrap();
+    (
+        frames,
+        joined_ms,
+        Some(small),
+        Some((caught_up, caught_up_ms)),
+    )
 }
 
 /// How sync holds the UI thread now that it runs on its worker (plan S29b; S29 measured it on
@@ -955,7 +1026,9 @@ fn measure_syncs_off_the_ui_thread() {
     // A large library: 10,000 Notes on one device, then a new device joins, once with them
     // in one op file (one merge transaction of 10,000 ops) and once with them in that
     // device's snapshot (one transaction too).
-    let in_one_file = joined_by_a_new_device(10_000, 1);
+    let (one_file, one_file_ms, small, rewritten) = joined_then_caught_up(10_000, 1, true);
+    let in_one_file = (one_file, one_file_ms);
+    let (small, (rewritten, rewritten_ms)) = (small.unwrap(), rewritten.unwrap());
     let in_a_snapshot = joined_by_a_new_device(10_000, 101);
 
     eprintln!(
@@ -966,7 +1039,9 @@ fn measure_syncs_off_the_ui_thread() {
          - {}\n\
          - {} (the sync {joined_ms} ms)\n\
          - {} (the sync {} ms)\n\
-         - {} (the sync {} ms)",
+         - {} (the sync {} ms)\n\
+         - {}\n\
+         - {} (the sync {rewritten_ms} ms)",
         edit_alone.as_secs_f64() * 1000.0,
         caught_up.report("catching up with 1,000 op files"),
         edited.report("catching up with 1,000 op files, editing"),
@@ -980,6 +1055,8 @@ fn measure_syncs_off_the_ui_thread() {
             .0
             .report("a new device joining 10,000 Notes in a snapshot, editing"),
         in_a_snapshot.1,
+        small.report("then one Note edited and one added there"),
+        rewritten.report("then all 10,000 edited there in one op file, editing"),
     );
     assert!(
         caught_up.max_tick() < std::time::Duration::from_millis(16),
@@ -993,8 +1070,8 @@ fn measure_syncs_off_the_ui_thread() {
 type HoldWhen = Box<dyn Fn(&str, &str) -> bool + Send>;
 
 /// The Sync folder on disk as the worker sees it, watched: which threads call it, and it
-/// can hold the next call of a kind (the read of an op file) until the test lets it go, or
-/// panic at a list.
+/// can hold the next call of a kind (the read of an op file) until the test lets it go,
+/// panic at a list, or refuse to write a `device.json`.
 struct WatchedFolder {
     fs: crate::sync::FsSyncFolder,
     threads: std::sync::Mutex<Vec<std::thread::ThreadId>>,
@@ -1008,6 +1085,8 @@ struct WatchedFolder {
         )>,
     >,
     panics: std::sync::atomic::AtomicBool,
+    /// Writing a `device.json` fails (the last step of a sync, after its merge).
+    fails_device_json: std::sync::atomic::AtomicBool,
 }
 
 impl WatchedFolder {
@@ -1017,6 +1096,7 @@ impl WatchedFolder {
             threads: Default::default(),
             hold: Default::default(),
             panics: Default::default(),
+            fails_device_json: Default::default(),
         })
     }
 
@@ -1084,6 +1164,13 @@ impl crate::sync::SyncFolder for WatchedFolder {
 
     fn write_new(&self, path: &str, bytes: &[u8]) -> Result<(), crate::sync::FolderError> {
         self.note("write_new", path);
+        if path.ends_with("/device.json")
+            && self
+                .fails_device_json
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(crate::sync::FolderError::Io("the provider failed".into()));
+        }
         self.fs.write_new(path, bytes)
     }
 
@@ -1549,4 +1636,349 @@ fn a_worker_syncs_on_the_clock_the_session_runs_on() {
     assert_eq!(a.sync_panel(at).status, "Last synced just now");
     assert_eq!(a.sync_panel(at + 61_000).status, "Last synced 1 minute ago");
     obs_store::clock::fix(None);
+}
+
+/// What the views hold, read whole: the Annotations in text and the Notes Tool's cards (S29c).
+fn views_read_whole(s: &Session) -> (Vec<Annotation>, Vec<crate::notes::Card>) {
+    (s.annotations_in_text().unwrap(), s.note_cards("").unwrap())
+}
+
+/// The ids of `cards`, in order.
+fn card_ids(cards: &[crate::notes::Card]) -> Vec<String> {
+    cards.iter().map(|c| c.annotation.id.clone()).collect()
+}
+
+/// Edit Note `n` on `s` to `body`, as one undo step.
+fn edit_note(s: &mut Session, n: &Annotation, body: &str) {
+    let after = Annotation {
+        content: Content::Note { body: body.into() },
+        modified_at: n.modified_at + 1,
+        ..n.clone()
+    };
+    s.commit(
+        "Edit",
+        vec![Change::update(
+            Row::Annotation(n.clone()),
+            Row::Annotation(after),
+        )],
+    )
+    .unwrap();
+}
+
+/// `s` syncs, holding the views as read whole before; then they read only what the sync's
+/// merge changed, and hold what a whole read gives now. Returns the Annotations read again.
+fn sync_patching_the_views(s: &mut Session) -> std::collections::BTreeSet<String> {
+    let before = s.annotations_revision();
+    let (mut in_text, mut cards) = views_read_whole(s);
+    sync(s);
+    let ids = s
+        .annotations_changed_since(Some(before))
+        .expect("only Annotations changed")
+        .clone();
+    s.patch_annotations_in_text(&mut in_text, &ids).unwrap();
+    s.patch_note_cards(&mut cards, &ids, "").unwrap();
+    let (whole_text, whole_cards) = views_read_whole(s);
+    assert_eq!(in_text, whole_text);
+    assert_eq!(card_ids(&cards), card_ids(&whole_cards));
+    assert_eq!(cards, whole_cards);
+    ids
+}
+
+#[test]
+fn after_a_sync_that_changed_only_annotations_the_views_read_only_those_and_hold_what_a_whole_read_gives()
+ {
+    let dir = Dir::new("views-patch");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    let notes: Vec<Annotation> = (0..30)
+        .map(|i| add_note(&mut a, &format!("Note {i}")))
+        .collect();
+    sync(&mut a);
+    sync(&mut b);
+    // B's own text of one, which A then edits without seeing it: a Sync conflict's copy on B
+    // (its card and the Note in place's both read again); A edits, deletes and adds others.
+    let shared = notes[3].clone();
+    edit_note(&mut b, &shared, "B's text");
+    // A's later, by its clock.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    edit_note(&mut a, &shared, "A's text");
+    edit_note(&mut a, &notes[7], "edited on A");
+    a.commit(
+        "Delete",
+        vec![Change::delete(Row::Annotation(notes[9].clone()))],
+    )
+    .unwrap();
+    add_note(&mut a, "new on A");
+    sync(&mut a);
+    b.notes.order = crate::notes::CardOrder::Modified;
+    let ids = sync_patching_the_views(&mut b);
+    assert!(ids.contains(&notes[7].id) && ids.contains(&notes[9].id));
+    assert!(ids.len() < 10, "only what the merge changed: {ids:?}");
+    let cards = b.note_cards("").unwrap();
+    assert!(
+        (cards.iter()).any(|c| c.annotation.conflict_of.as_deref() == Some(shared.id.as_str()))
+    );
+    // In Bible order, and a copy whose Note in place another device deletes.
+    a.commit(
+        "Delete",
+        vec![Change::delete(Row::Annotation(
+            a.annotation(&shared.id).unwrap(),
+        ))],
+    )
+    .unwrap();
+    edit_note(&mut a, &notes[12], "edited again on A");
+    sync(&mut a);
+    b.notes.order = crate::notes::CardOrder::Bible;
+    let ids = sync_patching_the_views(&mut b);
+    assert!(ids.contains(&shared.id));
+    // The next change of any kind reads everything again.
+    let before = b.annotations_revision();
+    b.create_notebook("Another").unwrap();
+    assert!(b.annotations_changed_since(Some(before)).is_none());
+    // A merge that changes a Notebook: the views read everything.
+    a.create_notebook("From A").unwrap();
+    add_note(&mut a, "one more");
+    sync(&mut a);
+    let before = b.annotations_revision();
+    sync(&mut b);
+    assert!(b.annotations_revision() > before);
+    assert!(b.annotations_changed_since(Some(before)).is_none());
+}
+
+/// A new device joining a library of 10,000 Notes (in one op file), editing at every frame
+/// (plan S29c): each edit waits for one batch of the merge, not the whole file (S29b: 0.5–0.9
+/// s). The bound is generous for a loaded CI machine; `measure_syncs_off_the_ui_thread` reports
+/// the numbers.
+#[test]
+fn an_edit_during_a_10k_note_join_waits_for_one_batch_of_the_merge_not_the_file() {
+    let (frames, sync_ms) = joined_by_a_new_device(10_000, 1);
+    let longest = frames.edits.iter().max().copied().unwrap_or_default();
+    eprintln!(
+        "{} (the sync {sync_ms} ms)",
+        frames.report("a new device joining 10,000 Notes in one op file, editing")
+    );
+    assert!(frames.edits.len() > 3, "the join took a few frames");
+    assert!(
+        longest < std::time::Duration::from_millis(100),
+        "an edit waited {longest:?}"
+    );
+}
+
+/// The views as the UI keeps them, read whole at revision `before` (`held`), brought up to now
+/// as it does: patched when only some Annotations changed since, read whole otherwise.
+fn views_brought_up_to_date(
+    s: &Session,
+    before: u64,
+    held: (Vec<Annotation>, Vec<crate::notes::Card>),
+) -> (Vec<Annotation>, Vec<crate::notes::Card>) {
+    let (mut in_text, mut cards) = held;
+    match s.annotations_changed_since(Some(before)) {
+        Some(ids) => {
+            let ids = ids.clone();
+            s.patch_annotations_in_text(&mut in_text, &ids).unwrap();
+            s.patch_note_cards(&mut cards, &ids, "").unwrap();
+            (in_text, cards)
+        }
+        None => views_read_whole(s),
+    }
+}
+
+/// From S29c's review (P1-1): a sync whose merge is committed but which then fails (its
+/// `device.json` not written) leaves the views stale, so the next sync, which merges one Note,
+/// has them read everything again: patched with only that Note they would miss the first's.
+#[test]
+fn after_a_sync_that_failed_having_merged_the_next_sync_has_the_views_read_everything() {
+    let dir = Dir::new("views-after-failure");
+    let mut a = dir.syncing("a");
+    let (mut b, folder) = watched(&dir, "b");
+    sync(&mut a);
+    sync(&mut b);
+    let notes: Vec<Annotation> = (0..10)
+        .map(|i| add_note(&mut a, &format!("Note {i}")))
+        .collect();
+    sync(&mut a);
+    sync(&mut b);
+    let before = b.annotations_revision();
+    let held = views_read_whole(&b);
+    // A's edits merge on B, then B's sync fails at its very end.
+    edit_note(&mut a, &notes[2], "edited on A");
+    a.commit(
+        "Delete",
+        vec![Change::delete(Row::Annotation(notes[5].clone()))],
+    )
+    .unwrap();
+    add_note(&mut a, "new on A");
+    sync(&mut a);
+    folder
+        .fails_device_json
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    sync(&mut b);
+    assert!(
+        b.sync_panel(now()).details.is_some(),
+        "the sync failed: {:?}",
+        b.sync_panel(now()).status
+    );
+    assert_eq!(
+        b.annotations_revision(),
+        before,
+        "a failed sync reloads nothing"
+    );
+    assert!(
+        b.annotation(&notes[5].id).is_err(),
+        "the merge was committed"
+    );
+    // A small sync next: one Note edited on A.
+    folder
+        .fails_device_json
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    edit_note(&mut a, &notes[7], "edited again on A");
+    sync(&mut a);
+    sync(&mut b);
+    assert!(b.annotations_revision() > before);
+    let views = views_brought_up_to_date(&b, before, held);
+    let whole = views_read_whole(&b);
+    assert_eq!(views.0, whole.0);
+    assert_eq!(card_ids(&views.1), card_ids(&whole.1));
+    assert_eq!(views.1, whole.1);
+    assert!((whole.1.iter()).any(|c| c.annotation.id == notes[2].id));
+    assert!(!(whole.1.iter()).any(|c| c.annotation.id == notes[5].id));
+    // Read whole once: the sync after patches again.
+    edit_note(&mut a, &notes[8], "and again on A");
+    sync(&mut a);
+    sync_patching_the_views(&mut b);
+}
+
+/// Stop `s`'s merge of the folder after two batches of three ops, as a crash would: the
+/// cursor it leaves.
+fn merge_stopped_inside_a_file(s: &Session, folder: &Path) -> obs_store::MergeCursor {
+    let batch = crate::sync::merge::MergeBatch {
+        stop_after: Some(2),
+        ..crate::sync::merge::MergeBatch::of_ops(3)
+    };
+    let fs = crate::sync::FsSyncFolder::new(folder);
+    assert!(matches!(
+        crate::sync::merge::merge_folder_with(store(s), &fs, &batch),
+        Err(crate::sync::SyncError::Store(
+            obs_store::StoreError::Cancelled
+        ))
+    ));
+    let mut cursors = store(s).merge_cursors().unwrap();
+    assert_eq!(cursors.len(), 1);
+    cursors.remove(0)
+}
+
+/// From S29c's review (P1-2): a cursor names a file of one Sync folder, so Stop syncing and
+/// choosing another folder forget a merge partly done. Choosing the folder again after Stop
+/// syncing joins as a new device: its snapshot is written and the file merges from its first
+/// op.
+#[test]
+fn stop_syncing_and_choosing_another_folder_forget_a_merge_partly_done() {
+    let dir = Dir::new("cursor-stop");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    for i in 0..30 {
+        add_note(&mut a, &format!("Note {i}"));
+    }
+    sync(&mut a);
+    merge_stopped_inside_a_file(&b, &dir.folder());
+    b.run("sync.stop", &json!({ "confirm": true })).unwrap();
+    assert!(store(&b).merge_cursors().unwrap().is_empty());
+    b.run(
+        "sync.choose_folder",
+        &json!({ "path": dir.folder().to_string_lossy() }),
+    )
+    .unwrap();
+    sync(&mut b);
+    assert_eq!(b.sync_panel(now()).details, None);
+    let fs = crate::sync::FsSyncFolder::new(dir.folder());
+    let b_id = store(&b).device_id().unwrap();
+    assert!(
+        crate::sync::snapshot::newest_snapshot(&fs, &b_id)
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(b.annotations(None).unwrap().len(), 30);
+    // Another folder chosen: the cursor goes with the folder left.
+    for i in 30..40 {
+        add_note(&mut a, &format!("Note {i}"));
+    }
+    sync(&mut a);
+    merge_stopped_inside_a_file(&b, &dir.folder());
+    let other = dir.0.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    b.run(
+        "sync.choose_folder",
+        &json!({ "path": other.to_string_lossy() }),
+    )
+    .unwrap();
+    assert!(store(&b).merge_cursors().unwrap().is_empty());
+    sync(&mut b);
+    assert_eq!(b.sync_panel(now()).details, None);
+    let other_fs = crate::sync::FsSyncFolder::new(&other);
+    assert!(
+        crate::sync::snapshot::newest_snapshot(&other_fs, &b_id)
+            .unwrap()
+            .is_some()
+    );
+}
+
+/// A merge stopped between batches inside an op file that is then damaged (S29c review,
+/// P1-2): as a damaged file does on a device without a cursor, it stops its device's merge,
+/// with the same `stopped` report and status line; the cursor is kept, read again next sync.
+#[test]
+fn a_cursor_at_a_damaged_file_stops_its_devices_merge_as_a_damaged_file_does() {
+    let dir = Dir::new("cursor-damaged");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    let mut c = dir.syncing("c");
+    sync(&mut a);
+    sync(&mut b);
+    sync(&mut c);
+    // B meets C.
+    sync(&mut b);
+    for i in 0..30 {
+        add_note(&mut a, &format!("Note {i}"));
+    }
+    sync(&mut a);
+    let cursor = merge_stopped_inside_a_file(&b, &dir.folder());
+    // A's file, cut short.
+    let a_id = store(&a).device_id().unwrap();
+    assert_eq!(cursor.device, a_id);
+    let path = (dir.folder()).join(crate::sync::ops::op_file_path(&a_id, cursor.seq));
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::write(&path, &bytes[..bytes.len() / 2]).unwrap();
+    sync(&mut b);
+    sync(&mut c);
+    let (b_panel, c_panel) = (b.sync_panel(now()), c.sync_panel(now()));
+    assert_eq!(
+        (&b_panel.status, &b_panel.details, b_panel.warn),
+        (&c_panel.status, &c_panel.details, c_panel.warn)
+    );
+    assert_eq!(b_panel.details, None, "the sync did not fail");
+    let fs = crate::sync::FsSyncFolder::new(dir.folder());
+    let stopped = |s: &Session| {
+        crate::sync::merge::merge_folder(store(s), &fs)
+            .unwrap()
+            .stopped
+    };
+    let found = stopped(&b);
+    assert_eq!(found, stopped(&c));
+    assert!(
+        matches!(
+            found.as_slice(),
+            [(device, seq, crate::sync::ops::OpsStop::NotWhole(_))]
+                if *device == a_id && *seq == cursor.seq
+        ),
+        "{found:?}"
+    );
+    assert_eq!(store(&b).merge_cursors().unwrap(), [cursor]);
+    // Whole again: B finishes from its cursor, and has every Note.
+    std::fs::write(&path, &bytes).unwrap();
+    sync(&mut b);
+    assert!(store(&b).merge_cursors().unwrap().is_empty());
+    assert_eq!(b.annotations(None).unwrap().len(), 30);
 }

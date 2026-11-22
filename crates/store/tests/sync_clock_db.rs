@@ -12,7 +12,9 @@
 //! plan S29b) shares the clock: two connections writing at once on two threads hand out one
 //! increasing sequence, none twice, and a new id one takes is the other's next clock's; once
 //! its writes are refused (a restore is coming) it commits nothing; and a write on the first
-//! waits only for the second's transaction running, not for each one after it.
+//! waits only for the second's transaction running, not for each one after it. Migration 19's
+//! merge cursor (S29c) is committed per batch, carried by a Backup and emptied by snapshots and
+//! Replace.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(not(target_arch = "wasm32"))]
@@ -22,8 +24,8 @@ use std::path::{Path, PathBuf};
 
 use obs_store::annotation::new_id;
 use obs_store::{
-    Annotation, Change, Content, HeldOp, Hlc, Notebook, Row, RowKey, SYNCED_TABLES,
-    SyncedPreference, USER_SCHEMA_VERSION, UserStore,
+    Annotation, BatchEnd, Change, Content, HeldOp, Hlc, MergeCursor, Notebook, Row, RowKey,
+    SYNCED_TABLES, StoreError, SyncedPreference, USER_SCHEMA_VERSION, UserStore,
 };
 use rusqlite::Connection;
 use rusqlite::types::Value;
@@ -182,7 +184,7 @@ fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
 
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 13);
-    assert_eq!(USER_SCHEMA_VERSION, 18);
+    assert_eq!(USER_SCHEMA_VERSION, 19);
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let copy = report.migration_backup.unwrap();
     assert!(copy.to_string_lossy().contains(".v13-"));
@@ -193,7 +195,13 @@ fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
     for (table, rows) in &before {
         assert_eq!(&after[table], rows, "{table}");
     }
-    for table in ["item_clock", "op_outbox", "sync_held", "former_device"] {
+    for table in [
+        "item_clock",
+        "op_outbox",
+        "sync_held",
+        "former_device",
+        "merge_cursor",
+    ] {
         assert_eq!(after[table], Vec::<String>::new(), "{table}");
     }
     // A tombstone from before schema 15 covers up to its own clock (`NULL`).
@@ -570,7 +578,7 @@ fn former_ids_keep_the_order_they_were_given_up_through_migration_18_restores_an
     v17.back_up(&backup).unwrap();
     drop(v17);
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 18);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     assert_eq!(
         former_seqs(&dir.db()),
         [format!("{older} 1"), format!("{newer} 2")]
@@ -1214,4 +1222,136 @@ fn a_write_on_the_first_connection_waits_only_for_the_transaction_running_on_the
         longest < std::time::Duration::from_millis(500),
         "an edit waited {longest:?}"
     );
+}
+
+/// Migration 19's `merge_cursor` (S29c): a batch that is not its file's last commits where the
+/// merge stands, one that does not start there is refused, and the last drops it with the
+/// file noted applied; a Backup carries it, a snapshot holds it empty, Replace empties it, and
+/// a v18 Backup restores with none.
+#[test]
+fn the_merge_cursor_is_committed_per_batch_carried_by_a_backup_and_emptied_by_snapshots_and_replace()
+ {
+    let dir = Dir::new("merge-cursor");
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    db.join_sync().unwrap();
+    let other = new_id();
+    db.execute_unchecked(&format!(
+        "INSERT INTO applied_up_to (device_id, seq) VALUES ('{other}', 0)"
+    ))
+    .unwrap();
+    let batch = |from: u64, end: BatchEnd| {
+        db.merge_op_file_batch(&other, 1, from, |_| Ok::<_, StoreError>(((), end)))
+    };
+    batch(0, BatchEnd::At(2)).unwrap();
+    let cursor = MergeCursor {
+        device: other.clone(),
+        seq: 1,
+        snapshot: None,
+        ops: 2,
+        fingerprint: None,
+    };
+    assert_eq!(db.merge_cursors().unwrap(), std::slice::from_ref(&cursor));
+    assert!(db.has_partial_merge().unwrap());
+    assert!(
+        batch(0, BatchEnd::Done).is_err(),
+        "a batch from another op than where it stands"
+    );
+    assert_eq!(
+        db.applied_up_to(&other).unwrap(),
+        0,
+        "the file is not applied yet"
+    );
+    batch(2, BatchEnd::At(4)).unwrap();
+
+    // A Backup keeps it; a snapshot does not.
+    let backup = dir.0.join("cursor.obsbackup");
+    db.back_up(&backup).unwrap();
+    let c = Connection::open(&backup).unwrap();
+    assert_eq!(
+        strings(
+            &c,
+            "SELECT device_id || ' ' || seq || ' ' || ops FROM merge_cursor"
+        ),
+        [format!("{other} 1 4")]
+    );
+    let (snapshot, _) = db.open_snapshot(&db.snapshot_bytes().unwrap()).unwrap();
+    assert!(snapshot.merge_cursors().unwrap().is_empty());
+
+    batch(4, BatchEnd::Done).unwrap();
+    assert!(db.merge_cursors().unwrap().is_empty());
+    assert_eq!(db.applied_up_to(&other).unwrap(), 1);
+
+    // A restore brings the Backup's back (with its rows); Replace empties it.
+    db.restore(&backup).unwrap();
+    assert_eq!(
+        db.merge_cursors().unwrap(),
+        [MergeCursor {
+            ops: 4,
+            ..cursor.clone()
+        }]
+    );
+    db.restamp_for_replace().unwrap();
+    assert!(db.merge_cursors().unwrap().is_empty());
+
+    // A v18 Backup has none, and restores whole.
+    let old = Dir::new("merge-cursor-v18");
+    let (v18, _) = UserStore::open_to(&old.db(), 18).unwrap();
+    add_notebook(&v18, "Study");
+    let v18_backup = old.0.join("v18.obsbackup");
+    v18.back_up(&v18_backup).unwrap();
+    drop(v18);
+    assert_eq!(UserStore::backup_contents(&v18_backup).unwrap().version, 18);
+    db.restore(&v18_backup).unwrap();
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    assert!(db.merge_cursors().unwrap().is_empty());
+}
+
+/// From S29c's review: merge cursors come back in the order their merges started, not by
+/// device (P2-2), a cursor moved on keeping its place and one started again going last; a
+/// snapshot's keeps its fingerprint (P2-1); `drop_merge_cursors` (Stop syncing, another folder
+/// chosen) forgets them all.
+#[test]
+fn merge_cursors_come_back_in_the_order_their_merges_started_and_go_all_at_once() {
+    let dir = Dir::new("merge-cursor-order");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    db.join_sync().unwrap();
+    // UUIDv7s: `late`'s id sorts after `early`'s, and its merge starts first.
+    let early = new_id();
+    let late = new_id();
+    assert!(late > early);
+    let file = |from: u64, end: BatchEnd| {
+        db.merge_op_file_batch(&late, 1, from, |_| Ok::<_, StoreError>(((), end)))
+    };
+    file(0, BatchEnd::At(2)).unwrap();
+    let name = "3-abc.obsbackup";
+    db.merge_snapshot_batch(&early, 3, name, &BTreeMap::new(), 0, |_| {
+        Ok::<_, StoreError>(((), BatchEnd::At(5), "fingerprint 5".to_string()))
+    })
+    .unwrap();
+    let order = |db: &UserStore| -> Vec<String> {
+        (db.merge_cursors().unwrap().into_iter())
+            .map(|c| c.device)
+            .collect()
+    };
+    assert_eq!(order(&db), [late.clone(), early.clone()]);
+    assert_eq!(
+        db.merge_cursor(&early).unwrap().unwrap(),
+        MergeCursor {
+            device: early.clone(),
+            seq: 3,
+            snapshot: Some(name.into()),
+            ops: 5,
+            fingerprint: Some("fingerprint 5".into()),
+        }
+    );
+    // Moved on, it keeps its place.
+    file(2, BatchEnd::At(4)).unwrap();
+    assert_eq!(order(&db), [late.clone(), early.clone()]);
+    // Dropped and started again, it goes after the other.
+    db.drop_merge_cursor(&late).unwrap();
+    file(0, BatchEnd::At(1)).unwrap();
+    assert_eq!(order(&db), [early.clone(), late.clone()]);
+    db.drop_merge_cursors().unwrap();
+    assert!(db.merge_cursors().unwrap().is_empty());
+    assert!(!db.has_partial_merge().unwrap());
 }

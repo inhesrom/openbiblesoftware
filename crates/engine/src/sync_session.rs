@@ -121,8 +121,15 @@ pub struct SessionSync {
     restore_pending: bool,
     /// How long the last sync took, in milliseconds.
     last_duration_ms: Option<i64>,
+    /// The last sync's merge: how many batches it committed, and how many times a file merged
+    /// whole for an op that might wait (S29c).
+    last_batches: Option<(usize, usize)>,
     /// Settings → Sync's action waiting for the sync running.
     deferred: Option<Deferred>,
+    /// A sync failed or was abandoned, maybe after committing some of its merge's batches or
+    /// files: what it merged is not in the views, so the next reload reads everything again
+    /// rather than only what that sync's merge touched (S29c).
+    views_stale: bool,
     /// How long a restore waits for the sync before it ([`RESTORE_SYNC_WAIT`]; tests wait
     /// less).
     #[cfg(not(target_arch = "wasm32"))]
@@ -166,7 +173,9 @@ impl Default for SessionSync {
             newer_app: Vec::new(),
             restore_pending: false,
             last_duration_ms: None,
+            last_batches: None,
             deferred: None,
+            views_stale: false,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: RESTORE_SYNC_WAIT,
             #[cfg(not(target_arch = "wasm32"))]
@@ -320,14 +329,18 @@ impl Session {
             .filter(|p| !p.trim().is_empty())
             .map(PathBuf::from);
         let old = std::mem::take(&mut self.sync);
+        #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+        let mut views_stale = old.views_stale;
         // A sync still running was on the User database this replaces.
         #[cfg(not(target_arch = "wasm32"))]
         if let Phase::Running(worker) = old.phase {
             worker.abandon();
+            views_stale = true;
         }
         self.sync = SessionSync {
             platform: old.platform,
             folder,
+            views_stale,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: old.restore_wait,
             #[cfg(not(target_arch = "wasm32"))]
@@ -454,10 +467,15 @@ impl Session {
                 if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
                     log::warn!("the sync running did not end in time: Stop syncing stopped it");
                     worker.abandon();
+                    self.sync.views_stale = true;
                 }
                 self.sync.deferred = None;
                 if let Err(e) = self.stop_syncing() {
                     self.sync.last = Some(LastSync::Failed(e));
+                }
+                // It commits nothing more, and no sync follows to reload what it merged.
+                if self.sync.views_stale {
+                    self.reload_synced_data(None);
                 }
                 return true;
             }
@@ -540,9 +558,20 @@ impl Session {
                         self.sync.newer_app = report.merge.needs_newer_app();
                         let merged = !report.merge.merged.is_empty()
                             || !report.merge.snapshots.is_empty()
-                            || report.merge.recorded.unheld > 0;
-                        if merged {
-                            self.reload_synced_data();
+                            || report.merge.recorded.unheld > 0
+                            || report.merge.resumed > 0;
+                        self.sync.last_batches = Some((report.merge.batches, report.merge.whole));
+                        if self.sync.views_stale {
+                            // A sync before failed or was abandoned: read everything again.
+                            self.reload_synced_data(None);
+                        } else if merged {
+                            // What the merge changed, when it is only a few Annotations.
+                            let touched = &report.merge.touched;
+                            let only = (!touched.annotation_views
+                                && touched.annotations.len()
+                                    <= crate::annotations::ANNOTATIONS_PATCH_LIMIT)
+                                .then(|| touched.annotations.clone());
+                            self.reload_synced_data(only);
                         }
                     }
                     SyncState::FolderNewer { .. } => self.sync.last = Some(LastSync::FolderNewer),
@@ -558,6 +587,8 @@ impl Session {
                 log::warn!("sync failed: {e}");
                 self.sync.schedule.sync_failed(finished);
                 self.sync.last = Some(LastSync::Failed(e.to_string()));
+                // It may have committed some of its merge before it failed.
+                self.sync.views_stale = true;
             }
         }
     }
@@ -588,9 +619,13 @@ impl Session {
 
     /// Synced data changed under the Session (a merge): reload what it keeps of it, as at
     /// launch, and have views and Notes searches read it again. Preferences that stay on the
-    /// device are not touched.
+    /// device are not touched. `only`: the Annotations the merge changed, when it changed
+    /// nothing else the views read (no Notebook, Highlight style or palette): the views read
+    /// only those ([`Session::annotations_changed_since`]). Views a failed or abandoned sync
+    /// left stale are read whole now (`only` is `None` then), and no longer stale.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(crate) fn reload_synced_data(&mut self) {
+    pub(crate) fn reload_synced_data(&mut self, only: Option<std::collections::BTreeSet<String>>) {
+        self.sync.views_stale = false;
         if let Some(order) = (self.user.as_ref()).and_then(|u| u.preferred_order().ok()) {
             self.library.set_preferred_order(order);
         }
@@ -604,6 +639,7 @@ impl Session {
         // Word forms (a synced setting) is read again when next asked for.
         self.bible_search.forget_recent();
         self.annotations_revision += 1;
+        self.annotations_changed = only.map(|ids| (self.annotations_revision, ids));
         self.rerun_searches_of_user_data();
         if let NotesFilter::Notebook(id) = &self.notes.filter
             && !(self.notebooks().unwrap_or_default().iter()).any(|n| &n.id == id)
@@ -615,7 +651,8 @@ impl Session {
     }
 
     /// Choose the Sync folder: this device syncs through it from now on (the first sync, due
-    /// at once, joins it). While a sync runs, it is chosen once that sync ends.
+    /// at once, joins it). While a sync runs, it is chosen once that sync ends. A merge partly
+    /// done in another folder is forgotten: its cursor names a file there.
     pub fn choose_sync_folder(&mut self, folder: &std::path::Path) -> Result<(), String> {
         if !folder.is_dir() {
             return Err(format!("{} is not a folder", folder.display()));
@@ -625,13 +662,20 @@ impl Session {
             return Ok(());
         }
         let user = self.user_data()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.sync.folder.as_deref() != Some(folder)
+            && let Some(store) = user.user_store()
+        {
+            store.drop_merge_cursors().map_err(|e| e.to_string())?;
+        }
         user.set_preference(SYNC_FOLDER_PREF, &folder.to_string_lossy())?;
         self.load_sync();
         Ok(())
     }
 
     /// Stop syncing: this device records no more ops (a new device id, its outbox emptied, a
-    /// restore's question dropped), then forgets the folder; its files stay in the folder. The
+    /// restore's question dropped, a merge partly done forgotten), then forgets the folder; its
+    /// files stay in the folder. The
     /// new id comes first, so a failure leaves the device syncing as before rather than
     /// recording into an outbox nothing reads. While a sync runs, it stops once that sync
     /// ends, or after [`STOP_SYNC_WAIT`], the sync abandoned (it writes nothing more).
@@ -647,6 +691,7 @@ impl Session {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(store) = user.user_store() {
             store.take_new_device_id().map_err(|e| e.to_string())?;
+            store.drop_merge_cursors().map_err(|e| e.to_string())?;
         }
         user.set_preference(SYNC_FOLDER_PREF, "")?;
         self.load_sync();
@@ -722,6 +767,7 @@ impl Session {
             }
             if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
                 worker.abandon();
+                self.sync.views_stale = true;
                 log::warn!("the sync before the restore did not finish in time");
                 unfinished = true;
                 deferred = self.sync.deferred.take();
@@ -879,6 +925,12 @@ impl Session {
         self.sync.last_duration_ms
     }
 
+    /// The last sync's merge: the batches it committed, and how many times a file merged whole
+    /// for an op that might wait (S29c).
+    pub fn last_sync_batches(&self) -> Option<(usize, usize)> {
+        self.sync.last_batches
+    }
+
     /// The other devices' ops this device holds back (Needs attention), each as a line.
     pub fn sync_held_lines(&self) -> Vec<String> {
         #[cfg(not(target_arch = "wasm32"))]
@@ -909,12 +961,9 @@ impl Session {
 
     /// What Needs attention counts: Orphaned annotations, Sync conflicts and held ops.
     pub fn needs_attention_count(&self) -> usize {
-        let annotations = (self.user.as_ref())
-            .and_then(|u| u.annotations(None).ok())
+        let marked = (self.user.as_ref())
+            .and_then(|u| u.needs_attention_count().ok())
             .unwrap_or_default();
-        let marked = (annotations.iter())
-            .filter(|a| a.is_orphaned() || a.conflict_of.is_some())
-            .count();
         marked + self.sync_held_lines().len()
     }
 

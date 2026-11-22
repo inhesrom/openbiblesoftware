@@ -325,6 +325,13 @@ pub trait UserData: std::fmt::Debug {
     fn annotation(&self, id: &str) -> Result<Option<Annotation>, String>;
     /// Annotations in one Notebook (or all), oldest first.
     fn annotations(&self, notebook: Option<&str>) -> Result<Vec<Annotation>, String>;
+    /// How many Annotations Needs attention lists (Orphaned annotations, Sync conflicts'
+    /// copies).
+    fn needs_attention_count(&self) -> Result<usize, String> {
+        Ok((self.annotations(None)?.iter())
+            .filter(|a| crate::notes::needs_attention(a))
+            .count())
+    }
     /// How many Annotations have a Text range in Resource `resource_id`.
     fn annotations_referring(&self, resource_id: &str) -> Result<u64, String>;
     /// Ids of Notes matching an FTS5 query over normalized words, newest first.
@@ -480,6 +487,11 @@ impl UserData for obs_store::UserStore {
     }
     fn annotations(&self, notebook: Option<&str>) -> Result<Vec<Annotation>, String> {
         obs_store::UserStore::annotations(self, notebook).map_err(|e| e.to_string())
+    }
+    fn needs_attention_count(&self) -> Result<usize, String> {
+        obs_store::UserStore::needs_attention_count(self)
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+            .map_err(|e| e.to_string())
     }
     fn annotations_referring(&self, resource_id: &str) -> Result<u64, String> {
         obs_store::UserStore::annotations_referring(self, resource_id).map_err(|e| e.to_string())

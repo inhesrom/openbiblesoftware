@@ -101,6 +101,9 @@ pub struct Session {
     pub reanchoring: crate::reanchor::Reanchoring,
     /// Bumped by every change to the annotation tables.
     pub(crate) annotations_revision: u64,
+    /// The revision the reload after a sync moved to, with the Annotations that merge changed,
+    /// when those were all it changed of what the views read (S29c): the views read only them.
+    pub(crate) annotations_changed: Option<(u64, std::collections::BTreeSet<String>)>,
     /// The Last session as last written, to skip writes that change nothing.
     saved_session: Option<String>,
     /// The Log folder and Log level (#219).
@@ -166,6 +169,7 @@ impl Session {
             history: crate::annotations::UndoHistory::default(),
             reanchoring: crate::reanchor::Reanchoring::default(),
             annotations_revision: 0,
+            annotations_changed: None,
             saved_session: None,
             diagnostics: crate::diagnostics::Diagnostics::default(),
             last_restore: None,

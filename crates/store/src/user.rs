@@ -28,7 +28,7 @@ use crate::synced_store;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 18;
+pub const USER_SCHEMA_VERSION: u32 = 19;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -79,13 +79,16 @@ const MIGRATIONS: &[&str] = &[
     crate::sync_schema::SCHEMA_17,
     // 17 → 18: the order this database gave up its former device ids (ADR 0022 rule 7).
     crate::sync_schema::SCHEMA_18,
+    // 18 → 19: where a merge done in batches stands (ADR 0022, S29c).
+    crate::sync_schema::SCHEMA_19,
 ];
 
 /// How long a write on one connection to the User database waits for another connection's
 /// write transaction to finish (the sync worker's, [`UserStore::second_connection`]) before it
 /// fails with "database is locked". Long on purpose: a user's edit waits out the longest merge
-/// transaction (a snapshot merged at a join) rather than be refused; it waits for no more than
-/// the one transaction it found running ([`WriteTurns`]).
+/// transaction rather than be refused (a batch of a merge, a few ms, S29c; a file merged whole
+/// because an op of it might wait, as long as that file); it waits for no more than the one
+/// transaction it found running ([`WriteTurns`]).
 pub const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How long after the first connection last found the User database locked the second one

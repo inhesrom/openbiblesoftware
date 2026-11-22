@@ -29,7 +29,7 @@ to Claude Opus 5.5 later on".
   #336 (accounts), #337 (trademark) and the privacy policy URL are scheduled (S33) *before* the
   first App Store Connect upload (S35, HITL), because a bundle id is permanent; dev builds use a
   distinct `.dev` bundle id until then.
-- **Size:** 8 milestones, 41 steps + 1 fallback step. 6 are HITL, 2 mixed (S09, S12). 25 need
+- **Size:** 8 milestones, 42 steps + 1 fallback step. 6 are HITL, 2 mixed (S09, S12). 25 need
   Xcode.
 
 ## Step table
@@ -72,8 +72,9 @@ to Claude Opus 5.5 later on".
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | done (PR #404) |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | done (PR #407) |
 | S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | done (PR #408) |
+| S29c | Sync 3c: merges in bounded transactions; the views read only what a merge changed | AFK | n | S29b (before S31) | migration 19 (`merge_cursor`), batched merge, resume, views' patch reads; an edit during a 10k-Note join under a frame | done (PR #412) |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 (ships after S29b) | Swift `SyncFolder`, screens | todo |
-| S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S30 | test report, folder list for onboarding | todo |
+| S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S29c, S30 | test report, folder list for onboarding | todo |
 | S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
 | S33 | Before anything permanent: #334, #336, #337, privacy policy URL, release cadence | HITL | n | S12 | decisions recorded, tickets closed, map lines, final bundle id applied | todo |
 | S34 | App Store readiness: `PrivacyInfo.xcprivacy`, icon, Credits, accessibility audit, size, archive + export + validate | AFK | y | S19–S26, S30, S32, S33 | validated archive, review notes, `docs/dev/mobile-release.md` | todo |
@@ -2245,6 +2246,100 @@ under the half they belong to.
   changed; `cargo xtask ci` green (8 m 28 s; 2,472 tests passed, 44 ignored; fmt, layers,
   assets, licenses, clippy, a11y, test, wasm).
 
+#### S29c — Sync 3c: merges in bounded transactions, and the views' reads after a merge
+
+- **Goal:** no edit on the UI thread waits for a whole merge: a snapshot or an op file of
+  thousands of ops (0.5–0.9 s at 10,000 Notes, S29b) merges in bounded transactions, so an edit
+  waits about one frame at most, far from `BUSY_TIMEOUT`; and after a sync the views read only
+  the Annotations it changed (17–24 ms at 10,000 Notes, S29b). Added by the supervisor from
+  `sync.md` "For later steps" (S29b and its review).
+- **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S29b. **Before:** S31.
+- **Read first:** `docs/dev/sync.md` (all, esp. the merge order, `applied_up_to`, "For later
+  steps"); ADR 0022, ADR 0006; S29b's Outcome and the Sync merge fix under S28c's Outcome;
+  `crates/engine/src/sync/` (`merge.rs`, `snapshot.rs`, `lifecycle.rs`), `sync_worker.rs`;
+  `crates/store/src/{merge_store,snapshot_store,sync_*}.rs`.
+- **Do:** design first in `sync.md`; merge in bounded transactions keeping the all-or-none
+  contract (a crash or abandon mid-file resumes where it stood or redoes idempotently, no op
+  applied twice to a different effect, no D2/D6 decision other than the unsplit merge's,
+  `applied_up_to` correct, snapshots resumable or idempotent); re-read only the Annotations
+  and Notes Tool cards a merge changed.
+- **Don't:** change a merge rule.
+- **Done when:** an edit during a 10,000-Note join waits ≤ a frame (dev profile; release
+  measured); the 1k merge props and the 10k runs at seeds 20266453, 891, 7744, 1 and 42 green
+  with batches forced small; a crash between batches converges with the unsplit result.
+- **Verify:** `cargo xtask sync-e2e`; `cargo xtask gallery` unchanged; `cargo xtask ci`.
+- **Stop-and-ask:** the contract cannot hold for a piece (a snapshot's tombstones, D6's whole-
+  list decisions, the held-write retry).
+
+- **Outcome (2026-11-22, branch `mobile/s29c-merge-batches`):** **Decisions (via supervisor):**
+  **D1** the cursor is stored: **migration 19** adds `merge_cursor` (`USER_SCHEMA_VERSION` 19;
+  migrations 18 and 19 both come on the sync stack, so this build's snapshots and Backups read as
+  newer to a build at 18); snapshots hold it empty, Backups carry it, Catch up finishes the
+  Backup's partly merged file, Replace empties it. **D2** a cursor whose file is gone (its device
+  replaced the snapshot, or trimmed the op file, or another snapshot covers it) is dropped and the
+  newer file merges from its first op: the one case, after a crash and a replaced file, where a
+  Sync conflict's copy or a "(n)" can differ from the unsplit merge (one no one needed, never a
+  loss). **Shipped:** an op file, a snapshot and the held ops' retry merge in batches
+  (`merge::MergeBatch`: 4 ms of merge work, or N ops in tests), each a `BEGIN IMMEDIATE`
+  transaction, so `WriteTurns` lets a waiting edit in between; the ops, their order, their
+  savepoints and every rule are the unsplit merge's, D3's deleted-with rows still read from the
+  whole file; `applied_up_to` moves with a file's last batch, each other batch commits the cursor
+  (`UserStore::merge_op_file_batch`, `merge_snapshot_batch`, `MergeCursor`). A file that might
+  wait (`merge::may_wait`: a write's parent neither here, deleted here, held, nor written earlier
+  in it; a delete of a default Notebook; an older app's op lacking fields) merges whole, as
+  before, so no file waits after a batch was committed and the order is the unsplit merge's.
+  `merge_folder` finishes a stopped merge first (redoing from the first op is not idempotent: a
+  former id's losing list item would be renamed again), and no snapshot is written while a merge
+  is partly done. Views: `MergeReport::touched` (Annotations written, deleted or recorded; whether
+  a Notebook, style or palette was), `Session::annotations_changed_since`,
+  `patch_annotations_in_text`, `patch_note_cards` (Sync conflicts' copies of a changed Note read
+  too); `MarkCache` and the Notes Tool patch when a sync's reload changed only up to 200
+  Annotations and nothing else they show (the cards read whole while one is edited); Needs
+  attention's count is one SQL count (`UserStore::needs_attention_count`). Docs: `sync.md`
+  "Merges in batches (S29c)", the merge, snapshot and sync sections, Evidence, "For later steps";
+  `backups.md` (migration 19). **Measured** (owner's Mac, an edit at every frame; dev, then
+  release): a new device joining 10,000 Notes, the longest edit **4.7 ms** in one op file and in a
+  snapshot alike (S29b: 0.5–0.9 s), p50 0.1–0.5 ms, the sync 1.3–1.5 s in 112–119 batches; then
+  all 10,000 edited in one op file (1,129–1,256 batches), the longest edit 5.6–6.1 ms where one
+  transaction would hold it 4.8 s; the 1,000-file catch-up's longest edit 1.3–3.8 ms; no frame's
+  sync work over 4.9 ms; the CI timing test 4.7 ms (bound 100 ms). The batches cost 3–4% (join
+  450 → 466–472 ms; 10,000 updates 4.80 → 4.91–4.96 s). The whole-file fallback triggered in
+  neither realistic merge (0 of the join's and the catch-up's files), 28 times per 1,000 prop
+  cases and 170–290 per 10,000 (of about 86,000 snapshots and 1.4 million ops merged). The views'
+  reads after a small sync on a 10,000-Note library 2.4–2.9 ms (only what changed), after the
+  join 9.9–11.9 ms (everything changed; S29b 17–24 ms). **Found:** a merge of 10,000 Annotation
+  updates is about ten times a merge of inserts (4.8 s); an edit at every frame stretches a large
+  merge (14 s of wall time for that catch-up, `WriteTurns`' 20 ms per waiting edit); a sync that
+  fails after some batches leaves them unreloaded until a later sync (as whole files did before):
+  all in `sync.md` "For later steps". **Tests:** engine `merge_batch_tests` (5, and a measurement):
+  stopped every two batches it ends as the unsplit merge (dump, conflicts, Notes), a replaced
+  snapshot's cursor dropped and nothing lost, a Backup between batches catching up from its
+  cursor and Replace emptying it, a file that might wait merging whole and waiting, no snapshot
+  while partly merged; store `sync_clock_db` +1 (the cursor per batch, Backups, snapshots,
+  Replace, a v18 Backup); `sync_session_tests` +2 (patched views equal a whole read; the 10k-join
+  edit timing); `merge_props` merges every case in batches of 1–3 and stops a fifth of the random
+  syncs after 1–6 batches, with reach checks (stops, stops in a snapshot, files finished first,
+  files merged whole) and no file waiting after a batch. Mutation checks: `may_wait` always false
+  fails the 1k props and the whole-file test; cards not re-reading a changed Note's copy fail the
+  views test. **Verified:** the 1k merge props (24 s) and the 10k runs at seeds 20266453, 891,
+  7744, 1 and 42 green (220–260 s each); `cargo test -p obs-store --all-features`; `cargo xtask
+  sync-e2e` green (3 m 28 s); `cargo xtask gallery` green, no golden changed; `cargo xtask ci`
+  green (9 m 11 s; 2,494 tests passed, 45 ignored; fmt, layers, assets, licenses, clippy, a11y,
+  test, wasm). Not a UI change (the views read less, show the same).
+  **Review fixes (2026-11-22):** a sync that fails or is abandoned marks the views stale, and
+  the next sync reads them whole (P1-1); a cursor whose device has nothing in the folder is
+  dropped, Stop syncing and choosing another folder empty `merge_cursor`, and a cursor at a file
+  that cannot be read is kept as a damaged file's stop is (supervisor: no new rule; its snapshot
+  and trims wait, documented with the join case) (P1-2); a snapshot cursor carries a fingerprint
+  of `snapshot_ops` and is dropped on a mismatch (P2-1); cursors resume in the order their
+  merges started (`merge_cursor.started`, migration 19 edited in place) (P2-2); a refusal
+  outside an op's savepoint after a committed batch counts in `split_waits`. Investigated the
+  slow Note-update merge: finding a Note's old `notes_fts` entry read every entry; it is now
+  found through the index by its words (10,000 merged edits 4.9 s → 1.3 s); the rest (a
+  segment per op from FTS5's flush before each query) is in `sync.md` "For later steps". The 1k
+  props and the 10k props at seeds 20266453, 891, 7744, 1 and 42 green; sync-e2e, gallery
+  (no golden changed) green.
+
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
 - **Goal:** the iPhone joins a Sync folder through the document picker; every rule stays in Rust.
@@ -2285,7 +2380,7 @@ under the half they belong to.
 
 - **Goal:** the only test that proves the provider behaviour the research could not: a real iCloud
   Drive round trip.
-- **Type:** HITL. **Xcode:** y. **Size:** S–M. **Depends on:** S29, S29b, S30.
+- **Type:** HITL. **Xcode:** y. **Size:** S–M. **Depends on:** S29, S29b, S29c, S30.
 - **Owner checklist:** pick `Open Bible Sync/` in iCloud Drive on the Mac desktop app and on the
   iPhone; make Highlights/Notes on each; wait; confirm convergence and a deliberate conflict; note
   latency; then (per #332 "Validation") check whether Dropbox, OneDrive and Google Drive folders

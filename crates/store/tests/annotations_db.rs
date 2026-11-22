@@ -492,6 +492,66 @@ fn notes_fts_matches_body_edits_immediately() {
     db.annotation_dump().unwrap();
 }
 
+/// A Note's old entry in `notes_fts` is found through the index by the words of its text
+/// (S29c: the id alone is not indexed, so it was a scan of every entry): text with quotes and
+/// FTS5's operator words, text with no word the index keeps, and an entry made from other text
+/// than the Note's (found by the scan instead) are all replaced by exactly one new entry.
+#[test]
+fn a_notes_old_index_entry_is_replaced_whatever_its_text() {
+    let dir = Dir::new("fts-replace");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let nb = default_of(&db).id;
+    let bodies = [
+        "He said \"NEAR\" AND NOT faith* OR (grace) ^ - : {body}",
+        "— !!! …",
+        "Plain words",
+        "Stale entry",
+    ];
+    let notes: Vec<Annotation> = bodies.iter().map(|b| note(&nb, b, None)).collect();
+    let inserts: Vec<Change> = (notes.iter().cloned())
+        .map(|n| Change::insert(Row::Annotation(n)))
+        .collect();
+    db.apply_changes(&inserts).unwrap();
+    // The last one's entry no longer has its text's words (an older build's word forms).
+    db.execute_unchecked(&format!(
+        "UPDATE notes_fts SET body = 'other words' WHERE annotation_id = '{}'",
+        notes[3].id
+    ))
+    .unwrap();
+    let edits: Vec<Change> = (notes.iter())
+        .enumerate()
+        .map(|(i, n)| {
+            let after = Annotation {
+                content: Content::Note {
+                    body: format!("Edited text {i}"),
+                },
+                modified_at: 21,
+                ..n.clone()
+            };
+            Change::update(Row::Annotation(n.clone()), Row::Annotation(after))
+        })
+        .collect();
+    db.apply_changes(&edits).unwrap();
+    let dump = db.annotation_dump().unwrap();
+    for n in &notes {
+        assert_eq!(dump.matches(n.id.as_str()).count(), 2, "{dump}");
+    }
+    for old in ["near", "faith", "plain", "stale", "other"] {
+        assert!(
+            db.search_notes(&format!("\"{old}\"")).unwrap().is_empty(),
+            "{old}"
+        );
+    }
+    assert_eq!(db.search_notes("\"edited\"").unwrap().len(), 4);
+    // And deleted, the same.
+    let deletes: Vec<Change> = (edits.iter())
+        .map(|e| Change::delete(e.after.clone().unwrap()))
+        .collect();
+    db.apply_changes(&deletes).unwrap();
+    assert!(db.search_notes("\"edited\"").unwrap().is_empty());
+    assert!(!db.annotation_dump().unwrap().contains(notes[0].id.as_str()));
+}
+
 /// Deleting a Highlight never touches `notes_fts` (#115): finding an entry there scans the
 /// whole index, so deleting a Notebook of N Highlights must not cost N scans. Proved by
 /// dropping the index: Highlights still delete, a Note does not.

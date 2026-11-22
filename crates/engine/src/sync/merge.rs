@@ -46,17 +46,139 @@
 //!
 //! Every op's clock is observed (`UserStore::observe_clock`), so an edit made here after a
 //! merge is later than what it merged. `docs/dev/sync.md` has the merge table.
+//!
+//! **Batches** (S29c): an op file, a snapshot and the held ops' retry merge in batches, each
+//! its own transaction ([`MergeBatch`]), so an edit on the UI thread waits for one batch, not
+//! a whole file. The ops, their order and every rule are the unsplit merge's; a file whose
+//! ops might wait for another device's ([`may_wait`]) merges whole, as before, so a file never
+//! waits after some of its batches were committed. A merge stopped between batches goes on
+//! from where it stood, first thing at the next merge ([`merge_folder_with`]).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::cell::Cell;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::time::{Duration, Instant};
 
 use obs_store::{
-    Annotation, Change, Content, HeldOp, Hlc, MergeTx, Notebook, Row, RowKey, RowState, StoreError,
-    UserStore, list_key_of,
+    Annotation, BatchEnd, Change, Content, HeldOp, Hlc, MergeTx, Notebook, Row, RowKey, RowState,
+    StoreError, Touched, UserStore, list_key_of,
 };
 
-use super::ops::{Op, OpsStop, read_ops_after};
-use super::snapshot::{SnapshotRead, merge_snapshot, newest_snapshot, read_snapshot};
+use super::ops::{Op, OpsStop, op_file_seq, ops_dir, read_op_files, read_ops_after};
+use super::snapshot::{
+    SnapshotRead, merge_snapshot, newest_snapshot, read_snapshot, snapshot_file_seq, snapshots_dir,
+};
 use super::{DEVICES_DIR, SyncError, SyncFolder};
+
+/// How long a batch of a merge works before it commits (S29c): an edit on the UI thread waits
+/// for at most one batch, a quarter of a frame.
+pub const MERGE_BATCH_BUDGET: Duration = Duration::from_millis(4);
+
+/// How a merge splits an op file, a snapshot or the held ops' retry into batches, each its own
+/// transaction (S29c, `docs/dev/sync.md` "Merges in batches"). A batch ends after the op that
+/// takes it to `max_ops` or past `budget`; it holds one op at least.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MergeBatch {
+    /// The ops a batch merges at most.
+    pub max_ops: usize,
+    /// How long a batch merges before it commits.
+    pub budget: Duration,
+    /// Stop the merge ([`StoreError::Cancelled`]) once this many batches are committed, as a
+    /// crash or an abandoned worker between two batches would: for tests.
+    pub stop_after: Option<usize>,
+}
+
+impl Default for MergeBatch {
+    /// The app's: by time, [`MERGE_BATCH_BUDGET`].
+    fn default() -> Self {
+        Self {
+            max_ops: usize::MAX,
+            budget: MERGE_BATCH_BUDGET,
+            stop_after: None,
+        }
+    }
+}
+
+impl MergeBatch {
+    /// Batches of `max_ops` ops, whatever they take (the tests').
+    pub fn of_ops(max_ops: usize) -> Self {
+        Self {
+            max_ops: max_ops.max(1),
+            budget: Duration::MAX,
+            stop_after: None,
+        }
+    }
+
+    /// One transaction per file, as before S29c.
+    pub fn whole() -> Self {
+        Self::of_ops(usize::MAX)
+    }
+}
+
+/// A merge's batches as it runs: how many it has committed.
+pub(crate) struct Batches<'a> {
+    batch: &'a MergeBatch,
+    committed: Cell<usize>,
+}
+
+impl<'a> Batches<'a> {
+    pub(crate) fn new(batch: &'a MergeBatch) -> Self {
+        Self {
+            batch,
+            committed: Cell::new(0),
+        }
+    }
+
+    /// Whether every file merges in one transaction anyway.
+    fn unbounded(&self) -> bool {
+        self.batch.max_ops == usize::MAX && self.batch.budget == Duration::MAX
+    }
+
+    /// A batch starting now; `whole`: the rest of its file in it.
+    pub(crate) fn start(&self, whole: bool) -> Budget {
+        Budget {
+            started: Instant::now(),
+            ops: 0,
+            max_ops: if whole {
+                usize::MAX
+            } else {
+                self.batch.max_ops
+            },
+            budget: if whole {
+                Duration::MAX
+            } else {
+                self.batch.budget
+            },
+        }
+    }
+
+    /// A batch was committed: the merge goes on, unless it is to stop here.
+    pub(crate) fn committed(&self, report: &mut MergeReport) -> Result<(), StoreError> {
+        let n = self.committed.get() + 1;
+        self.committed.set(n);
+        report.batches += 1;
+        if self.batch.stop_after.is_some_and(|stop| n >= stop) {
+            return Err(StoreError::Cancelled);
+        }
+        Ok(())
+    }
+}
+
+/// One batch's work so far.
+pub(crate) struct Budget {
+    started: Instant,
+    ops: usize,
+    max_ops: usize,
+    budget: Duration,
+}
+
+impl Budget {
+    /// One more op merged: whether the batch ends after it.
+    pub(crate) fn spent(&mut self) -> bool {
+        self.ops += 1;
+        self.ops >= self.max_ops
+            || (self.budget != Duration::MAX && self.started.elapsed() >= self.budget)
+    }
+}
 
 /// Why an op file was not merged (it is merged again later).
 #[derive(Debug)]
@@ -66,6 +188,19 @@ pub enum MergeError {
     /// the older default that replaces it).
     Waits(String),
     Store(StoreError),
+}
+
+impl MergeError {
+    /// Whether the file waits (merged again later, from where it stands) rather than the
+    /// sync failing: it waits for another device's file, or an op this build cannot apply
+    /// was refused outside the op's own savepoint, which would hold it ([`merge_counted`]).
+    pub(crate) fn waits(&self) -> bool {
+        matches!(
+            self,
+            MergeError::Waits(_)
+                | MergeError::Store(StoreError::Rejected(_) | StoreError::Conflict(_))
+        )
+    }
 }
 
 impl From<StoreError> for MergeError {
@@ -158,6 +293,23 @@ pub struct MergeReport {
     /// The other devices' snapshots merged (ADR 0022 rule 5), by device, with the op files
     /// each covers.
     pub snapshots: Vec<(String, u64)>,
+    /// The batches committed (S29c).
+    pub batches: usize,
+    /// How many times an op file or snapshot (or what was left of it) merged in one
+    /// transaction because an op of it might wait ([`may_wait`]).
+    pub whole: usize,
+    /// How many times a file waited after some of its batches were committed: never, when
+    /// [`may_wait`] holds (the property tests check it). A refusal outside an op's savepoint
+    /// ([`MergeError::waits`]) after a committed batch counts too: the file waits partly
+    /// merged, as one that waits for another device's would.
+    pub split_waits: usize,
+    /// Files a stopped merge had partly merged, finished first (S29c).
+    pub resumed: usize,
+    /// Where stopped merges stood, forgotten: their files were gone (replaced by a newer
+    /// snapshot, or trimmed) or covered already, so the newer merge from its first op.
+    pub cursors_dropped: usize,
+    /// What the merge wrote, for the views that read it again.
+    pub touched: Touched,
 }
 
 impl MergeReport {
@@ -177,10 +329,23 @@ impl MergeReport {
 /// A device's op files still to merge, by number, and why the first waits (if it does).
 type Pending = (String, VecDeque<(u64, Vec<Op>)>, Option<String>);
 
-/// Merge every other device's op files in `folder` not yet merged here. Each file is merged
-/// whole or not at all; one that waits for another device's rows is tried again after the
-/// other devices' files, until no more can be merged.
+/// Merge every other device's op files in `folder` not yet merged here, in the app's batches
+/// ([`merge_folder_with`]).
 pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeReport, SyncError> {
+    merge_folder_with(user, folder, &MergeBatch::default())
+}
+
+/// Merge every other device's op files in `folder` not yet merged here, in batches of `batch`.
+/// Each file is merged whole or not at all; one that waits for another device's rows is tried
+/// again after the other devices' files, until no more can be merged. A file whose merge
+/// stopped between two batches is finished first.
+pub fn merge_folder_with(
+    user: &UserStore,
+    folder: &dyn SyncFolder,
+    batch: &MergeBatch,
+) -> Result<MergeReport, SyncError> {
+    let batches = Batches::new(batch);
+    let batches = &batches;
     let own = user.device_id()?;
     let mut ids: Vec<String> = folder
         .list(DEVICES_DIR)?
@@ -189,7 +354,8 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
         .collect();
     ids.sort();
     let mut report = MergeReport::default();
-    retry_held(user, &mut report)?;
+    resume_partial(user, folder, &mut report, batches)?;
+    retry_held(user, &mut report, batches)?;
     // Snapshots before other devices' op files (ADR 0022 rule 5): a device not met yet, or
     // whose op files after the last merged here are gone, is merged from its newest
     // snapshot, which also says how far it covers the other devices' files.
@@ -203,7 +369,7 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             SnapshotStep::Nothing => {}
             SnapshotStep::Stop(_, OpsStop::NoSnapshot) => no_snapshot.push(id),
             SnapshotStep::Stop(seq, stop) => report.stopped.push((id, seq, stop)),
-            SnapshotStep::Merge(seq, contents) => snapshots.push((id, seq, contents)),
+            SnapshotStep::Merge(seq, name, contents) => snapshots.push((id, seq, name, contents)),
         }
     }
     // This device's former ids first (a restore or a copy gave it a new id), before any
@@ -219,9 +385,9 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
     let mut merged = vec![false; snapshots.len()];
     let mut pending = Vec::new();
     for id in &own_ids {
-        if let Some(i) = snapshots.iter().position(|(s, _, _)| s == id) {
-            let (_, seq, contents) = &snapshots[i];
-            waits[i] = snapshot_waits(user, *seq, contents, &mut report)?;
+        if let Some(i) = snapshots.iter().position(|(s, _, _, _)| s == id) {
+            let (_, seq, name, contents) = &snapshots[i];
+            waits[i] = snapshot_waits(user, *seq, name, contents, &mut report, batches)?;
             if waits[i].is_some() {
                 continue;
             }
@@ -230,18 +396,18 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             continue;
         }
         pending.push(pending_of(user, folder, id, &mut report)?);
-        merge_pending(user, &mut pending, &mut report)?;
+        merge_pending(user, &mut pending, &mut report, batches)?;
     }
     ready.retain(|id| !own_ids.contains(id));
     // A snapshot that waits (for a row another device's file brings) is tried again after
     // the others.
     loop {
         let mut progress = false;
-        for (i, (id, seq, contents)) in snapshots.iter().enumerate() {
+        for (i, (id, seq, name, contents)) in snapshots.iter().enumerate() {
             if merged[i] {
                 continue;
             }
-            match snapshot_waits(user, *seq, contents, &mut report)? {
+            match snapshot_waits(user, *seq, name, contents, &mut report, batches)? {
                 None => {
                     if waits[i].take().is_some() {
                         report.retried += 1;
@@ -257,7 +423,7 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             break;
         }
     }
-    for ((id, seq, _), why) in snapshots.into_iter().zip(waits) {
+    for ((id, seq, _, _), why) in snapshots.into_iter().zip(waits) {
         if let Some(why) = why {
             report.waiting.push((id, seq, why));
         }
@@ -278,24 +444,119 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
     for id in ready {
         pending.push(pending_of(user, folder, &id, &mut report)?);
     }
-    merge_pending(user, &mut pending, &mut report)?;
+    merge_pending(user, &mut pending, &mut report, batches)?;
     for (device, files, waits) in pending {
         if let (Some((seq, _)), Some(why)) = (files.front(), waits) {
             report.waiting.push((device, *seq, why));
         }
     }
-    retry_held(user, &mut report)?;
+    retry_held(user, &mut report, batches)?;
     Ok(report)
+}
+
+/// Finish first every merge that stopped between two batches (a crash, an abandoned worker),
+/// in the order they started, so their ops merge in the order the stopped syncs would have
+/// merged them. A cursor whose file is gone (its device wrote a newer snapshot, or trimmed the
+/// op file) or is covered already is dropped: the newer file merges from its first op in its
+/// turn. So is one whose device has no file in this folder (the cursor came from another Sync
+/// folder: a Backup's). One whose file cannot be read now (downloading, damaged) is kept, as a
+/// damaged file stops its device's merge: read again at every sync, its stop reported in its
+/// turn; one that waits is finished in its turn.
+fn resume_partial(
+    user: &UserStore,
+    folder: &dyn SyncFolder,
+    report: &mut MergeReport,
+    batches: &Batches<'_>,
+) -> Result<(), SyncError> {
+    for cursor in user.merge_cursors()? {
+        let device = cursor.device.as_str();
+        let applied = user.merged_up_to(device)?;
+        if applied.is_some_and(|a| a >= cursor.seq) {
+            user.drop_merge_cursor(device)?;
+            report.cursors_dropped += 1;
+            continue;
+        }
+        let seqs: Vec<u64> = (folder.list(&ops_dir(device))?.iter())
+            .filter_map(|n| op_file_seq(n))
+            .collect();
+        let snapshots = folder.list(&snapshots_dir(device))?;
+        if seqs.is_empty() && !snapshots.iter().any(|n| snapshot_file_seq(n).is_some()) {
+            user.drop_merge_cursor(device)?;
+            report.cursors_dropped += 1;
+            continue;
+        }
+        let merged = match &cursor.snapshot {
+            None => {
+                if applied.unwrap_or(0) + 1 != cursor.seq {
+                    user.drop_merge_cursor(device)?;
+                    report.cursors_dropped += 1;
+                    continue;
+                }
+                if !seqs.contains(&cursor.seq) {
+                    // Trimmed: a later file or a snapshot covering it is there.
+                    let replaced = seqs.iter().any(|s| *s > cursor.seq)
+                        || newest_snapshot(folder, device)?.is_some_and(|(s, _)| s >= cursor.seq);
+                    if replaced {
+                        user.drop_merge_cursor(device)?;
+                        report.cursors_dropped += 1;
+                    }
+                    continue;
+                }
+                let read = read_op_files(folder, device, cursor.seq.saturating_sub(1), 1)?;
+                let Some((seq, ops)) = read.files.into_iter().next() else {
+                    continue;
+                };
+                match merge_file(user, device, seq, &ops, report, batches) {
+                    Ok(()) => {
+                        report.merged.push((device.to_string(), seq));
+                        true
+                    }
+                    Err(e) => waits_or(e)?,
+                }
+            }
+            Some(name) => {
+                if !snapshots.contains(name) {
+                    // Replaced by a newer snapshot of its device.
+                    if snapshots.iter().any(|n| snapshot_file_seq(n).is_some()) {
+                        user.drop_merge_cursor(device)?;
+                        report.cursors_dropped += 1;
+                    }
+                    continue;
+                }
+                let SnapshotRead::Whole(contents) = read_snapshot(user, folder, device, name)?
+                else {
+                    continue;
+                };
+                snapshot_waits(user, cursor.seq, name, &contents, report, batches)?.is_none()
+            }
+        };
+        if merged {
+            report.resumed += 1;
+        }
+    }
+    Ok(())
+}
+
+/// A file's merge that failed: `false` when it waits (it is tried again in its turn), the
+/// error otherwise.
+fn waits_or(e: MergeError) -> Result<bool, SyncError> {
+    match e {
+        MergeError::Waits(_)
+        | MergeError::Store(StoreError::Rejected(_) | StoreError::Conflict(_)) => Ok(false),
+        MergeError::Store(e) => Err(e.into()),
+    }
 }
 
 /// Merge a snapshot: why it waits (for a row another device's file brings), if it does.
 fn snapshot_waits(
     user: &UserStore,
     seq: u64,
+    name: &str,
     contents: &obs_store::SnapshotContents,
     report: &mut MergeReport,
+    batches: &Batches<'_>,
 ) -> Result<Option<String>, SyncError> {
-    match merge_snapshot(user, seq, contents, report) {
+    match merge_snapshot(user, seq, name, contents, report, batches) {
         Ok(()) => Ok(None),
         Err(
             MergeError::Waits(why)
@@ -325,12 +586,13 @@ fn merge_pending(
     user: &UserStore,
     pending: &mut [Pending],
     report: &mut MergeReport,
+    batches: &Batches<'_>,
 ) -> Result<(), SyncError> {
     loop {
         let mut progress = false;
         for (device, files, waits) in pending.iter_mut() {
             while let Some((seq, ops)) = files.front() {
-                match merge_file(user, device, *seq, ops, report) {
+                match merge_file(user, device, *seq, ops, report, batches) {
                     Ok(()) => {
                         report.merged.push((device.clone(), *seq));
                         files.pop_front();
@@ -367,8 +629,9 @@ enum SnapshotStep {
     Ops,
     /// Nothing: it has no file yet.
     Nothing,
-    /// Merge its newest snapshot (covering its op files up to the number), then its op files.
-    Merge(u64, Box<obs_store::SnapshotContents>),
+    /// Merge its newest snapshot (covering its op files up to the number; its file's name),
+    /// then its op files.
+    Merge(u64, String, Box<obs_store::SnapshotContents>),
     /// Neither: why, at which file or snapshot.
     Stop(u64, OpsStop),
 }
@@ -403,7 +666,7 @@ fn snapshot_to_merge(
         (Some(_), _) => return Ok(SnapshotStep::Ops),
     };
     Ok(match read_snapshot(user, folder, device, &name)? {
-        SnapshotRead::Whole(contents) => SnapshotStep::Merge(seq, contents),
+        SnapshotRead::Whole(contents) => SnapshotStep::Merge(seq, name, contents),
         SnapshotRead::Newer { format } => {
             SnapshotStep::Stop(seq, OpsStop::SnapshotNewer { format })
         }
@@ -471,72 +734,283 @@ fn retry_one(
     }
 }
 
-/// Try every held op again, in one transaction (nothing when none is held).
-fn retry_held(user: &UserStore, report: &mut MergeReport) -> Result<(), SyncError> {
+/// Try every held op again, by clock, in batches (nothing when none is held): the ops held
+/// when it starts, as one transaction would. An op that applies leaves `sync_held` in its
+/// batch, so a retry stopped between batches goes on with the ops still held.
+fn retry_held(
+    user: &UserStore,
+    report: &mut MergeReport,
+    batches: &Batches<'_>,
+) -> Result<(), SyncError> {
     if !user.has_sync_held()? {
         return Ok(());
     }
-    let mut recorded = Recorded::default();
-    user.merge_held(|tx| {
-        for held in tx.held(None)? {
-            retry_one(tx, &held, &mut recorded)?;
-        }
-        Ok::<(), MergeError>(())
-    })
-    .map_err(|e| match e {
-        MergeError::Store(e) => SyncError::from(e),
-        MergeError::Waits(why) => SyncError::Damaged(why),
-    })?;
-    report.recorded.add(&recorded);
+    let held = user.sync_held()?;
+    let mut from = 0;
+    while from < held.len() {
+        let mut recorded = Recorded::default();
+        let mut touched = Touched::default();
+        let next = user
+            .merge_held(|tx| {
+                let mut budget = batches.start(false);
+                let mut i = from;
+                while let Some(op) = held.get(i) {
+                    retry_one(tx, op, &mut recorded)?;
+                    i += 1;
+                    if budget.spent() {
+                        break;
+                    }
+                }
+                touched = tx.take_touched();
+                Ok::<usize, MergeError>(i)
+            })
+            .map_err(|e| match e {
+                MergeError::Store(e) => SyncError::from(e),
+                MergeError::Waits(why) => SyncError::Damaged(why),
+            })?;
+        report.recorded.add(&recorded);
+        report.touched.add(touched);
+        batches.committed(report)?;
+        from = next;
+    }
     Ok(())
 }
 
-/// Merge op file `seq` of `device` (its `ops`, in order) in one transaction.
+/// What one batch of a merge did, added to the report once it is committed.
+#[derive(Default)]
+pub(crate) struct BatchDone {
+    pub(crate) outcomes: Vec<Outcome>,
+    pub(crate) not_observed: usize,
+    pub(crate) recorded: Recorded,
+    pub(crate) touched: Touched,
+}
+
+impl BatchDone {
+    pub(crate) fn add_to(self, report: &mut MergeReport) {
+        for outcome in self.outcomes {
+            *report.outcomes.entry(outcome).or_default() += 1;
+        }
+        report.not_observed += self.not_observed;
+        report.recorded.add(&self.recorded);
+        report.touched.add(self.touched);
+    }
+}
+
+/// Merge op file `seq` of `device` (its `ops`, in order), in batches, from where its merge
+/// stands (a batch committed before, [`obs_store::MergeCursor`]). Its last batch notes it
+/// applied. One whose ops might wait ([`may_wait`]) merges what is left in one transaction.
 fn merge_file(
     user: &UserStore,
     device: &str,
     seq: u64,
     ops: &[Op],
     report: &mut MergeReport,
+    batches: &Batches<'_>,
 ) -> Result<(), MergeError> {
-    let mut outcomes = Vec::with_capacity(ops.len());
-    let mut not_observed = 0;
-    let mut recorded = Recorded::default();
-    user.merge_op_file(device, seq, |tx| {
-        for op in ops {
-            if !user.observe_clock(&op.clock) {
-                not_observed += 1;
+    let mut from = (user.merge_cursor(device)?)
+        .filter(|c| c.seq == seq && c.snapshot.is_none())
+        .map_or(0, |c| c.ops);
+    let mut whole: Option<bool> = None;
+    // Some of its batches are committed (by this merge, or one that stopped).
+    let mut committed = from > 0;
+    let mut counted = false;
+    loop {
+        let mut done = BatchDone::default();
+        let start = usize::try_from(from).unwrap_or(usize::MAX);
+        let end = user.merge_op_file_batch(device, seq, from, |tx| {
+            let rest = ops.get(start..).unwrap_or_default();
+            let all = match whole {
+                Some(all) => all,
+                None => {
+                    let all = !batches.unbounded()
+                        && may_wait(tx, rest.iter().map(|op| (op.change().key(), op)))?;
+                    whole = Some(all);
+                    all || batches.unbounded()
+                }
+            };
+            let mut budget = batches.start(all);
+            let mut i = start;
+            while let Some(op) = ops.get(i) {
+                merge_counted(user, tx, op, None, ops, &mut done)?;
+                i += 1;
+                if budget.spent() {
+                    break;
+                }
             }
-            // Each op in a savepoint: one this build cannot apply is held, leaving nothing of
-            // itself, and the rest of the file merges.
-            tx.begin_op()?;
-            // Counted only if the savepoint keeps what it recorded.
-            let mut by_op = Recorded::default();
-            match merge_op(tx, op, ops, &mut by_op) {
-                Ok(outcome) => {
-                    tx.end_op(true)?;
-                    recorded.add(&by_op);
-                    outcomes.push(outcome);
+            done.touched = tx.take_touched();
+            let end = if i >= ops.len() {
+                BatchEnd::Done
+            } else {
+                BatchEnd::At(i as u64)
+            };
+            Ok::<_, MergeError>((end, end))
+        });
+        if whole == Some(true) && !counted {
+            counted = true;
+            report.whole += 1;
+        }
+        let end = match end {
+            Ok(end) => end,
+            Err(e) => {
+                if committed && e.waits() {
+                    report.split_waits += 1;
                 }
-                Err(MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why))) => {
-                    tx.end_op(false)?;
-                    tx.hold(&held_of(op, why))?;
-                    outcomes.push(Outcome::Held);
-                }
-                Err(e) => {
-                    tx.end_op(false)?;
-                    return Err(e);
-                }
+                return Err(e);
+            }
+        };
+        committed = true;
+        done.add_to(report);
+        batches.committed(report)?;
+        match end {
+            BatchEnd::Done => return Ok(()),
+            BatchEnd::At(next) => from = next,
+        }
+    }
+}
+
+/// Merge `op` in a savepoint (its clock observed first), counting what it did in `done`: one
+/// this build cannot apply is held, leaving nothing of itself, and the rest of its file
+/// merges. `key`: the row it is about, for a snapshot's op (`merge_keyed`); else its Change's.
+pub(crate) fn merge_counted(
+    user: &UserStore,
+    tx: &mut MergeTx<'_>,
+    op: &Op,
+    key: Option<&RowKey>,
+    file: &[Op],
+    done: &mut BatchDone,
+) -> Result<Outcome, MergeError> {
+    if !user.observe_clock(&op.clock) {
+        done.not_observed += 1;
+    }
+    tx.begin_op()?;
+    // Counted only if the savepoint keeps what it recorded.
+    let mut by_op = Recorded::default();
+    let merged = match key {
+        Some(key) => merge_keyed(tx, op, key, file, &mut by_op),
+        None => merge_op(tx, op, file, &mut by_op),
+    };
+    match merged {
+        Ok(outcome) => {
+            tx.end_op(true)?;
+            done.recorded.add(&by_op);
+            done.outcomes.push(outcome);
+            Ok(outcome)
+        }
+        Err(MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why))) => {
+            tx.end_op(false)?;
+            tx.hold(&held_of(op, why))?;
+            done.outcomes.push(Outcome::Held);
+            Ok(Outcome::Held)
+        }
+        Err(e) => {
+            tx.end_op(false)?;
+            Err(e)
+        }
+    }
+}
+
+/// The rows `row` needs here before it is written: an Annotation its Notebook and (a
+/// Highlight) its style, a Highlight style its palette, a Reading its plan.
+fn parents_of(row: &Row) -> Vec<RowKey> {
+    match row {
+        Row::Annotation(a) => {
+            let mut needs = vec![RowKey::Notebook(a.notebook_id.clone())];
+            if let Content::Highlight { style } = &a.content {
+                needs.push(RowKey::HighlightStyle(style.clone()));
+            }
+            needs
+        }
+        Row::HighlightStyle(s) => vec![RowKey::HighlightPalette(s.palette_id.clone())],
+        Row::Reading(r) => vec![RowKey::ReadingPlan(r.plan_uid.clone())],
+        _ => Vec::new(),
+    }
+}
+
+/// Whether merging `ops` (each with the row it is about) from here might wait for another
+/// device's file (S29c): then they merge in one transaction, as before batches, so a file never
+/// waits after some of its batches were committed and the ops merge in the unsplit merge's
+/// order. Only two things wait: a write whose parent is not here (`ensure_parents`), and a
+/// delete of the default Notebook (`merge_delete`). So it might when a write's parent is not
+/// here, deleted here (restored from its tombstone's row, whose own parents are checked the
+/// same way; held when it keeps none) or held here, nor written by an earlier op that no op
+/// before it deletes (a deleted style is restored from a row whose palette is not known);
+/// when an op deletes the default Notebook, or one an earlier op writes as a default; or when
+/// a write lacks fields (an older app's: they come from the row here). Rows here leave only
+/// with a tombstone, so what this finds known stays known while the batches run.
+pub(crate) fn may_wait<'o>(
+    tx: &mut MergeTx<'_>,
+    ops: impl Iterator<Item = (Option<RowKey>, &'o Op)>,
+) -> Result<bool, MergeError> {
+    let mut defaults: HashSet<String> = tx.default_notebook()?.into_iter().map(|n| n.id).collect();
+    let mut written: HashSet<RowKey> = HashSet::new();
+    let mut deleted: HashSet<RowKey> = HashSet::new();
+    let mut here: HashMap<RowKey, bool> = HashMap::new();
+    for (key, op) in ops {
+        let Some(key) = key else {
+            continue;
+        };
+        let Some(after) = &op.after else {
+            if let RowKey::Notebook(id) = &key
+                && defaults.contains(id)
+            {
+                return Ok(true);
+            }
+            deleted.insert(key);
+            continue;
+        };
+        if !op.absent.is_empty() {
+            return Ok(true);
+        }
+        for parent in parents_of(after) {
+            let by_this_file = written.contains(&parent)
+                && (!deleted.contains(&parent) || !matches!(parent, RowKey::HighlightStyle(_)));
+            if !by_this_file && !known_here(tx, &parent, &mut here)? {
+                return Ok(true);
             }
         }
-        Ok::<(), MergeError>(())
-    })?;
-    for outcome in outcomes {
-        *report.outcomes.entry(outcome).or_default() += 1;
+        if let Row::Notebook(nb) = after
+            && nb.is_default
+        {
+            defaults.insert(nb.id.clone());
+        }
+        written.insert(key);
     }
-    report.not_observed += not_observed;
-    report.recorded.add(&recorded);
-    Ok(())
+    Ok(false)
+}
+
+/// Whether the parent `key` names is here, deleted here with its row kept (and that row's own
+/// parents known), deleted before rows were kept (the child is held then, not waiting), or
+/// held here: a child of it never waits for another device's file. `cache`: what was found.
+fn known_here(
+    tx: &mut MergeTx<'_>,
+    key: &RowKey,
+    cache: &mut HashMap<RowKey, bool>,
+) -> Result<bool, MergeError> {
+    if let Some(known) = cache.get(key) {
+        return Ok(*known);
+    }
+    let state = tx.state(key)?;
+    let known = if state.row.is_some() {
+        true
+    } else if state.tombstone.is_some() {
+        match tx.tombstone_row(key)? {
+            Some(row) => {
+                let mut all = true;
+                for parent in parents_of(&row) {
+                    if !known_here(tx, &parent, cache)? {
+                        all = false;
+                        break;
+                    }
+                }
+                all
+            }
+            None => true,
+        }
+    } else {
+        tx.is_held(key)?
+    };
+    cache.insert(key.clone(), known);
+    Ok(known)
 }
 
 /// Merge one op of another device (its clock already observed), one of the ops of `file` (the

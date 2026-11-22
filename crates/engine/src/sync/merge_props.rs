@@ -87,13 +87,13 @@ use obs_store::{
     Tombstone, UserStore,
 };
 
-use super::DEVICES_DIR;
 use super::folder::{FolderError, MemSyncFolder, SyncFolder};
 use super::lifecycle::{RestoreChoice, SyncOptions, SyncState, restore_choice, sync_now};
-use super::merge::{Outcome, merge_folder};
+use super::merge::{MergeBatch, Outcome, merge_folder_with};
 use super::merge_tests::{Dir, files_of, push_ops, view};
 use super::ops::{Op, OpFileRead, decode_op_file, write_pending_ops};
 use super::snapshot::{SnapshotFile, SnapshotPolicy, snapshot_file, snapshot_ops};
+use super::{DEVICES_DIR, SyncError};
 
 /// Cases each CI run checks.
 const CI_CASES: u64 = 1_000;
@@ -235,8 +235,14 @@ struct World {
     never_known: Vec<(String, Hlc)>,
     /// The ids a restore that replaced took: their snapshots' bases are a replace's.
     replaced_ids: BTreeSet<String>,
-    /// How this case writes snapshots and trims (small, so they happen).
+    /// How this case writes snapshots and trims (small, so they happen), and splits its merges
+    /// into batches (1–3 ops, S29c).
     options: SyncOptions,
+    /// When a merge stops between two batches, as a crash or an abandoned worker would (S29c):
+    /// its own generator, so a seed's edits and syncs are those it made before S29c. Only the
+    /// random syncs stop ([`World::sync`]); the targeted sequences need theirs whole.
+    crashes: Rng,
+    may_stop: bool,
     /// What the merges did, over every case of a run.
     stats: Stats,
 }
@@ -297,6 +303,17 @@ struct Stats {
     /// The sync merge fix review's: a copy's Backup from before it took its new id, restored
     /// catching up after its Sync conflict's copy was edited ([`World::copy_backup_step`]).
     unmet_id_backups: usize,
+    /// S29c: batches committed; files (or what was left of them) merged whole for an op that
+    /// might wait; files that waited after a batch was committed (never); merges stopped
+    /// between two batches, of them with a snapshot partly merged; files a stopped merge left,
+    /// finished first; where a stopped merge stood forgotten, its file gone.
+    batches: usize,
+    whole: usize,
+    split_waits: usize,
+    stopped: usize,
+    stopped_in_snapshots: usize,
+    resumed: usize,
+    cursors_dropped: usize,
 }
 
 impl Stats {
@@ -312,6 +329,11 @@ impl Stats {
         self.recorded.items_renamed += report.recorded.items_renamed;
         self.recorded.items_kept += report.recorded.items_kept;
         self.recorded.unheld += report.recorded.unheld;
+        self.batches += report.batches;
+        self.whole += report.whole;
+        self.split_waits += report.split_waits;
+        self.resumed += report.resumed;
+        self.cursors_dropped += report.cursors_dropped;
     }
 }
 
@@ -386,9 +408,14 @@ impl World {
     fn sync_now(&mut self, d: usize) {
         self.push_device(d);
         let met = self.met(d);
-        let report = match sync_now(&self.devices[d], &self.folder, &self.options).unwrap() {
-            SyncState::Synced(report) => report,
-            other => panic!("device {d}: {other:?}"),
+        let options = SyncOptions {
+            batch: self.crash_batch(),
+            ..self.options.clone()
+        };
+        let report = match sync_now(&self.devices[d], &self.folder, &options) {
+            Ok(SyncState::Synced(report)) => report,
+            Err(e) => return self.stopped(d, e),
+            Ok(other) => panic!("device {d}: {other:?}"),
         };
         self.stats.trimmed += report.trimmed.len();
         self.merged(d, &report.merge, &met);
@@ -753,6 +780,7 @@ impl World {
     /// partly synced folder shows it (each other device's files, or only its first few), and
     /// sometimes as the app does, trimming too.
     fn sync(&mut self, d: usize, rng: &mut Rng) {
+        self.may_stop = true;
         if rng.below(4) == 0 {
             self.sync_now(d);
             return;
@@ -775,12 +803,41 @@ impl World {
         }
     }
 
+    /// This case's batches, stopping now and then after a few, as a crash between two
+    /// batches would (S29c).
+    fn crash_batch(&mut self) -> MergeBatch {
+        let mut batch = self.options.batch;
+        if std::mem::take(&mut self.may_stop) && self.crashes.below(5) == 0 {
+            batch.stop_after = Some(1 + self.crashes.below(6));
+        }
+        batch
+    }
+
+    /// Device `d`'s merge stopped between two batches (`crash_batch`): what it merged stays,
+    /// and its next merge finishes the file it partly merged.
+    fn stopped(&mut self, d: usize, e: SyncError) {
+        assert!(
+            matches!(e, SyncError::Store(StoreError::Cancelled)),
+            "device {d}: {e}"
+        );
+        self.stats.stopped += 1;
+        let user = &self.devices[d];
+        if (user.merge_cursors().unwrap().iter()).any(|c| c.snapshot.is_some()) {
+            self.stats.stopped_in_snapshots += 1;
+        }
+        // What the merge recorded is not this device's change to undo.
+        user.take_applied_changes();
+    }
+
     /// Device `d` writes its ops and merges every other device's.
     fn sync_all(&mut self, d: usize) {
         self.push_device(d);
         let met = self.met(d);
-        let report = merge_folder(&self.devices[d], &self.folder).unwrap();
-        self.merged(d, &report, &met);
+        let batch = self.crash_batch();
+        match merge_folder_with(&self.devices[d], &self.folder, &batch) {
+            Ok(report) => self.merged(d, &report, &met),
+            Err(e) => self.stopped(d, e),
+        }
     }
 
     /// Device `d` writes its ops and merges only the op files `seen` (device id, number), as
@@ -789,8 +846,11 @@ impl World {
         self.push_device(d);
         let met = self.met(d);
         let files: Vec<(&str, u64)> = seen.iter().map(|(id, n)| (id.as_str(), *n)).collect();
-        let report = merge_folder(&self.devices[d], &view(&self.folder.folder, &files)).unwrap();
-        self.merged(d, &report, &met);
+        let batch = self.crash_batch();
+        match merge_folder_with(&self.devices[d], &view(&self.folder.folder, &files), &batch) {
+            Ok(report) => self.merged(d, &report, &met),
+            Err(e) => self.stopped(d, e),
+        }
     }
 
     /// Device `d` merged (`report`), having merged `met` of each device before.
@@ -801,6 +861,10 @@ impl World {
         met: &BTreeMap<String, Option<u64>>,
     ) {
         assert!(report.stopped.is_empty(), "{report:?}");
+        assert_eq!(
+            report.split_waits, 0,
+            "a file waited after a batch: {report:?}"
+        );
         self.stats.add(report);
         self.stats.snapshots_merged += report.snapshots.len();
         self.stats.snapshots_after_trim += report
@@ -843,7 +907,8 @@ impl World {
                 self.as_device(d);
                 busy |= !self.push_device(d).is_empty();
                 let met = self.met(d);
-                let report = merge_folder(&self.devices[d], &self.folder).unwrap();
+                let report =
+                    merge_folder_with(&self.devices[d], &self.folder, &self.options.batch).unwrap();
                 assert!(report.waiting.is_empty(), "{report:?}");
                 busy |= !report.merged.is_empty() || !report.snapshots.is_empty();
                 self.merged(d, &report, &met);
@@ -2210,6 +2275,7 @@ fn check_case(
 ) -> String {
     let mut rng = Rng(seed);
     seed_ids(Some(rng.next()));
+    let mut crashes = Rng(seed ^ 0xC0FF_EE29_C0FF_EE29);
     let n = 2 + rng.below(2);
     let offsets: Vec<i64> = (0..n).map(|_| rng.offset()).collect();
     let now = TEMPLATE_MS + 3_600_000 + rng.ms(1_000_000);
@@ -2231,6 +2297,7 @@ fn check_case(
             after_ms: 1_000 + rng.ms(20_000),
             trim_after_ms: 1_000 + rng.ms(30_000),
         },
+        batch: MergeBatch::of_ops(1 + crashes.below(3)),
     };
     let mut world = World {
         devices,
@@ -2255,6 +2322,8 @@ fn check_case(
         never_known: Vec::new(),
         replaced_ids: BTreeSet::new(),
         options,
+        crashes,
+        may_stop: false,
         stats: std::mem::take(stats),
     };
     // Most devices join at once; the others join late, at their first sync, with what they
@@ -2698,7 +2767,9 @@ fn run(cases: u64, name: &str) {
          before a late join restored {}, databases copied {}, Backups with a base {}, \
          snapshots written again {}; the sync merge fix's sequences: own items held {}, far \
          bases after a re-add {}, snapshot deletes on a restore {}, copies edited then \
-         restored {}, Backups from before the new id was met {}",
+         restored {}, Backups from before the new id was met {}; S29c: batches {}, merged \
+         whole for an op that might wait {}, waited after a batch {}, merges stopped between \
+         batches {} ({} in a snapshot), finished first {}, stopped merges' files gone {}",
         stats.outcomes,
         stats.retried,
         stats.renamed_layouts,
@@ -2728,7 +2799,15 @@ fn run(cases: u64, name: &str) {
         stats.snapshot_deletes,
         stats.edited_copies,
         stats.unmet_id_backups,
+        stats.batches,
+        stats.whole,
+        stats.split_waits,
+        stats.stopped,
+        stats.stopped_in_snapshots,
+        stats.resumed,
+        stats.cursors_dropped,
     );
+    assert_eq!(stats.split_waits, 0, "a file waited after a batch");
     for outcome in [
         Outcome::Written,
         Outcome::Superseded,
@@ -2804,6 +2883,13 @@ fn run(cases: u64, name: &str) {
             "a Backup from before the new id was met",
             stats.unmet_id_backups,
         ),
+        ("a merge stopped between two batches", stats.stopped),
+        (
+            "a merge stopped in a snapshot's batches",
+            stats.stopped_in_snapshots,
+        ),
+        ("a stopped merge's file finished first", stats.resumed),
+        ("a file merged whole for an op that might wait", stats.whole),
     ] {
         assert!(n > 0, "no case reached {what}");
     }
