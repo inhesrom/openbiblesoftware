@@ -3,10 +3,12 @@
 //! device a new id ([`UserStore::restore_from`]), and so does finding op files under its own
 //! id that it did not write (a copied database, [`UserStore::take_new_device_id`]).
 //!
-//! - The ids the database had before are kept in `former_device` (migration 17), and the
-//!   merge counts a clock naming any of them as this device's own ([`UserStore::own_device_ids`]),
-//!   so a Note text or list item written under the old id is still kept as a Sync conflict's
-//!   copy or "Name (2)" when a remote edit that never saw it replaces it. A restore keeps the
+//! - The ids the database had before are kept in `former_device` (migration 17), with the
+//!   order it gave them up (`seq`, migration 18: the merge merges their files the last given
+//!   up first), and the merge counts a clock naming any of them as this device's own
+//!   ([`UserStore::own_device_ids`]), so a Note text or list item written under the old id is
+//!   still kept as a Sync conflict's copy or "Name (2)" when a remote edit that never saw it
+//!   replaces it. A restore keeps the
 //!   device's own ids (the one it had and its former ones) and adds the Backup's id, with the
 //!   Backup's former ones, only when that id is one of them: a Backup of another device's
 //!   (restored on a new computer while that device still syncs) does not make that device's
@@ -26,15 +28,21 @@ use rusqlite::{Connection, params};
 use crate::annotation::new_id;
 use crate::error::StoreError;
 use crate::sync_clock::{read_device_id, records_ops};
-use crate::synced_store::has_table;
+use crate::synced_store::{has_column, has_table};
 use crate::user::{UserStore, sql};
 
-/// This device's id and the ids it had before, its own first.
+/// This device's id and the ids it had before, its own first, then the former ones from the
+/// last given up to the first (`former_device.seq`, schema 18; before it, by id).
 pub(crate) fn read_own_ids(c: &Connection) -> Result<Vec<String>, StoreError> {
     let mut ids = vec![read_device_id(c)?];
     if has_table(c, "former_device")? {
+        let query = if has_column(c, "former_device", "seq")? {
+            "SELECT device_id FROM former_device ORDER BY seq DESC, device_id DESC"
+        } else {
+            "SELECT device_id FROM former_device ORDER BY device_id DESC"
+        };
         let former: Vec<String> = c
-            .prepare_cached("SELECT device_id FROM former_device ORDER BY device_id")
+            .prepare_cached(query)
             .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
             .map_err(sql)?;
         let own = ids[0].clone();
@@ -55,9 +63,9 @@ pub(crate) fn read_restore_choice(c: &Connection) -> Result<bool, StoreError> {
     .map_err(sql)
 }
 
-/// Give the database `c` a new device id in one step: each of `former` goes to
-/// `former_device`, the outbox is emptied, and (`pending`) a restore's choice is waited for.
-/// Returns the new id.
+/// Give the database `c` a new device id in one step: each of `former` (the first given up
+/// first) not there yet goes to `former_device`, at the next `seq`, the outbox is emptied, and
+/// (`pending`) a restore's choice is waited for. Returns the new id.
 pub(crate) fn renew_device_id(
     c: &Connection,
     former: &[String],
@@ -65,7 +73,11 @@ pub(crate) fn renew_device_id(
 ) -> Result<String, StoreError> {
     let new = new_id();
     let mut insert = c
-        .prepare_cached("INSERT INTO former_device (device_id) VALUES (?1) ON CONFLICT DO NOTHING")
+        .prepare_cached(
+            "INSERT INTO former_device (device_id, seq)
+             VALUES (?1, (SELECT coalesce(max(seq), 0) + 1 FROM former_device))
+             ON CONFLICT DO NOTHING",
+        )
         .map_err(sql)?;
     for id in former {
         if *id != new && crate::annotation::is_valid_id(id) {
@@ -83,7 +95,8 @@ pub(crate) fn renew_device_id(
 
 impl UserStore {
     /// This device's id and the ids this database had before (ADR 0022 rule 7), its own
-    /// first: a clock naming any of them is this device's own to the merge.
+    /// first, then the former ones from the last given up: a clock naming any of them is this
+    /// device's own to the merge.
     pub fn own_device_ids(&self) -> Result<Vec<String>, StoreError> {
         read_own_ids(&self.conn)
     }

@@ -28,7 +28,7 @@ use crate::synced_store;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 17;
+pub const USER_SCHEMA_VERSION: u32 = 18;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -77,6 +77,8 @@ const MIGRATIONS: &[&str] = &[
     // 16 → 17: the device ids this database had before, and a restore's pending choice
     // (ADR 0022 rule 7, S28c).
     crate::sync_schema::SCHEMA_17,
+    // 17 → 18: the order this database gave up its former device ids (ADR 0022 rule 7).
+    crate::sync_schema::SCHEMA_18,
 ];
 
 /// How long a write on one connection to the User database waits for another connection's

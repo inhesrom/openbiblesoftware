@@ -149,6 +149,29 @@ impl MergeTx<'_> {
         self.own_ids.iter().any(|id| id == device)
     }
 
+    /// Whether a clock naming `later` is this device's own and came after `earlier`'s (one of
+    /// its ids too) in its own history: `later` is its id now, or `earlier` itself, or a
+    /// former id it gave up after `earlier` (`former_device.seq`). An older former id's clock
+    /// can be another device's: a copied database's original keeps the id it gave up here.
+    pub fn is_own_after(&self, later: &str, earlier: &str) -> bool {
+        let rank = |device: &str| self.own_ids.iter().position(|id| id == device);
+        match (rank(later), rank(earlier)) {
+            (Some(l), Some(e)) => l <= e,
+            (Some(l), None) => l == 0,
+            _ => false,
+        }
+    }
+
+    /// Whether a held write of the device `older` is kept beside a newer held write of the
+    /// same row by `newer`: `older` is one of this device's ids and `newer` neither is that id
+    /// nor came after it in this device's history ([`MergeTx::is_own_after`]). A newer write
+    /// of its own history replaces it by last writer wins with nothing for the own checks to
+    /// keep; so, after a copy, the original's writes under the id it kept are kept one per
+    /// row, not one per write.
+    fn held_beside(&self, older: &str, newer: &str) -> bool {
+        self.is_own(older) && !self.is_own_after(newer, older)
+    }
+
     /// The name the user gave this device (empty until then).
     pub fn device_name(&self) -> Result<String, StoreError> {
         self.tx
@@ -376,9 +399,22 @@ impl MergeTx<'_> {
     /// records ops): what the merge decides here for every device, such as a rename for a name
     /// clash. The default Notebook may stop being the default.
     pub fn record(&mut self, changes: &[Change]) -> Result<(), StoreError> {
+        self.record_after(changes, None)
+    }
+
+    /// [`MergeTx::record`], each clock also after `kept`: the clock of the version of this
+    /// device's own list item that a re-add (D6's "Name (2)", or under its own name against a
+    /// delete) keeps. A list base later than the re-add then also supersedes the version it
+    /// keeps, so a base merged afterwards never drops a version written after it.
+    pub fn record_after(
+        &mut self,
+        changes: &[Change],
+        kept: Option<&Hlc>,
+    ) -> Result<(), StoreError> {
         let columns = self.store.sync_columns(self.tx)?;
         let stamp = Stamp::Local {
             recording: self.recording,
+            after: kept,
         };
         for change in changes {
             self.store
@@ -454,19 +490,25 @@ impl MergeTx<'_> {
     /// replaces itself). Of a row's held writes only the newest is kept: it supersedes the
     /// older by last writer wins once it applies, so a row a later app keeps writing holds one
     /// op, not one per write. A held delete is always kept (it notes its tombstone when it
-    /// applies), and so is a write whose op line lacked fields (the older write may hold them).
+    /// applies), and so is a write whose op line lacked fields (the older write may hold them),
+    /// and so is an older write of this device's own that the newer did not come after in its
+    /// own history ([`MergeTx::held_beside`]): applied before the newer one, in clock order,
+    /// it is what the newer replaces, so the own checks keep it (D6's "Name (2)"; a list item
+    /// held while its list was damaged was lost when another device's newer write dropped it).
     pub fn hold(&mut self, op: &HeldOp) -> Result<(), StoreError> {
         let (kind, id) = held_key(&op.change);
         if op.change.after.is_some() && op.absent.is_empty() {
+            let writer = &op.clock.device_id;
             for other in read_held_of(self.tx, kind, &id)? {
                 if other.change.after.is_none() || other.clock == op.clock {
                     continue;
                 }
+                let by = &other.clock.device_id;
                 if other.clock > op.clock {
-                    if other.absent.is_empty() {
+                    if other.absent.is_empty() && !self.held_beside(writer, by) {
                         return Ok(());
                     }
-                } else {
+                } else if !self.held_beside(by, writer) {
                     self.unhold(&other)?;
                 }
             }

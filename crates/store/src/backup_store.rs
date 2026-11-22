@@ -299,11 +299,19 @@ impl UserStore {
         // (and the Backup's former ones) only when the Backup is of this device's own
         // (`sync_device.rs`). On a device that was syncing, the restore waits for the user to
         // choose to catch up or replace.
+        // The former ids go in the order the device gave them up: the Backup's this device
+        // no longer has, then this device's own former ones, then the id it has now.
         let tx = source.unchecked_transaction().map_err(sql)?;
-        let mut former = own.clone();
+        let mut former = Vec::new();
         if own.contains(&crate::sync_clock::read_device_id(&tx)?) {
-            former.extend(crate::sync_device::read_own_ids(&tx)?);
+            former.extend(
+                crate::sync_device::read_own_ids(&tx)?
+                    .into_iter()
+                    .rev()
+                    .filter(|id| !own.contains(id)),
+            );
         }
+        former.extend(own.iter().rev().cloned());
         tx.execute("DELETE FROM former_device", []).map_err(sql)?;
         crate::sync_device::renew_device_id(&tx, &former, syncing)?;
         tx.commit().map_err(sql)?;

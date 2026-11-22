@@ -22,6 +22,14 @@
 //! snapshot covers the Backup's device's later files ([`World::late_backup_step`]); a database
 //! copied, joined or not, both copies syncing on ([`World::copy_step`]); and an own snapshot
 //! damaged in the folder, written again at its device's next sync ([`World::mend_step`]).
+//! The sync merge fix's four shrunk sequences run now and then too: an own Collection held
+//! while its list is damaged, then another device's later one of its name
+//! ([`World::held_own_item_step`]); an own Collection's re-add for a clash, then a far-ahead
+//! base before the version it keeps ([`World::far_base_after_re_add_step`]); a snapshot's
+//! delete of an own Collection met on a restore ([`World::snapshot_delete_step`]); and a
+//! Sync conflict's copy edited, then a restore catching up ([`World::edited_copy_step`]).
+//! And the review's: a copy's Backup from before it took its new id, restored catching up
+//! after the copy edited its Sync conflict's copy ([`World::copy_backup_step`]).
 //! Each device's wall
 //! clock is its own: the case's clock moves on by random steps, and a device's runs from it by
 //! an offset of its own, sometimes more than [`MAX_FORWARD_SKEW_MS`] ahead (its clocks are then
@@ -276,6 +284,19 @@ struct Stats {
     copies: usize,
     based_backups: usize,
     mended: usize,
+    /// The sync merge fix's sequences: an own list item held while its list is damaged, then
+    /// another device's later item of its name ([`World::held_own_item_step`]); an own item's
+    /// re-add for a clash, then a far base before the version it keeps
+    /// ([`World::far_base_after_re_add_step`]); a snapshot's delete covering an own item met
+    /// on a restore ([`World::snapshot_delete_step`]); a Sync conflict's copy edited, then a
+    /// restore catching up ([`World::edited_copy_step`]).
+    held_own_items: usize,
+    far_bases: usize,
+    snapshot_deletes: usize,
+    edited_copies: usize,
+    /// The sync merge fix review's: a copy's Backup from before it took its new id, restored
+    /// catching up after its Sync conflict's copy was edited ([`World::copy_backup_step`]).
+    unmet_id_backups: usize,
 }
 
 impl Stats {
@@ -646,14 +667,7 @@ impl World {
             return;
         }
         let d = rng.below(self.devices.len());
-        let copy = self.devices[d].copy_in_memory().unwrap();
-        self.devices.push(copy);
-        self.offsets.push(rng.offset());
-        self.last.push(Vec::new());
-        self.joins.push(None);
-        self.joined.push(self.joined[d]);
-        self.backups.push(None);
-        let c = self.devices.len() - 1;
+        let c = self.copy_device(d, rng);
         let (first, second) = if rng.below(2) == 0 { (d, c) } else { (c, d) };
         // The first writes a Notebook of its own.
         self.as_device(first);
@@ -689,6 +703,18 @@ impl World {
             self.merged(e, &report.merge, &met);
         }
         self.stats.copies += 1;
+    }
+
+    /// Device `d`'s database copied to another computer, a new device of the case: its index.
+    fn copy_device(&mut self, d: usize, rng: &mut Rng) -> usize {
+        let copy = self.devices[d].copy_in_memory().unwrap();
+        self.devices.push(copy);
+        self.offsets.push(rng.offset());
+        self.last.push(Vec::new());
+        self.joins.push(None);
+        self.joined.push(self.joined[d]);
+        self.backups.push(None);
+        self.devices.len() - 1
     }
 
     /// The S28c review's damaged snapshot: a byte of device `e`'s newest snapshot in the
@@ -1158,6 +1184,475 @@ impl World {
         seen.extend(self.files(p));
         self.sync_seeing(r, &seen);
         self.stats.d7_steps += 1;
+    }
+
+    /// Three distinct joined devices, at random (none when fewer are joined).
+    fn three_joined(&self, rng: &mut Rng) -> Option<(usize, usize, usize)> {
+        let mut joined: Vec<usize> = (0..self.devices.len())
+            .filter(|d| self.joined[*d])
+            .collect();
+        if joined.len() < 3 {
+            return None;
+        }
+        let a = joined.remove(rng.below(joined.len()));
+        let b = joined.remove(rng.below(joined.len()));
+        let c = joined.remove(rng.below(joined.len()));
+        Some((a, b, c))
+    }
+
+    /// Whether device `e`'s Collections are in their list's shape (or have no value).
+    fn collections_in_shape(&self, e: usize) -> bool {
+        self.devices[e]
+            .preference(COLLECTIONS)
+            .unwrap()
+            .is_none_or(|v| collection_items(&v).is_some())
+    }
+
+    /// Device `e`'s Collections as items, or None when they are not in their list's shape.
+    fn collection_values(&self, e: usize) -> Option<Vec<serde_json::Value>> {
+        match self.devices[e].preference(COLLECTIONS).unwrap() {
+            None => Some(Vec::new()),
+            Some(v) => collection_items(&v).map(|_| serde_json::from_str(&v).unwrap()),
+        }
+    }
+
+    /// Device `e`'s Collections with `json` (holding its `name`) added, or None when one of
+    /// that name is there or they are not in their list's shape.
+    fn with_collection(&self, e: usize, json: serde_json::Value) -> Option<String> {
+        let mut items = self.collection_values(e)?;
+        if items.iter().any(|it| it["name"] == json["name"]) {
+            return None;
+        }
+        items.push(json);
+        Some(serde_json::to_string(&items).unwrap())
+    }
+
+    /// Device `e`'s Collections without the one named `name`, or None when they are not in
+    /// their list's shape.
+    fn without_collection(&self, e: usize, name: &str) -> Option<String> {
+        let mut items = self.collection_values(e)?;
+        items.retain(|it| it["name"] != name);
+        Some(serde_json::to_string(&items).unwrap())
+    }
+
+    /// A wall clock after every device's now, for writes that must come in this order.
+    fn after_all(&self) -> i64 {
+        self.now + self.offsets.iter().copied().max().unwrap_or(0) + 1
+    }
+
+    /// The sync merge fix's seed 20266453: P writes the Collections damaged, then in shape; A
+    /// adds an item after both, and C one of its name later still; A meets P's damaged value
+    /// (its own item is held), C's item (held too), then P's value in shape. A's item must
+    /// stay, as "Name (2)" (D6).
+    fn held_own_item_step(&mut self, rng: &mut Rng) {
+        let Some((a, p, c)) = self.three_joined(rng) else {
+            return;
+        };
+        if ![a, p, c].iter().all(|e| self.collections_in_shape(*e)) {
+            return;
+        }
+        for e in [p, c, a] {
+            self.as_device(e);
+            self.sync_all(e);
+        }
+        let name = *rng.pick(NAMES).unwrap();
+        let t = self.after_all();
+        fix(Some(t));
+        let value = self.devices[p].preference(COLLECTIONS).unwrap();
+        self.devices[p]
+            .set_preference(COLLECTIONS, rng.pick(DAMAGED).unwrap())
+            .unwrap();
+        self.stats.damaged += 1;
+        let damaged = self.push_device(p);
+        fix(Some(t + 1));
+        self.devices[p]
+            .set_preference(COLLECTIONS, value.as_deref().unwrap_or("[]"))
+            .unwrap();
+        self.stats.fixed += 1;
+        self.done(p);
+        self.push(p);
+        fix(Some(t + 2));
+        let n = self.n;
+        self.n += 1;
+        let Some(ours) = self.with_collection(a, serde_json::json!({ "name": name, "n": n }))
+        else {
+            return;
+        };
+        self.devices[a].set_preference(COLLECTIONS, &ours).unwrap();
+        self.done(a);
+        self.push(a);
+        fix(Some(t + 3));
+        let n = self.n;
+        self.n += 1;
+        let Some(theirs) = self.with_collection(c, serde_json::json!({ "name": name, "n": n }))
+        else {
+            return;
+        };
+        self.devices[c]
+            .set_preference(COLLECTIONS, &theirs)
+            .unwrap();
+        self.done(c);
+        self.push(c);
+        self.now += 4;
+        self.as_device(a);
+        let p_id = self.devices[p].device_id().unwrap();
+        let mut seen: Vec<(String, u64)> = damaged.iter().map(|s| (p_id.clone(), *s)).collect();
+        self.sync_seeing(a, &seen);
+        seen.extend(self.files(c));
+        self.sync_seeing(a, &seen);
+        // A's own item and C's, both held while P's damaged value is in place.
+        let held = self.devices[a]
+            .sync_held()
+            .unwrap()
+            .iter()
+            .filter(|h| matches!(&h.change.after, Some(Row::Collection(item)) if item.name == name))
+            .count();
+        self.sync_all(a);
+        if held >= 2 {
+            self.stats.held_own_items += 1;
+        }
+    }
+
+    /// The sync merge fix's seed 126745: Y, at a clock more than a day ahead of everyone's,
+    /// adds an item; Z edits it (stamped just after Y's clock); Y, never seeing Z's edit,
+    /// deletes it and adds its own again, so Z keeps its edit as "Name (2)" (D6); then X's
+    /// whole value, written at a far clock just before Y's item, reaches Z: Z's edit is later
+    /// than it, and must stay.
+    fn far_base_after_re_add_step(&mut self, rng: &mut Rng) {
+        let Some((y, z, x)) = self.three_joined(rng) else {
+            return;
+        };
+        if ![y, z, x].iter().all(|e| self.collections_in_shape(*e)) {
+            return;
+        }
+        for e in [x, y, z] {
+            self.as_device(e);
+            self.sync_all(e);
+        }
+        let name = *rng.pick(NAMES).unwrap();
+        let far = self.after_all() + 2 * SKEW_MS;
+        fix(Some(far - 2));
+        let value = self.devices[x].preference(COLLECTIONS).unwrap();
+        self.devices[x]
+            .set_preference(COLLECTIONS, rng.pick(DAMAGED).unwrap())
+            .unwrap();
+        self.stats.damaged += 1;
+        fix(Some(far - 1));
+        self.devices[x]
+            .set_preference(COLLECTIONS, value.as_deref().unwrap_or("[]"))
+            .unwrap();
+        self.stats.fixed += 1;
+        self.done(x);
+        let x_files = self.push_device(x);
+        fix(Some(far));
+        let n = self.n;
+        self.n += 1;
+        let Some(added) = self.with_collection(y, serde_json::json!({ "name": name, "n": n }))
+        else {
+            return;
+        };
+        self.devices[y].set_preference(COLLECTIONS, &added).unwrap();
+        self.done(y);
+        self.push(y);
+        // Z sees every file but X's new ones.
+        let x_id = self.devices[x].device_id().unwrap();
+        let not_x = |w: &World| -> Vec<(String, u64)> {
+            (0..w.devices.len())
+                .filter(|e| *e != z)
+                .flat_map(|e| w.files(e))
+                .filter(|(id, seq)| *id != x_id || !x_files.contains(seq))
+                .collect()
+        };
+        self.as_device(z);
+        let seen = not_x(self);
+        self.sync_seeing(z, &seen);
+        let n = self.n;
+        self.n += 1;
+        let Some(mut items) = self.collection_values(z) else {
+            return;
+        };
+        let Some(item) = items.iter_mut().find(|it| it["name"] == name) else {
+            return;
+        };
+        item["n"] = n.into();
+        self.devices[z]
+            .set_preference(COLLECTIONS, &serde_json::to_string(&items).unwrap())
+            .unwrap();
+        self.done(z);
+        self.push(z);
+        // Its snapshot holds the edit as a version (an op without `before`), so the
+        // invariants count it among the Collections that must survive.
+        super::snapshot::write_snapshot(&self.devices[z], &self.folder).unwrap();
+        fix(Some(far + 500));
+        let Some(without) = self.without_collection(y, name) else {
+            return;
+        };
+        self.devices[y]
+            .set_preference(COLLECTIONS, &without)
+            .unwrap();
+        fix(Some(far + 1_000));
+        let n = self.n;
+        self.n += 1;
+        if let Some(again) = self.with_collection(y, serde_json::json!({ "name": name, "n": n })) {
+            self.devices[y].set_preference(COLLECTIONS, &again).unwrap();
+        }
+        self.done(y);
+        self.push(y);
+        self.now += 1;
+        self.as_device(z);
+        let seen = not_x(self);
+        self.sync_seeing(z, &seen);
+        self.sync_all(z);
+        self.stats.far_bases += 1;
+    }
+
+    /// The sync merge fix's seed 3146456: D adds an item and takes a Backup, then deletes the
+    /// item; E joins late, its snapshot holding that delete; D adds another item of the name
+    /// and restores the Backup, catching up: E's snapshot (merged first, D's Backup never met
+    /// E) brings the delete with no `before`, covering the Backup's item. The later item must
+    /// stay.
+    fn snapshot_delete_step(&mut self, rng: &mut Rng) {
+        let n = self.devices.len();
+        let late: Vec<usize> = (0..n).filter(|e| !self.joined[*e]).collect();
+        let Some(&e) = rng.pick(&late) else {
+            return;
+        };
+        let joined: Vec<usize> = (0..n).filter(|d| self.joined[*d]).collect();
+        let Some(&d) = rng.pick(&joined) else {
+            return;
+        };
+        if !self.collections_in_shape(d) {
+            return;
+        }
+        let name = *rng.pick(NAMES).unwrap();
+        self.as_device(d);
+        let k = self.n;
+        self.n += 1;
+        let Some(added) = self.with_collection(d, serde_json::json!({ "name": name, "n": k }))
+        else {
+            return;
+        };
+        self.devices[d].set_preference(COLLECTIONS, &added).unwrap();
+        self.done(d);
+        self.push(d);
+        self.take_backup(d, rng);
+        self.now += 1;
+        self.as_device(d);
+        let Some(without) = self.without_collection(d, name) else {
+            return;
+        };
+        self.devices[d]
+            .set_preference(COLLECTIONS, &without)
+            .unwrap();
+        self.done(d);
+        self.push(d);
+        self.now += 1;
+        self.as_device(e);
+        self.sync_now(e);
+        super::snapshot::write_snapshot(&self.devices[e], &self.folder).unwrap();
+        self.now += 1;
+        self.as_device(d);
+        let k = self.n;
+        self.n += 1;
+        let again = self.with_collection(d, serde_json::json!({ "name": name, "n": k }));
+        if let Some(again) = &again {
+            self.devices[d].set_preference(COLLECTIONS, again).unwrap();
+            self.done(d);
+        }
+        self.push(d);
+        let backup = self.backups[d].take().unwrap();
+        self.restore(d, backup, RestoreChoice::CatchUp);
+        if again.is_some() {
+            self.stats.snapshot_deletes += 1;
+        }
+    }
+
+    /// The sync merge fix's seed 5007792: A writes T over a Note and takes a Backup (it never
+    /// met E); P, not seeing T, writes V later; E joins late, its snapshot holding V; A meets
+    /// V and keeps T as a Sync conflict's copy, edits the copy, and restores the Backup,
+    /// catching up. The copy's edit must survive.
+    fn edited_copy_step(&mut self, rng: &mut Rng) {
+        let n = self.devices.len();
+        let late: Vec<usize> = (0..n).filter(|e| !self.joined[*e]).collect();
+        let Some(&e) = rng.pick(&late) else {
+            return;
+        };
+        let mut joined: Vec<usize> = (0..n).filter(|d| self.joined[*d]).collect();
+        if joined.len() < 2 {
+            return;
+        }
+        let a = joined.remove(rng.below(joined.len()));
+        let p = joined.remove(rng.below(joined.len()));
+        // A Note both have: A makes one when there is none.
+        self.as_device(a);
+        let nb = self.devices[a].notebooks().unwrap().remove(0);
+        let body = self.text("copied first");
+        let made = Annotation {
+            id: new_id(),
+            notebook_id: nb.id,
+            content: Content::Note { body },
+            anchor: None,
+            created_at: 7,
+            modified_at: 7,
+            conflict_of: None,
+        };
+        self.devices[a]
+            .apply_changes(&[Change::insert(Row::Annotation(made.clone()))])
+            .unwrap();
+        self.done(a);
+        self.push(a);
+        self.now += 1;
+        self.as_device(p);
+        self.sync_all(p);
+        let Some(note) = self.devices[a].annotation(&made.id).unwrap() else {
+            return;
+        };
+        if self.devices[p].annotation(&made.id).unwrap().is_none() {
+            return;
+        }
+        self.now += 1;
+        self.as_device(a);
+        self.edit_text(a, &note, "copied T by A");
+        let t = self.devices[a].annotation(&note.id).unwrap().unwrap();
+        self.take_backup(a, rng);
+        fix(Some(self.after_all()));
+        let theirs = self.devices[p].annotation(&note.id).unwrap().unwrap();
+        self.edit_text(p, &theirs, "copied V by P");
+        self.push(p);
+        self.now += 1;
+        self.as_device(e);
+        self.sync_now(e);
+        super::snapshot::write_snapshot(&self.devices[e], &self.folder).unwrap();
+        self.now += 1;
+        fix(Some(self.after_all()));
+        self.sync_all(a);
+        let copy = self.devices[a]
+            .annotations(None)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.conflict_of.as_deref() == Some(note.id.as_str()) && c.body() == t.body());
+        let edited = copy.is_some();
+        if let Some(copy) = copy {
+            self.edit_text(a, &copy, "copy edited by A");
+        }
+        self.push(a);
+        self.now += 1;
+        self.as_device(a);
+        let backup = self.backups[a].take().unwrap();
+        self.restore(a, backup, RestoreChoice::CatchUp);
+        if edited {
+            self.stats.edited_copies += 1;
+        }
+    }
+
+    /// The sync merge fix review's P0: C's database is copied to D, whose Backup is taken
+    /// before D finds it is a copy (so it never meets the id D then takes); C writes on and D
+    /// takes a new id; D writes T over a Note; C, never seeing T, writes V later; D meets V,
+    /// keeps T as a Sync conflict's copy and edits the copy (or, half the time, does not meet
+    /// V first: seed 891); then D restores the Backup and catches up, meeting the id it took
+    /// only through that id's snapshot. The copy's edit (or T) must survive.
+    fn copy_backup_step(&mut self, rng: &mut Rng) {
+        if self.devices.len() >= 4 {
+            return;
+        }
+        let joined: Vec<usize> = (0..self.devices.len())
+            .filter(|c| self.joined[*c])
+            .collect();
+        let Some(&c) = rng.pick(&joined) else {
+            return;
+        };
+        self.as_device(c);
+        let nb = self.devices[c].notebooks().unwrap().remove(0);
+        let body = self.text("copied first");
+        let made = Annotation {
+            id: new_id(),
+            notebook_id: nb.id,
+            content: Content::Note { body },
+            anchor: None,
+            created_at: 7,
+            modified_at: 7,
+            conflict_of: None,
+        };
+        self.devices[c]
+            .apply_changes(&[Change::insert(Row::Annotation(made.clone()))])
+            .unwrap();
+        self.done(c);
+        self.push(c);
+        let c_id = self.devices[c].device_id().unwrap();
+        let d = self.copy_device(c, rng);
+        let backup = (
+            self.devices[d].copy_in_memory().unwrap(),
+            self.archived_op_files(),
+        );
+        // C writes on, so D finds a file under its id it did not write and takes a new id.
+        self.now += 1;
+        self.as_device(c);
+        let nb = Notebook {
+            id: new_id(),
+            name: (*rng.pick(NAMES).unwrap()).into(),
+            is_default: false,
+            show_in_text: true,
+            created_at: 5,
+            modified_at: 5,
+        };
+        self.deletable.insert(nb.id.clone());
+        self.devices[c]
+            .apply_changes(&[Change::insert(Row::Notebook(nb))])
+            .unwrap();
+        self.done(c);
+        self.push(c);
+        self.now += 1;
+        self.as_device(d);
+        self.sync_now(d);
+        let d_id = self.devices[d].device_id().unwrap();
+        assert_ne!(d_id, c_id, "device {d}: a copy keeps its original's id");
+        self.stats.copies += 1;
+        self.now += 1;
+        self.as_device(c);
+        self.sync_all(c);
+        self.now += 1;
+        self.as_device(d);
+        self.sync_all(d);
+        let (Some(ours), Some(theirs)) = (
+            self.devices[d].annotation(&made.id).unwrap(),
+            self.devices[c].annotation(&made.id).unwrap(),
+        ) else {
+            return;
+        };
+        self.edit_text(d, &ours, "copied T by D");
+        let t = self.devices[d].annotation(&made.id).unwrap().unwrap();
+        self.push(d);
+        fix(Some(self.after_all()));
+        self.edit_text(c, &theirs, "copied V by C");
+        self.push(c);
+        let mut edited = false;
+        if rng.below(2) == 0 {
+            self.now += 1;
+            fix(Some(self.after_all()));
+            self.sync_all(d);
+            let copy = self.devices[d]
+                .annotations(None)
+                .unwrap()
+                .into_iter()
+                .find(|a| {
+                    a.conflict_of.as_deref() == Some(made.id.as_str()) && a.body() == t.body()
+                });
+            if let Some(copy) = copy {
+                self.edit_text(d, &copy, "copy edited by D");
+                edited = true;
+            }
+            self.push(d);
+        }
+        self.now += 1;
+        self.as_device(d);
+        let unmet = backup.0.merged_up_to(&d_id).unwrap().is_none()
+            && super::snapshot::newest_snapshot(&self.folder, &d_id)
+                .unwrap()
+                .is_some();
+        self.restore(d, backup, RestoreChoice::CatchUp);
+        if edited && unmet {
+            self.stats.unmet_id_backups += 1;
+        }
     }
 
     /// One random change on device `d`, planned from what it holds.
@@ -1782,6 +2277,12 @@ fn check_case(
             9 => world.late_backup_step(&mut rng),
             11 => world.copy_step(&mut rng),
             13 => world.mend_step(&mut rng),
+            15 => world.held_own_item_step(&mut rng),
+            17 => world.far_base_after_re_add_step(&mut rng),
+            19 => world.snapshot_delete_step(&mut rng),
+            21 | 23 => world.edited_copy_step(&mut rng),
+            25 => world.snapshot_delete_step(&mut rng),
+            27 => world.copy_backup_step(&mut rng),
             n if n % 4 == 0 => world.sync(d, &mut rng),
             _ => world.edit(d, &mut rng),
         }
@@ -2195,7 +2696,9 @@ fn run(cases: u64, name: &str) {
          Q1 sequence {}, D7 sequence {}, D3 sequence {}; late joins {}, snapshots merged {} ({} for files \
          trimmed), own op files trimmed {}, restores catching up {}, replacing {}; Backups \
          before a late join restored {}, databases copied {}, Backups with a base {}, \
-         snapshots written again {}",
+         snapshots written again {}; the sync merge fix's sequences: own items held {}, far \
+         bases after a re-add {}, snapshot deletes on a restore {}, copies edited then \
+         restored {}, Backups from before the new id was met {}",
         stats.outcomes,
         stats.retried,
         stats.renamed_layouts,
@@ -2220,6 +2723,11 @@ fn run(cases: u64, name: &str) {
         stats.copies,
         stats.based_backups,
         stats.mended,
+        stats.held_own_items,
+        stats.far_bases,
+        stats.snapshot_deletes,
+        stats.edited_copies,
+        stats.unmet_id_backups,
     );
     for outcome in [
         Outcome::Written,
@@ -2279,6 +2787,23 @@ fn run(cases: u64, name: &str) {
             stats.based_backups,
         ),
         ("a damaged snapshot written again", stats.mended),
+        (
+            "an own item held while its list was damaged, then one of its name",
+            stats.held_own_items,
+        ),
+        ("a far base after an own item's re-add", stats.far_bases),
+        (
+            "a snapshot's delete of an own item on a restore",
+            stats.snapshot_deletes,
+        ),
+        (
+            "a Sync conflict's copy edited, then a restore",
+            stats.edited_copies,
+        ),
+        (
+            "a Backup from before the new id was met",
+            stats.unmet_id_backups,
+        ),
     ] {
         assert!(n > 0, "no case reached {what}");
     }

@@ -190,9 +190,10 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
     ids.sort();
     let mut report = MergeReport::default();
     retry_held(user, &mut report)?;
-    // Snapshots first (ADR 0022 rule 5): a device not met yet, or whose op files after the
-    // last merged here are gone, is merged from its newest snapshot, which also says how far
-    // it covers the other devices' files.
+    // Snapshots before other devices' op files (ADR 0022 rule 5): a device not met yet, or
+    // whose op files after the last merged here are gone, is merged from its newest
+    // snapshot, which also says how far it covers the other devices' files.
+    let own_ids = user.own_device_ids()?;
     let mut ready = Vec::new();
     let mut snapshots = Vec::new();
     let mut no_snapshot = Vec::new();
@@ -205,18 +206,43 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             SnapshotStep::Merge(seq, contents) => snapshots.push((id, seq, contents)),
         }
     }
-    // A snapshot that waits (for a row another device's file brings) is tried again after
-    // the others.
+    // This device's former ids first (a restore or a copy gave it a new id), before any
+    // other snapshot too, the last given up first (`own_device_ids`), each with its snapshot
+    // (a former id this database never met) before its op files: they are its own history,
+    // so their versions are here as its own before another device's replace them, and the
+    // own checks see them (ADR 0022 rule 7). Another snapshot, or an older former id's later
+    // files (after a copy, the other copy's), merged first could make the merge record
+    // again, at a new clock, a row the last id made and later edited (a Sync conflict's copy,
+    // an item kept), and that record would beat the later edit. A former id's snapshot that
+    // waits is tried again with the others, its files after it.
     let mut waits: Vec<Option<String>> = vec![None; snapshots.len()];
     let mut merged = vec![false; snapshots.len()];
+    let mut pending = Vec::new();
+    for id in &own_ids {
+        if let Some(i) = snapshots.iter().position(|(s, _, _)| s == id) {
+            let (_, seq, contents) = &snapshots[i];
+            waits[i] = snapshot_waits(user, *seq, contents, &mut report)?;
+            if waits[i].is_some() {
+                continue;
+            }
+            merged[i] = true;
+        } else if !ready.contains(id) {
+            continue;
+        }
+        pending.push(pending_of(user, folder, id, &mut report)?);
+        merge_pending(user, &mut pending, &mut report)?;
+    }
+    ready.retain(|id| !own_ids.contains(id));
+    // A snapshot that waits (for a row another device's file brings) is tried again after
+    // the others.
     loop {
         let mut progress = false;
         for (i, (id, seq, contents)) in snapshots.iter().enumerate() {
             if merged[i] {
                 continue;
             }
-            match merge_snapshot(user, *seq, contents, &mut report) {
-                Ok(()) => {
+            match snapshot_waits(user, *seq, contents, &mut report)? {
+                None => {
                     if waits[i].take().is_some() {
                         report.retried += 1;
                     }
@@ -224,11 +250,7 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
                     ready.push(id.clone());
                     progress = true;
                 }
-                Err(
-                    MergeError::Waits(why)
-                    | MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why)),
-                ) => waits[i] = Some(why),
-                Err(MergeError::Store(e)) => return Err(e.into()),
+                why => waits[i] = why,
             }
         }
         if !progress {
@@ -249,24 +271,66 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             report.stopped.push((id, 0, OpsStop::NoSnapshot));
         }
     }
-    // This device's former ids first (a restore or a copy gave it a new id): their op files
-    // are its own history, so their versions are here as its own before another device's
-    // replace them, and the own checks see them (ADR 0022 rule 7).
-    let own_ids = user.own_device_ids()?;
-    ready.sort_by_key(|id| (!own_ids.contains(id), id.clone()));
-    let mut pending: Vec<Pending> = Vec::new();
+    // Former ids whose snapshot waited above and merged since go first again, the last
+    // given up first.
+    let former_rank = |id: &String| own_ids.iter().position(|o| o == id).unwrap_or(usize::MAX);
+    ready.sort_by_key(|id| (former_rank(id), id.clone()));
     for id in ready {
-        let ops = read_ops_after(folder, &id, user.applied_up_to(&id)?)?;
-        if let Some((seq, stop)) = ops.stopped {
-            report.stopped.push((id.clone(), seq, stop));
-        }
-        pending.push((id, ops.files.into(), None));
+        pending.push(pending_of(user, folder, &id, &mut report)?);
     }
+    merge_pending(user, &mut pending, &mut report)?;
+    for (device, files, waits) in pending {
+        if let (Some((seq, _)), Some(why)) = (files.front(), waits) {
+            report.waiting.push((device, *seq, why));
+        }
+    }
+    retry_held(user, &mut report)?;
+    Ok(report)
+}
+
+/// Merge a snapshot: why it waits (for a row another device's file brings), if it does.
+fn snapshot_waits(
+    user: &UserStore,
+    seq: u64,
+    contents: &obs_store::SnapshotContents,
+    report: &mut MergeReport,
+) -> Result<Option<String>, SyncError> {
+    match merge_snapshot(user, seq, contents, report) {
+        Ok(()) => Ok(None),
+        Err(
+            MergeError::Waits(why)
+            | MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why)),
+        ) => Ok(Some(why)),
+        Err(MergeError::Store(e)) => Err(e.into()),
+    }
+}
+
+/// The op files of `device` after the last merged here, to merge.
+fn pending_of(
+    user: &UserStore,
+    folder: &dyn SyncFolder,
+    device: &str,
+    report: &mut MergeReport,
+) -> Result<Pending, SyncError> {
+    let ops = read_ops_after(folder, device, user.applied_up_to(device)?)?;
+    if let Some((seq, stop)) = ops.stopped {
+        report.stopped.push((device.to_string(), seq, stop));
+    }
+    Ok((device.to_string(), ops.files.into(), None))
+}
+
+/// Merge the `pending` op files, each device's in order, pass after pass while any merges: a
+/// file that waits for another device's rows is tried again after the others.
+fn merge_pending(
+    user: &UserStore,
+    pending: &mut [Pending],
+    report: &mut MergeReport,
+) -> Result<(), SyncError> {
     loop {
         let mut progress = false;
-        for (device, files, waits) in &mut pending {
+        for (device, files, waits) in pending.iter_mut() {
             while let Some((seq, ops)) = files.front() {
-                match merge_file(user, device, *seq, ops, &mut report) {
+                match merge_file(user, device, *seq, ops, report) {
                     Ok(()) => {
                         report.merged.push((device.clone(), *seq));
                         files.pop_front();
@@ -292,16 +356,9 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             }
         }
         if !progress {
-            break;
+            return Ok(());
         }
     }
-    for (device, files, waits) in pending {
-        if let (Some((seq, _)), Some(why)) = (files.front(), waits) {
-            report.waiting.push((device, *seq, why));
-        }
-    }
-    retry_held(user, &mut report)?;
-    Ok(report)
 }
 
 /// What a merge does first about another device's files.
@@ -649,7 +706,7 @@ fn merge_write(
     if let Some(item) = lost_item
         && let Some(renamed) = tx.renamed_for_clash(&item)?
     {
-        tx.record(&[Change::insert(renamed)])?;
+        tx.record_after(&[Change::insert(renamed)], state.clock.as_ref())?;
         recorded.items_renamed += 1;
     }
     Ok(Outcome::Written)
@@ -660,9 +717,11 @@ fn merge_write(
 /// delete covering it that is not this op's own version): the device that wrote it would have
 /// kept its Note text as a Sync conflict's copy (D2) or its list item as "Name (2)", or under
 /// its own name against a delete (D6), when that version replaced it. That device is this one
-/// now, so this one does, whatever order the ops come in. Nothing when the version here is
-/// this device's own (by any of its ids: it came after the op) or holds the op's text. Such a
-/// copy may be one no one needed (the other device had seen the op's text), which is safe.
+/// now, so this one does, whatever order the ops come in. Nothing when the version here came
+/// after the op in this device's own history (its id now, the op's id, or a former id given up
+/// after the op's: [`MergeTx::is_own_after`]; an older former id's can be a copied database's
+/// original's) or holds the op's text. Such a copy may be one no one needed (the other device
+/// had seen the op's text), which is safe.
 fn former_own_lost(
     tx: &mut MergeTx<'_>,
     op: &Op,
@@ -677,17 +736,20 @@ fn former_own_lost(
     if state
         .clock
         .as_ref()
-        .is_some_and(|c| tx.is_own(&c.device_id))
+        .is_some_and(|c| tx.is_own_after(&c.device_id, writer))
     {
         return Ok(());
     }
     if state.row.is_none()
         && state.tombstone.as_ref().is_some_and(|t| {
             t.covers.as_ref() == Some(&op.clock)
-                || t.covers.as_ref().is_some_and(|c| tx.is_own(&c.device_id))
+                || t.covers
+                    .as_ref()
+                    .is_some_and(|c| tx.is_own_after(&c.device_id, writer))
         })
     {
-        // The delete removed this version, or a later one of this device's: it had seen it.
+        // The delete removed this version, or a later one of this device's own history: it
+        // had seen it.
         return Ok(());
     }
     match (after, &state.row) {
@@ -726,14 +788,14 @@ fn former_own_lost(
             if here.json != mine.json
                 && let Some(renamed) = tx.renamed_for_clash(after)?
             {
-                tx.record(&[Change::insert(renamed)])?;
+                tx.record_after(&[Change::insert(renamed)], Some(&op.clock))?;
                 recorded.items_renamed += 1;
             }
         }
         (Row::Collection(_) | Row::CopyPreset(_) | Row::SavedSearch(_), None) => {
             // Deleted by a delete that never saw it: recorded again under its own name, after
-            // what the tombstone covers.
-            tx.record(&[Change::insert(after.clone())])?;
+            // what the tombstone covers and the op's own clock.
+            tx.record_after(&[Change::insert(after.clone())], Some(&op.clock))?;
             recorded.items_kept += 1;
         }
         _ => {}
@@ -810,7 +872,8 @@ fn conflict_copy(
 
 /// This device's own list item here (a Collection, Copy preset or Saved search: the row's
 /// clock is this device's) that `op` had not seen: it is an add (no `before`), or its `before`
-/// is another version (its `before_clock` not this row's clock, its JSON another).
+/// is another version (its `before_clock` not this row's clock, its JSON another). A delete
+/// with no `before` (a snapshot's tombstone) had seen it when it covers this row's clock.
 fn own_unseen_item<'s>(
     tx: &MergeTx<'_>,
     op: &Op,
@@ -825,6 +888,7 @@ fn own_unseen_item<'s>(
         return None;
     }
     let unseen = match &op.before {
+        None if op.after.is_none() => op.before_clock != state.clock,
         None => true,
         Some(Row::Collection(before) | Row::CopyPreset(before) | Row::SavedSearch(before)) => {
             op.before_clock != state.clock && before.json != ours.json
@@ -836,7 +900,7 @@ fn own_unseen_item<'s>(
 
 /// This device's own list item that `op`, another device's write of an item of that name with
 /// other JSON, replaces without having seen it ([`own_unseen_item`], D6). It is recorded
-/// again under a free name. So two devices' concurrent edits of one item keep both, the
+/// again under a free name, after its own clock ([`MergeTx::record_after`]). So two devices' concurrent edits of one item keep both, the
 /// earlier as "Name (2)", as D2 keeps both Note texts.
 fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> Option<Row> {
     let ours = own_unseen_item(tx, op, state)?;

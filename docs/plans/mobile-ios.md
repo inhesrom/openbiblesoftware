@@ -1961,6 +1961,57 @@ under the half they belong to.
   166 passed; `cargo test -p obs-engine sync` 73 passed, 1 ignored; clippy clean;
   `cargo xtask ci` green (8 m 20 s; 2,436 tests passed, 43 ignored; fmt, layers, assets,
   licenses, clippy, a11y, test, wasm).
+  **Sync merge fix (2026-11-24, branch `mobile/sync-merge-fix`, after S29b; supervisor
+  decisions):** S29b's lost Collection (`OBS_MERGE_SEED=20266453`, there since S28c) and five
+  more losses the 10k runs then found, all in the list-item and former-id rules, each shrunk to
+  a test that failed before its fix (`sync.md` "Merging", "Ops held back", "Restores and
+  copies", Evidence). (1) 20266453: an own Collection held while its list was damaged was
+  dropped when another device's later item of its name was held (S28b-2 review P2-5's "only the
+  newest held write"); `MergeTx::hold` now keeps this device's own held writes, so D6 renames
+  it "(2)" when both apply. (2) 126745: D6's "(2)" (and an item kept against a delete) got an
+  ordinary clock below a far-ahead edit, and a base merged later superseded it; the re-add is
+  stamped after the version it keeps (`MergeTx::record_after`). (3) 3146456: a snapshot's delete
+  with no `before` covering an own item counted as unseen and brought it back at a new clock,
+  beating the old id's later item; unseen now means `before_clock` is not the row's clock, as
+  documented. (4) 5007792: snapshots merged before the former ids' files, so a restore re-made a
+  Sync conflict's copy at a new clock that beat its edit; former ids' files now merge before the
+  snapshots. (5) 7744: of two former ids the older (after a copy, the original's live id) merged
+  first, with the same result; **migration 18** (`USER_SCHEMA_VERSION` 18) adds
+  `former_device.seq`, the order the ids were given up (v17 rows numbered by id; a restore numbers
+  them oldest first, a copy detection the next; Backups carry it), and former ids' files merge
+  the last given up first. (6) 891: `former_own_lost` took any own id's version as later than a
+  former id's op; now only the current id's, the op's own id's or a later-given-up id's
+  (`MergeTx::is_own_after`), so an older former id's version (a copy's original's) no longer
+  hides the loss; the cost, a copy no one needed when such a version really came after (a clock
+  running ahead), is safe. No D2/D6/D7/Replace rule changed. **Tests:** `merge_tests` +3,
+  `lifecycle_tests` +5, store `sync_clock_db` +1 (migration 18 through restores, a copy
+  detection and a Backup); `merge_props` gained the first four sequences as generator steps
+  (about 196, 194, 86 and 48 per 1k cases, each a reach check). Mutation checks: undoing (1),
+  (2) or (4) fails the 1k run; (3) fails its unit test only ((4) keeps the restore sequence from
+  reaching it). 10k runs after the fixes, 20 seeds in a row green (1, 7, 42, 99, 777, 1234,
+  4321, 65536, 100000, 2,000,000, 3,000,000, 7,000,000, 8,000,000, 9,000,000, 10,000,000,
+  11,111,111, 22,222,222, 33,333,333, 44,444,444, 20261122; 20266453, 123456, 3141592,
+  5000000, 31337, 271828 and 424242 green before the last fix). Measured: 1k props 19 s, 10k
+  about 250 s (four at once); `cargo test -p obs-store --all-features` 172 passed, 3 ignored;
+  `cargo test -p obs-engine sync` 102 passed, 2 ignored; clippy and the wasm check clean;
+  `cargo xtask sync-e2e` green (2 m 43 s); `cargo xtask ci` green (11 m 41 s; 2,476 tests
+  passed, 44 ignored).
+  **Review fixes (same branch):** the review blocked on one P0: the 891 fix lost a copy's
+  edited Sync conflict's copy when the copy restored a Backup from before it took its new id
+  (that id met only through its snapshot, which merged after the original's files). A former
+  id's snapshot now merges with its op files, the last given up first, before older former
+  ids and other snapshots (a snapshot that waits is retried as before). `MergeTx::hold` keeps
+  an older own held write beside a newer one only when the newer is not of its id or a later
+  one of this device's (`held_beside`), so a copy's original adds no "(2)" no one needed and
+  no pile of held writes. New: `lifecycle_tests` +3 (the P0, a restore chain x → y → z, the
+  3146456 rule end to end through a former id's own snapshot), `merge_tests` +2;
+  `merge_props` gained `copy_backup_step` (about 183 per 1k) and its reach checks count only
+  sequences reached. Undoing the snapshot order fails the 1k run. The case left (a former
+  id's snapshot or file that waits for a row another snapshot brings) is documented in
+  `sync.md`. 10k runs green at 20 seeds (20266453, 123456, 3141592, 5000000, 7744, 891, 1,
+  42 and 12 new); `cargo test -p obs-store --all-features` 172 passed, 3 ignored; `cargo test
+  -p obs-engine sync` 112 passed, 2 ignored; `cargo xtask sync-e2e` green (89 s); `cargo
+  xtask ci` green (9 m 8 s; 2,486 tests passed, 44 ignored).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 
@@ -2141,7 +2192,7 @@ under the half they belong to.
   **`OBS_MERGE_SEED=20266453`** (case 0: "the Collection {"n":5} added at
   01a3189b1d7d-0000-01a3189b-1106-7389-ab3f-8a0111211392 was lost"; case 5331 of a 10k run
   from 20261122); it fails the same at `d468f1b` (S29, before S29b, on one connection), so it
-  is the merge's: a fix-up step on the sync stack takes it (`sync.md` "Known issue").
+  is the merge's: a fix-up step on the sync stack takes it (`sync.md` "Known issue") (fixed: see the Sync merge fix under S28c's Outcome).
   `sync-e2e` makes a Notebook named "Mac B" on B (there at `d468f1b` too, not checked by the
   e2e). **Verified:** `cargo test -p obs-store --all-features`; `cargo test -p obs-engine
   --lib sync`; the merge property tests, 1,000 cases and 10,000 from the default seed and
