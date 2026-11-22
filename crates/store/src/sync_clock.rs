@@ -45,8 +45,13 @@ pub(crate) struct SyncColumns {
 
 /// How a `Change` applied gets its clock.
 pub(crate) enum Stamp<'a> {
-    /// Made on this device: the next clock, kept in the outbox while `recording`.
-    Local { recording: bool },
+    /// Made on this device: the next clock, kept in the outbox while `recording`; with
+    /// `after`, a clock after it too (the merge's re-add of an own list item comes after the
+    /// version it keeps).
+    Local {
+        recording: bool,
+        after: Option<&'a Hlc>,
+    },
     /// Merged from another device's op: the op's clock, and for a delete the clock of the
     /// version it removed (`None`: one from before clocks).
     Merged {

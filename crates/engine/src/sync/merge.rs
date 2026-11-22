@@ -649,7 +649,7 @@ fn merge_write(
     if let Some(item) = lost_item
         && let Some(renamed) = tx.renamed_for_clash(&item)?
     {
-        tx.record(&[Change::insert(renamed)])?;
+        tx.record_after(&[Change::insert(renamed)], state.clock.as_ref())?;
         recorded.items_renamed += 1;
     }
     Ok(Outcome::Written)
@@ -726,14 +726,14 @@ fn former_own_lost(
             if here.json != mine.json
                 && let Some(renamed) = tx.renamed_for_clash(after)?
             {
-                tx.record(&[Change::insert(renamed)])?;
+                tx.record_after(&[Change::insert(renamed)], Some(&op.clock))?;
                 recorded.items_renamed += 1;
             }
         }
         (Row::Collection(_) | Row::CopyPreset(_) | Row::SavedSearch(_), None) => {
             // Deleted by a delete that never saw it: recorded again under its own name, after
-            // what the tombstone covers.
-            tx.record(&[Change::insert(after.clone())])?;
+            // what the tombstone covers and the op's own clock.
+            tx.record_after(&[Change::insert(after.clone())], Some(&op.clock))?;
             recorded.items_kept += 1;
         }
         _ => {}
@@ -810,7 +810,8 @@ fn conflict_copy(
 
 /// This device's own list item here (a Collection, Copy preset or Saved search: the row's
 /// clock is this device's) that `op` had not seen: it is an add (no `before`), or its `before`
-/// is another version (its `before_clock` not this row's clock, its JSON another).
+/// is another version (its `before_clock` not this row's clock, its JSON another). A delete
+/// with no `before` (a snapshot's tombstone) had seen it when it covers this row's clock.
 fn own_unseen_item<'s>(
     tx: &MergeTx<'_>,
     op: &Op,
@@ -825,6 +826,7 @@ fn own_unseen_item<'s>(
         return None;
     }
     let unseen = match &op.before {
+        None if op.after.is_none() => op.before_clock != state.clock,
         None => true,
         Some(Row::Collection(before) | Row::CopyPreset(before) | Row::SavedSearch(before)) => {
             op.before_clock != state.clock && before.json != ours.json
@@ -836,7 +838,7 @@ fn own_unseen_item<'s>(
 
 /// This device's own list item that `op`, another device's write of an item of that name with
 /// other JSON, replaces without having seen it ([`own_unseen_item`], D6). It is recorded
-/// again under a free name. So two devices' concurrent edits of one item keep both, the
+/// again under a free name, after its own clock ([`MergeTx::record_after`]). So two devices' concurrent edits of one item keep both, the
 /// earlier as "Name (2)", as D2 keeps both Note texts.
 fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> Option<Row> {
     let ours = own_unseen_item(tx, op, state)?;

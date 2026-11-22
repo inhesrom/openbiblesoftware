@@ -709,7 +709,10 @@ impl UserStore {
                 &mut lists,
                 columns,
                 change,
-                &Stamp::Local { recording },
+                &Stamp::Local {
+                    recording,
+                    after: None,
+                },
                 false,
             )?;
         }
@@ -767,10 +770,11 @@ impl UserStore {
             None
         };
         // What a local write must come after, so every device's merge takes it: the version
-        // it replaces, (a row made again) what its tombstone covers, and (a list item) its
-        // list's base, which supersedes every item op at or before it.
+        // it replaces, (a row made again) what its tombstone covers, (a list item) its list's
+        // base, which supersedes every item op at or before it, and (the merge's re-add of an
+        // own list item) the version it keeps.
         let replaced = match stamp {
-            Stamp::Local { .. } if columns.schema_15 => {
+            Stamp::Local { after, .. } if columns.schema_15 => {
                 let base = match ListPreference::of_row(&key) {
                     Some(list) if columns.schema_16 => read_list_base(tx, &list)?,
                     _ => None,
@@ -780,6 +784,7 @@ impl UserStore {
                     .and_then(Hlc::parse)
                     .max(read_tombstone_covers(tx, &key)?)
                     .max(base)
+                    .max(after.cloned())
             }
             _ => None,
         };
@@ -828,7 +833,7 @@ impl UserStore {
             (key, _, after) => write_synced_row(tx, lists, key, after.as_ref())?,
         }
         let (clock, covers) = match stamp {
-            Stamp::Local { recording } if columns.clocks => {
+            Stamp::Local { recording, .. } if columns.clocks => {
                 let clock = self.next_clock_after(tx, replaced.as_ref())?;
                 stamp_row(tx, &key, change, &clock, columns)?;
                 if *recording {

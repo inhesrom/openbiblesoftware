@@ -376,9 +376,22 @@ impl MergeTx<'_> {
     /// records ops): what the merge decides here for every device, such as a rename for a name
     /// clash. The default Notebook may stop being the default.
     pub fn record(&mut self, changes: &[Change]) -> Result<(), StoreError> {
+        self.record_after(changes, None)
+    }
+
+    /// [`MergeTx::record`], each clock also after `kept`: the clock of the version of this
+    /// device's own list item that a re-add (D6's "Name (2)", or under its own name against a
+    /// delete) keeps. A list base later than the re-add then also supersedes the version it
+    /// keeps, so a base merged afterwards never drops a version written after it.
+    pub fn record_after(
+        &mut self,
+        changes: &[Change],
+        kept: Option<&Hlc>,
+    ) -> Result<(), StoreError> {
         let columns = self.store.sync_columns(self.tx)?;
         let stamp = Stamp::Local {
             recording: self.recording,
+            after: kept,
         };
         for change in changes {
             self.store

@@ -795,6 +795,43 @@ fn a_former_ids_files_merge_op_by_op_when_a_snapshot_of_a_device_met_after_the_b
     assert!(texts.contains(&"V on C".to_string()), "{texts:?}");
 }
 
+/// The merge property test's seed 3146456, shrunk: A's Collection "Greek" (n 1) is in a
+/// Backup; A then deletes it and C joins, its snapshot holding that tombstone; A adds another
+/// "Greek" (n 9) and restores the Backup, catching up. C's snapshot brings the delete with no
+/// `before`, covering the Backup's "Greek": it had seen it, so it deletes it (D6's unseen
+/// delete keeps only a version it does not cover), and A's old id's "Greek" (n 9) is in place
+/// on every device. Before the fix the delete counted as unseen, A recorded "Greek" (n 1)
+/// again at a new clock, and that beat the old id's later "Greek" (n 9), which was lost.
+#[test]
+fn a_snapshots_delete_covering_this_devices_own_item_deletes_it() {
+    let dir = Dir::new("restore-snapshot-delete-item");
+    let folder = MemSyncFolder::new();
+    let mut a = open(&dir, "a");
+    let key = "library.collections";
+    a.set_preference(key, r#"[{"name":"Greek","n":1}]"#)
+        .unwrap();
+    sync(&a, &folder);
+    let backup = back_up(&dir, &a, "a");
+    a.set_preference(key, "[]").unwrap();
+    sync(&a, &folder);
+    let c = open(&dir, "c");
+    sync(&c, &folder);
+    write_snapshot(&c, &folder).unwrap();
+    a.set_preference(key, r#"[{"name":"Greek","n":9}]"#)
+        .unwrap();
+    sync(&a, &folder);
+    a.restore(&backup).unwrap();
+    restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    settle(&[&a, &c], &folder);
+    converged(&[&a, &c]);
+    for user in [&a, &c] {
+        assert_eq!(
+            user.preference(key).unwrap().as_deref(),
+            Some(r#"[{"name":"Greek","n":9}]"#)
+        );
+    }
+}
+
 #[test]
 fn a_replace_over_a_list_base_keeps_another_devices_collection_made_after_the_backup() {
     let dir = Dir::new("restore-replace-base");

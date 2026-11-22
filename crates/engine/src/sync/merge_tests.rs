@@ -1716,6 +1716,95 @@ fn an_own_list_item_held_while_its_list_is_damaged_survives_a_later_item_of_its_
     converged(&[&a, &b]);
 }
 
+/// The merge property test's seed 126745, shrunk: Y, its clock more than a day ahead, adds
+/// "Study" at y; Z edits it (stamped just after y: Z's own clock is not observed that far);
+/// Y, never seeing Z's edit, deletes "Study" and adds its own again, and Z keeps its edit as
+/// "Study (2)" (D6). Then X's whole value, at a far clock just before y, reaches Z: a base
+/// later than Z's ordinary clock but before Z's edit. "Study (2)" is stamped after the
+/// version it keeps, so that base does not supersede it, on every device. Before the fix it
+/// had Z's ordinary clock, and the base dropped Z's edit everywhere.
+#[test]
+fn an_own_items_re_add_comes_after_the_version_it_keeps_so_a_later_base_keeps_it() {
+    let dir = Dir::new("re-add-after-kept");
+    let cloud = MemSyncFolder::new();
+    let (z, b) = (device(&dir, "z"), device(&dir, "b"));
+    Device::settle(&[&z, &b], &cloud);
+    let key = "library.collections";
+    let (x, y) = (new_id(), new_id());
+    let far = u64::try_from(obs_store::clock::now_ms()).unwrap() + 2 * 86_400_000;
+    let at = |device: &str, wall_ms: u64| Hlc {
+        wall_ms,
+        counter: 0,
+        device_id: device.into(),
+    };
+    let study = |n: u32| {
+        Row::Collection(obs_store::SyncedListItem {
+            name: "Study".into(),
+            position: 0,
+            json: format!(r#"{{"n":{n},"name":"Study"}}"#),
+        })
+    };
+    let op = |device: &str, wall_ms, before: Option<Row>, before_clock, after| Op {
+        device: device.into(),
+        clock: at(device, wall_ms),
+        before,
+        after,
+        before_clock,
+        absent: Vec::new(),
+    };
+    for d in [&z, &b] {
+        meet(&d.user, &x);
+        meet(&d.user, &y);
+    }
+    cloud.put(
+        &op_file_path(&y, 1),
+        &encode_op_file(&[op(&y, far, None, None, Some(study(6)))]).unwrap(),
+    );
+    z.sync(&cloud);
+    z.user
+        .set_preference(key, r#"[{"n":9,"name":"Study"}]"#)
+        .unwrap();
+    z.push(&cloud);
+    cloud.put(
+        &op_file_path(&y, 2),
+        &encode_op_file(&[
+            op(&y, far + 500, Some(study(6)), Some(at(&y, far)), None),
+            op(&y, far + 1_000, None, None, Some(study(11))),
+        ])
+        .unwrap(),
+    );
+    let report = z.sync(&cloud);
+    assert_eq!(report.recorded.items_renamed, 1, "{report:?}");
+    let base = Op {
+        device: x.clone(),
+        clock: at(&x, far - 1),
+        before: None,
+        after: Some(Row::Preference(obs_store::SyncedPreference {
+            key: key.into(),
+            value: r#"[{"name":"Other"}]"#.into(),
+        })),
+        before_clock: None,
+        absent: Vec::new(),
+    };
+    cloud.put(&op_file_path(&x, 1), &encode_op_file(&[base]).unwrap());
+    Device::settle(&[&z, &b], &cloud);
+    for d in [&z, &b] {
+        let value = d.user.preference(key).unwrap().unwrap();
+        let mut items: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(&value)
+            .unwrap()
+            .iter()
+            .map(|item| format!("{} {}", item["name"], item["n"]))
+            .collect();
+        items.sort();
+        assert_eq!(
+            items,
+            [r#""Other" null"#, r#""Study (2)" 9"#, r#""Study" 11"#],
+            "{value}"
+        );
+    }
+    converged(&[&z, &b]);
+}
+
 #[test]
 fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
     let dir = Dir::new("held");
