@@ -101,4 +101,6 @@ pub use synced::{
     SyncedPreferredOrder, SyncedReading, SyncedReadingPlan, SyncedResourceTags,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use user::{OpenReport, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};
+pub use user::{
+    BUSY_TIMEOUT, OpenReport, SecondConnection, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore,
+};

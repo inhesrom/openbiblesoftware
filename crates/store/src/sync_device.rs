@@ -92,7 +92,7 @@ impl UserStore {
     /// id that it did not write (ADR 0022 rule 7): its old id is kept as a former one, the
     /// outbox is emptied, and it records no ops until it joins again. Returns the new id.
     pub fn take_new_device_id(&self) -> Result<String, StoreError> {
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        let tx = self.write_tx()?;
         let old = read_device_id(&tx)?;
         let new = renew_device_id(&tx, &[old], false)?;
         tx.commit().map_err(sql)?;

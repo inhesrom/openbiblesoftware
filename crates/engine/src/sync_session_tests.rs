@@ -7,7 +7,15 @@
 //! too; held ops are listed with why; a folder that is not there and one a newer app set up
 //! say so. A Note editor's save after a merge changed its Note keeps both texts, the typed one
 //! as a Sync conflict's copy; a copy whose Note was deleted on another device offers Keep this
-//! text and Let it go.
+//! text and Let it go. Off the UI thread (S29b): no call of the Sync folder is on it; edits
+//! made while a sync runs are kept and go out with the next; choosing a folder and Stop
+//! syncing wait for the sync running, "Syncing…" meanwhile; a worker that panics is a failed
+//! sync; a restore whose sync first does not finish goes ahead, says so, and that sync writes
+//! nothing after. From S29b's review: Stop syncing or Choose folder waiting for a sync when a
+//! restore starts applies (before the restore when the sync ends in its wait, after it when
+//! the restore abandons it); Stop syncing abandons a sync that does not end in its wait, and
+//! stops; an edit made while a snapshot is due skips the snapshot, not the sync; a worker
+//! syncs on a fixed clock the Session's thread runs on (the gallery's).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -66,18 +74,27 @@ fn now() -> i64 {
     obs_store::clock::now_ms()
 }
 
-/// Sync now, as Sync now does: "Syncing…" for a frame, then the sync.
+/// Sync now, as Sync now does: the sync starts on its worker at the next frame, "Syncing…"
+/// until a frame takes its result.
 fn sync(s: &mut Session) {
     s.run("sync.now", &json!({})).unwrap();
-    assert_eq!(
-        s.sync_tick(now()),
-        Some(0),
-        "a requested sync is due at once"
+    assert!(s.sync_tick(now()).is_some());
+    assert!(
+        s.sync_panel(now()).syncing,
+        "a requested sync starts at once"
     );
-    assert!(s.sync_panel(now()).syncing);
     assert_eq!(s.sync_panel(now()).status, texts::SYNCING);
-    s.sync_tick(now());
-    assert!(!s.sync_panel(now()).syncing);
+    settle(s);
+}
+
+/// The frames until the sync running (or a restore's choice) has ended and been taken.
+fn settle(s: &mut Session) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while s.sync_panel(now()).syncing {
+        assert!(std::time::Instant::now() < deadline, "the sync never ended");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        s.sync_tick(now());
+    }
 }
 
 fn store(s: &Session) -> &obs_store::UserStore {
@@ -215,12 +232,9 @@ fn an_edit_makes_a_sync_due_thirty_seconds_on_and_the_period_is_five_minutes() {
     a.create_notebook("Edited").unwrap();
     let due = a.sync_tick(t).unwrap();
     assert!(due <= 30_000 && due > 20_000, "{due}");
-    assert_eq!(
-        a.sync_tick(t + 30_000),
-        Some(0),
-        "due 30 seconds after the edit"
-    );
     a.sync_tick(t + 30_000);
+    assert!(a.sync_panel(now()).syncing, "due 30 seconds after the edit");
+    settle(&mut a);
     assert!(!store(&a).has_pending_ops().unwrap(), "the edit went out");
 }
 
@@ -266,6 +280,9 @@ fn a_restore_on_a_syncing_device_syncs_first_keeps_its_folder_and_catching_up_wo
     a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
         .unwrap();
     assert!(!a.sync_restore_pending());
+    assert_eq!(a.sync_panel(now()).status, texts::SYNCING);
+    settle(&mut a);
+    assert!(!a.sync_restore_pending());
     assert!(
         notebook_names(&a).contains(&"Written just before".to_string()),
         "catching up brought it back"
@@ -297,6 +314,7 @@ fn the_restore_prompt_comes_back_after_a_restart_until_it_is_answered() {
     assert_eq!(a.sync_tick(now()), None);
     a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
         .unwrap();
+    settle(&mut a);
     drop(a);
     let a = dir.session("a");
     assert!(!a.sync_restore_pending(), "answered once, asked no more");
@@ -324,6 +342,7 @@ fn replace_makes_the_restored_data_what_every_device_has() {
     assert!(a.sync_restore_pending());
     a.run("sync.restore_choice", &json!({ "choice": "replace" }))
         .unwrap();
+    settle(&mut a);
     assert!(!a.sync_restore_pending());
     assert!(notebook_names(&a).contains(&"Kept".to_string()));
     sync(&mut b);
@@ -758,20 +777,163 @@ fn op_files(folder: &Path) -> usize {
         .sum()
 }
 
-/// How long a sync holds the UI thread (supervisor decision D3, plan S29): a sync of one
-/// edit through a local folder, a device merging 1,000 op files another wrote while it was
-/// away, a sync with nothing new beside them, and a new device joining that folder.
+/// What the frames did while a sync ran on its worker: each frame's sync work on the UI
+/// thread (`sync_tick`: starting it, looking for its result, then taking it and reloading
+/// the Synced data it merged; and the status the shell draws), the frame after the result's
+/// (the views reading again what moved `annotations_revision`) and, when the frames edited,
+/// how long each edit took.
+struct Frames {
+    ticks: Vec<std::time::Duration>,
+    after: std::time::Duration,
+    edits: Vec<std::time::Duration>,
+}
+
+impl Frames {
+    fn report(&self, what: &str) -> String {
+        let ms = |d: &std::time::Duration| d.as_secs_f64() * 1000.0;
+        let mut ticks: Vec<f64> = self.ticks.iter().map(ms).collect();
+        ticks.sort_by(f64::total_cmp);
+        let buckets = [1.0, 2.0, 4.0, 8.0, 16.0, f64::INFINITY];
+        let mut counts = [0usize; 6];
+        for t in &ticks {
+            counts[buckets.iter().position(|b| t < b).unwrap_or(5)] += 1;
+        }
+        let last = self.ticks.last().map_or(0.0, ms);
+        let mut line = format!(
+            "{what}: {} frames, sync work a frame max {:.2} ms (the result's frame {last:.2} ms, \
+             the views' reads the frame after {:.2} ms), p50 {:.3} ms; histogram <1 {} | 1-2 {} \
+             | 2-4 {} | 4-8 {} | 8-16 {} | >=16 {}",
+            ticks.len(),
+            ticks.last().copied().unwrap_or(0.0),
+            ms(&self.after),
+            ticks.get(ticks.len() / 2).copied().unwrap_or(0.0),
+            counts[0],
+            counts[1],
+            counts[2],
+            counts[3],
+            counts[4],
+            counts[5],
+        );
+        if !self.edits.is_empty() {
+            let mut edits: Vec<f64> = self.edits.iter().map(ms).collect();
+            edits.sort_by(f64::total_cmp);
+            line.push_str(&format!(
+                "; an edit each frame ({}): max {:.2} ms, p50 {:.2} ms",
+                edits.len(),
+                edits.last().copied().unwrap_or(0.0),
+                edits.get(edits.len() / 2).copied().unwrap_or(0.0),
+            ));
+        }
+        line
+    }
+
+    fn max_tick(&self) -> std::time::Duration {
+        self.ticks.iter().max().copied().unwrap_or_default()
+    }
+}
+
+/// Sync now, as the app's frames run it (one each 16 ms) until the sync's result is taken,
+/// timing each frame's sync work and then what the views read again at the frame after
+/// (`MarkCache` and the Notes Tool's cards, with Needs attention's count, once the reload
+/// moved `annotations_revision`), and with `edit` making a Notebook at every frame while it
+/// runs.
+fn frames_of_a_sync(s: &mut Session, edit: bool) -> Frames {
+    let frame = std::time::Duration::from_millis(16);
+    let mut frames = Frames {
+        ticks: Vec::new(),
+        after: std::time::Duration::ZERO,
+        edits: Vec::new(),
+    };
+    s.run("sync.now", &json!({})).unwrap();
+    loop {
+        let start = std::time::Instant::now();
+        s.sync_tick(now());
+        // What the shell asks every frame besides.
+        let syncing = s.sync_panel(now()).syncing;
+        let _ = s.sync_indicator(now());
+        frames.ticks.push(start.elapsed());
+        if !syncing {
+            let start = std::time::Instant::now();
+            let _ = s.annotations_in_text().unwrap();
+            let _ = s.notebooks().unwrap();
+            let _ = s.highlight_styles().unwrap();
+            let _ = s.note_cards("").unwrap();
+            let _ = s.needs_attention_count();
+            frames.after = start.elapsed();
+            return frames;
+        }
+        if edit {
+            let at = std::time::Instant::now();
+            s.create_notebook(&format!("Edit {}", new_id())).unwrap();
+            frames.edits.push(at.elapsed());
+        }
+        // Spun, not slept: a sleep in a test process can wake many milliseconds late (timer
+        // coalescing), and the frames would be too few to see a stall.
+        while start.elapsed() < frame {
+            std::hint::spin_loop();
+        }
+    }
+}
+
+/// A device makes `notes` Notes over `files` op files (one sync each), then a new device
+/// joins, editing at every frame: its frames, and how long its sync took (ms).
+fn joined_by_a_new_device(notes: usize, files: usize) -> (Frames, i64) {
+    let dir = Dir::new(&format!("measure-{notes}-{files}"));
+    let mut l = dir.syncing("library");
+    sync(&mut l);
+    let notebook = l.default_notebook().unwrap().id;
+    for file in 0..files {
+        let changes: Vec<Change> = (file * notes / files..(file + 1) * notes / files)
+            .map(|i| {
+                Change::insert(Row::Annotation(Annotation {
+                    id: new_id(),
+                    notebook_id: notebook.clone(),
+                    content: Content::Note {
+                        body: format!("Note {i}: a sentence or two of study."),
+                    },
+                    anchor: None,
+                    created_at: 1,
+                    modified_at: 1,
+                    conflict_of: None,
+                }))
+            })
+            .collect();
+        store(&l).apply_changes(&changes).unwrap();
+        sync(&mut l);
+    }
+    let mut n = dir.syncing("new");
+    let frames = frames_of_a_sync(&mut n, true);
+    assert_eq!(
+        (n.annotations(None).unwrap().into_iter())
+            .filter(|a| a.is_note())
+            .count(),
+        notes
+    );
+    (frames, n.last_sync_duration_ms().unwrap())
+}
+
+/// How sync holds the UI thread now that it runs on its worker (plan S29b; S29 measured it on
+/// the UI thread, 136–141 ms for the catch-up): frame by frame, a device catching up with
+/// 1,000 op files another wrote while it was away, once with no edits and once with an edit
+/// at every frame (how long a user's edit waits for the worker's merge transactions); a new
+/// device joining that folder; and a new device joining a folder whose other device holds
+/// 10,000 Notes (the merge's biggest transactions: a file of 10,000 ops, and a snapshot).
 /// `cargo test -p obs-engine --lib measure_ -- --ignored --nocapture`.
 #[test]
 #[ignore = "a measurement, not a check"]
-fn measure_syncs_on_the_ui_thread() {
+fn measure_syncs_off_the_ui_thread() {
     let dir = Dir::new("measure");
     let mut a = dir.syncing("a");
+    let mut e = dir.syncing("e");
     let mut b = dir.syncing("b");
     sync(&mut a);
+    sync(&mut e);
     sync(&mut b);
     sync(&mut a);
-    a.create_notebook("One edit").unwrap();
+    sync(&mut e);
+    let at = std::time::Instant::now();
+    a.create_notebook("Before").unwrap();
+    let edit_alone = at.elapsed();
     sync(&mut a);
     let one_edit = a.last_sync_duration_ms().unwrap();
     for i in 0..1000 {
@@ -779,18 +941,612 @@ fn measure_syncs_on_the_ui_thread() {
         sync(&mut b);
     }
     let files = op_files(&dir.folder());
-    sync(&mut a);
-    let merged_1000 = a.last_sync_duration_ms().unwrap();
+    let caught_up = frames_of_a_sync(&mut a, false);
+    let caught_up_ms = a.last_sync_duration_ms().unwrap();
     assert!(notebook_names(&a).contains(&"Notebook 999".to_string()));
-    sync(&mut a);
-    let nothing_new = a.last_sync_duration_ms().unwrap();
+    let edited = frames_of_a_sync(&mut e, true);
+    assert!(notebook_names(&e).contains(&"Notebook 999".to_string()));
+    let nothing_new = frames_of_a_sync(&mut a, false);
     let mut c = dir.syncing("c");
-    sync(&mut c);
-    let joined = c.last_sync_duration_ms().unwrap();
+    let joined = frames_of_a_sync(&mut c, true);
+    let joined_ms = c.last_sync_duration_ms().unwrap();
     assert!(notebook_names(&c).contains(&"Notebook 999".to_string()));
+
+    // A large library: 10,000 Notes on one device, then a new device joins, once with them
+    // in one op file (one merge transaction of 10,000 ops) and once with them in that
+    // device's snapshot (one transaction too).
+    let in_one_file = joined_by_a_new_device(10_000, 1);
+    let in_a_snapshot = joined_by_a_new_device(10_000, 101);
+
     eprintln!(
-        "sync on the UI thread, local folder ({files} op files): one edit {one_edit} ms; \
-         merging 1,000 op files {merged_1000} ms; nothing new {nothing_new} ms; a new device \
-         joining {joined} ms"
+        "sync off the UI thread, local folder ({files} op files), dev profile:\n\
+         - one edit's sync {one_edit} ms; an edit with no sync running {:.2} ms\n\
+         - {} (the sync {caught_up_ms} ms)\n\
+         - {}\n\
+         - {}\n\
+         - {} (the sync {joined_ms} ms)\n\
+         - {} (the sync {} ms)\n\
+         - {} (the sync {} ms)",
+        edit_alone.as_secs_f64() * 1000.0,
+        caught_up.report("catching up with 1,000 op files"),
+        edited.report("catching up with 1,000 op files, editing"),
+        nothing_new.report("nothing new"),
+        joined.report("a new device joining, editing"),
+        in_one_file
+            .0
+            .report("a new device joining 10,000 Notes in one op file, editing"),
+        in_one_file.1,
+        in_a_snapshot
+            .0
+            .report("a new device joining 10,000 Notes in a snapshot, editing"),
+        in_a_snapshot.1,
     );
+    assert!(
+        caught_up.max_tick() < std::time::Duration::from_millis(16),
+        "a frame stalled: {:?}",
+        caught_up.max_tick()
+    );
+}
+
+/// Which call of the Sync folder to hold: by its name (`list`, `read`, `ensure_available`
+/// …) and path.
+type HoldWhen = Box<dyn Fn(&str, &str) -> bool + Send>;
+
+/// The Sync folder on disk as the worker sees it, watched: which threads call it, and it
+/// can hold the next call of a kind (the read of an op file) until the test lets it go, or
+/// panic at a list.
+struct WatchedFolder {
+    fs: crate::sync::FsSyncFolder,
+    threads: std::sync::Mutex<Vec<std::thread::ThreadId>>,
+    /// Held: the call, the signal that it is reached, and the switch that lets it go on.
+    #[allow(clippy::type_complexity)]
+    hold: std::sync::Mutex<
+        Option<(
+            HoldWhen,
+            std::sync::mpsc::Sender<()>,
+            std::sync::mpsc::Receiver<()>,
+        )>,
+    >,
+    panics: std::sync::atomic::AtomicBool,
+}
+
+impl WatchedFolder {
+    fn new(path: &Path) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            fs: crate::sync::FsSyncFolder::new(path),
+            threads: Default::default(),
+            hold: Default::default(),
+            panics: Default::default(),
+        })
+    }
+
+    /// Hold the next call `when` picks: returns the signal that it is reached and the switch
+    /// that lets it go on.
+    fn hold_next(
+        &self,
+        when: impl Fn(&str, &str) -> bool + Send + 'static,
+    ) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (reached, on_reached) = std::sync::mpsc::channel();
+        let (go, on_go) = std::sync::mpsc::channel();
+        *self.hold.lock().unwrap() = Some((Box::new(when), reached, on_go));
+        (on_reached, go)
+    }
+
+    /// Hold the next read of another device's op file than `own`'s (a merge's).
+    fn hold_next_op_read(
+        &self,
+        own: &Session,
+    ) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let own = store(own).device_id().unwrap();
+        self.hold_next(move |call, path| {
+            call == "read" && path.contains("/ops/") && !path.contains(own.as_str())
+        })
+    }
+
+    /// Note the call `call` of `path`, holding it when it is the one held.
+    fn note(&self, call: &str, path: &str) {
+        self.threads
+            .lock()
+            .unwrap()
+            .push(std::thread::current().id());
+        let mut hold = self.hold.lock().unwrap();
+        let held = match &*hold {
+            Some((when, _, _)) if when(call, path) => hold.take(),
+            _ => None,
+        };
+        drop(hold);
+        if let Some((_, reached, go)) = held {
+            reached.send(()).unwrap();
+            go.recv().unwrap();
+        }
+    }
+
+    fn calls_on(&self, thread: std::thread::ThreadId) -> usize {
+        (self.threads.lock().unwrap().iter())
+            .filter(|t| **t == thread)
+            .count()
+    }
+}
+
+impl crate::sync::SyncFolder for WatchedFolder {
+    fn list(&self, dir: &str) -> Result<Vec<String>, crate::sync::FolderError> {
+        self.note("list", dir);
+        if self.panics.load(std::sync::atomic::Ordering::SeqCst) {
+            panic!("the provider failed");
+        }
+        self.fs.list(dir)
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, crate::sync::FolderError> {
+        self.note("read", path);
+        self.fs.read(path)
+    }
+
+    fn write_new(&self, path: &str, bytes: &[u8]) -> Result<(), crate::sync::FolderError> {
+        self.note("write_new", path);
+        self.fs.write_new(path, bytes)
+    }
+
+    fn remove(&self, path: &str) -> Result<(), crate::sync::FolderError> {
+        self.note("remove", path);
+        self.fs.remove(path)
+    }
+
+    fn ensure_available(&self, path: &str) -> Result<bool, crate::sync::FolderError> {
+        self.note("ensure_available", path);
+        self.fs.ensure_available(path)
+    }
+}
+
+/// A Session syncing through `dir`'s folder, watched.
+fn watched(dir: &Dir, name: &str) -> (Session, std::sync::Arc<WatchedFolder>) {
+    let mut s = dir.syncing(name);
+    let folder = WatchedFolder::new(&dir.folder());
+    s.set_sync_test_folder(folder.clone());
+    (s, folder)
+}
+
+/// Every file in `folder`, by path.
+fn folder_files(folder: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(folder, &mut out);
+    out.sort();
+    out
+}
+
+/// Wait until the worker syncing through `folder` has ended: only the test and the Session
+/// hold it then.
+fn worker_ends(folder: &std::sync::Arc<WatchedFolder>) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while std::sync::Arc::strong_count(folder) > 2 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the worker never ended"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+/// What a sync could change of a User database.
+fn sync_rows(s: &Session) -> String {
+    let store = store(s);
+    format!(
+        "{:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}",
+        notebook_names(s),
+        store.device_id().unwrap(),
+        store.own_device_ids().unwrap(),
+        store.merged_devices().unwrap(),
+        store.last_reserved_op_file().unwrap(),
+        store.has_pending_ops().unwrap(),
+        store.records_ops().unwrap(),
+        store.restore_choice_pending().unwrap(),
+    )
+}
+
+#[test]
+fn every_read_and_write_of_the_sync_folder_is_off_the_ui_thread() {
+    let dir = Dir::new("off-ui");
+    let ui = std::thread::current().id();
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    a.create_notebook("From A").unwrap();
+    sync(&mut a);
+    sync(&mut b);
+    b.create_notebook("From B").unwrap();
+    sync(&mut b);
+    sync(&mut a);
+    assert!(notebook_names(&a).contains(&"From B".to_string()));
+    assert_eq!(
+        a.sync_panel(now()).devices.len(),
+        2,
+        "the devices were read"
+    );
+    // A restore syncs first, then the prompt's Catch up syncs.
+    let backup = dir.0.join("a.obsbackup");
+    back_up(&mut a, &backup);
+    restore(&mut a, &backup);
+    a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
+        .unwrap();
+    settle(&mut a);
+    assert!(!a.sync_restore_pending());
+    assert!(folder.threads.lock().unwrap().len() > 20);
+    assert_eq!(folder.calls_on(ui), 0, "none on the UI thread");
+}
+
+#[test]
+fn edits_made_while_a_sync_runs_are_kept_and_go_out_with_the_next() {
+    let dir = Dir::new("edit-during");
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    for i in 0..20 {
+        b.create_notebook(&format!("From B {i}")).unwrap();
+        sync(&mut b);
+    }
+    let (reached, go) = folder.hold_next_op_read(&a);
+    a.run("sync.now", &json!({})).unwrap();
+    a.sync_tick(now());
+    reached
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    // The worker is merging B's files: the user goes on.
+    assert!(a.sync_panel(now()).syncing);
+    assert_eq!(a.sync_tick(now()), Some(crate::sync_session::SYNC_POLL_MS));
+    a.create_notebook("Made while syncing").unwrap();
+    let note = add_note(&mut a, "Written while syncing");
+    go.send(()).unwrap();
+    // More edits while it merges.
+    a.create_notebook("Made while merging").unwrap();
+    settle(&mut a);
+    let names = notebook_names(&a);
+    for name in ["From B 19", "Made while syncing", "Made while merging"] {
+        assert!(names.contains(&name.to_string()), "{name} in {names:?}");
+    }
+    sync(&mut a);
+    sync(&mut b);
+    let names = notebook_names(&b);
+    for name in ["Made while syncing", "Made while merging"] {
+        assert!(names.contains(&name.to_string()), "{name} reached B");
+    }
+    assert!(
+        b.annotations(None)
+            .unwrap()
+            .iter()
+            .any(|n| n.id == note.id && n.body() == "Written while syncing")
+    );
+}
+
+#[test]
+fn choosing_a_folder_and_stop_syncing_wait_for_the_sync_running_showing_syncing() {
+    let dir = Dir::new("deferred");
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    b.create_notebook("From B").unwrap();
+    sync(&mut b);
+    let old = store(&a).device_id().unwrap();
+
+    let (reached, go) = folder.hold_next_op_read(&a);
+    a.run("sync.now", &json!({})).unwrap();
+    a.sync_tick(now());
+    reached
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    a.run("sync.stop", &json!({ "confirm": true })).unwrap();
+    assert_eq!(a.sync_folder(), Some(dir.folder().as_path()), "not yet");
+    assert!(a.sync_panel(now()).syncing);
+    assert_eq!(a.sync_indicator(now()).unwrap().text, texts::SYNCING);
+    go.send(()).unwrap();
+    settle(&mut a);
+    assert_eq!(a.sync_folder(), None, "stopped once the sync ended");
+    assert_ne!(store(&a).device_id().unwrap(), old);
+    assert!(notebook_names(&a).contains(&"From B".to_string()));
+
+    // Choosing a folder while a sync runs (from a script) chooses it once that sync ends.
+    b.create_notebook("From B again").unwrap();
+    sync(&mut b);
+    let other = dir.0.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    a.run(
+        "sync.choose_folder",
+        &json!({ "path": dir.folder().to_string_lossy() }),
+    )
+    .unwrap();
+    let (reached, go) = folder.hold_next_op_read(&a);
+    a.sync_tick(now());
+    reached
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    a.run(
+        "sync.choose_folder",
+        &json!({ "path": other.to_string_lossy() }),
+    )
+    .unwrap();
+    assert_eq!(a.sync_folder(), Some(dir.folder().as_path()));
+    assert!(a.sync_panel(now()).syncing);
+    go.send(()).unwrap();
+    settle(&mut a);
+    assert_eq!(a.sync_folder(), Some(other.as_path()));
+    assert_eq!(a.sync_panel(now()).status, "Last synced just now");
+}
+
+#[test]
+fn a_sync_whose_worker_panics_fails_and_the_next_one_syncs() {
+    let dir = Dir::new("panics");
+    let (mut a, folder) = watched(&dir, "a");
+    sync(&mut a);
+    folder
+        .panics
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    sync(&mut a);
+    let panel = a.sync_panel(now());
+    assert_eq!(panel.status, texts::UNREACHABLE);
+    assert!(panel.warn);
+    assert!(
+        panel
+            .details
+            .unwrap()
+            .contains("stopped before it finished"),
+        "the closed channel is a failure"
+    );
+    folder
+        .panics
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    sync(&mut a);
+    assert_eq!(a.sync_panel(now()).status, "Last synced just now");
+}
+
+#[test]
+fn a_restore_goes_ahead_when_its_sync_first_does_not_finish_and_that_sync_writes_nothing_after() {
+    let dir = Dir::new("abandoned");
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    let backup = dir.0.join("a.obsbackup");
+    back_up(&mut a, &backup);
+    a.create_notebook("Not written yet").unwrap();
+    b.create_notebook("From B").unwrap();
+    sync(&mut b);
+    // The sync before the restore writes A's op file, then is held reading B's: an iCloud
+    // download that does not come.
+    a.set_restore_sync_wait(std::time::Duration::from_millis(300));
+    let (reached, go) = folder.hold_next_op_read(&a);
+    let started = std::time::Instant::now();
+    restore(&mut a, &backup);
+    let waited = started.elapsed();
+    reached.try_recv().unwrap();
+    assert!(
+        waited >= std::time::Duration::from_millis(300)
+            && waited < std::time::Duration::from_secs(20),
+        "{waited:?}"
+    );
+    assert!(a.sync_restore_pending());
+    let panel = a.sync_panel(now());
+    assert_eq!(panel.status, texts::RESTORE_TITLE);
+    assert_eq!(
+        panel.details.as_deref(),
+        Some(texts::RESTORE_SYNC_UNFINISHED),
+        "it says the sync before the restore did not finish"
+    );
+    assert!(!notebook_names(&a).contains(&"Not written yet".to_string()));
+    let restored = sync_rows(&a);
+    let files = folder_files(&dir.folder());
+    // The held read comes back: the abandoned sync reads and writes the folder no more, and
+    // the merge of B's file it read is refused (its connection's commits roll back): either
+    // alone keeps the restored data as it is; this fails without both.
+    go.send(()).unwrap();
+    worker_ends(&folder);
+    assert_eq!(
+        sync_rows(&a),
+        restored,
+        "nothing written into the restored data"
+    );
+    assert!(!notebook_names(&a).contains(&"From B".to_string()));
+    assert_eq!(
+        folder_files(&dir.folder()),
+        files,
+        "nothing written in the folder"
+    );
+    // The edit made before the restore reached the folder before it was held.
+    sync(&mut b);
+    assert!(notebook_names(&b).contains(&"Not written yet".to_string()));
+    // Catch up syncs as after any restore.
+    a.run("sync.restore_choice", &json!({ "choice": "catch_up" }))
+        .unwrap();
+    settle(&mut a);
+    assert!(notebook_names(&a).contains(&"From B".to_string()));
+    assert_eq!(a.sync_panel(now()).status, "Last synced just now");
+}
+
+/// A restore of A's Backup while `ask` (Stop syncing, or choosing `other`) waits for a sync
+/// held reading B's op file: let go during the restore's wait (`let_go`), so what waited
+/// applies before the restore, or never, so the restore abandons that sync.
+fn restore_while_waiting(name: &str, ask: &str, let_go: bool) -> (Dir, Session, PathBuf) {
+    let dir = Dir::new(name);
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    let backup = dir.0.join("a.obsbackup");
+    back_up(&mut a, &backup);
+    b.create_notebook("From B").unwrap();
+    sync(&mut b);
+    let other = dir.0.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    a.set_restore_sync_wait(std::time::Duration::from_millis(if let_go {
+        30_000
+    } else {
+        300
+    }));
+    let (reached, go) = folder.hold_next_op_read(&a);
+    a.run("sync.now", &json!({})).unwrap();
+    a.sync_tick(now());
+    reached
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    match ask {
+        "stop" => a.run("sync.stop", &json!({ "confirm": true })).unwrap(),
+        _ => a
+            .run(
+                "sync.choose_folder",
+                &json!({ "path": other.to_string_lossy() }),
+            )
+            .unwrap(),
+    };
+    assert!(a.sync_panel(now()).syncing, "it waits for the sync");
+    let letting_go = let_go.then(|| {
+        let go = go.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            go.send(()).unwrap();
+        })
+    });
+    restore(&mut a, &backup);
+    if let Some(thread) = letting_go {
+        thread.join().unwrap();
+    } else {
+        go.send(()).unwrap();
+    }
+    worker_ends(&folder);
+    settle(&mut a);
+    (dir, a, other)
+}
+
+#[test]
+fn stop_syncing_waiting_for_a_sync_when_a_restore_starts_stays_stopped() {
+    for let_go in [true, false] {
+        let name = format!("stop-restore-{let_go}");
+        let (_dir, a, _) = restore_while_waiting(&name, "stop", let_go);
+        assert_eq!(a.sync_folder(), None, "let go: {let_go}");
+        assert!(!a.sync_restore_pending(), "let go: {let_go}");
+        assert!(
+            !store(&a).records_ops().unwrap(),
+            "it records nothing more (let go: {let_go})"
+        );
+        assert!(a.sync_indicator(now()).is_none());
+    }
+}
+
+#[test]
+fn a_folder_chosen_while_a_sync_runs_when_a_restore_starts_stays_chosen() {
+    for let_go in [true, false] {
+        let name = format!("choose-restore-{let_go}");
+        let (_dir, a, other) = restore_while_waiting(&name, "choose", let_go);
+        assert_eq!(a.sync_folder(), Some(other.as_path()), "let go: {let_go}");
+    }
+}
+
+#[test]
+fn stop_syncing_abandons_a_sync_that_does_not_end_and_stops() {
+    let dir = Dir::new("stop-abandons");
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    // In B's op file, not its snapshot.
+    b.create_notebook("From B").unwrap();
+    sync(&mut b);
+    let wait = std::time::Duration::from_millis(300);
+    a.set_stop_sync_wait(wait);
+    // A folder call that does not come back: a hung network disk.
+    let (reached, go) = folder.hold_next_op_read(&a);
+    a.run("sync.now", &json!({})).unwrap();
+    a.sync_tick(now());
+    reached
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    let pressed = std::time::Instant::now();
+    a.run("sync.stop", &json!({ "confirm": true })).unwrap();
+    a.sync_tick(now());
+    if pressed.elapsed() < wait {
+        assert!(a.sync_panel(now()).syncing, "it waits first");
+        assert_eq!(a.sync_folder(), Some(dir.folder().as_path()));
+    }
+    std::thread::sleep(wait);
+    assert_eq!(a.sync_tick(now()), None, "stopped: nothing more to sync");
+    assert_eq!(a.sync_folder(), None);
+    assert!(!a.sync_panel(now()).syncing);
+    assert!(!store(&a).records_ops().unwrap());
+    let stopped = sync_rows(&a);
+    let files = folder_files(&dir.folder());
+    // The held call comes back: the abandoned sync merges nothing and writes nothing.
+    go.send(()).unwrap();
+    worker_ends(&folder);
+    assert_eq!(sync_rows(&a), stopped);
+    assert!(!notebook_names(&a).contains(&"From B".to_string()));
+    assert_eq!(folder_files(&dir.folder()), files);
+}
+
+#[test]
+fn an_edit_made_while_a_snapshot_is_due_skips_the_snapshot_not_the_sync() {
+    let dir = Dir::new("snapshot-edit");
+    let (mut a, folder) = watched(&dir, "a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    let id = store(&a).device_id().unwrap();
+    // A's snapshot is damaged, so a snapshot is due at its next sync, after reading it.
+    let snapshots = dir.folder().join(crate::sync::snapshot::snapshots_dir(&id));
+    let damaged = std::fs::read_dir(&snapshots)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    std::fs::write(&damaged, b"damaged").unwrap();
+    let mine = format!("{}/", crate::sync::snapshot::snapshots_dir(&id));
+    let (reached, go) =
+        folder.hold_next(move |call, path| call == "ensure_available" && path.starts_with(&mine));
+    a.run("sync.now", &json!({})).unwrap();
+    a.sync_tick(now());
+    reached
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    // The worker reads its snapshot in `snapshot_due`: the user goes on.
+    a.create_notebook("Made while a snapshot was due").unwrap();
+    go.send(()).unwrap();
+    settle(&mut a);
+    let panel = a.sync_panel(now());
+    assert_eq!(panel.status, "Last synced just now", "{:?}", panel.details);
+    // The edit went out, and the snapshot was written after it.
+    sync(&mut b);
+    assert!(notebook_names(&b).contains(&"Made while a snapshot was due".to_string()));
+    let (_, name) =
+        crate::sync::snapshot::newest_snapshot(&crate::sync::FsSyncFolder::new(dir.folder()), &id)
+            .unwrap()
+            .unwrap();
+    assert!(matches!(
+        crate::sync::snapshot::read_snapshot(
+            store(&a),
+            &crate::sync::FsSyncFolder::new(dir.folder()),
+            &id,
+            &name
+        )
+        .unwrap(),
+        crate::sync::snapshot::SnapshotRead::Whole(_)
+    ));
+}
+
+#[test]
+fn a_worker_syncs_on_the_clock_the_session_runs_on() {
+    // The gallery's clock is fixed: the worker's device.json reads the same time.
+    let at = 1_700_000_000_000;
+    obs_store::clock::fix(Some(at));
+    let dir = Dir::new("fixed-clock");
+    let mut a = dir.syncing("a");
+    sync(&mut a);
+    assert_eq!(a.sync_panel(at).status, "Last synced just now");
+    assert_eq!(a.sync_panel(at + 61_000).status, "Last synced 1 minute ago");
+    obs_store::clock::fix(None);
 }

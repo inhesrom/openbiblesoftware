@@ -45,6 +45,13 @@ pub const SYNCING: &str = "Syncing…";
 pub const NOT_SYNCED_YET: &str = "Not synced yet";
 pub const UNREACHABLE: &str =
     "Could not reach the Sync folder. It is tried again in a few minutes.";
+/// Why the last sync failed when a restore did not wait for the sync before it (its Details,
+/// S29b).
+pub const RESTORE_SYNC_UNFINISHED: &str = "The sync before the restore did not finish in time, so \
+     the restore went ahead without it; the Safety backup holds the edits it had not written.";
+/// The same when that restore then failed, so nothing was replaced.
+pub const RESTORE_FAILED_SYNC_UNFINISHED: &str =
+    "The sync before the restore did not finish in time and was stopped.";
 pub const DEVICES_LABEL: &str = "Synced devices";
 pub const UNNAMED_DEVICE: &str = "Unnamed device";
 pub const THIS_DEVICE: &str = "this device";

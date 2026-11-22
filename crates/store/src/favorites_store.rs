@@ -138,7 +138,7 @@ impl UserStore {
     /// as of `at`. Tests make old Visits with this.
     #[doc(hidden)]
     pub fn record_visit_at(&self, label: &str, location: &str, at: i64) -> Result<(), StoreError> {
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        let tx = self.write_tx()?;
         tx.execute(
             "INSERT INTO history (visited_at, day, label, location)
              VALUES (?1, date(?1, 'unixepoch', ?4), ?2, ?3)",

@@ -165,6 +165,8 @@ pub mod sync;
 pub mod sync_session;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod sync_session_tests;
+#[cfg(not(target_arch = "wasm32"))]
+mod sync_worker;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;

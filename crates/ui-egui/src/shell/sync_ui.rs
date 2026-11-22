@@ -31,8 +31,9 @@ pub(crate) struct SyncUi {
 }
 
 impl State {
-    /// The frame's sync: a due sync runs (after a frame showing "Syncing…"), and the next
-    /// frame is asked for when the next sync is due. Nothing without a Sync folder.
+    /// The frame's sync: a due sync starts on its worker, a running one's result is taken
+    /// once it is there ("Syncing…" meanwhile, the next frame asked for soon), and otherwise
+    /// the next frame is asked for when the next sync is due. Nothing without a Sync folder.
     pub(super) fn sync_frame(&mut self, ctx: &egui::Context) {
         let Some(due_ms) = self.session.sync_tick(obs_store::clock::now_ms()) else {
             return;
