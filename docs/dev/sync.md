@@ -84,9 +84,10 @@ behaves as before (the gallery's goldens are unchanged).
   device's `needs_newer_app`, the Synced devices from their `device.json` (this one first,
   "(this device)"; a restored or copied device lists its old id as another device), the name.
   Help → Keyboard shortcuts lists Sync now only once a folder is chosen.
-- **Stop syncing** (`sync.stop {confirm: true}`, asked first) forgets the folder and gives the
-  device a new id (`take_new_device_id`): it records no more ops, its outbox is emptied, a
-  restore's question is dropped, its files stay in the folder. Choosing a folder again joins as
+- **Stop syncing** (`sync.stop {confirm: true}`, asked first) gives the device a new id
+  (`take_new_device_id`): it records no more ops, its outbox is emptied, a restore's question
+  is dropped, its files stay in the folder; then it forgets the folder (in that order, so a
+  failure leaves it syncing rather than recording into an outbox nothing reads). Choosing a folder again joins as
   a new Synced device.
 - **A restore** (`data.restore`, `data.undo_restore`) on a device with a Sync folder syncs first
   when the folder is reachable (`Session::sync_before_restore`; a failure does not hold the
@@ -100,7 +101,9 @@ behaves as before (the gallery's goldens are unchanged).
   this text and the Note's at … were changed on two devices…", and **Keep this version**,
   **Keep the other**, **Keep both**, **Combine**: `sync.resolve_conflict {id, keep}`, each one
   undo step that syncs like any edit; Combine puts the Note in place's text, a blank line and
-  the copy's text in the Note in place and opens it to edit) and, under **Changes waiting**,
+  the copy's text in the Note in place and opens it to edit; a copy whose Note another device
+  deleted says so and offers **Keep this text** and **Let it go** instead) and, under
+  **Changes waiting**,
   the held ops, each "A change from <device> to <what> is waiting: <why>. It is tried again at
   every sync."
 
@@ -913,14 +916,21 @@ Mobile app has no period (`at_launch(false)`).
   edit back, across a restart; Replace makes the restored data every device's; a restore never
   takes the Backup's folder; Stop syncing records nothing more and choosing again joins as a new
   device; a Sync conflict's copy is in Needs attention with its four actions, each undone in
-  one step, the other device taking the resolution; held ops listed with why; a folder not
+  one step, the other device taking Keep this version, Keep both and Combine; a copy whose
+  Note another device deleted offers Keep this text and Let it go; a Note editor's save after
+  a merge changed its Note keeps both texts (into a new copy, or the merge's copy of its
+  text); the restore prompt comes back after a restart until it is answered; held ops listed with why; a folder not
   there and one a newer app set up. `measure_syncs_on_the_ui_thread` (ignored) measures.
 - `crates/ui-egui/src/sync_tests.rs` (S29): the same through the harness (Choose Sync folder…
   with the folder dialog injected, the indicator opening Settings on Sync, the prompt's two
-  buttons, Needs attention's buttons); the gallery's Sync goldens.
+  buttons, Needs attention's buttons, an autosave after a merge keeping both texts and typing
+  on in the copy, Combine clicked while typing in the copy); the gallery's Sync goldens.
 - `cargo xtask sync-e2e` (S29, `xtask/src/sync_e2e.rs`): the real app twice, each with its own
   `OBS_USER_DB`, through one temporary folder: they converge, and a restored Backup's prompt
-  takes Catch up and Replace, photographed.
+  takes Catch up and Replace, photographed. Steps that follow frame-numbered commands wait on a
+  file (`after_file`: A's Backup; for B, a file the xtask writes once B's Word forms op is in
+  the folder), so a slow software renderer cannot reach them first; B must stop with nothing
+  waiting to sync.
 
 ## For later steps
 
