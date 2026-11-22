@@ -41,15 +41,25 @@ pub(crate) fn has_table(c: &Connection, name: &str) -> Result<bool, StoreError> 
 /// later than what the tombstone covers, and a later delete keeps the newer clock and the
 /// newer of what they cover, so every device ends with the same tombstone whatever order its
 /// deletes and writes arrived in. Before schema 15 a row made again took its tombstone away.
-/// An update changes neither.
+/// An update changes neither. From schema 16 the tombstone of a parent ([`keeps_row`]) also
+/// keeps `row`, the deleted version's serialized row, with that delete's own `row_covers` and
+/// `row_clock`: of the deletes that kept a row, the one covering the newest version (of two
+/// covering the same, the later delete), each compared with those two ([`tombstone_row_wins`]).
 pub(crate) fn mark_tombstone(
     c: &Connection,
     change: &Change,
     key: &RowKey,
     clock: &str,
     covers: Option<&str>,
+    row: Option<&str>,
 ) -> Result<(), StoreError> {
     let (kind, id) = key.tombstone();
+    let keep_row = match (&change.before, &change.after, covers, row) {
+        (Some(_), None, Some(covers), Some(row)) => {
+            tombstone_row_wins(c, key, clock, covers)?.then_some(row)
+        }
+        _ => None,
+    };
     match (&change.before, &change.after, covers) {
         (Some(_), None, Some(covers)) => c.execute(
             "INSERT INTO tombstone (row_table, row_id, clock, covers) VALUES (?1, ?2, ?3, ?4)
@@ -69,6 +79,75 @@ pub(crate) fn mark_tombstone(
         ),
         _ => Ok(0),
     }
+    .map_err(sql)?;
+    if let (Some(row), Some(covers)) = (keep_row, covers) {
+        keep_tombstone_row(c, key, row, covers, clock)?;
+    }
+    Ok(())
+}
+
+/// Whether the tombstone of the row `key` names keeps the deleted row (schema 16): a
+/// Notebook, Reading plan, Highlight palette or Highlight style, which a child arriving later
+/// from another device restores (ADR 0022 rule 3, D3).
+pub(crate) fn keeps_row(key: &RowKey) -> bool {
+    matches!(
+        key,
+        RowKey::Notebook(_)
+            | RowKey::ReadingPlan(_)
+            | RowKey::HighlightPalette(_)
+            | RowKey::HighlightStyle(_)
+    )
+}
+
+/// Whether a delete at `clock` covering `covers` (text forms) is the one whose row the
+/// tombstone of `key` keeps, against the delete whose row it keeps now (its `row_covers` and
+/// `row_clock`, not the tombstone's newest of every delete): it covers a newer version, or the
+/// same one and is the later delete, or the tombstone keeps no row yet. Every device keeps the
+/// same row whatever order the deletes came in.
+pub(crate) fn tombstone_row_wins(
+    c: &Connection,
+    key: &RowKey,
+    clock: &str,
+    covers: &str,
+) -> Result<bool, StoreError> {
+    let (kind, id) = key.tombstone();
+    let kept: Option<(Option<String>, Option<String>)> = c
+        .prepare_cached(
+            "SELECT row_covers, row_clock FROM tombstone
+             WHERE row_table = ?1 AND row_id = ?2 AND row IS NOT NULL",
+        )
+        .and_then(|mut s| {
+            s.query_row(params![kind, id], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+        })
+        .map_err(sql)?;
+    Ok(match kept {
+        Some((kept_covers, kept_clock)) => {
+            (covers, clock)
+                >= (
+                    kept_covers.as_deref().unwrap_or_default(),
+                    kept_clock.as_deref().unwrap_or_default(),
+                )
+        }
+        None => true,
+    })
+}
+
+/// Keep `row` (a serialized `Row`) in the tombstone of `key`, with the `covers` and `clock` of
+/// the delete it is from.
+pub(crate) fn keep_tombstone_row(
+    c: &Connection,
+    key: &RowKey,
+    row: &str,
+    covers: &str,
+    clock: &str,
+) -> Result<(), StoreError> {
+    let (kind, id) = key.tombstone();
+    c.execute(
+        "UPDATE tombstone SET row = ?3, row_covers = ?4, row_clock = ?5
+         WHERE row_table = ?1 AND row_id = ?2",
+        params![kind, id, row, covers, clock],
+    )
     .map(drop)
     .map_err(sql)
 }
@@ -242,7 +321,7 @@ pub(crate) fn read_preferred_order(c: &Connection) -> Result<SyncedPreferredOrde
     })
 }
 
-fn read_preference(c: &Connection, key: &str) -> Result<Option<String>, StoreError> {
+pub(crate) fn read_preference(c: &Connection, key: &str) -> Result<Option<String>, StoreError> {
     c.prepare_cached("SELECT value FROM preference WHERE key = ?1")
         .and_then(|mut s| s.query_row([key], |r| r.get(0)).optional())
         .map_err(sql)
@@ -327,13 +406,10 @@ fn forget_positions(c: &Connection, key: &str) -> Result<(), StoreError> {
     if !has_column(c, "item_clock", "position")? {
         return Ok(());
     }
-    let (kind, prefix) = match &list {
-        ListPreference::Collections => ("collection", String::new()),
-        ListPreference::CopyPresets => ("copy_preset", String::new()),
-        ListPreference::SavedSearches => ("saved_search", String::new()),
-        ListPreference::GuideArrangement(guide) => ("guide_section", format!("{guide}/")),
-        ListPreference::ResourceTags => return Ok(()),
-    };
+    if matches!(list, ListPreference::ResourceTags) {
+        return Ok(());
+    }
+    let (kind, prefix) = list.item_rows();
     c.execute(
         "UPDATE item_clock SET position = NULL
          WHERE row_table = ?1 AND substr(row_id, 1, length(?2)) = ?2",
@@ -554,7 +630,7 @@ pub(crate) fn write_preference(c: &Connection, key: &str, value: &str) -> Result
 
 /// The Changes that set synced preference `key` to `value`: one per item of a list
 /// preference whose old and new values are both in shape, else one for the whole value.
-/// None when it already holds `value`.
+/// None when it already holds `value`, or holds none and `value` is an empty list.
 pub(crate) fn preference_changes(
     c: &Connection,
     key: &str,
@@ -573,10 +649,15 @@ pub(crate) fn preference_changes(
         // its index.
         stored_positions(c, &mut before)?;
         let changes = diff(&before, &after);
-        // An empty list written where there was no value has no items to add: it is
-        // written whole, so the value is there as the engine wrote it.
         if !changes.is_empty() {
             return Ok(changes);
+        }
+        // An empty list written where there was no value changes nothing: no value reads as
+        // an empty list. Written whole it would be the list's base (D7), which supersedes
+        // every other device's items made before it (`Session::save_collections` writes the
+        // Resource tags with the Collections, `"{}"` on a device that has none).
+        if old.is_none() {
+            return Ok(Vec::new());
         }
     }
     let row = |value: String| {

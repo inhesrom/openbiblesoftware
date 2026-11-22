@@ -172,6 +172,7 @@ fn note(notebook_id: &str, body: &str) -> Annotation {
         }),
         created_at: 20,
         modified_at: 20,
+        conflict_of: None,
     }
 }
 
@@ -817,20 +818,24 @@ fn a_list_preference_not_in_shape_is_written_whole_and_never_loses_its_value() {
     }
 }
 
+/// No value reads as an empty list, so writing one there changes nothing: written whole it
+/// would be the list's base, superseding other devices' items made before it (S28b-2 review
+/// P1-1; `Session::save_collections` writes `"{}"` Resource tags on a device that has none).
 #[test]
-fn an_empty_list_written_where_there_was_none_is_written_whole() {
+fn an_empty_list_written_where_there_was_none_changes_nothing() {
     let dir = Dir::new("empty-list");
     let (db, _) = UserStore::open(&dir.db()).unwrap();
     db.take_applied_changes();
-    db.set_preference("copy.presets", "[]").unwrap();
-    assert_eq!(raw(&dir.db(), "copy.presets").as_deref(), Some("[]"));
-    assert_eq!(
-        db.take_applied_changes(),
-        vec![Change::insert(Row::Preference(SyncedPreference {
-            key: "copy.presets".into(),
-            value: "[]".into(),
-        }))]
-    );
+    for (key, empty) in [
+        ("copy.presets", "[]"),
+        ("library.collections", "[]"),
+        ("library.tags", "{}"),
+        ("search.saved", "[]"),
+    ] {
+        db.set_preference(key, empty).unwrap();
+        assert_eq!(raw(&dir.db(), key), None, "{key}");
+        assert_eq!(db.take_applied_changes(), Vec::new(), "{key}");
+    }
 }
 
 #[test]

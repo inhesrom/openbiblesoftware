@@ -67,7 +67,7 @@ pub use highlight_style::{
 };
 pub use hlc::Hlc;
 #[cfg(not(target_arch = "wasm32"))]
-pub use merge_store::{MergeTx, RowState, Tombstone};
+pub use merge_store::{HeldOp, MergeTx, RowState, Tombstone, list_key_of};
 #[cfg(not(target_arch = "wasm32"))]
 pub use obr::{APPLICATION_ID, ObrReader, copy_obr_as, write_obr};
 pub use reading_plans::{PlanReadingRow, ReadingPlanRow};

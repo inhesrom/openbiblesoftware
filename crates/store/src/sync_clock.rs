@@ -27,6 +27,10 @@ pub(crate) const CLOCK_SCHEMA: u32 = 14;
 /// The first schema whose tombstones say what their delete covers (`tombstone.covers`).
 pub(crate) const COVERS_SCHEMA: u32 = 15;
 
+/// The first schema with Sync conflicts' copies, deleted parents' rows (`tombstone.row`), the
+/// ops held back (`sync_held`) and a list's base (`item_clock ('preference', key)`).
+pub(crate) const HELD_SCHEMA: u32 = 16;
+
 /// Which of Sync's tables and columns a database has (one opened at an older schema, for a
 /// migration test, lacks the later ones).
 #[derive(Debug, Clone, Copy)]
@@ -35,6 +39,8 @@ pub(crate) struct SyncColumns {
     pub(crate) clocks: bool,
     /// `tombstone.covers` and `item_clock.position` (schema 15).
     pub(crate) schema_15: bool,
+    /// `tombstone.row`, `sync_held` and a list's base (schema 16).
+    pub(crate) schema_16: bool,
 }
 
 /// How a `Change` applied gets its clock.
@@ -46,6 +52,9 @@ pub(crate) enum Stamp<'a> {
     Merged {
         clock: &'a Hlc,
         covers: Option<&'a Hlc>,
+        /// For a delete, the row as the op's device deleted it (its `before`), which a
+        /// parent's tombstone keeps; `None`: the row here.
+        deleted: Option<&'a Row>,
     },
     /// Rewritten here the way every device rewrites it from what they all merged (a default
     /// Notebook another device's older one replaces): an update, and the row keeps its clock.
@@ -91,12 +100,17 @@ pub struct ReservedOpFile {
 }
 
 /// The tables whose `clock` the seed reads: every synced table, the tombstones, the item
-/// clocks and the outbox.
-fn clocked_tables() -> impl Iterator<Item = &'static str> {
-    SYNCED_TABLES
+/// clocks, the outbox and the ops held back (schema 16; their clocks were observed).
+fn clocked_tables(c: &Connection) -> Result<Vec<&'static str>, StoreError> {
+    let mut tables: Vec<&'static str> = SYNCED_TABLES
         .iter()
         .copied()
         .chain(["tombstone", "item_clock", "op_outbox"])
+        .collect();
+    if crate::synced_store::has_table(c, "sync_held")? {
+        tables.push("sync_held");
+    }
+    Ok(tables)
 }
 
 /// A `GLOB` pattern matching exactly the text form of a clock ([`Hlc::parse`]).
@@ -112,7 +126,7 @@ fn largest_clock(c: &Connection, now_ms: i64) -> Result<Option<(u64, u16)>, Stor
     let glob = clock_glob();
     let latest = format!("{:012x}", latest_wall_taken_in(now_ms));
     let mut largest = None;
-    for table in clocked_tables() {
+    for table in clocked_tables(c)? {
         let clock: Option<String> = c
             .query_row(
                 &format!(
@@ -366,15 +380,20 @@ pub(crate) fn record_op(
 /// deleted row has none (its tombstone has it); a list preference's item has its
 /// `item_clock` row, and its preference's row the same clock; the Preferred order has its
 /// `item_clock` row (`preferred_order`, `''`), kept when the order is empty, and every
-/// `preferred_order` row the same clock. From schema 15 (`positions`) a list item's
-/// `item_clock` row keeps its position too (`synced_store::stored_positions`).
+/// `preferred_order` row the same clock. From schema 15 a list item's `item_clock` row keeps
+/// its position too (`synced_store::stored_positions`). From schema 16 a list preference
+/// written whole is its list's **base** (ADR 0022 rule 3, D7): its clock is kept as
+/// `item_clock ('preference', key)`, every item op at or before it is superseded (so the
+/// item clocks at or before it go: the base holds their data), and its `preference.clock`
+/// stays the newest of any op on the list.
 pub(crate) fn stamp_row(
     c: &Connection,
     key: &RowKey,
     change: &Change,
     clock: &Hlc,
-    positions: bool,
+    columns: SyncColumns,
 ) -> Result<(), StoreError> {
+    let positions = columns.schema_15;
     let clock = clock.encode()?;
     let deleted = change.after.is_none();
     let set = |table: &str, column: &str, id: &str| {
@@ -396,7 +415,16 @@ pub(crate) fn stamp_row(
         RowKey::Favorite(uid) => set("favorite", "uid", uid),
         RowKey::ReadingPlan(uid) => set("reading_plan", "uid", uid),
         RowKey::Layout(id) => set("layout", "id", id),
-        RowKey::Preference(k) => set("preference", "key", k),
+        RowKey::Preference(k) => match ListPreference::of_key(k) {
+            Some(list) if columns.schema_16 => {
+                let value = match &change.after {
+                    Some(Row::Preference(p)) => Some(p.value.as_str()),
+                    _ => None,
+                };
+                stamp_list_base(c, &list, &clock, value, deleted)
+            }
+            _ => set("preference", "key", k),
+        },
         RowKey::Reading(plan, position) if !deleted => c
             .execute(
                 "UPDATE plan_reading SET clock = ?1
@@ -467,6 +495,79 @@ pub(crate) fn stamp_row(
     }
 }
 
+/// The tombstone key (`row_table`, `row_id`) of the base of list preference `key`
+/// ([`stamp_row`]).
+pub(crate) const LIST_BASE_TABLE: &str = "preference";
+
+/// Make the whole value of `list` just written at `clock` (text form), `value` (`None`:
+/// deleted), its base: the list's `preference.clock` is the newest of it and every item op,
+/// the base's clock is kept, and the item clocks at or before it go; each item of `value`
+/// (when in shape) gets the base's clock and its index in `value` as its position, so every
+/// device composes the list in the same order however its later items arrived.
+fn stamp_list_base(
+    c: &Connection,
+    list: &ListPreference,
+    clock: &str,
+    value: Option<&str>,
+    deleted: bool,
+) -> Result<(), StoreError> {
+    let key = list.key();
+    if !deleted {
+        c.execute(
+            "UPDATE preference SET clock = max(coalesce(clock, ''), ?1) WHERE key = ?2",
+            params![clock, key],
+        )
+        .map_err(sql)?;
+    }
+    c.execute(
+        "INSERT INTO item_clock (row_table, row_id, clock) VALUES (?1, ?2, ?3)
+         ON CONFLICT (row_table, row_id) DO UPDATE SET clock = max(clock, excluded.clock)",
+        params![LIST_BASE_TABLE, key, clock],
+    )
+    .map_err(sql)?;
+    let (kind, prefix) = list.item_rows();
+    c.execute(
+        "DELETE FROM item_clock WHERE row_table = ?1 AND substr(row_id, 1, length(?2)) = ?2
+             AND clock <= ?3",
+        params![kind, prefix, clock],
+    )
+    .map_err(sql)?;
+    let Some(items) = value.and_then(|v| list.items(Some(v))) else {
+        return Ok(());
+    };
+    let mut stmt = c
+        .prepare_cached(
+            "INSERT INTO item_clock (row_table, row_id, clock, position) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (row_table, row_id) DO NOTHING",
+        )
+        .map_err(sql)?;
+    for (i, item) in items.iter().enumerate() {
+        let (kind, id) = item.key().tombstone();
+        let position = match item {
+            Row::ResourceTags(_) => None,
+            _ => i64::try_from(i).ok(),
+        };
+        stmt.execute(params![kind, id, clock, position])
+            .map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// The clock of the base of `list` (its newest whole-value write, from schema 16), if any.
+pub(crate) fn read_list_base(
+    c: &Connection,
+    list: &ListPreference,
+) -> Result<Option<Hlc>, StoreError> {
+    let clock: Option<String> = c
+        .prepare_cached("SELECT clock FROM item_clock WHERE row_table = ?1 AND row_id = ?2")
+        .and_then(|mut s| {
+            s.query_row(params![LIST_BASE_TABLE, list.key()], |r| r.get(0))
+                .optional()
+        })
+        .map_err(sql)?;
+    Ok(clock.as_deref().and_then(Hlc::parse))
+}
+
 /// The newest version a delete of the row `key` names covered (its tombstone's `covers`, or
 /// its own clock before schema 15 filled `covers`), if it has a tombstone with a clock.
 pub(crate) fn read_tombstone_covers(
@@ -515,17 +616,32 @@ pub(crate) fn read_row_clock(c: &Connection, key: &RowKey) -> Result<Option<Stri
         ),
         RowKey::Layout(id) => one("SELECT clock FROM layout WHERE id = ?1", &[id]),
         RowKey::Preference(k) => one("SELECT clock FROM preference WHERE key = ?1", &[k]),
-        RowKey::PreferredOrder
-        | RowKey::Collection(_)
-        | RowKey::CopyPreset(_)
-        | RowKey::SavedSearch(_)
-        | RowKey::GuideSection(..)
-        | RowKey::ResourceTags(_) => {
+        RowKey::PreferredOrder => {
             let (kind, id) = key.tombstone();
             one(
                 "SELECT clock FROM item_clock WHERE row_table = ?1 AND row_id = ?2",
                 &[&kind, &id],
             )
+        }
+        // An item is at least as new as its list's base, which holds it unless a later op
+        // on it does.
+        RowKey::Collection(_)
+        | RowKey::CopyPreset(_)
+        | RowKey::SavedSearch(_)
+        | RowKey::GuideSection(..)
+        | RowKey::ResourceTags(_) => {
+            let (kind, id) = key.tombstone();
+            let base = ListPreference::of_row(key)
+                .map(|l| l.key())
+                .unwrap_or_default();
+            one(
+                "SELECT max(coalesce((SELECT clock FROM item_clock
+                                      WHERE row_table = ?1 AND row_id = ?2), ''),
+                            coalesce((SELECT clock FROM item_clock
+                                      WHERE row_table = ?3 AND row_id = ?4), ''))",
+                &[&kind, &id, &LIST_BASE_TABLE, &base],
+            )
+            .map(|c| c.filter(|c| !c.is_empty()))
         }
     }
 }

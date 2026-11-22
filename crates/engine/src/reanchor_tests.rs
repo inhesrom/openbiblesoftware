@@ -1092,6 +1092,7 @@ fn plan_on_the_starter_kjv() {
             }),
             created_at: 0,
             modified_at: 0,
+            conflict_of: None,
         });
     }
     let t = std::time::Instant::now();

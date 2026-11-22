@@ -49,6 +49,7 @@ fn highlight(db: &UserStore, style: &str) -> Annotation {
         }),
         created_at: 30,
         modified_at: 30,
+        conflict_of: None,
     }
 }
 
@@ -110,6 +111,7 @@ fn the_v10_migration_seeds_the_built_ins_under_their_v0_1_ids() {
                     }),
                     created_at: 30,
                     modified_at: 30,
+                    conflict_of: None,
                 }
             })
             .collect()

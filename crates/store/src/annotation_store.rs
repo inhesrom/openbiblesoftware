@@ -19,13 +19,14 @@ use crate::highlight_style_store::{
     read_palette, read_style, style_exists, write_palette, write_style,
 };
 use crate::hlc::Hlc;
+use crate::preference_items::ListPreference;
 use crate::sync_clock::{
-    CLOCK_SCHEMA, COVERS_SCHEMA, Stamp, SyncColumns, read_device_id, read_row_clock,
-    read_tombstone_covers, record_op, records_ops, stamp_row,
+    CLOCK_SCHEMA, COVERS_SCHEMA, HELD_SCHEMA, Stamp, SyncColumns, read_device_id, read_list_base,
+    read_row_clock, read_tombstone_covers, record_op, records_ops, stamp_row,
 };
 use crate::sync_schema::is_synced_preference;
 use crate::synced_store::{
-    ListItems, NO_CLOCK, has_table, mark_tombstone, read_synced_row, write_synced_row,
+    ListItems, NO_CLOCK, has_table, keeps_row, mark_tombstone, read_synced_row, write_synced_row,
 };
 use crate::user::{UserStore, sql};
 
@@ -270,7 +271,7 @@ const ANNOTATION_COLUMNS: &str = "a.id, a.notebook_id, a.kind, a.style, a.body, 
      a.modified_at, x.kind, x.start_book, x.start_chapter, x.start_verse, x.end_book,
      x.end_chapter, x.end_verse, x.resource_id, x.unit_id, x.start_byte, x.end_byte, x.quote,
      x.prefix, x.suffix, x.content_hash, x.native_ref, x.whole_verses, x.status,
-     x.checked_hash";
+     x.checked_hash, a.conflict_of";
 
 const ANNOTATION_FROM: &str = "annotations a LEFT JOIN anchors x ON x.annotation_id = a.id";
 
@@ -345,6 +346,7 @@ fn annotation_from(r: &SqlRow<'_>) -> rusqlite::Result<Annotation> {
         anchor,
         created_at: r.get(5)?,
         modified_at: r.get(6)?,
+        conflict_of: r.get(26)?,
     })
 }
 
@@ -517,11 +519,13 @@ fn write_annotation(
         )));
     }
     c.execute(
-        "INSERT INTO annotations (id, notebook_id, kind, style, body, created_at, modified_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO annotations (id, notebook_id, kind, style, body, created_at, modified_at,
+             conflict_of)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT (id) DO UPDATE SET notebook_id = excluded.notebook_id,
              kind = excluded.kind, style = excluded.style, body = excluded.body,
-             created_at = excluded.created_at, modified_at = excluded.modified_at",
+             created_at = excluded.created_at, modified_at = excluded.modified_at,
+             conflict_of = excluded.conflict_of",
         params![
             a.id,
             a.notebook_id,
@@ -529,7 +533,8 @@ fn write_annotation(
             style,
             body,
             a.created_at,
-            a.modified_at
+            a.modified_at,
+            a.conflict_of
         ],
     )
     .map_err(sql)?;
@@ -643,6 +648,21 @@ impl UserStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(sql)
     }
 
+    /// The **Sync conflicts**' copies (ADR 0022 rule 3): every Note holding the text that
+    /// lost when its Note was edited on two devices (`conflict_of` names that Note), oldest
+    /// first. Needs attention lists them (S19, S29).
+    pub fn sync_conflicts(&self) -> Result<Vec<Annotation>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {ANNOTATION_COLUMNS} FROM {ANNOTATION_FROM}
+                 WHERE a.conflict_of IS NOT NULL ORDER BY a.created_at, a.id"
+            ))
+            .map_err(sql)?;
+        let rows = stmt.query_map([], annotation_from).map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
     /// How many Annotations have a Text range in Resource `resource_id`.
     pub fn annotations_referring(&self, resource_id: &str) -> Result<u64, StoreError> {
         self.conn
@@ -700,14 +720,15 @@ impl UserStore {
     }
 
     /// Which of Sync's tables and columns the database has: one opened at an older schema
-    /// (migration tests) has no tombstones before 13, no clocks before 14 and no `covers`
-    /// before 15.
+    /// (migration tests) has no tombstones before 13, no clocks before 14, no `covers`
+    /// before 15 and no `tombstone.row` or `sync_held` before 16.
     pub(crate) fn sync_columns(&self, c: &Connection) -> Result<SyncColumns, StoreError> {
         let version = self.schema_version()?;
         Ok(SyncColumns {
             tombstones: has_table(c, "tombstone")?,
             clocks: version >= CLOCK_SCHEMA,
             schema_15: version >= COVERS_SCHEMA,
+            schema_16: version >= HELD_SCHEMA,
         })
     }
 
@@ -746,12 +767,20 @@ impl UserStore {
             None
         };
         // What a local write must come after, so every device's merge takes it: the version
-        // it replaces, and (a row made again) what its tombstone covers.
+        // it replaces, (a row made again) what its tombstone covers, and (a list item) its
+        // list's base, which supersedes every item op at or before it.
         let replaced = match stamp {
-            Stamp::Local { .. } if columns.schema_15 => before_clock
-                .as_deref()
-                .and_then(Hlc::parse)
-                .max(read_tombstone_covers(tx, &key)?),
+            Stamp::Local { .. } if columns.schema_15 => {
+                let base = match ListPreference::of_row(&key) {
+                    Some(list) if columns.schema_16 => read_list_base(tx, &list)?,
+                    _ => None,
+                };
+                before_clock
+                    .as_deref()
+                    .and_then(Hlc::parse)
+                    .max(read_tombstone_covers(tx, &key)?)
+                    .max(base)
+            }
             _ => None,
         };
         if matches!(stamp, Stamp::Kept) && (change.before.is_none() || change.after.is_none()) {
@@ -801,7 +830,7 @@ impl UserStore {
         let (clock, covers) = match stamp {
             Stamp::Local { recording } if columns.clocks => {
                 let clock = self.next_clock_after(tx, replaced.as_ref())?;
-                stamp_row(tx, &key, change, &clock, columns.schema_15)?;
+                stamp_row(tx, &key, change, &clock, columns)?;
                 if *recording {
                     let before = before_clock.as_deref().and_then(Hlc::parse);
                     record_op(tx, &clock, change, before.as_ref())?;
@@ -809,8 +838,8 @@ impl UserStore {
                 (clock.encode()?, before_clock.unwrap_or_default())
             }
             Stamp::Local { .. } => (NO_CLOCK.to_string(), NO_CLOCK.to_string()),
-            Stamp::Merged { clock, covers } => {
-                stamp_row(tx, &key, change, clock, columns.schema_15)?;
+            Stamp::Merged { clock, covers, .. } => {
+                stamp_row(tx, &key, change, clock, columns)?;
                 let covers = match covers {
                     Some(c) => c.encode()?,
                     None => NO_CLOCK.to_string(),
@@ -821,12 +850,29 @@ impl UserStore {
             Stamp::Kept => return Ok(()),
         };
         if columns.tombstones {
+            // A parent's tombstone keeps the row deleted (as the deleting device had it),
+            // which another device's child of it arriving later restores (schema 16).
+            let deleted = match stamp {
+                Stamp::Merged {
+                    deleted: Some(row), ..
+                } => Some(*row),
+                _ => change.before.as_ref(),
+            };
+            let row = match deleted {
+                Some(before) if columns.schema_16 && keeps_row(&key) => {
+                    Some(serde_json::to_string(before).map_err(|e| {
+                        StoreError::Rejected(format!("a row that is not JSON: {e}"))
+                    })?)
+                }
+                _ => None,
+            };
             mark_tombstone(
                 tx,
                 change,
                 &key,
                 &clock,
                 columns.schema_15.then_some(covers.as_str()),
+                row.as_deref(),
             )?;
         }
         Ok(())

@@ -9,7 +9,8 @@
 //! items and the outbox of ops not yet written to the Sync folder; from schema 14
 //! `apply_changes` stamps every row, item and tombstone it writes with a hybrid logical clock
 //! (`hlc.rs`, `sync_clock.rs`). Migration 14 → 15 adds what each tombstone's delete covers, so
-//! the merge (`merge_store.rs`) lets an edit the delete did not see bring the row back.
+//! the merge (`merge_store.rs`) lets an edit the delete did not see bring the row back;
+//! 15 → 16 adds Sync conflicts' copies, deleted parents' rows and the ops held back.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -226,6 +227,35 @@ CREATE TABLE op_outbox (
 pub(crate) const SCHEMA_15: &str = "
 ALTER TABLE tombstone ADD COLUMN covers TEXT;
 ALTER TABLE item_clock ADD COLUMN position INTEGER;
+";
+
+/// Migration 15 → 16 (ADR 0022 rule 3, S28b-2).
+///
+/// - `annotations.conflict_of`: on a **Sync conflict**'s copy, the id of the Note whose text
+///   won (`NULL` on every other Annotation): the Note edited on two devices keeps the later
+///   text in place, and the device whose own text lost records it as this copy.
+/// - `tombstone.row`: the deleted row, as a serialized `Row`, of a Notebook, Reading plan,
+///   Highlight palette or Highlight style (the version with the newest clock a delete
+///   covered): another device's child of it arriving later (a Note added to the Notebook
+///   meanwhile) restores it from here. `NULL` for every other kind and every tombstone written
+///   before schema 16. `row_covers` and `row_clock` are what the delete it is from covered and
+///   its clock, which a later delete's are compared with (`synced_store::tombstone_row_wins`).
+/// - `sync_held`: another device's ops this device could not apply (a synced preference a
+///   later app added, an item of a list whose value is not in its shape, a child of a parent
+///   deleted before schema 16), each with its row, clock and `change` JSON, so the rest of its
+///   op file merges; the merge tries them again at every sync, and Needs attention lists them.
+pub(crate) const SCHEMA_16: &str = "
+ALTER TABLE annotations ADD COLUMN conflict_of TEXT;
+ALTER TABLE tombstone ADD COLUMN row TEXT;
+ALTER TABLE tombstone ADD COLUMN row_covers TEXT;
+ALTER TABLE tombstone ADD COLUMN row_clock TEXT;
+CREATE TABLE sync_held (
+    row_table TEXT NOT NULL,
+    row_id    TEXT NOT NULL,
+    clock     TEXT NOT NULL,
+    change    TEXT NOT NULL,
+    PRIMARY KEY (row_table, row_id, clock)
+);
 ";
 
 /// Migration 12 → 13, after [`SCHEMA_13`]: this device's id.

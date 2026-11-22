@@ -459,6 +459,10 @@ fn export_everything_writes_markdown_notes_and_json_of_every_table() {
     );
     let annotations = json("annotations.json", &mut read);
     assert_eq!(annotations["annotations"].as_array().unwrap().len(), 3);
+    // Always written, null on all but a Sync conflict's copy.
+    for a in annotations["annotations"].as_array().unwrap() {
+        assert_eq!(a.get("conflict_of"), Some(&Value::Null), "{a}");
+    }
     assert_eq!(annotations["notebooks"].as_array().unwrap().len(), 2);
     assert!(
         !annotations["highlight_styles"]

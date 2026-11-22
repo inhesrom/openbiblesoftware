@@ -143,6 +143,12 @@ pub struct Annotation {
     /// Milliseconds since the Unix epoch.
     pub created_at: i64,
     pub modified_at: i64,
+    /// A **Sync conflict**'s copy (ADR 0022 rule 3): the id of the Note whose text was edited
+    /// on another device before this device's edit was seen there, this copy holding the text
+    /// that lost. Always serialized (`null` when none), so an op line without it is one from
+    /// an app that does not know it, and the merge keeps the value here (`docs/dev/sync.md`).
+    #[serde(default)]
+    pub conflict_of: Option<String>,
 }
 
 impl Annotation {

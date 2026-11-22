@@ -461,7 +461,8 @@ This zip is a copy of everything you made in Open Bible Software, for reading or
 elsewhere:\n\n\
 - `notes/`: each Notebook's Notes and Highlights as Markdown, in Bible order.\n\
 - `annotations.json`: every Notebook, Highlight style and palette, and Annotation with its \
-anchor, and the name of every Resource they were made on, removed ones included.\n\
+anchor (its `conflict_of`, null on most, names the Note whose text a Sync conflict's copy \
+lost to), and the name of every Resource they were made on, removed ones included.\n\
 - `layouts.json` and `last-session.json`: your Layouts and the Workspace as you left it.\n\
 - `favorites.json`, `history.json` and `reading-plans.json`.\n\
 - `preferred-order.json` and `settings.json`: your Preferred order and every setting.\n\

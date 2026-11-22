@@ -618,6 +618,7 @@ impl Session {
                 anchor: Some(part.anchor()),
                 created_at: now,
                 modified_at: now,
+                conflict_of: None,
             })
             .collect();
         let label = if made.len() == 1 {
@@ -663,6 +664,7 @@ impl Session {
             anchor,
             created_at: now,
             modified_at: now,
+            conflict_of: None,
         };
         self.commit("Note", vec![Change::insert(Row::Annotation(note.clone()))])?;
         if let NoteTarget::Selection(sel) = target {
