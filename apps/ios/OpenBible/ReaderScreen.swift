@@ -10,6 +10,10 @@ struct ReaderScreen: View {
     /// Import (S26): reached from the options menu until the screen anatomy (#335, S12/S14a)
     /// gives it its place.
     @Bindable var importer: ImportModel
+    /// The Library (S24): a sheet from the options menu until the screen anatomy (#335,
+    /// S12/S14a) gives it its place; the first-launch Study set offer is a sheet over the
+    /// reader.
+    @Bindable var library: LibraryModel
     @State private var reference = ""
     @State private var showBooks = false
     @State private var showAbout = false
@@ -61,6 +65,8 @@ struct ReaderScreen: View {
                         ForEach(model.tones, id: \.id) { Text($0.label).tag($0.id) }
                     }
                     Toggle("Show measurements", isOn: $model.showMeasurements)
+                    Button("Library…") { library.open() }
+                        .accessibilityIdentifier("reader.library")
                     Button("Import…") { importer.picking = true }
                         .accessibilityIdentifier("reader.import")
                     Button("About") { showAbout = true }
@@ -91,6 +97,19 @@ struct ReaderScreen: View {
             }
             ResourceText(model: model)
                 .ignoresSafeArea(edges: .bottom)
+                .safeAreaInset(edge: .bottom) {
+                    if let banner = library.banner {
+                        Button { library.open() } label: {
+                            DownloadBanner(text: banner)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .padding(.horizontal)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .background(.regularMaterial)
+                        .accessibilityIdentifier("reader.banner")
+                    }
+                }
             if model.showMeasurements && (!model.benchResult.isEmpty || !model.metricsText.isEmpty) {
                     Text(model.benchResult.isEmpty ? model.metricsText : model.benchResult)
                         .font(.caption2.monospaced())
@@ -121,6 +140,16 @@ struct ReaderScreen: View {
         .sheet(item: $importer.shown) { _ in
             ImportReportSheet(model: importer)
         }
+        .sheet(isPresented: $library.showing) {
+            LibrarySheet(model: library)
+        }
+        .sheet(isPresented: Binding(get: { library.offer != nil }, set: { if !$0 { library.offerNotNow() } })) {
+            if let offer = library.offer {
+                StudySetOfferSheet(model: library, offer: offer)
+                    .libraryQuestions(library, active: true)
+            }
+        }
+        .libraryQuestions(library, active: !library.showing && library.offer == nil)
     }
 }
 

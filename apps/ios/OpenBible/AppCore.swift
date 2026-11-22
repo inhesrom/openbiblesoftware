@@ -20,6 +20,8 @@ final class AppCore {
 
     let engineVersion = OpenBibleCore.engineVersion()
     private(set) var state: State = .starting
+    /// The app's folder the core was booted over.
+    private(set) var folder: URL?
     /// How long the boot took, for the log and the tests.
     private(set) var bootDuration: Duration?
     /// What the core reports from its pump thread, delivered on the main actor.
@@ -66,6 +68,17 @@ final class AppCore {
             }
             try? core.setObserver(observer: events)
             self.events = events
+            // The Library's transfers: small files through the shell's transport, `.obr`
+            // and Open catalogue files through the background downloads.
+            try? core.setTransport(transport: HTTPTransport())
+            #if DEBUG
+                // Test harness: a local Starter library mirror instead of the release.
+                if let mirror = ProcessInfo.processInfo.environment["OBS_STARTER_MIRROR"] {
+                    try? core.setStarterSource(base: mirror, releasesApi: nil)
+                }
+            #endif
+            DownloadCenter.shared.attach(core: core, folder: folder)
+            self.folder = folder
             state = .ready(core)
         } catch {
             state = .failed(message: Self.message(error))
