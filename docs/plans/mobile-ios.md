@@ -2326,6 +2326,19 @@ under the half they belong to.
   sync-e2e` green (3 m 28 s); `cargo xtask gallery` green, no golden changed; `cargo xtask ci`
   green (9 m 11 s; 2,494 tests passed, 45 ignored; fmt, layers, assets, licenses, clippy, a11y,
   test, wasm). Not a UI change (the views read less, show the same).
+  **Review fixes (2026-11-22):** a sync that fails or is abandoned marks the views stale, and
+  the next sync reads them whole (P1-1); a cursor whose device has nothing in the folder is
+  dropped, Stop syncing and choosing another folder empty `merge_cursor`, and a cursor at a file
+  that cannot be read is kept as a damaged file's stop is (supervisor: no new rule; its snapshot
+  and trims wait, documented with the join case) (P1-2); a snapshot cursor carries a fingerprint
+  of `snapshot_ops` and is dropped on a mismatch (P2-1); cursors resume in the order their
+  merges started (`merge_cursor.started`, migration 19 edited in place) (P2-2); a refusal
+  outside an op's savepoint after a committed batch counts in `split_waits`. Investigated the
+  slow Note-update merge: finding a Note's old `notes_fts` entry read every entry; it is now
+  found through the index by its words (10,000 merged edits 4.9 s → 1.3 s); the rest (a
+  segment per op from FTS5's flush before each query) is in `sync.md` "For later steps". The 1k
+  props and the 10k props at seeds 20266453, 891, 7744, 1 and 42 green; sync-e2e, gallery
+  (no golden changed) green.
 
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
