@@ -364,6 +364,49 @@ fn index_form(body: &str) -> String {
         .join(" ")
 }
 
+/// Delete Note `id`'s entry in `notes_fts`, made from its text `old`. Its `annotation_id` is
+/// not indexed, so finding the entry by that alone reads every entry (about 0.4 ms a Note in
+/// a library of 10,000, S29c); the words of its text find it through the index first, then the
+/// id among those. An entry those words do not find (made from another text, or by an older
+/// build's word forms) is deleted by reading every entry, as before.
+fn delete_note_entry(c: &Connection, id: &str, old: &str) -> Result<(), StoreError> {
+    if let Some(words) = entry_words(&index_form(old)) {
+        let deleted = c
+            .execute(
+                "DELETE FROM notes_fts WHERE notes_fts MATCH ?1 AND annotation_id = ?2",
+                params![words, id],
+            )
+            .map_err(sql)?;
+        if deleted > 0 {
+            return Ok(());
+        }
+    }
+    c.execute("DELETE FROM notes_fts WHERE annotation_id = ?1", [id])
+        .map(drop)
+        .map_err(sql)
+}
+
+/// A `MATCH` expression every entry made from the index form `text` matches: up to eight of
+/// its distinct words, each quoted (so none is read as an operator); `None` when it has no
+/// word the index keeps.
+fn entry_words(text: &str) -> Option<String> {
+    let mut words: Vec<&str> = Vec::new();
+    for word in text.split_whitespace() {
+        if word.chars().any(char::is_alphanumeric) && !words.contains(&word) {
+            words.push(word);
+            if words.len() == 8 {
+                break;
+            }
+        }
+    }
+    (!words.is_empty()).then(|| {
+        (words.iter())
+            .map(|w| format!("\"{}\"", w.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
+}
+
 fn read_notebook(c: &Connection, id: &str) -> Result<Option<Notebook>, StoreError> {
     c.prepare_cached(&format!(
         "SELECT {NOTEBOOK_COLUMNS} FROM notebooks WHERE id = ?1"
@@ -486,11 +529,9 @@ fn write_annotation(
     after: Option<&Annotation>,
 ) -> Result<(), StoreError> {
     let Some(a) = after else {
-        // Only a Note has an index entry. `annotation_id` is not indexed, so finding the entry
-        // scans `notes_fts`; deleting a Notebook full of Highlights must not do that per row.
-        if before.is_some_and(Annotation::is_note) {
-            c.execute("DELETE FROM notes_fts WHERE annotation_id = ?1", [id])
-                .map_err(sql)?;
+        // Only a Note has an index entry.
+        if let Some(note) = before.filter(|b| b.is_note()) {
+            delete_note_entry(c, id, note.body())?;
         }
         for stmt in [
             "DELETE FROM anchors WHERE annotation_id = ?1",
@@ -541,15 +582,13 @@ fn write_annotation(
     if before.map(|b| &b.anchor) != Some(&a.anchor) {
         write_anchor(c, id, a.anchor.as_ref())?;
     }
-    // Rewrite the Note's index entry only when its text changed: finding the old entry
-    // scans the index's (small) content table.
+    // Rewrite the Note's index entry only when its text changed.
     fn indexed(x: &Annotation) -> Option<&str> {
         x.is_note().then(|| x.body())
     }
     if before.and_then(indexed) != indexed(a) {
-        if before.and_then(indexed).is_some() {
-            c.execute("DELETE FROM notes_fts WHERE annotation_id = ?1", [id])
-                .map_err(sql)?;
+        if let Some(old) = before.and_then(indexed) {
+            delete_note_entry(c, id, old)?;
         }
         if a.is_note() {
             c.execute(
