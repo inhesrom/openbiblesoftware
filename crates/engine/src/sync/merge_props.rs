@@ -1198,14 +1198,18 @@ impl World {
             .is_none_or(|v| collection_items(&v).is_some())
     }
 
+    /// Device `e`'s Collections as items, or None when they are not in their list's shape.
+    fn collection_values(&self, e: usize) -> Option<Vec<serde_json::Value>> {
+        match self.devices[e].preference(COLLECTIONS).unwrap() {
+            None => Some(Vec::new()),
+            Some(v) => collection_items(&v).map(|_| serde_json::from_str(&v).unwrap()),
+        }
+    }
+
     /// Device `e`'s Collections with `json` (holding its `name`) added, or None when one of
-    /// that name is there.
+    /// that name is there or they are not in their list's shape.
     fn with_collection(&self, e: usize, json: serde_json::Value) -> Option<String> {
-        let value = self.devices[e].preference(COLLECTIONS).unwrap();
-        let mut items: Vec<serde_json::Value> = value
-            .as_deref()
-            .map(|v| serde_json::from_str(v).unwrap())
-            .unwrap_or_default();
+        let mut items = self.collection_values(e)?;
         if items.iter().any(|it| it["name"] == json["name"]) {
             return None;
         }
@@ -1213,15 +1217,12 @@ impl World {
         Some(serde_json::to_string(&items).unwrap())
     }
 
-    /// Device `e`'s Collections without the one named `name`.
-    fn without_collection(&self, e: usize, name: &str) -> String {
-        let value = self.devices[e].preference(COLLECTIONS).unwrap();
-        let mut items: Vec<serde_json::Value> = value
-            .as_deref()
-            .map(|v| serde_json::from_str(v).unwrap())
-            .unwrap_or_default();
+    /// Device `e`'s Collections without the one named `name`, or None when they are not in
+    /// their list's shape.
+    fn without_collection(&self, e: usize, name: &str) -> Option<String> {
+        let mut items = self.collection_values(e)?;
         items.retain(|it| it["name"] != name);
-        serde_json::to_string(&items).unwrap()
+        Some(serde_json::to_string(&items).unwrap())
     }
 
     /// A wall clock after every device's now, for writes that must come in this order.
@@ -1348,11 +1349,7 @@ impl World {
         self.sync_seeing(z, &seen);
         let n = self.n;
         self.n += 1;
-        let value = self.devices[z].preference(COLLECTIONS).unwrap();
-        let Some(mut items) = value
-            .as_deref()
-            .and_then(|v| serde_json::from_str::<Vec<serde_json::Value>>(v).ok())
-        else {
+        let Some(mut items) = self.collection_values(z) else {
             return;
         };
         let Some(item) = items.iter_mut().find(|it| it["name"] == name) else {
@@ -1368,7 +1365,9 @@ impl World {
         // invariants count it among the Collections that must survive.
         super::snapshot::write_snapshot(&self.devices[z], &self.folder).unwrap();
         fix(Some(far + 500));
-        let without = self.without_collection(y, name);
+        let Some(without) = self.without_collection(y, name) else {
+            return;
+        };
         self.devices[y]
             .set_preference(COLLECTIONS, &without)
             .unwrap();
@@ -1420,7 +1419,9 @@ impl World {
         self.take_backup(d, rng);
         self.now += 1;
         self.as_device(d);
-        let without = self.without_collection(d, name);
+        let Some(without) = self.without_collection(d, name) else {
+            return;
+        };
         self.devices[d]
             .set_preference(COLLECTIONS, &without)
             .unwrap();
@@ -1434,10 +1435,7 @@ impl World {
         self.as_device(d);
         let k = self.n;
         self.n += 1;
-        if self.collections_in_shape(d)
-            && let Some(again) =
-                self.with_collection(d, serde_json::json!({ "name": name, "n": k }))
-        {
+        if let Some(again) = self.with_collection(d, serde_json::json!({ "name": name, "n": k })) {
             self.devices[d].set_preference(COLLECTIONS, &again).unwrap();
             self.done(d);
         }
@@ -1463,16 +1461,34 @@ impl World {
         }
         let a = joined.remove(rng.below(joined.len()));
         let p = joined.remove(rng.below(joined.len()));
-        let has = |d: usize, id: &str| self.devices[d].annotation(id).unwrap().is_some();
-        let notes: Vec<Annotation> = self.devices[a]
-            .annotations(None)
-            .unwrap()
-            .into_iter()
-            .filter(|n| n.is_note() && n.conflict_of.is_none() && has(p, &n.id))
-            .collect();
-        let Some(note) = rng.pick(&notes).cloned() else {
+        // A Note both have: A makes one when there is none.
+        self.as_device(a);
+        let nb = self.devices[a].notebooks().unwrap().remove(0);
+        let body = self.text("copied first");
+        let made = Annotation {
+            id: new_id(),
+            notebook_id: nb.id,
+            content: Content::Note { body },
+            anchor: None,
+            created_at: 7,
+            modified_at: 7,
+            conflict_of: None,
+        };
+        self.devices[a]
+            .apply_changes(&[Change::insert(Row::Annotation(made.clone()))])
+            .unwrap();
+        self.done(a);
+        self.push(a);
+        self.now += 1;
+        self.as_device(p);
+        self.sync_all(p);
+        let Some(note) = self.devices[a].annotation(&made.id).unwrap() else {
             return;
         };
+        if self.devices[p].annotation(&made.id).unwrap().is_none() {
+            return;
+        }
+        self.now += 1;
         self.as_device(a);
         self.edit_text(a, &note, "copied T by A");
         let t = self.devices[a].annotation(&note.id).unwrap().unwrap();
@@ -2129,7 +2145,8 @@ fn check_case(
             15 => world.held_own_item_step(&mut rng),
             17 => world.far_base_after_re_add_step(&mut rng),
             19 => world.snapshot_delete_step(&mut rng),
-            21 => world.edited_copy_step(&mut rng),
+            21 | 23 => world.edited_copy_step(&mut rng),
+            25 => world.snapshot_delete_step(&mut rng),
             n if n % 4 == 0 => world.sync(d, &mut rng),
             _ => world.edit(d, &mut rng),
         }
@@ -2543,7 +2560,9 @@ fn run(cases: u64, name: &str) {
          Q1 sequence {}, D7 sequence {}, D3 sequence {}; late joins {}, snapshots merged {} ({} for files \
          trimmed), own op files trimmed {}, restores catching up {}, replacing {}; Backups \
          before a late join restored {}, databases copied {}, Backups with a base {}, \
-         snapshots written again {}",
+         snapshots written again {}; the sync merge fix's sequences: own items held {}, far \
+         bases after a re-add {}, snapshot deletes on a restore {}, copies edited then \
+         restored {}",
         stats.outcomes,
         stats.retried,
         stats.renamed_layouts,
@@ -2568,6 +2587,10 @@ fn run(cases: u64, name: &str) {
         stats.copies,
         stats.based_backups,
         stats.mended,
+        stats.held_own_items,
+        stats.far_bases,
+        stats.snapshot_deletes,
+        stats.edited_copies,
     );
     for outcome in [
         Outcome::Written,

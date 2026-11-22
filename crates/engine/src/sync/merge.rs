@@ -207,13 +207,14 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
         }
     }
     // This device's former ids first (a restore or a copy gave it a new id), before any
-    // snapshot too: their op files are its own history, so their versions are here as its
-    // own before another device's replace them, and the own checks see them (ADR 0022 rule
-    // 7). A snapshot merged first could make the merge record again, at a new clock, a row
-    // its old id made and later edited (a Sync conflict's copy, an item kept), and that
-    // record would beat the old id's later edit.
+    // snapshot too, the last given up first (`own_device_ids`): their op files are its own
+    // history, so their versions are here as its own before another device's replace them,
+    // and the own checks see them (ADR 0022 rule 7). A snapshot, or an older former id's
+    // later files (after a copy, the other copy's), merged first could make the merge record
+    // again, at a new clock, a row the last id made and later edited (a Sync conflict's copy,
+    // an item kept), and that record would beat the later edit.
     let mut pending = Vec::new();
-    for id in ready.iter().filter(|id| own_ids.contains(id)) {
+    for id in own_ids.iter().filter(|id| ready.contains(id)) {
         pending.push(pending_of(user, folder, id, &mut report)?);
     }
     ready.retain(|id| !own_ids.contains(id));
@@ -262,8 +263,10 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             report.stopped.push((id, 0, OpsStop::NoSnapshot));
         }
     }
-    // Former ids met through a snapshot (theirs, their files trimmed) go first again.
-    ready.sort_by_key(|id| (!own_ids.contains(id), id.clone()));
+    // Former ids met through a snapshot (theirs, their files trimmed) go first again, the
+    // last given up first.
+    let former_rank = |id: &String| own_ids.iter().position(|o| o == id).unwrap_or(usize::MAX);
+    ready.sort_by_key(|id| (former_rank(id), id.clone()));
     for id in ready {
         pending.push(pending_of(user, folder, &id, &mut report)?);
     }

@@ -278,6 +278,21 @@ CREATE TABLE former_device (
 ALTER TABLE device ADD COLUMN restore_choice INTEGER NOT NULL DEFAULT 0;
 ";
 
+/// Migration 17 → 18 (ADR 0022 rule 7, the sync merge fix).
+///
+/// - `former_device.seq`: the order this database gave up each of its former ids, from 1 (the
+///   first given up): a restore or a copy detection records each new former id at the next
+///   number. The merge merges the former ids' op files newest first, so this device's latest
+///   history is here before an older id's later files, which after a copy are the other
+///   copy's. The ids already there are numbered in their id order (UUIDv7: the order they
+///   were made, as near as a v17 database can tell).
+pub(crate) const SCHEMA_18: &str = "
+ALTER TABLE former_device ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+UPDATE former_device SET seq = (
+    SELECT COUNT(*) FROM former_device AS f WHERE f.device_id <= former_device.device_id
+);
+";
+
 /// Migration 12 → 13, after [`SCHEMA_13`]: this device's id.
 pub(crate) fn make_device(c: &Connection) -> Result<(), StoreError> {
     c.execute(

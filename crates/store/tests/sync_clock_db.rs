@@ -182,7 +182,7 @@ fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
 
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 13);
-    assert_eq!(USER_SCHEMA_VERSION, 17);
+    assert_eq!(USER_SCHEMA_VERSION, 18);
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     let copy = report.migration_backup.unwrap();
     assert!(copy.to_string_lossy().contains(".v13-"));
@@ -231,7 +231,7 @@ fn assert_restored_as_held(db: &UserStore, held: &Tables, before: &str) {
 }
 
 #[test]
-fn a_v13_backup_restores_into_17_losing_nothing() {
+fn a_v13_backup_restores_into_18_losing_nothing() {
     let dir = Dir::new("v13-backup");
     let old = dir.0.join("old").join("user.db");
     v13_fixture(&old);
@@ -508,7 +508,7 @@ fn a_v15_backup_restores_with_no_conflicts_no_kept_rows_and_nothing_held() {
 }
 
 #[test]
-fn a_v16_backup_restores_into_17_with_its_id_a_former_one_and_no_choice_waiting() {
+fn a_v16_backup_restores_into_18_with_its_id_a_former_one_and_no_choice_waiting() {
     let dir = Dir::new("v16-own-backup");
     let (v16, _) = UserStore::open_to(&dir.db(), 16).unwrap();
     assert_eq!(v16.schema_version().unwrap(), 16);
@@ -521,7 +521,7 @@ fn a_v16_backup_restores_into_17_with_its_id_a_former_one_and_no_choice_waiting(
     assert_eq!(UserStore::backup_contents(&backup).unwrap().version, 16);
     let held = everything(&Connection::open(&backup).unwrap());
 
-    // The same database, now at 17, restores its own v16 Backup.
+    // The same database, now at 18, restores its own v16 Backup.
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(db.device_id().unwrap(), id);
     db.restore(&backup).unwrap();
@@ -540,6 +540,64 @@ fn a_v16_backup_restores_into_17_with_its_id_a_former_one_and_no_choice_waiting(
         ["0"]
     );
     assert!(!db.restore_choice_pending().unwrap());
+}
+
+/// `former_device`'s ids with their `seq`, by `seq`.
+fn former_seqs(path: &Path) -> Vec<String> {
+    strings(
+        &Connection::open(path).unwrap(),
+        "SELECT device_id || ' ' || seq FROM former_device ORDER BY seq",
+    )
+}
+
+/// Migration 18 numbers a v17 database's former ids in their id order, a restore of its own
+/// v17 Backup gives them their order and the id it gave up the next number, a copy
+/// detection the next one after that, and a Backup keeps the numbers (the merge merges the
+/// former ids' files the last given up first).
+#[test]
+fn former_ids_keep_the_order_they_were_given_up_through_migration_18_restores_and_backups() {
+    let dir = Dir::new("former-order");
+    let (v17, _) = UserStore::open_to(&dir.db(), 17).unwrap();
+    let (older, newer) = (new_id(), new_id());
+    for id in [&newer, &older] {
+        v17.execute_unchecked(&format!(
+            "INSERT INTO former_device (device_id) VALUES ('{id}')"
+        ))
+        .unwrap();
+    }
+    let x = v17.device_id().unwrap();
+    let backup = dir.0.join("v17.obsbackup");
+    v17.back_up(&backup).unwrap();
+    drop(v17);
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(db.schema_version().unwrap(), 18);
+    assert_eq!(
+        former_seqs(&dir.db()),
+        [format!("{older} 1"), format!("{newer} 2")]
+    );
+    assert_eq!(
+        db.own_device_ids().unwrap(),
+        [x.clone(), newer.clone(), older.clone()]
+    );
+    db.restore(&backup).unwrap();
+    let n = db.device_id().unwrap();
+    assert_eq!(
+        former_seqs(&dir.db()),
+        [format!("{older} 1"), format!("{newer} 2"), format!("{x} 3")]
+    );
+    assert_eq!(
+        db.own_device_ids().unwrap(),
+        [n.clone(), x.clone(), newer.clone(), older.clone()]
+    );
+    let m = db.take_new_device_id().unwrap();
+    assert_eq!(
+        db.own_device_ids().unwrap(),
+        [m, n.clone(), x, newer, older]
+    );
+    let again = dir.0.join("v18.obsbackup");
+    db.back_up(&again).unwrap();
+    assert_eq!(former_seqs(&again), former_seqs(&dir.db()));
+    assert_eq!(former_seqs(&again).last(), Some(&format!("{n} 4")));
 }
 
 #[test]

@@ -885,6 +885,80 @@ fn a_conflict_copy_edited_before_a_restore_keeps_its_edit_when_catching_up() {
     assert_eq!(texts(&a), ["T2 on A", "V on D"]);
 }
 
+/// The merge property test's seed 7744, shrunk: P's database is copied to A, which takes a
+/// new id (P's stays P's and a former one of A's). A writes T over a Note and is backed up; P,
+/// never seeing T, writes V; A meets V, keeps T as a Sync conflict's copy and edits it to T2;
+/// A restores the Backup and catches up. Its former ids' files merge the last given up first
+/// (`former_device.seq`), A's before P's, so the copy and T2 are here as A's own when V
+/// arrives, and T2 stays. Before the fix P's files went first (by id), A made the copy again
+/// at a new clock, and that beat T2. `p_id_sorts_last`: P's id sorts after A's new one (a
+/// clock running behind when A took its id), which must not change the order.
+fn a_copys_edited_conflict_copy_survives_a_restore(name: &str, p_id_sorts_last: bool) {
+    let dir = Dir::new(name);
+    let folder = MemSyncFolder::new();
+    let p = open(&dir, "p");
+    if p_id_sorts_last {
+        p.execute_unchecked("UPDATE device SET device_id = 'ffffffff-ffff-7fff-bfff-ffffffffffff'")
+            .unwrap();
+    }
+    let nb = default_notebook(&p);
+    let n = note(&nb, "first");
+    add(&p, Row::Annotation(n.clone()));
+    sync(&p, &folder);
+    let p_id = p.device_id().unwrap();
+    let mut a = p.copy_in_memory().unwrap();
+    add(&p, Row::Notebook(notebook("On P")));
+    sync(&p, &folder);
+    let report = sync(&a, &folder);
+    let a_id = report.new_device_id.clone().unwrap();
+    assert_eq!(a.own_device_ids().unwrap(), [a_id.clone(), p_id.clone()]);
+    assert_eq!(a_id > p_id, !p_id_sorts_last);
+    settle(&[&p, &a], &folder);
+    a.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "T on A")),
+    )])
+    .unwrap();
+    let backup = a.copy_in_memory().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    p.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "V on P")),
+    )])
+    .unwrap();
+    sync(&p, &folder);
+    let report = sync(&a, &folder);
+    assert_eq!(report.merge.recorded.conflicts, 1, "{report:?}");
+    let copy = a
+        .annotations(None)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.conflict_of.is_some())
+        .unwrap();
+    a.apply_changes(&[Change::update(
+        Row::Annotation(copy.clone()),
+        Row::Annotation(with_text(&copy, "T2 on A")),
+    )])
+    .unwrap();
+    sync(&a, &folder);
+    a.restore_from(&backup).unwrap();
+    restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    assert_eq!(a.own_device_ids().unwrap()[1..], [a_id, p_id]);
+    settle(&[&p, &a], &folder);
+    converged(&[&p, &a]);
+    assert_eq!(texts(&a), ["T2 on A", "V on P"]);
+}
+
+#[test]
+fn a_copys_edited_conflict_copy_survives_a_restore_catching_up() {
+    a_copys_edited_conflict_copy_survives_a_restore("copy-restore-copy-edited", false);
+}
+
+#[test]
+fn a_copys_edited_conflict_copy_survives_a_restore_when_the_originals_id_sorts_last() {
+    a_copys_edited_conflict_copy_survives_a_restore("copy-restore-copy-edited-skew", true);
+}
+
 #[test]
 fn a_replace_over_a_list_base_keeps_another_devices_collection_made_after_the_backup() {
     let dir = Dir::new("restore-replace-base");
