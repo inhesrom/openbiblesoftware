@@ -1599,7 +1599,9 @@ under the half they belong to.
   run now reaches: written 313,931, superseded 10,859, covered 462, edit kept 1,666, delete
   noted 1,227; files retried 306; Layouts renamed 1,497; defaults demoted 14,973; items moved
   351; undos 19,075; clocks not observed 45,283 (three more 10k runs from other seeds green).
-  Measured after the fixes: see the S28b-1 fix report (`/tmp/obs-ios-plan/fix-s28b1-report.md`).
+  Measured after the fixes: `cargo xtask ci` green (7 m 28 s, 2,386 tests passed, 43
+  ignored); `cargo test -p obs-store` 155 passed; `cargo test -p obs-engine --lib sync` 34
+  passed, 1 ignored (3.1 s); with `--include-ignored` 35 passed (25.0 s).
   The stalled-stream finding and the `skip_serializing_if` note went to S28b-2's entry.
 
 #### S28b-2 — Sync 2b-2 (Rust): Sync conflicts, deleted parents, list items of one name, whole values
