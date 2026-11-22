@@ -1732,6 +1732,80 @@ this in addition to its own lines):
 - **Verify:** UI standard; XCUITest `libraryDownload` against the local mirror.
 - **Stop-and-ask:** UI standard; background `URLSession` resume data proves unusable for
   GitHub Releases URLs (redirects).
+- **Outcome (2026-11-22, branch `mobile/s24-ios-downloads`, on S26/S23/S13; S08 has not
+  happened, so the screen anatomy is not decided):**
+  - **Decisions (supervisor, at the stop-and-ask: two rules would have lived in Swift).**
+    (1) "Use cellular data" (off by default) is kept by the core: `obs-mobile`
+    `use_cellular()`/`set_use_cellular(on)` in a new device-only preference
+    `mobile.downloads` (`obs_store::DEVICE_PREFERENCES`; the store's preference-list test
+    now reads `crates/mobile/src` too); the `plan_*` signatures are unchanged and Swift
+    forwards the value. Its toggle is in the Library sheet for now; S14b moves it into
+    Settings (added to S14b's entry). (2) The first-launch Study set offer is the core's:
+    `study_set_offer(network)` (every word, the size, the network line; never once shown at
+    an earlier launch or when nothing of the Study set is missing) and
+    `study_set_offer_shown()` (recorded as the sheet appears, as the desktop's tour). (3)
+    `is_wifi = !path.usesInterfaceType(.cellular)` (offline and wired count as not
+    cellular, what `allowsCellularAccess = false` waits for); resume data beside the core's
+    file as `<file>.resume`.
+  - **Shipped, Rust:** `obs_mobile::download_settings` (the above), `download_label(state)`
+    (a row's state in words, so no size is formatted in Swift), and in `obs-ffi` those plus
+    `licence_class_label` and `licence_filters()` (the desktop's licence filter words and
+    default). Tests in `library_tests.rs` and `apps/obs-ffi/tests/library.rs`.
+  - **Shipped, iOS:** `HTTPTransport` (the core's `Transport`, statuses and headers as
+    `fetch.rs`); `DownloadCenter` (two `URLSessionConfiguration.background` sessions, Wi-Fi
+    only and cellular, progress to the core, the finished file moved to the core's path and
+    handed to `install_downloaded`, failures to `download_failed`, resume data kept and
+    used by Retry, Cancel; `handleEventsForBackgroundURLSession` through an app delegate,
+    which boots the core when the system launches the app for its transfers);
+    `NetworkMonitor` (`NWPathMonitor`, injectable); the free bytes from
+    `volumeAvailableCapacityForImportantUsage` (privacy manifest: `DiskSpace`, `E174.1`,
+    checked against Xcode 27.2's schema); Library… in the reader's options menu (as S26's
+    Import…; **S12 and S14a may move it**, and no navigation was designed here) opening the
+    Library sheet with Starter library, Get Resources and Storage as pushed lists, the
+    banner and Use cellular data; the core's banner at the reader's foot; the first-launch
+    Study set offer as a sheet over the reader. No entitlement, capability or background
+    mode was needed; App Transport Security allowed `http://127.0.0.1` with no exception.
+  - **Resume data and GitHub's redirects (the step's stop-and-ask): usable, with a
+    fallback.** Against a local mirror that answers like GitHub (a 302 from the asset URL to
+    a signed URL that expires), resume data names the signed URL: while it is valid the
+    resumed task asks for the rest with a byte range and finishes (`/signed/easton.obr`,
+    `Range: bytes=524288-`, nothing else); once it has expired the request is refused, and
+    the center starts afresh from the core's URL, which a background session follows
+    through the 302 (`/r/smith.obr`, then `/signed/smith.obr`) and installs. Not checked
+    against github.com itself (the tests never touch the network): how long GitHub's signed
+    asset URLs stay valid decides how often the fallback runs.
+  - **Measured** (simulator, iOS 27.2, local mirror of `dist/starter`): the Study set (15
+    Resources, 136.6 MB) at 512 KB/s a connection, the app sent home after 2 s: about 55 MB
+    arrived while it was away (iPhone 17; 53.7 MB on the iPad), the simulator keeping the
+    app in `runningBackground` for those 20 s rather than suspending it; back in front,
+    every file verified, installed and indexed; `testLibraryDownload` takes 103–111 s.
+    `xcodebuild test`: 18 tests on an iPhone 17 (7 min 20 s) and on an iPad Air 11-inch
+    (M4) (7 min 53 s), all passing, with the Import files placed and
+    `TEST_RUNNER_OBS_STUDY_SET_DIR=dist/starter`.
+  - **Accessibility audit.** It passes on the offer (Light and Dark), the Library sheet,
+    Starter library (also with a download in progress and with Retry), Get Resources and
+    Storage. Filtered, as S26: the system toolbar's glass Done, and on iPad findings with no
+    element from the reader drawn behind the floating sheet (contrast, detection and, new
+    here, text the sheet covers reported as clipped). The system blue on the offer's
+    buttons failed contrast, so they are label-coloured. Found on the way: a List scrolled
+    far down goes blank while the audit changes Dynamic Type, so the audited rows are near
+    the top.
+  - **Surprises.** A transfer an earlier launch left running in the background session is
+    found again by its file: one from another URL (an earlier test's mirror, a new
+    release) is now replaced instead of kept. Every UI test that does not test the offer
+    launches with `OBS_TEST_NO_STUDY_SET_OFFER=1`, since the offer at first launch would
+    cover the reader.
+  - **Deferred / for later steps.** A transfer that finishes after a relaunch is installed
+    (the core accepts it), but one still running after a relaunch shows no progress until
+    its row's Download is tapped again (the center then carries on with it), since the
+    core does not know it yet. Storage (S25) has a first list with Remove and the free
+    bytes already (noted in S25's entry). The words of the Library's buttons and titles are
+    Swift's, as S26's were (S12's string decision). No later step's assumption proved wrong.
+  - Checks: `cargo test -p obs-mobile library` (23 tests, 5 new, 1 ignored), `cargo test -p obs-ffi
+    --test library` (3, 1 new), `cargo test -p obs-store --test sync_schema_db`; `cargo
+    xtask ios build --sim-only`, `xcodegen generate`, the iPhone and iPad runs above;
+    previews `docs/previews/ios/s24-*.png`; `cargo xtask gallery` unchanged; `cargo xtask
+    ci` (see the PR: the known `find_bar` flake failed one run and passed alone).
 
 #### S25 — On-device index builds, `BGProcessingTask`, Storage, backup exclusion
 
