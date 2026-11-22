@@ -11,8 +11,12 @@
 //! newest [`ROLLING_BACKUPS`] are kept) is written with SQLite's online backup API.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
+};
 
 use crate::annotation::{Change, Row};
 use crate::error::StoreError;
@@ -74,6 +78,19 @@ const MIGRATIONS: &[&str] = &[
     crate::sync_schema::SCHEMA_17,
 ];
 
+/// How long a write on one connection to the User database waits for another connection's
+/// write transaction to finish (the sync worker's, [`UserStore::second_connection`]) before it
+/// fails with "database is locked". Long on purpose: a user's edit waits out the longest merge
+/// transaction (a snapshot merged at a join) rather than be refused.
+pub const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A write transaction on the User database: `BEGIN IMMEDIATE`, so it takes the write lock
+/// before it reads. A deferred one that read before another connection committed could not
+/// write at all (`SQLITE_BUSY_SNAPSHOT`, which [`BUSY_TIMEOUT`] never waits out).
+pub(crate) fn write_tx(conn: &Connection) -> Result<Transaction<'_>, StoreError> {
+    Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sql)
+}
+
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
     StoreError::Sqlite(e.to_string())
 }
@@ -101,8 +118,49 @@ pub struct UserStore {
     /// Every Change applied, for tests (`take_applied_changes`).
     #[cfg(feature = "test-support")]
     pub(crate) recorded: std::cell::RefCell<Vec<Change>>,
-    /// The clock `apply_changes` stamps Changes with (`sync_clock.rs`).
-    pub(crate) clock: std::cell::RefCell<crate::sync_clock::ClockState>,
+    /// The clock `apply_changes` stamps Changes with (`sync_clock.rs`), shared with every
+    /// [`UserStore::second_connection`] opened from this one, so the connections hand out one
+    /// sequence of clocks between them.
+    pub(crate) clock: Arc<Mutex<crate::sync_clock::ClockState>>,
+}
+
+/// A second connection to a User database, to open on another thread (the sync worker, plan
+/// S29b): the database's path and the clock it shares with the [`UserStore`] it came from.
+/// Every clock either connection hands out is after every clock the other handed out or
+/// observed.
+#[derive(Debug, Clone)]
+pub struct SecondConnection {
+    path: PathBuf,
+    schema: u32,
+    clock: Arc<Mutex<crate::sync_clock::ClockState>>,
+}
+
+impl SecondConnection {
+    /// Open it: the database must be there, at the schema the first connection had. Nothing
+    /// is migrated or backed up (the first connection did that at its open).
+    pub fn open(&self) -> Result<UserStore, StoreError> {
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(sql)?;
+        let found: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(sql)?;
+        if found != self.schema {
+            return Err(StoreError::Rejected(format!(
+                "the User database is at schema {found}, not {}",
+                self.schema
+            )));
+        }
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(sql)?;
+        conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
+        Ok(UserStore {
+            clock: Arc::clone(&self.clock),
+            ..UserStore::from_parts(conn, self.path.clone())
+        })
+    }
 }
 
 impl UserStore {
@@ -114,6 +172,22 @@ impl UserStore {
             recorded: Default::default(),
             clock: Default::default(),
         }
+    }
+
+    /// What another thread needs to open a second connection to this User database sharing
+    /// its clock (the sync worker, plan S29b).
+    pub fn second_connection(&self) -> Result<SecondConnection, StoreError> {
+        Ok(SecondConnection {
+            path: self.path.clone(),
+            schema: self.schema_version()?,
+            clock: Arc::clone(&self.clock),
+        })
+    }
+
+    /// The clock's state, for this connection to hand out the next clock or take one in.
+    pub(crate) fn clock_state(&self) -> MutexGuard<'_, crate::sync_clock::ClockState> {
+        // A panic while it was held left it as it was: a clock handed out was noted first.
+        self.clock.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Open (creating if needed) the User database at `path`, migrate it, and write this
@@ -156,6 +230,7 @@ impl UserStore {
             .map_err(sql)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(sql)?;
+        conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
         let mut store = Self::from_parts(conn, path.to_path_buf());
         let mut report = OpenReport {
             found_version: found,
@@ -391,7 +466,7 @@ impl UserStore {
         &self,
         names: &[(String, String, String)],
     ) -> Result<(), StoreError> {
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        let tx = write_tx(&self.conn)?;
         {
             let mut stmt = tx
                 .prepare_cached(

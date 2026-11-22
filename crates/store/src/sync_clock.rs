@@ -61,12 +61,13 @@ pub(crate) enum Stamp<'a> {
     Kept,
 }
 
-/// Where this process's clock is: the device it names, the last wall time and counter it
-/// handed out, and whether it has been seeded from the database since it was opened or
-/// restored.
+/// Where this process's clock is: the last wall time and counter it handed out or observed,
+/// and whether it has been seeded from the database since it was opened or restored. Every
+/// connection to the database shares one (`UserStore::second_connection`); the device a clock
+/// names is read in the transaction that stamps it, so a new id one connection takes is the
+/// next clock's on every connection.
 #[derive(Debug, Default)]
 pub(crate) struct ClockState {
-    device_id: Option<String>,
     last: Option<(u64, u16)>,
     seeded: bool,
 }
@@ -185,16 +186,12 @@ impl UserStore {
     /// The next clock, from the database `c` this store writes through.
     pub(crate) fn next_clock(&self, c: &Connection) -> Result<Hlc, StoreError> {
         let now = crate::clock::now_ms();
-        let mut state = self.clock.borrow_mut();
+        let device_id = read_device_id(c)?;
+        let mut state = self.clock_state();
         if !state.seeded {
-            state.device_id = Some(read_device_id(c)?);
             state.last = state.last.max(largest_clock(c, now)?);
             state.seeded = true;
         }
-        let device_id = state
-            .device_id
-            .clone()
-            .ok_or_else(|| StoreError::Corrupt("the User database has no device id".into()))?;
         let clock = Hlc::next(state.last, now, &device_id)?;
         state.last = Some(clock.tick());
         Ok(clock)
@@ -230,7 +227,7 @@ impl UserStore {
         if clock.wall_ms > latest_wall_taken_in(crate::clock::now_ms()) {
             return false;
         }
-        let mut state = self.clock.borrow_mut();
+        let mut state = self.clock_state();
         state.last = state.last.max(Some(clock.tick()));
         true
     }
@@ -238,9 +235,7 @@ impl UserStore {
     /// Seed the clock from the database again at the next change (after a restore replaced
     /// it); it still never hands out a clock below one it handed out before.
     pub(crate) fn reseed_clock(&self) {
-        let mut state = self.clock.borrow_mut();
-        state.seeded = false;
-        state.device_id = None;
+        self.clock_state().seeded = false;
     }
 
     /// This Synced device's id.
@@ -272,7 +267,7 @@ impl UserStore {
     /// file reserved and not yet written, by number. An op file reserved before (a write that
     /// stopped half way) comes back with exactly the ops it had.
     pub fn reserve_op_files(&self) -> Result<Vec<ReservedOpFile>, StoreError> {
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        let tx = crate::user::write_tx(&self.conn)?;
         let device = read_device_id(&tx)?;
         let written: Option<i64> = tx
             .query_row(
@@ -333,7 +328,7 @@ impl UserStore {
     pub fn op_file_written(&self, seq: u64) -> Result<(), StoreError> {
         let seq = i64::try_from(seq)
             .map_err(|_| StoreError::Rejected(format!("op file number {seq}")))?;
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        let tx = crate::user::write_tx(&self.conn)?;
         let device = read_device_id(&tx)?;
         let (written, reserved): (Option<i64>, bool) = tx
             .query_row(

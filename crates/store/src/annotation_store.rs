@@ -699,7 +699,7 @@ impl UserStore {
     /// its row (or its tombstone, with the clock of the version it deleted), and while this
     /// device records ops it waits in the outbox for the Sync folder.
     pub fn apply_changes(&self, changes: &[Change]) -> Result<(), StoreError> {
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        let tx = crate::user::write_tx(&self.conn)?;
         let columns = self.sync_columns(&tx)?;
         let recording = columns.clocks && records_ops(&tx, &read_device_id(&tx)?)?;
         let mut lists = ListItems::default();

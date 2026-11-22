@@ -8,7 +8,9 @@
 //! observed, after a reopen, a restore or a wall clock stepping back, taking in no clock that
 //! does not parse or is more than a day ahead (whose rows stay); and the outbox keeps ops only
 //! while this device records them, giving a reserved op file the same ops when it is retried
-//! and marking only the next reserved file written.
+//! and marking only the next reserved file written. A second connection (the sync worker's,
+//! plan S29b) shares the clock: two connections writing at once on two threads hand out one
+//! increasing sequence, none twice, and a new id one takes is the other's next clock's.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(not(target_arch = "wasm32"))]
@@ -980,4 +982,109 @@ fn the_outbox_keeps_ops_only_while_recording_and_a_reserved_file_comes_back_the_
         )
         .unwrap();
     assert_eq!(own, 2, "the last of its own op files written");
+}
+
+/// The Notebook rows' clocks, oldest first.
+fn notebook_clocks(path: &Path) -> Vec<String> {
+    strings(
+        &Connection::open(path).unwrap(),
+        "SELECT clock FROM notebooks WHERE clock IS NOT NULL ORDER BY clock",
+    )
+}
+
+#[test]
+fn two_connections_on_two_threads_hand_out_one_sequence_of_clocks() {
+    let dir = Dir::new("two-connections");
+    // Both threads' wall clocks stand still at the same millisecond, so every clock is told
+    // apart by its counter alone: two connections counting on their own would hand out the
+    // same clocks.
+    const AT: i64 = 1_800_000_000_000;
+    obs_store::clock::fix(Some(AT));
+    let (ui, _) = UserStore::open(&dir.db()).unwrap();
+    ui.start_recording_ops().unwrap();
+    let second = ui.second_connection().unwrap();
+    let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let worker = {
+        let start = std::sync::Arc::clone(&start);
+        std::thread::spawn(move || {
+            obs_store::clock::fix(Some(AT));
+            let sync = second.open().unwrap();
+            start.wait();
+            let mut mine = Vec::new();
+            for i in 0..200 {
+                mine.push(add_notebook(&sync, &format!("Worker {i}")));
+                if i == 100 {
+                    // A merge takes in another device's clock 5 seconds on.
+                    assert!(sync.observe_clock(&Hlc {
+                        wall_ms: 1_800_000_005_000,
+                        counter: 7,
+                        device_id: new_id(),
+                    }));
+                }
+            }
+            obs_store::clock::fix(None);
+            mine
+        })
+    };
+    start.wait();
+    let mine: Vec<Hlc> = (0..200)
+        .map(|i| add_notebook(&ui, &format!("UI {i}")))
+        .collect();
+    let theirs = worker.join().unwrap();
+    for (who, clocks) in [("the UI's", &mine), ("the worker's", &theirs)] {
+        assert!(
+            clocks.windows(2).all(|w| w[0] < w[1]),
+            "{who} clocks increase"
+        );
+    }
+    let mut all: Vec<Hlc> = mine.iter().chain(&theirs).cloned().collect();
+    all.sort();
+    all.dedup();
+    assert_eq!(all.len(), 400, "no clock handed out twice");
+    let held = notebook_clocks(&dir.db());
+    let unique: std::collections::BTreeSet<&String> = held.iter().collect();
+    assert_eq!(unique.len(), held.len(), "every row its own clock");
+    // Every change of both connections is in the outbox, once.
+    let outbox = strings(
+        &Connection::open(dir.db()).unwrap(),
+        "SELECT clock FROM op_outbox",
+    );
+    assert_eq!(outbox.len(), 400);
+    // The UI's next clock passes the one the worker observed.
+    let next = add_notebook(&ui, "After");
+    assert!(next.tick() > (1_800_000_005_000, 7), "{next}");
+}
+
+#[test]
+fn a_new_id_taken_on_the_second_connection_is_the_first_connections_next_clocks() {
+    let dir = Dir::new("new-id-elsewhere");
+    let (ui, _) = UserStore::open(&dir.db()).unwrap();
+    ui.start_recording_ops().unwrap();
+    let old = add_notebook(&ui, "Before").device_id;
+    let second = ui.second_connection().unwrap();
+    let new = std::thread::spawn(move || second.open().unwrap().take_new_device_id().unwrap())
+        .join()
+        .unwrap();
+    assert_ne!(new, old);
+    assert_eq!(add_notebook(&ui, "After").device_id, new);
+    assert_eq!(ui.device_id().unwrap(), new);
+}
+
+#[test]
+fn a_second_connection_is_refused_at_another_schema_and_where_there_is_no_database() {
+    let dir = Dir::new("second-refused");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let second = db.second_connection().unwrap();
+    drop(db);
+    Connection::open(dir.db())
+        .unwrap()
+        .pragma_update(None, "user_version", USER_SCHEMA_VERSION + 1)
+        .unwrap();
+    assert!(matches!(
+        second.open(),
+        Err(obs_store::StoreError::Rejected(_))
+    ));
+    std::fs::remove_file(dir.db()).unwrap();
+    assert!(second.open().is_err(), "nothing is made at its path");
+    assert!(!dir.db().exists());
 }
