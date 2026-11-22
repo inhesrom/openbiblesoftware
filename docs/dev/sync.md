@@ -312,6 +312,15 @@ edit in between two of them: it waits for one batch, not the file.
   views' reads the frame after: 2.4–2.9 ms when a 10,000-Note library merges one edited and one
   added Note (only those read); 9.9–11.9 ms when the merge changed all 10,000 (read whole, S29b's
   17–24 ms less the second read of every Annotation Needs attention's count made).
+- **Note edits merged** (S29c's review): 95% of a Note update's merge was finding the Note's
+  old `notes_fts` entry by `annotation_id`, a column the index does not index, so every entry
+  was read (sampled with `sample`). `delete_note_entry` now finds it through the index by up to
+  eight words of its old text, then the id among those, and reads every entry only when those
+  words do not find it (an entry made from other text). Measured with
+  `measure_merge_batches_against_one_transaction` (dev profile, owner's Mac), 10,000 Notes
+  edited in one op file: one transaction 4,926 → 1,311–1,314 ms, in batches 5,067 →
+  1,365–1,374 ms (1,115 → 315 batches); the join is unchanged (440–451 ms). The UI's own Note
+  edits and deletes take the same path.
 
 ## Data
 
@@ -1301,10 +1310,13 @@ Mobile app has no period (`at_launch(false)`).
 
 - **Merges in batches** and **the views' reads after a merge**, found by S29b, are S29c's
   ([above](#merges-in-batches-s29c)). Left from them:
-  - A merge of 10,000 Annotation updates is about ten times a merge of 10,000 inserts (4.8 s
-    against 0.45 s of merge work, dev and release alike); in batches no edit waits for it, but
-    the sync takes that long, and longer while the user edits (`WriteTurns`' 20 ms per waiting
-    edit). Where an update's merge spends it is not measured yet.
+  - A merge of 10,000 Note updates is still about three times a merge of 10,000 inserts
+    (1.3 s against 0.45 s; 4.8 s before the review's fix above). What is left is `notes_fts`:
+    each update's lookup is a full-text query, which first writes the index's pending entries
+    to disk as a segment of their own, so every op makes a segment and FTS5 merges them as it
+    goes. Finding an entry without a query needs its rowid by Annotation: a table from
+    Annotation id to `notes_fts` rowid kept with every write of the index (or `notes_fts`'s
+    rowid kept equal to a stable integer of the Annotation's), a schema change for a later step.
   - After a merge that changed many Annotations (a join), the views still read every one, about
     10–12 ms at 10,000 Notes; the marks of each open Resource are made again from all of them
     as after any edit.
