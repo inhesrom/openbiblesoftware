@@ -70,9 +70,12 @@ a Bundled set that does not match the lock.
 - **Clean environment.** Xcode's build PATH has no `~/.cargo/bin`, and its `SDKROOT` and
   deployment settings would reach cargo's host build scripts. The phase runs
   `${CARGO:-$HOME/.cargo/bin/cargo}` under `env -i` with `HOME`, `USER`, `TMPDIR`, a PATH that
-  starts with `~/.cargo/bin`, and `DEVELOPER_DIR` (so `xcrun` finds the same Xcode). It also
+  starts with that cargo's own folder and then `~/.cargo/bin`, and `DEVELOPER_DIR` (so `xcrun`
+  finds the same Xcode). It also
   passes `RUSTUP_HOME`, `CARGO_HOME`, `RUSTUP_TOOLCHAIN` and the proxy variables when they are
-  set. The phase runs under `/bin/bash`, because it uses arrays and `pipefail`.
+  set. The phase runs under `/bin/bash`, because it uses arrays and `pipefail`. Where Rust is not
+  under `~/.cargo` (GitHub's macOS runners), set `CARGO` (and `CARGO_HOME`/`RUSTUP_HOME`) in the
+  environment of `xcodebuild`, as `ios.yml` does.
 - **Before the first device build or archive, run `cargo xtask ios build` (no `--sim-only`).** A
   simulator build leaves only the simulator slice in the package. Xcode reads the XCFramework
   before this phase runs, so a device build straight after a simulator build has no device
@@ -96,6 +99,67 @@ a Bundled set that does not match the lock.
 - There is no debug build of the Rust core for the simulator: `--sim-only` uses
   `[profile.ios]` (fat LTO). A change in a core crate costs about a minute; a debug variant
   can be added when the edit-run loop needs one.
+
+## CI
+
+`.github/workflows/ios.yml` (plan A9, S32) runs the commands above on GitHub's `macos-latest`
+(arm64) for every push to master and pull request that changes `crates/**`, `apps/**`,
+`xtask/**`, `Cargo.lock`, `Cargo.toml`, `rust-toolchain.toml` or the workflow, and on demand
+(`workflow_dispatch`). `ci.yml` and `cargo xtask ci` are unchanged: nothing there needs macOS
+or Xcode. No device build, signing or upload (S33, S35). Its steps:
+
+1. **Select Xcode.** The workflow's `XCODE_VERSION` is matched against the
+   `CFBundleShortVersionString` of every `/Applications/Xcode*.app` the runner has (the version
+   itself or any `version.x`; the newest wins), and `DEVELOPER_DIR` is set to it for every later
+   step and for the run-script phase. The step lists what it found, and fails with "this runner
+   image has no Xcode …" when none matches. **It is `26`, not S05's 27.2:** GitHub has no macOS 27
+   image yet (`macos-latest` was `macos-26-arm64` with Xcode 26.0–26.6 on 2026-11-21), so CI
+   builds and tests with the newest Xcode 26.x, the previous SDK. Local work and release archives
+   (S34) stay on 27.2. **When a macOS 27 image ships,** set `runs-on` to it and `XCODE_VERSION`
+   to `27`.
+2. **Toolchain:** `rust-toolchain.toml`'s, plus `aarch64-apple-ios-sim` (CI builds the simulator
+   slice only); `Swatinem/rust-cache`; `brew install xcodegen`.
+3. **Starter library, then the Bundled set.** It downloads the `starter-library` artifact of
+   master's latest successful `starter.yml` run (`gh run download`, about 160 MB) into
+   `dist/starter` and runs `cargo xtask ios bundled-set`. That is cheaper than building the
+   Starter library on the runner (`starter.yml`'s two builds take about 8 minutes on Linux).
+   But the artifact is master's, so its Bundled set matches the lock only while the branch
+   changes neither the Starter build nor the lock. When it does not match, or when no artifact
+   can be downloaded (artifacts expire after 90 days), the job says so in a notice and builds
+   the Starter library from the branch (`cargo xtask starter --previous <the latest release's
+   manifest>`, as `starter.yml` does, with its own cache of the source downloads), then runs
+   `bundled-set` again, which must match the lock.
+4. `cargo xtask ios build --sim-only`, `xcodegen generate`.
+5. **Simulator:** the workflow's `SIMULATOR` (`iPhone 17`) on the runtime of the selected SDK
+   (iOS 27.2), else the first iPhone on it with a warning; it is booted before the tests and
+   passed to `xcodebuild` by its udid.
+6. **`xcodebuild test`** of both targets, with `-derivedDataPath` and `-resultBundlePath`
+   under the runner's temporary folder (outside `target/`, which rust-cache prunes). When
+   `dist/starter` holds every Resource its manifest puts in the Study set, the tests get
+   `TEST_RUNNER_OBS_STUDY_SET_DIR=dist/starter`, so S07's
+   `testATaggedWordShowsItsStrongsNumber` runs; otherwise only that test is skipped
+   (`-skip-testing:`), and a notice in the log says so.
+7. **On failure:** the `ios-test-results` artifact holds `OpenBible.xcresult`, the screenshots
+   the tests attached (exported with `xcresulttool export attachments`, named as the tests name
+   them) and a screenshot of the simulator at the end.
+
+**Lock check on Linux.** `starter.yml` runs `cargo xtask ios bundled-set --out
+target/bundled-set` after it uploads the Starter library, so a Starter change that moves the
+Bundled set fails there too, and a pass on Linux shows that `apps/ios/bundled-set.lock` does not
+depend on the host. `starter.yml` also runs when the lock alone changes; it skips the check
+when `release.yml` calls it, so a desktop release never waits on the iOS lock. A stale lock can be
+rewritten from that run's artifact: `cargo xtask ios bundled-set --from <the artifact>
+--update-lock`.
+
+**Known cost.** The run-script phase runs cargo under `env -i`, so rust-cache's
+`CARGO_INCREMENTAL=0` does not reach it, and `ios build`'s host build of `obs-ffi` (for
+`bindgen`) is compiled again inside `xcodebuild` (about 20 s on the owner's Mac; the
+`[profile.ios]` library itself is up to date).
+
+**Timings on the owner's Mac (dry run of the job's steps, 2026-11-21):** the artifact download
+and a `bundled-set` attempt 1 min 29 s; `ios build --sim-only` in a fresh worktree 3 min 24 s;
+`xcodebuild test` (build and both targets, 6 tests) 1 min 39 s. The runner's go in the plan's
+S32 Outcome after its first run.
 
 ## Minimum iOS, devices, orientation
 

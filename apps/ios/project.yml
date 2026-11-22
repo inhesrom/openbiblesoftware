@@ -74,7 +74,7 @@ targets:
               if [ -n "${!v:-}" ]; then pass+=("$v=${!v}"); fi
             done
             env -i HOME="$HOME" USER="${USER:-}" TMPDIR="${TMPDIR:-/tmp}" \
-              PATH="$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+              PATH="$(dirname "$cargo"):$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
               DEVELOPER_DIR="${DEVELOPER_DIR}" "${pass[@]+"${pass[@]}"}" "$cargo" "$@"
           }
           stamp="${DERIVED_FILE_DIR}/rust-core.stamp"

@@ -5,7 +5,9 @@ name: Starter library
 # pull requests that touch the lock or the pipeline, so the build report can be reviewed with
 # the change, on master after such a change is merged, and when the `release` workflow calls
 # this one on a pushed `v*` tag (or a dry run), which packs that artifact into the Release
-# archives and publishes it (docs/dev/releasing.md).
+# archives and publishes it (docs/dev/releasing.md). After the upload it checks the Mobile app's
+# Bundled set against apps/ios/bundled-set.lock (docs/dev/ios-project.md, "CI"), except when
+# `release` calls it.
 
 on:
   workflow_call:
@@ -19,6 +21,7 @@ on:
       - "crates/model/**"
       - "crates/scripture/**"
       - "crates/store/**"
+      - "apps/ios/bundled-set.lock"
       - "Cargo.lock"
       - ".github/workflows/starter.yml"
   pull_request:
@@ -29,6 +32,7 @@ on:
       - "crates/model/**"
       - "crates/scripture/**"
       - "crates/store/**"
+      - "apps/ios/bundled-set.lock"
       - "Cargo.lock"
       - ".github/workflows/starter.yml"
   workflow_dispatch:
@@ -91,3 +95,12 @@ jobs:
           name: starter-library
           path: dist/starter/
           if-no-files-found: error
+      # The Mobile app's Bundled set must be the one apps/ios/bundled-set.lock lists, so a
+      # Starter change that moves it fails here, on Linux too (the lock is host-independent);
+      # the iOS workflow copies the same set on macOS. After the upload, so a stale lock can be
+      # rewritten from this run's artifact (`--from <it> --update-lock`). Not when `release`
+      # calls this workflow (`github.workflow` is then the caller's): a desktop release does not
+      # wait on the iOS lock, which every pull request that moves it has checked.
+      - name: Bundled set matches apps/ios/bundled-set.lock
+        if: github.workflow == 'Starter library'
+        run: cargo xtask ios bundled-set --out target/bundled-set

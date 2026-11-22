@@ -72,7 +72,7 @@ to Claude Opus 5.5 later on".
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S30 | test report, folder list for onboarding | todo |
-| S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
+| S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | done (PR #369; CI on Xcode 26.x until a macOS 27 image ships) |
 | S33 | Before anything permanent: #334, #336, #337, privacy policy URL, release cadence | HITL | n | S12 | decisions recorded, tickets closed, map lines, final bundle id applied | todo |
 | S34 | App Store readiness: `PrivacyInfo.xcprivacy`, icon, Credits, accessibility audit, size, archive + export + validate | AFK | y | S19–S26, S30, S32, S33 | validated archive, review notes, `docs/dev/mobile-release.md` | todo |
 | S35 | App Store Connect record, first upload, TestFlight, submission | HITL | y | S34 | TestFlight build; review submitted | todo |
@@ -1869,6 +1869,104 @@ this in addition to its own lines):
 - **Verify:** `gh run watch` on the PR; `gh run view --log` for timings.
 - **Stop-and-ask:** the job exceeds 30 minutes (then cache DerivedData or split); the runner image
   lacks the pinned Xcode.
+- **Outcome (2026-11-21, branch `mobile/s32-ios-ci`; the runner's first run is the
+  supervisor's, below):**
+  - **Shipped:** `.github/workflows/ios.yml`, one job `ios` on `macos-latest`; a lock-check
+    step in `starter.yml`; the "CI" section of `docs/dev/ios-project.md`. `ci.yml` and
+    `cargo xtask ci` are untouched.
+  - **Xcode pin:** `XCODE_VERSION: "27.2"` in the workflow. The first step lists every
+    `/Applications/Xcode*.app` with its `CFBundleShortVersionString`, takes the newest `27.2`
+    or `27.2.x`, and exports `DEVELOPER_DIR` (the run-script phase passes it on); none fails
+    with "this runner image has no Xcode 27.2". Bump it with S05's Outcome.
+  - **Starter library: download, with a build as fallback.** The job downloads the
+    `starter-library` artifact of master's latest successful `starter.yml` run (`gh run
+    download`, 157 MB; with a `bundled-set` attempt 1 min 29 s on the owner's Mac) and runs
+    `cargo xtask ios bundled-set`. That is cheaper than building it (`starter.yml`'s two
+    builds took 8 min on Linux). Master's artifact gives the lock's Bundled set only while a
+    branch changes neither the Starter build nor the lock. When it does not, or when no
+    artifact can be downloaded (90-day expiry), a notice says so and the job builds the
+    Starter library from the branch (`cargo xtask starter --previous <latest release's
+    manifest>`, as `starter.yml` does, with a macOS cache of the source downloads) and
+    copies again, which must match. **Today every run takes the build path:** master's
+    artifact (run 44848436632) predates S04's `mobile_set`. The dry run hit exactly that
+    ("lists no Resource with `mobile_set` `bundled`"). That lasts until S04 is merged and
+    `starter.yml` runs on master; expect the first runs to be slower by one Starter build.
+  - **Lock check:** `starter.yml` runs `cargo xtask ios bundled-set --out target/bundled-set`
+    after its upload, so a stale lock fails on Linux too, and a pass there shows the lock
+    does not depend on the host. Because the check runs after the upload, a stale lock can be
+    rewritten from that run's artifact with `--from … --update-lock`. `starter.yml` also runs
+    now when `apps/ios/bundled-set.lock` alone changes. It skips the check when `release.yml`
+    calls it (`github.workflow == 'Starter library'`), so a desktop release never waits on the
+    iOS lock.
+  - **Tests:** both targets on `iPhone 17` on the SDK's own runtime (iOS 27.2). Without that
+    device, the first iPhone on that runtime is used, with a warning. The simulator is booted
+    first and passed by udid. When `dist/starter` holds every Study set Resource its manifest
+    lists, `TEST_RUNNER_OBS_STUDY_SET_DIR` points at it and S07's
+    `testATaggedWordShowsItsStrongsNumber` runs. Otherwise that test alone is passed to
+    `-skip-testing:` and a notice says so. On failure, the `ios-test-results` artifact holds
+    `OpenBible.xcresult`, the tests' screenshots (`xcresulttool export attachments`, renamed
+    to the names the tests gave them) and a screenshot of the simulator.
+  - **Beyond the entry (small, flagged):**
+    - The triggers add `xtask/**` and `rust-toolchain.toml` to the entry's list, because the
+      job builds with `cargo xtask ios` and that toolchain.
+    - Only `aarch64-apple-ios-sim` is added, because the job builds no device slice.
+    - Xcode's DerivedData and the result bundle go under `$RUNNER_TEMP`, since rust-cache
+      prunes `target/`.
+    - `timeout-minutes: 45`, against a hung simulator. The 30-minute stop-and-ask is judged
+      from the run's time.
+  - **Dry run on the owner's Mac:** every `run:` step was extracted from the YAML and run with
+    bash, under GitHub-like `GITHUB_ENV`, `GITHUB_OUTPUT` and `RUNNER_TEMP`, and with
+    rust-cache's `CARGO_INCREMENTAL=0`.
+    - Shims, for the agent-shell quirks only: `xcrun simctl` → CoreSimulator's `simctl`, `brew`
+      → `bash brew`, and `cargo xtask starter` replaced by a copy of S07's `dist/starter`.
+    - Xcode selection passed. `27.20` failed with the message and `27` matched.
+    - The download path fell back as above. The fallback's release-manifest download (v0.2.0)
+      and `bundled-set` matched the lock, and `--out target/bundled-set` matched it too.
+    - `ios build --sim-only`, fresh worktree: 3 min 24 s.
+    - Simulator pick: `iPhone 17` (and `iPhone 18 Pro` when the name is missing).
+    - `xcodebuild test`: 6 tests passed in 1 min 39 s, the tagged-word test included. With
+      `kjv-strongs.obr` removed: the notice, `-skip-testing:`, 5 tests passed in 1 min 8 s.
+    - The failure step exported 4 named screenshots and the simulator's.
+    - `actionlint` (with a copied `shellcheck`) is clean on `ios.yml` and `starter.yml`.
+  - **Found:** the run-script phase runs cargo under `env -i`, so rust-cache's
+    `CARGO_INCREMENTAL=0` does not reach it. `ios build`'s host `obs-ffi` (for bindgen) is
+    therefore compiled again inside `xcodebuild`: about 20 s here, while the `[profile.ios]`
+    library stays up to date. Left as is and recorded in `ios-project.md`.
+  - **Not verified (needs the runner):** that `macos-latest` has Xcode 27.2, an iOS 27.2
+    runtime and an `iPhone 17`; the job's time; that a deliberate Swift test failure fails the
+    job; that a `crates/engine` change triggers it.
+  - **Verify (supervisor, after pushing):**
+    - `gh run list --workflow ios.yml --branch mobile/s32-ios-ci`.
+    - `gh run watch <id> --exit-status`.
+    - `gh run view <id> --log | grep -E "Xcode apps|Selected|::notice::|::warning::|Simulator |Study set|Executed|TEST (SUCCEEDED|FAILED)"`
+      for what the runner had.
+    - `gh run view <id> --json jobs --jq '.jobs[] | {name, startedAt, completedAt, steps: [.steps[] | {name, startedAt, completedAt}]}'`
+      for the timings. Record the total here.
+    - `gh run download <id> -n ios-test-results` after a failure.
+    - Then push a throwaway commit with `XCTFail("deliberate")` in `HelloModelTests` (the job
+      must fail and upload `ios-test-results`), revert it, push a whitespace change in
+      `crates/engine/src/lib.rs` (the job must start), and revert that.
+    - **If the runner's Xcode differs:** the first step's log lists what the image has. Use a
+      runner label whose image has 27.2 (`runs-on`), or move `XCODE_VERSION` to a version it
+      has, with S05's Outcome and the owner's Mac, so the pin stays the one the app is built
+      with. That is the entry's stop-and-ask. A missing `iPhone 17` only warns; change
+      `SIMULATOR` to the name the log shows. No iOS 27.2 runtime fails with the runtimes listed.
+  - **Runner results (supervisor, 2026-11-21, PR #369):**
+    - Run 1: `macos-latest` is `macos-26-arm64` with Xcode 26.0–26.6 and no 27.x; no macOS 27
+      image exists yet, not even in beta (actions/runner-images README). Decision: CI uses
+      `XCODE_VERSION: "26"` (the newest 26.x, the previous SDK; the app targets iOS 17). Local work
+      and S34 archives stay on 27.2; move CI to 27 when a macOS 27 image ships.
+    - Runs 2 and 3: the run-script phase could not find cargo. The runner's Rust is Homebrew's
+      rustup (`/opt/homebrew/opt/rustup/bin/cargo`, `RUSTUP_HOME=~/.rustup`), not `~/.cargo/bin`.
+      Fixed: the `xcodebuild test` step exports `CARGO` and `RUSTUP_HOME` (and leaves `CARGO_HOME` at
+      its default, where the earlier steps' registry is), and the phase puts that cargo's folder
+      first on its PATH. Both failures uploaded `ios-test-results` (the failure path works).
+    - **Run 4 (44967184600): green in 35 min.** Xcode 26.6, iOS 26.5 simulator, iPhone 17. The
+      Starter library was built on the runner (master's artifact predates `mobile_set`), so the
+      Study set was present and all 6 tests ran, including the tagged-word test. Expect a shorter
+      job once S04 merges and master's artifact matches the lock.
+    - The deliberate-failure check is covered by runs 2 and 3; the `crates/**` trigger is in the
+      paths filter. Neither throwaway commit was pushed.
 
 #### S33 — Before anything permanent: identifiers, accounts, trademark, privacy URL, cadence (HITL)
 
