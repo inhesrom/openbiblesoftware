@@ -12,7 +12,9 @@
 //! plan S29b) shares the clock: two connections writing at once on two threads hand out one
 //! increasing sequence, none twice, and a new id one takes is the other's next clock's; once
 //! its writes are refused (a restore is coming) it commits nothing; and a write on the first
-//! waits only for the second's transaction running, not for each one after it.
+//! waits only for the second's transaction running, not for each one after it. Migration 19's
+//! merge cursor (S29c) is committed per batch, carried by a Backup and emptied by snapshots and
+//! Replace.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(not(target_arch = "wasm32"))]
@@ -22,8 +24,8 @@ use std::path::{Path, PathBuf};
 
 use obs_store::annotation::new_id;
 use obs_store::{
-    Annotation, Change, Content, HeldOp, Hlc, Notebook, Row, RowKey, SYNCED_TABLES,
-    SyncedPreference, USER_SCHEMA_VERSION, UserStore,
+    Annotation, BatchEnd, Change, Content, HeldOp, Hlc, MergeCursor, Notebook, Row, RowKey,
+    SYNCED_TABLES, StoreError, SyncedPreference, USER_SCHEMA_VERSION, UserStore,
 };
 use rusqlite::Connection;
 use rusqlite::types::Value;
@@ -1220,4 +1222,85 @@ fn a_write_on_the_first_connection_waits_only_for_the_transaction_running_on_the
         longest < std::time::Duration::from_millis(500),
         "an edit waited {longest:?}"
     );
+}
+
+/// Migration 19's `merge_cursor` (S29c): a batch that is not its file's last commits where the
+/// merge stands, one that does not start there is refused, and the last drops it with the
+/// file noted applied; a Backup carries it, a snapshot holds it empty, Replace empties it, and
+/// a v18 Backup restores with none.
+#[test]
+fn the_merge_cursor_is_committed_per_batch_carried_by_a_backup_and_emptied_by_snapshots_and_replace()
+ {
+    let dir = Dir::new("merge-cursor");
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    db.join_sync().unwrap();
+    let other = new_id();
+    db.execute_unchecked(&format!(
+        "INSERT INTO applied_up_to (device_id, seq) VALUES ('{other}', 0)"
+    ))
+    .unwrap();
+    let batch = |from: u64, end: BatchEnd| {
+        db.merge_op_file_batch(&other, 1, from, |_| Ok::<_, StoreError>(((), end)))
+    };
+    batch(0, BatchEnd::At(2)).unwrap();
+    let cursor = MergeCursor {
+        device: other.clone(),
+        seq: 1,
+        snapshot: None,
+        ops: 2,
+    };
+    assert_eq!(db.merge_cursors().unwrap(), [cursor.clone()]);
+    assert!(db.has_partial_merge().unwrap());
+    assert!(
+        batch(0, BatchEnd::Done).is_err(),
+        "a batch from another op than where it stands"
+    );
+    assert_eq!(
+        db.applied_up_to(&other).unwrap(),
+        0,
+        "the file is not applied yet"
+    );
+    batch(2, BatchEnd::At(4)).unwrap();
+
+    // A Backup keeps it; a snapshot does not.
+    let backup = dir.0.join("cursor.obsbackup");
+    db.back_up(&backup).unwrap();
+    let c = Connection::open(&backup).unwrap();
+    assert_eq!(
+        strings(
+            &c,
+            "SELECT device_id || ' ' || seq || ' ' || ops FROM merge_cursor"
+        ),
+        [format!("{other} 1 4")]
+    );
+    let (snapshot, _) = db.open_snapshot(&db.snapshot_bytes().unwrap()).unwrap();
+    assert!(snapshot.merge_cursors().unwrap().is_empty());
+
+    batch(4, BatchEnd::Done).unwrap();
+    assert!(db.merge_cursors().unwrap().is_empty());
+    assert_eq!(db.applied_up_to(&other).unwrap(), 1);
+
+    // A restore brings the Backup's back (with its rows); Replace empties it.
+    db.restore(&backup).unwrap();
+    assert_eq!(
+        db.merge_cursors().unwrap(),
+        [MergeCursor {
+            ops: 4,
+            ..cursor.clone()
+        }]
+    );
+    db.restamp_for_replace().unwrap();
+    assert!(db.merge_cursors().unwrap().is_empty());
+
+    // A v18 Backup has none, and restores whole.
+    let old = Dir::new("merge-cursor-v18");
+    let (v18, _) = UserStore::open_to(&old.db(), 18).unwrap();
+    add_notebook(&v18, "Study");
+    let v18_backup = old.0.join("v18.obsbackup");
+    v18.back_up(&v18_backup).unwrap();
+    drop(v18);
+    assert_eq!(UserStore::backup_contents(&v18_backup).unwrap().version, 18);
+    db.restore(&v18_backup).unwrap();
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    assert!(db.merge_cursors().unwrap().is_empty());
 }
