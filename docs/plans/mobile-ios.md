@@ -1727,6 +1727,48 @@ under the half they belong to.
   deleted (only the undo of a list's first whole write does that) is merged as a base with no
   value but not generated; `sync_held` is per device and not in `synced_dump` (two devices may
   hold different ops for the same state). S28c and S29 gained "Added by S28b-2" bullets.
+  **Review fixes (review `/tmp/obs-ios-plan/review-s28b2.md`, supervisor decisions):**
+  **P1-1** `preference_changes` writes nothing for an in-shape empty list over no value (it was
+  a whole write, so a base that superseded other devices' items: `Session::save_collections`
+  wrote `"{}"` Resource tags on a device with none, wiping the family's tags); S27b's
+  `an_empty_list_written_where_there_was_none_is_written_whole` became `…_changes_nothing`, and
+  `collections_tests` no longer expects a whole write; `backup_check` unchanged (a stored value
+  missing is skipped). **P1-2** D6 also fires when a write of an item of that name had not seen
+  this device's own version (`before_clock` not the row's, `before` JSON another): concurrent
+  edits of one shared item keep both, the earlier as "Name (2)" (accepted). **Found by the new
+  D6 survival invariant (supervisor decision):** the list-item version of Q1, a delete of
+  another version of the name (Z deleted Y's "Read" before X met Y's add) deleted X's own item
+  no device had seen; such a delete is now noted and X records its item again under its own
+  name, after the tombstone's covers (`Recorded::items_kept`, `EditKept`); the copy no one needed
+  in a rare three-device chain (a device whose own item that re-record replaces before it meets
+  the delete keeps it as "Name (2)") is documented as safe. **P2-1** a child of a parent whose op
+  is held here is held too (`MergeTx::is_held`), not left waiting. **P2-2** a parent's tombstone
+  keeps `row_covers` and `row_clock` (migration 16 changed in place, unreleased) and a later
+  delete is compared with those, so the row is the same in every order; doc fixed. **P2-3** the
+  props count a text seen only when an op deleted its Note or wrote other text, and check each
+  copy's first text and its `conflict_id`. **P2-4** `restore_deleted_with` skips a row whose
+  tombstone here has a clock other than the file's delete. **P2-5** `hold` keeps only a row's
+  newest held write (held deletes, and writes lacking fields, all kept); `merge_folder` checks
+  `UserStore::has_sync_held` (`EXISTS`). **P2-6** what an op records is counted only when its
+  savepoint is kept. **P2-7** noted in `sync.md`: Annotation command results carry
+  `conflict_of`. **Tests:** `merge_tests` 33 (+7: tags save, D6 edit, unseen delete in both
+  orders, tombstone row in three orders, held parent's child, kept parent and a row deleted here
+  too, newest held write); props: partial-view syncs (some devices' files, or their first few),
+  the review's Q1 and D7 sequences (265 and about 4,000 per 10k), the Resource tags saved as
+  `save_collections` saves them, damage 1/4 and a damaged device mending half the time (about
+  7,000 damaged and 6,500 mended per 10k), and the D6 survival invariant. Mutation checks, each
+  failing a test: no `restore_deleted_with` (2 unit tests, and the props' "row restored with its
+  parent" reach check only: no invariant sees it, since a parent its child's maker left comes
+  back without its rows); no copy on a delete (its unit test and the props: "q1 by D … was
+  lost"); `tombstone_row_wins` tie-break flipped, or compared with the tombstone's newest of
+  all (its unit test only: a flipped tie-break is still the same in every order); no re-apply of
+  held items on a merged base (props, the D6 survival invariant); P1-1, P1-2 and the unseen
+  delete undone (their unit tests and the props); P2-1 and P2-4 undone (their unit tests only).
+  A 10k run (default seed) reached: written 362,136, superseded 20,116, covered 974, edit kept
+  2,704, delete noted 2,182, parent kept 244, held 349; conflict copies 470, parents restored
+  288, rows restored with a parent 99, items renamed 1,188, items kept 4, held ops applied
+  10,655; parents back after their child's maker left them 15. 10k runs with seeds 7, 424242,
+  99999999, 123456789, 1, 31337 and 2026 green (about 30–43 s each).
 
 #### S28c — Sync 2c (Rust): snapshots, trimming, versioning, device-id rules, restore, scheduling
 
@@ -1770,11 +1812,13 @@ under the half they belong to.
   (`docs/dev/sync.md` "Merging"); tombstones are kept for good beside live rows, so trimming
   never removes one. A restore with a new id must keep the other devices' `applied_up_to`
   rows' meaning (the last of their op files merged here).
-- **Added by S28b-2:** snapshots must also carry `tombstone.row`, the lists' bases
+- **Added by S28b-2:** snapshots must also carry `tombstone.row` (with its `row_covers` and
+  `row_clock`, added by the review fixes), the lists' bases
   (`item_clock ('preference', key)`, their items at the base's clock) and
   `annotations.conflict_of`, and be merged by the same rules (a whole list value as a base,
   `MergeTx::write_list_base`); `sync_held` stays out of them (each device's own). The merge's
-  "own row" checks (D2's copy, D6's rename, D4's demotion) go by the clock's device id, so after
+  "own row" checks (D2's copy, D6's rename and its kept item against an unseen delete, D4's
+  demotion) go by the clock's device id, so after
   a restore gives the device a new id its older rows are not its own any more: decide whether
   that is acceptable (the other device's edit then wins in place with no copy) or the restore
   re-stamps them. `sync_now` should retry held ops (`merge_folder` does) and a sync that
