@@ -479,8 +479,11 @@ impl UserStore {
     /// Merge a snapshot of another Synced device `device` that covers its op files up to `seq`
     /// and, for every device, `applied` (its `applied_up_to`) with `merge`, in one
     /// transaction that also notes it merged: `device` merged up to `seq`, and every other
-    /// device (not this one) up to the larger of what is noted here and what the snapshot
-    /// covers. All of it, or (`merge` fails) none.
+    /// device up to the larger of what is noted here and what the snapshot covers, but this
+    /// device's own ids, its current one and its former ones (ADR 0022 rule 7): a former id's
+    /// files are this device's own history, merged op by op so that its own checks see each
+    /// op (a text of its own another device's version replaced is kept as a copy), not taken
+    /// as covered by another device's snapshot. All of it, or (`merge` fails) none.
     pub fn merge_snapshot<T, E: From<StoreError>>(
         &self,
         device: &str,
@@ -501,6 +504,7 @@ impl UserStore {
         let out = merge(&mut m)?;
         #[cfg(feature = "test-support")]
         let recorded = std::mem::take(&mut m.recorded);
+        let own_ids: Vec<String> = applied.keys().filter(|id| m.is_own(id)).cloned().collect();
         drop(m);
         let as_i64 = |seq: u64| {
             i64::try_from(seq).map_err(|_| StoreError::Rejected(format!("op file number {seq}")))
@@ -512,7 +516,8 @@ impl UserStore {
         )
         .map_err(sql)?;
         for (other, seq) in applied {
-            if *other == own || other == device || !crate::annotation::is_valid_id(other) {
+            if own_ids.contains(other) || other == device || !crate::annotation::is_valid_id(other)
+            {
                 continue;
             }
             tx.execute(

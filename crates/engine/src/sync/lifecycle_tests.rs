@@ -752,3 +752,45 @@ fn a_former_ids_text_merged_after_an_edit_that_never_saw_it_is_kept_as_a_copy() 
     assert!(texts.contains(&"T on A".to_string()), "{texts:?}");
     assert!(texts.contains(&"V on B".to_string()), "{texts:?}");
 }
+
+#[test]
+fn a_former_ids_files_merge_op_by_op_when_a_snapshot_of_a_device_met_after_the_backup_covers_them()
+{
+    let dir = Dir::new("restore-former-snapshot");
+    let folder = MemSyncFolder::new();
+    let mut a = open(&dir, "a");
+    sync(&a, &folder);
+    let nb = default_notebook(&a);
+    let n = note(&nb, "first");
+    add(&a, Row::Annotation(n.clone()));
+    sync(&a, &folder);
+    // A is backed up before C joins: the Backup has never met C.
+    let backup = back_up(&dir, &a, "a");
+    let c = open(&dir, "c");
+    sync(&c, &folder);
+    // A writes T; C, never seeing T, writes V later, then merges T (V stays: T is not C's
+    // own, so C makes no copy) and writes a snapshot covering A's file of T.
+    a.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "T on A")),
+    )])
+    .unwrap();
+    sync(&a, &folder);
+    c.apply_changes(&[Change::update(
+        Row::Annotation(n.clone()),
+        Row::Annotation(with_text(&n, "V on C")),
+    )])
+    .unwrap();
+    let c_report = sync(&c, &folder);
+    assert_eq!(c_report.merge.recorded.conflicts, 0, "{c_report:?}");
+    write_snapshot(&c, &folder).unwrap();
+    // A, restored, catches up: it meets C through C's snapshot, which covers A's old id's
+    // file of T. That file is A's own history and merges op by op, so T is kept as a copy.
+    a.restore(&backup).unwrap();
+    restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    settle(&[&a, &c], &folder);
+    converged(&[&a, &c]);
+    let texts = texts(&a);
+    assert!(texts.contains(&"T on A".to_string()), "{texts:?}");
+    assert!(texts.contains(&"V on C".to_string()), "{texts:?}");
+}
