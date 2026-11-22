@@ -31,17 +31,18 @@ single-instance Tab with all of it.
 - The launch backups (`backups/user-000006.db`) and the before-upgrade copy
   (`user.v8-<time>.bak`) are written the same way, so they are Backups too.
 
-### What Sync added (schemas 13 to 18, ADR 0022)
+### What Sync added (schemas 13 to 19, ADR 0022)
 
-Migrations 12 → 13, 13 → 14, 14 → 15, 15 → 16, 16 → 17 and 17 → 18 (`crates/store/src/sync_schema.rs`) add what Sync needs; a
+Migrations 12 → 13, 13 → 14, 14 → 15, 15 → 16, 16 → 17, 17 → 18 and 18 → 19 (`crates/store/src/sync_schema.rs`) add what Sync needs; a
 Backup holds it like every other table, and an older Backup gains it as it is restored (with
 ids made then). Every write of Synced data is a `Change` through `UserStore::apply_changes`
 (S27b, `crates/store/src/synced.rs`), which writes the tombstones and, from schema 14, stamps
 each row, item and tombstone with its hybrid logical clock (S28a, `sync_clock.rs`; the
 encoding is in [`sync.md`](sync.md#clocks)); schemas 15 and 16 add what the merge needs
 (S28b-1, S28b-2, [`sync.md`](sync.md#merging)), 17 what a restore or a copy needs (S28c,
-[`sync.md`](sync.md#restores-and-copies-new-device-ids)), and 18 the order the former ids were
-given up (the sync merge fix).
+[`sync.md`](sync.md#restores-and-copies-new-device-ids)), 18 the order the former ids were
+given up (the sync merge fix), and 19 where a merge done in batches stands (S29c,
+[`sync.md`](sync.md#merges-in-batches-s29c)).
 
 | Table or column | What |
 |---|---|
@@ -56,6 +57,7 @@ given up (the sync merge fix).
 | `op_outbox` (14) | While this device records ops: each `Change` applied, with its clock, until it is in an op file of the Sync folder (`file_seq`, once reserved). Empty on a device that does not sync. |
 | `annotations.conflict_of` (16) | On a Sync conflict's copy, the id of the Note whose text won ([`sync.md`](sync.md#sync-conflicts)); `NULL` on every other Annotation. |
 | `sync_held` (16) | Other devices' ops this device could not apply yet, each with its row, clock and `change` JSON, tried again at every sync ([`sync.md`](sync.md#ops-held-back)). Empty on a device that does not sync. |
+| `merge_cursor` (19) | While the merge of another device's op file or snapshot stands between two of its batches (a sync stopped there): that device, the op file (`seq`) or the snapshot (`snapshot`, its file name, and `seq`, the op files it covers), and how many of its ops are merged; the next sync finishes it first ([`sync.md`](sync.md#merges-in-batches-s29c)). A Backup keeps it with the rows it goes with, so a restore that catches up finishes that file; Replace empties it; a snapshot holds it empty. Empty almost always. |
 
 A **snapshot** in the Sync folder (S28c, [`sync.md`](sync.md#snapshots)) is a Backup in this
 format holding only the Synced data and what merging it needs: History, the Last session,
@@ -269,7 +271,7 @@ uses):
   ids (kept when saved over or renamed); new Favorites and Reading plans get ids; a v13 Backup
   round-trips and a v12 one gains the new tables as it is restored; every preference the
   engine keeps is listed once as synced or staying on the device.
-- `crates/store/tests/sync_clock_db.rs`: a v13 database and a v13 Backup migrate to 18
+- `crates/store/tests/sync_clock_db.rs`: a v13 database and a v13 Backup migrate to 19
   losing nothing (a restore giving a new id and emptying the outbox); migration 16's columns and tables (a copy's `conflict_of`, a parent's
   tombstone row, a held op, a list's base) round-trip through a Backup, and a v15 Backup restores
   with none; a Backup carries the item clocks and the outbox; item positions and what
@@ -277,7 +279,10 @@ uses):
   `NULL` (an item at its index, a tombstone covering up to its own clock); every database has a
   device id after `open` and `open_backup`; the clock passes every clock held after a reopen
   (with the wall clock stepped back) and after a restore; the outbox keeps ops only while
-  recording and a reserved op file comes back with the same ops.
+  recording and a reserved op file comes back with the same ops; the merge cursor (19) is
+  committed per batch, carried by a Backup, empty in a snapshot, emptied by Replace, and a v18
+  Backup restores with none
+  (`the_merge_cursor_is_committed_per_batch_carried_by_a_backup_and_emptied_by_snapshots_and_replace`).
   `synced_writes_db.rs` (`every_write_of_synced_data_stamps_its_rows_with_clocks_and_records_its_ops`)
   checks every `Row` variant's write stamps its row, item or tombstone.
 - `crates/store/tests/user_db.rs` (`a_refused_database_is_not_changed`): a newer or foreign

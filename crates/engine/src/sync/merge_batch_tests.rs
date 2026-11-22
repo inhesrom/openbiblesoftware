@@ -392,3 +392,65 @@ fn no_snapshot_is_written_while_a_merge_is_partly_done() {
         None
     );
 }
+
+/// How long a 10,000-Note merge takes in one transaction (as before S29c) and in the app's
+/// batches, for a new device joining (10,000 Notes added in one op file) and then catching up
+/// with all of them edited (one op file of 10,000 updates): the cost of the batches' commits.
+/// `cargo test -p obs-engine --lib measure_merge_batches -- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn measure_merge_batches_against_one_transaction() {
+    let dir = Dir::new("batches-measure");
+    let folder = MemSyncFolder::new();
+    let app = options(MergeBatch::default());
+    let l = open(&dir, "library");
+    sync(&l, &folder, &app);
+    let (_, notes) = many_notes(&l, "Study", 10_000);
+    sync(&l, &folder, &app);
+    let n = open(&dir, "new");
+    n.join_sync().unwrap();
+    let whole = n.copy_in_memory().unwrap();
+    let ms = |at: std::time::Instant| at.elapsed().as_secs_f64() * 1000.0;
+    // Both merges record at one clock, so they record the same.
+    let clock = obs_store::clock::now_ms() + 60_000;
+    fix(Some(clock));
+    let at = std::time::Instant::now();
+    let one = merge_folder_with(&whole, &folder, &MergeBatch::whole()).unwrap();
+    let join_whole = ms(at);
+    let at = std::time::Instant::now();
+    let split = merge_folder_with(&n, &folder, &MergeBatch::default()).unwrap();
+    let join_split = ms(at);
+    fix(None);
+    assert_eq!(n.synced_dump().unwrap(), whole.synced_dump().unwrap());
+    let changes: Vec<Change> = (notes.iter())
+        .map(|a| {
+            Change::update(
+                Row::Annotation(a.clone()),
+                Row::Annotation(with_text(a, &format!("{} (edited)", a.body()))),
+            )
+        })
+        .collect();
+    l.apply_changes(&changes).unwrap();
+    sync(&l, &folder, &app);
+    fix(Some(clock + 60_000));
+    let at = std::time::Instant::now();
+    let one_edit = merge_folder_with(&whole, &folder, &MergeBatch::whole()).unwrap();
+    let edit_whole = ms(at);
+    let at = std::time::Instant::now();
+    let split_edit = merge_folder_with(&n, &folder, &MergeBatch::default()).unwrap();
+    let edit_split = ms(at);
+    fix(None);
+    assert_eq!(n.synced_dump().unwrap(), whole.synced_dump().unwrap());
+    eprintln!(
+        "10,000 Notes joined: one transaction {join_whole:.0} ms ({} batch), in batches \
+         {join_split:.0} ms ({} batches, {} merged whole); then all edited: one transaction \
+         {edit_whole:.0} ms ({} batch), in batches {edit_split:.0} ms ({} batches, {} merged \
+         whole)",
+        one.batches,
+        split.batches,
+        split.whole,
+        one_edit.batches,
+        split_edit.batches,
+        split_edit.whole,
+    );
+}
