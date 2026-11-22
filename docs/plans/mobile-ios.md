@@ -1786,7 +1786,10 @@ this in addition to its own lines):
     Starter library (also with a download in progress and with Retry), Get Resources and
     Storage. Filtered, as S26: the system toolbar's glass Done, and on iPad findings with no
     element from the reader drawn behind the floating sheet (contrast, detection and, new
-    here, text the sheet covers reported as clipped). The system blue on the offer's
+    here, text the sheet covers reported as clipped). That iPad filter is wide (it would
+    also hide an element-less finding inside the sheet); it is accepted because the iPhone
+    runs the same audits on the same screens full screen, filtering only Done
+    (`LibraryTests.audit` says so). The system blue on the offer's
     buttons failed contrast, so they are label-coloured. Found on the way: a List scrolled
     far down goes blank while the audit changes Dynamic Type, so the audited rows are near
     the top.
@@ -1795,13 +1798,41 @@ this in addition to its own lines):
     release) is now replaced instead of kept. Every UI test that does not test the offer
     launches with `OBS_TEST_NO_STUDY_SET_OFFER=1`, since the offer at first launch would
     cover the reader.
-  - **Deferred / for later steps.** A transfer that finishes after a relaunch is installed
-    (the core accepts it), but one still running after a relaunch shows no progress until
-    its row's Download is tapped again (the center then carries on with it), since the
-    core does not know it yet. Storage (S25) has a first list with Remove and the free
+  - **Review fixes (2026-11-22).** (P1) `AppCore` keeps its boot as a task that a later
+    `start()` awaits, so the scene connecting during a background-session launch's boot
+    gets a ready reader (`AppCoreTests`). (P1) A background relaunch loses no finished
+    file: the app folder is worked out without the core (`AppCore.locateAppFolder()`,
+    side-effect free; the Debug test folder is reset only by the boot), a finished file
+    goes straight to the core's path and resume data is kept before boot, and the system's
+    completion handler is held until `attach` has handed every queued file to the core
+    (`DownloadTests`, simulating the relaunch through the delegate before boot). (Rust)
+    `download_progress` and `download_failed` adopt a transfer the core does not know, as
+    `install_downloaded` does, so one running after a relaunch shows progress, the banner,
+    Cancel and a failure, and counts in the won't-fit rule. `Network.is_wifi` is now
+    `Option<bool>`: `NetworkMonitor` starts as not known, which the core counts as not
+    Wi-Fi (Download asks first; the offer says "Checking the network."), and the open
+    offer is asked for again when the path changes; the offer has a `looking_up` flag for
+    its spinner. Also: the progress throttle covers transfers of unknown length; Storage is
+    refreshed only on `Changed.library` and `Changed.downloads` refreshes are coalesced to
+    one per 0.25 s (measured: the 15-Resource Study set at 2 MB/s a connection, 18 s, 299
+    `downloads` changes, 84 refreshes, 0.06 s on the main thread, 0.3 %; 0.5 % on the
+    iPad); Cancel and the hand-in of a finished file share a lock and a cancelled file is
+    not installed (`DownloadTests`); a request outside the app folder fails in the core;
+    Release builds transfer `https` only (the Release binary has no `OBS_TEST_`,
+    `OBS_STARTER_MIRROR` or `OBS_STUDY_SET_DIR` string); the test counts come from the
+    core's answers (the offer's "N Resources", the core's Study set rows) and the served
+    manifest instead of names, with wider waits; `ios.yml`'s job timeout is 60 minutes.
+    With the fixes the iPhone 17 and iPad runs have 22 tests each (8 min 1 s and 8 min 18
+    s), all passing. Not yet checked on a device: a relaunch after the app is terminated
+    (start the Study set, `kill` the app, let the transfers finish), and whether
+    `urlSessionDidFinishEvents` can arrive before the delegate has stored its handler.
+  - **Deferred / for later steps.** A transfer still running after a relaunch now shows
+    once its first progress arrives; one waiting for Wi-Fi shows only when its row's
+    Download is tapped (the center then carries on with it). Storage's sizes refresh when
+    the library changes or the sheet opens, not as a Search index finishes. Storage (S25) has a first list with Remove and the free
     bytes already (noted in S25's entry). The words of the Library's buttons and titles are
     Swift's, as S26's were (S12's string decision). No later step's assumption proved wrong.
-  - Checks: `cargo test -p obs-mobile library` (23 tests, 5 new, 1 ignored), `cargo test -p obs-ffi
+  - Checks: `cargo test -p obs-mobile library` (25 tests, 7 new, 1 ignored), `cargo test -p obs-ffi
     --test library` (3, 1 new), `cargo test -p obs-store --test sync_schema_db`; `cargo
     xtask ios build --sim-only`, `xcodegen generate`, the iPhone and iPad runs above;
     previews `docs/previews/ios/s24-*.png`; `cargo xtask gallery` unchanged; `cargo xtask
