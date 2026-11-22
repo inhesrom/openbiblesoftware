@@ -207,6 +207,14 @@ jobs:
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
         run: |
+          # The run-script phase runs cargo under `env -i` and looks for it at ~/.cargo/bin unless
+          # CARGO, CARGO_HOME and RUSTUP_HOME say otherwise; this runner installs Rust elsewhere.
+          CARGO="$(command -v cargo)"
+          export CARGO
+          export CARGO_HOME="${CARGO_HOME:-$(dirname "$(dirname "$CARGO")")}"
+          RUSTUP_HOME="${RUSTUP_HOME:-$(rustup show home 2>/dev/null || true)}"
+          [ -n "$RUSTUP_HOME" ] && export RUSTUP_HOME
+          echo "cargo for the run-script phase: $CARGO (CARGO_HOME=$CARGO_HOME RUSTUP_HOME=${RUSTUP_HOME:-unset})"
           study="$GITHUB_WORKSPACE/dist/starter"
           ids=$(jq -r '.resources[] | select(.mobile_set == "study") | .resource_id' \
             "$study/starter-manifest.json" 2>/dev/null || true)
