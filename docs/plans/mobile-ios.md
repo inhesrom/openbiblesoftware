@@ -1817,7 +1817,7 @@ this in addition to its own lines):
     (`io.github.inhesrom.openbible.obr`, exported), `LSSupportsOpeningDocumentsInPlace =
     false`. No entitlement. The privacy manifest adds reason `3B52.1`.
   - **Checks.** `cargo test -p obs-engine import` (37 tests, 13 new), `cargo test -p
-    obs-mobile import` (8 new), `cargo test -p obs-ffi --test import`; `cargo xtask ios
+    obs-mobile import` (8, 6 new), `cargo test -p obs-ffi --test import`; `cargo xtask ios
     build --sim-only`, `xcodegen generate`, `xcodebuild test` green on an iPhone 17 (all 10
     tests, Study set override on; ImportTests in Light and Dark) and an iPad Air 11-inch
     (M4) (all 10), with the files placed by `apps/ios/scripts/place-import-files.sh` and
