@@ -17,10 +17,12 @@
 //! - `settings`: Theme, Page tone, Text size and Dynamic Type, fonts, Reduce motion;
 //! - [`library`]: Library → Starter library, the Open catalogue, downloads and their states,
 //!   Remove and Add back, Library → Storage;
+//! - [`download_settings`]: "Use cellular data" and the first-launch Study set offer;
 //! - [`import`]: Import of a file the user picked or shared, and its Import report;
 //! - `events`: the pump and its [`Changed`] events.
 
 mod app;
+pub mod download_settings;
 mod events;
 mod frame;
 pub mod import;
@@ -34,6 +36,7 @@ mod text_input;
 pub mod tokens;
 
 pub use app::{LibraryResource, MobileApp, MobileError};
+pub use download_settings::{DOWNLOADS_PREF, StudySetOffer};
 pub use events::Changed;
 pub use frame::{
     AROUND, BAND, Footnote, FootnoteMarkerHit, Hit, HitVerse, HitWord, MAX_TILE_PX, ReaderFrame,
@@ -43,7 +46,7 @@ pub use import::{IMPORT_KINDS, ImportReportView, ImportState, ReportSection};
 pub use library::{
     DownloadOrigin, DownloadPlan, DownloadRequest, DownloadRow, DownloadState, Network, OpenRow,
     RemoveAnswer, SetSummary, StarterChoice, StarterLibraryView, StarterRow, StarterRowStatus,
-    StorageRow, StorageView,
+    StorageRow, StorageView, download_label,
 };
 pub use navigation::{BookChapters, HistoryDay, HistoryVisit, ParsedReference};
 pub use obs_engine::licence::{LicenceClass, LicenceFilter};

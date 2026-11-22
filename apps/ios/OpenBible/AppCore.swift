@@ -20,12 +20,19 @@ final class AppCore {
 
     let engineVersion = OpenBibleCore.engineVersion()
     private(set) var state: State = .starting
+    /// The app's folder the core was booted over.
+    private(set) var folder: URL?
     /// How long the boot took, for the log and the tests.
     private(set) var bootDuration: Duration?
     /// What the core reports from its pump thread, delivered on the main actor.
     @ObservationIgnored var onChange: ((Changed) -> Void)?
-    @ObservationIgnored private var started = false
+    /// The boot, once begun: every `start()` waits for it (the background downloads' launch
+    /// and the scene can both start the core).
+    @ObservationIgnored private var boot: Task<Void, Never>?
     @ObservationIgnored private var events: CoreEvents?
+    @ObservationIgnored private let appFolder: @Sendable () throws -> URL
+    @ObservationIgnored private let studySet: String?
+    @ObservationIgnored private let downloads: DownloadCenter
 
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "boot")
 
@@ -34,20 +41,32 @@ final class AppCore {
         return nil
     }
 
-    /// Boot the core, once per process; later calls wait for nothing and return.
+    /// `appFolder` is the folder to boot over, `studySet` the debug Study set override and
+    /// `downloads` the background transfers the core is attached to (a test's own).
+    init(
+        appFolder: @escaping @Sendable () throws -> URL = { try AppCore.appFolder() },
+        studySet: String? = AppCore.debugStudySet(),
+        downloads: DownloadCenter = .shared
+    ) {
+        self.appFolder = appFolder
+        self.studySet = studySet
+        self.downloads = downloads
+    }
+
+    /// Boot the core, once per process; a call while it boots waits for that boot to end.
     func start() async {
-        guard !started else { return }
-        started = true
+        if boot == nil { boot = Task { await self.run() } }
+        await boot?.value
+    }
+
+    private func run() async {
         let folder: URL
-        do { folder = try Self.appFolder() } catch {
+        do { folder = try appFolder() } catch {
             state = .failed(message: "\(error)")
+            downloads.coreFailed()
             return
         }
-        var studySet: String?
-        #if DEBUG
-            // The debug Study set override (plan S07): a Starter library folder on the Mac.
-            studySet = ProcessInfo.processInfo.environment["OBS_STUDY_SET_DIR"]
-        #endif
+        let studySet = studySet
         let bundle = Self.bundledSet()?.path
         let clock = ContinuousClock()
         let began = clock.now
@@ -66,10 +85,31 @@ final class AppCore {
             }
             try? core.setObserver(observer: events)
             self.events = events
+            // The Library's transfers: small files through the shell's transport, `.obr`
+            // and Open catalogue files through the background downloads.
+            try? core.setTransport(transport: HTTPTransport())
+            #if DEBUG
+                // Test harness: a local Starter library mirror instead of the release.
+                if let mirror = ProcessInfo.processInfo.environment["OBS_STARTER_MIRROR"] {
+                    try? core.setStarterSource(base: mirror, releasesApi: nil)
+                }
+            #endif
+            downloads.attach(core: core, folder: folder)
+            self.folder = folder
             state = .ready(core)
         } catch {
             state = .failed(message: Self.message(error))
+            downloads.coreFailed()
         }
+    }
+
+    /// The debug Study set override (plan S07): a Starter library folder on the Mac.
+    nonisolated static func debugStudySet() -> String? {
+        #if DEBUG
+            return ProcessInfo.processInfo.environment["OBS_STUDY_SET_DIR"]
+        #else
+            return nil
+        #endif
     }
 
     /// Boot a core in `folder` over `bundle`, and keep the folders it lists out of device
@@ -86,18 +126,30 @@ final class AppCore {
         return core
     }
 
-    /// The app's own folder for the core: Application Support/OpenBible.
+    /// The folder the core boots over: `locateAppFolder()`, made afresh for a UI test that
+    /// asks for a folder of its own (Debug).
     nonisolated static func appFolder() throws -> URL {
-        let support = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
-            create: true)
+        let folder = try locateAppFolder(create: true)
         #if DEBUG
             // Test harness: UI tests that add to the library (ImportTests) boot in a folder of
             // their own, made afresh, so the app's own library stays as other tests expect it.
-            if let name = ProcessInfo.processInfo.environment["OBS_TEST_APP_FOLDER"] {
-                let folder = support.appendingPathComponent(name, isDirectory: true)
+            if ProcessInfo.processInfo.environment["OBS_TEST_APP_FOLDER"] != nil {
                 try? FileManager.default.removeItem(at: folder)
-                return folder
+            }
+        #endif
+        return folder
+    }
+
+    /// The app's own folder for the core, Application Support/OpenBible (a test's own under
+    /// `OBS_TEST_APP_FOLDER`, Debug), worked out without changing anything in it: the
+    /// background downloads need it before the core is up, after a relaunch.
+    nonisolated static func locateAppFolder(create: Bool = false) throws -> URL {
+        let support = try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
+            create: create)
+        #if DEBUG
+            if let name = ProcessInfo.processInfo.environment["OBS_TEST_APP_FOLDER"] {
+                return support.appendingPathComponent(name, isDirectory: true)
             }
         #endif
         return support.appendingPathComponent("OpenBible", isDirectory: true)

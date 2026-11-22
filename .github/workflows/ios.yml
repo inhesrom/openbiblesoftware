@@ -54,8 +54,9 @@ jobs:
   ios:
     name: iOS build and tests (simulator)
     runs-on: macos-latest
-    # S32's stop-and-ask is a job over 30 minutes; this only stops a hung simulator.
-    timeout-minutes: 45
+    # S32's stop-and-ask is a job over 30 minutes; this only stops a hung simulator. 60, not
+    # 45, since S24's LibraryTests and DownloadTests download the Study set several times.
+    timeout-minutes: 60
     permissions:
       contents: read
       # `gh run download` of starter.yml's artifact from another run.
@@ -211,8 +212,9 @@ jobs:
           xcrun simctl terminate "$UDID" com.apple.DocumentsApp || true
 
       # testATaggedWordShowsItsStrongsNumber (S07) needs the Study set, read in place from
-      # dist/starter through TEST_RUNNER_OBS_STUDY_SET_DIR; without it, that test alone is
-      # skipped and the log says so.
+      # dist/starter through TEST_RUNNER_OBS_STUDY_SET_DIR; without it, that test is
+      # skipped and the log says so. LibraryTests and DownloadTests (S24) serve the same
+      # folder from a local mirror in the test process; without it they skip themselves.
       - name: xcodebuild test
         working-directory: apps/ios
         env:
@@ -243,7 +245,7 @@ jobs:
             echo "Study set: $count Resources in $study"
             export TEST_RUNNER_OBS_STUDY_SET_DIR="$study"
           else
-            echo "::notice::no Study set in $study${missing:+ (missing:$missing)}: skipping OpenBibleUITests/PrototypeTests/testATaggedWordShowsItsStrongsNumber only"
+            echo "::notice::no Study set in $study${missing:+ (missing:$missing)}: skipping OpenBibleUITests/PrototypeTests/testATaggedWordShowsItsStrongsNumber, and LibraryTests and DownloadTests' downloads skip themselves"
             args=(-skip-testing:OpenBibleUITests/PrototypeTests/testATaggedWordShowsItsStrongsNumber)
           fi
           xcodebuild test -scheme OpenBible \

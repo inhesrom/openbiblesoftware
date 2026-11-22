@@ -380,13 +380,17 @@ fn backups_round_trip_with_the_sync_columns_and_an_older_one_gains_them() {
     assert_eq!(strings(&c, "SELECT device_id FROM device").len(), 1);
 }
 
-/// Every preference key the engine keeps (its `*_PREF`, `*_PREF_PREFIX` and `*_KEY`
-/// constants) is listed once: as Synced data or as staying on the device (ADR 0022 rule 4).
+/// Every preference key the engine and the Mobile app keep (their `*_PREF`, `*_PREF_PREFIX`
+/// and `*_KEY` constants) is listed once: as Synced data or as staying on the device (ADR
+/// 0022 rule 4).
 #[test]
 fn every_preference_the_engine_keeps_is_listed_as_synced_or_staying_on_the_device() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine/src");
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut keys = Vec::new();
-    for entry in std::fs::read_dir(&src).unwrap() {
+    let files = ["engine/src", "mobile/src"]
+        .iter()
+        .flat_map(|dir| std::fs::read_dir(crates.join(dir)).unwrap());
+    for entry in files {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "rs") {
             continue;

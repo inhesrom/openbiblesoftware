@@ -24,6 +24,8 @@ final class PrototypeTests: XCTestCase {
     @MainActor
     func testPrototypeSmoke() throws {
         let app = XCUIApplication()
+        // The first-launch Study set offer is LibraryTests'.
+        app.launchEnvironment["OBS_TEST_NO_STUDY_SET_OFFER"] = "1"
         app.launch()
 
         // One element per Verse, labelled with its reference and text, in reading order.
@@ -82,6 +84,7 @@ final class PrototypeTests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchEnvironment["OBS_STUDY_SET_DIR"] = studySet
+        app.launchEnvironment["OBS_TEST_NO_STUDY_SET_OFFER"] = "1"
         app.launchArguments += ["-OBSResource", "kjv-strongs", "-OBSGoTo", "Jn 3:16"]
         app.launch()
         let verse = app.staticTexts["John.3.16"]
@@ -97,6 +100,8 @@ final class PrototypeTests: XCTestCase {
     @MainActor
     func testAccessibilityAudit() throws {
         let app = XCUIApplication()
+        // The first-launch Study set offer is LibraryTests'.
+        app.launchEnvironment["OBS_TEST_NO_STUDY_SET_OFFER"] = "1"
         app.launch()
         XCTAssertTrue(app.staticTexts["Gen.1.1"].waitForExistence(timeout: 30))
         try app.performAccessibilityAudit { issue in

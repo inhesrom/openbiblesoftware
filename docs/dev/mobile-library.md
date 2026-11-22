@@ -6,7 +6,8 @@ and Add back, **Library → Storage**, and **Import** (S26: a file from the docu
 "Open in Open Bible", with its Import report). Every rule (the manifests and their merge, the sets,
 sha256 pinning, each download's state, "Wi-Fi only", "ask first over cellular", "won't fit")
 is in Rust; the shell owns only the transfers. S23 of [the iOS plan](../plans/mobile-ios.md)
-built the Rust side; S24 builds the iOS screens and the background transfers on it. The
+built the Rust side; S24 built the iOS screens and the background transfers on it (§ The
+shell's downloads). The
 desktop's Starter library is unchanged ([starter-library](starter-library.md)).
 
 ## Contract
@@ -87,7 +88,9 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     floor, exceeds the free bytes the shell passes less what the downloads already planned
     need), then the network: on Wi-Fi, start (cellular allowed only with "Use cellular
     data"); on cellular with it on, start; with it off, `AskCellular` with the size, and
-    asking again with `cellular_confirmed` starts it over cellular.
+    asking again with `cellular_confirmed` starts it over cellular. A network the shell
+    does not know yet (`Network.is_wifi: None`, before its first path update) counts as not
+    Wi-Fi: Download asks first, saying the network is not known yet.
   - Download states: `Queued` → `Downloading { done, total }` (`download_progress`) →
     `Verifying` → `Installing` → `Indexing` → `Done`, or `Failed { message, retry }`
     (`download_failed` from the shell; a refused file from `install_downloaded`).
@@ -101,7 +104,11 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     Starter Resource that manifest does not list stays `Queued`, its file kept, while a
     released manifest check runs (it starts one), and is installed when the check lists it,
     refused (file deleted) when the check lists it not or finds no release this app reads,
-    and keeps waiting after a check that failed. `cancel_download` forgets a queued,
+    and keeps waiting after a check that failed. `download_progress`, `download_failed` and
+    `install_downloaded` adopt a transfer the core does not know (one the system carried on
+    across a relaunch): it gets a download at the file the core names, with the manifest's
+    size, so it shows in its row and the banner, can be cancelled, shows a failure with
+    Retry, and counts in the free space the downloads need. `cancel_download` forgets a queued,
     downloading or failed download and deletes its file. The pump moves Starter installs,
     Open imports and Search index builds on (a download that fails there has its file
     deleted: an Import cancelled before it read it), and reports `Changed::Downloads`
@@ -123,12 +130,116 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     `tab.parallel`, else to the first other Resource it can show; only when there is none is
     the removal refused ("… is the only Resource the reader can show").
   - `storage()`: `library_storage` with titles and sizes in words.
+  - `download_label(state)`: a download's state in words for its row ("Waiting to
+    download", "Downloading · 12.0 MB of 26.0 MB", "Checking the file…", "Adding it to your
+    Library…", "Building its Search index…", "In your Library", or a failure's message).
+- **`obs-mobile` `download_settings`** (S24; the device-only User database preference
+  `mobile.downloads`, `DOWNLOADS_PREF`, in `obs_store::DEVICE_PREFERENCES`, never synced):
+  - `use_cellular()` / `set_use_cellular(on)`: "Use cellular data", off by default (#333),
+    kept on this device. The shell passes it as every `Network`'s `allow_cellular`; the
+    `plan_*` signatures are unchanged.
+  - `study_set_offer(network)` → `Option<StudySetOffer>`: the first-launch Study set offer
+    while there is one to make, every word of it (title, what it brings, `size` such as "15
+    Resources, 136.6 MB", `status`, the `network` line, where to find it `later`, the
+    `download` and `not_now` labels, and `retry` after a failed lookup). `None` once it was
+    shown at an earlier launch on this device, when nothing of the Study set is missing
+    (every Resource of it in the library or Removed, once the released list says which), or
+    with the debug Study set override. Before the released list is in (the first launch) it
+    has no size and its status says the Study set is being looked up ("Looking up the Study
+    set…", with `looking_up` true: the sheet shows a spinner), or why the list could not be
+    fetched, with `retry`; a list kept on the device gives the size at once, and a later
+    failed check changes nothing in it. The `network` line is "You are on Wi-Fi.", "You are
+    not on Wi-Fi." or, before the shell knows, "Checking the network.", then what Download
+    does there.
+  - `study_set_offer_shown()`: called as the sheet appears; recorded at once, so the offer is
+    not made at a later launch even if the app is closed while it shows (as the desktop's
+    First-run tour). This launch keeps answering `study_set_offer`, so the open sheet follows
+    the lookup.
 - **`obs-ffi`** (`apps/obs-ffi/src/library.rs`): the Swift-implemented `Transport { get(url)
   -> bytes }` (foreign trait; errors `TransportError.notFound | rateLimited | network`, an
   unknown Swift error arrives as `network`), wrapped as the engine's `Fetch`
   (`TransportFetch`, installed by `MobileApp.setTransport`); it is only called from job
   threads with the core unlocked. Mirror Records and Enums of everything above, and
-  `Changed.downloads`. Paths cross as `String`s.
+  `Changed.downloads`. Paths cross as `String`s. S24 added `use_cellular`,
+  `set_use_cellular`, `study_set_offer` (`StudySetOffer`), `study_set_offer_shown`, and the
+  free functions `download_label(state)`, `licence_class_label(class)` (the desktop's badge
+  words) and `licence_filters()` (Get Resources' choices with the desktop's labels and
+  hovers, and the default, All).
+
+## The shell's downloads (S24, #333 "Downloads")
+
+`apps/ios`; every rule above stays in Rust, and the shell moves bytes and lays out.
+
+- **Transport** (`HTTPTransport`): one plain GET per call, blocking on the core's job
+  thread, over an ephemeral `URLSession` with no cookies, cache or credentials and the
+  `User-Agent` `OpenBible/<engine version>`; a request to `https://api.github.com/` asks for
+  `application/vnd.github+json` and `X-GitHub-Api-Version: 2022-11-28`. Statuses as
+  `apps/openbible/src/fetch.rs` reads them (`HTTPStatus.check`): 2xx a success, 404 and 410
+  `notFound`, 429 and a 403 with `x-ratelimit-remaining: 0` `rateLimited`, anything else
+  `network("<url>: http status: <code>")`; a transfer error `network("<url>: <error>")`;
+  `file://` read locally (missing: `notFound`); another scheme `network("<url>: unsupported
+  protocol \"<scheme>\"")`. Redirects are followed (GitHub's release assets). Release
+  builds take `https` only (the transport and `DownloadCenter` refuse `http` and `file://`
+  with the same words); Debug builds keep them for the local mirror.
+- **Background transfers** (`DownloadCenter`): for each `DownloadRequest` of a
+  `DownloadPlan.start`, a `URLSessionDownloadTask` in one of two
+  `URLSessionConfiguration.background` sessions, `<bundle id>.downloads.wifi`
+  (`allowsCellularAccess = false`) or `.cellular` (true), as the request's `cellular` says
+  (the `URLRequest` says the same), `sessionSendsLaunchEvents`, not discretionary, no
+  cookies or cache. The task's `taskDescription` carries the Resource id, origin, URL and
+  the core's file relative to the app folder, so a transfer is known again after a
+  relaunch. Progress goes to `download_progress` at most every 0.25 s (its last update
+  always; with no length known, every one is throttled); a finished file is checked for its
+  HTTP status, moved to the core's path at once and handed in with `install_downloaded`; a
+  failure goes to `download_failed`; a request whose file is outside the app folder fails
+  in the core. A request whose file has a transfer running already from the same URL
+  carries on with it (a relaunch the core forgot it in); one from another URL replaces it.
+  Cancel and the hand-in of a finished file take one lock, and a file whose download was
+  cancelled is deleted rather than handed in, so a Cancel tapped as a transfer finishes
+  installs nothing (the core would accept a finished file it does not know). No
+  entitlement, capability or background mode is needed.
+- **Background relaunch:** the app delegate's
+  `application(_:handleEventsForBackgroundURLSession:completionHandler:)` stores the
+  handler and starts the core (`AppCore.start()`; a later `start()`, the scene's, waits
+  for the same boot). The app folder is known without the core
+  (`AppCore.locateAppFolder()`, which changes nothing; the Debug test folder is made
+  afresh only by the boot's `appFolder()`), so before the core is up a finished file still
+  goes straight to the core's path and resume data is still kept; what is handed to the
+  core waits for `attach`. `urlSessionDidFinishEvents(forBackgroundURLSession:)` calls the
+  handler on the main thread, unless something waits for the core: then `attach` calls it
+  once everything is handed in (or the boot failed), so a suspension or termination right
+  after it loses no finished file.
+- **Resume data:** the `NSURLSessionDownloadTaskResumeData` the system leaves with a
+  dropped transfer is kept as `<the core's file>.resume`; Retry (a new `Start` for the same
+  file) resumes from it. Resume data names the URL the transfer had reached, which for
+  GitHub's release assets is the signed URL the 302 led to: while it is valid, the resumed
+  request asks for the rest with a byte range; once it has expired the server refuses it
+  and the transfer starts afresh from the core's URL, once (`DownloadTests`, against a local
+  mirror). Cancel stops the transfer and deletes the resume data; the core deletes its own
+  file; the core's 24 h sweep removes any left over.
+- **Network** (`NetworkMonitor`): `NWPathMonitor`; `is_wifi` is `!path.usesInterfaceType(.cellular)`
+  (Wi-Fi, wired and no network at all count as not cellular, which is what
+  `allowsCellularAccess = false` waits for), and not known (`nil`) until the first path
+  update; `allow_cellular` the core's `use_cellular()`. When the path changes, the open
+  offer is asked for again, so its network line follows.
+- **Refreshes:** `Changed.library` asks the core again for everything shown, Storage
+  included; `Changed.downloads` (every progress update wakes the pump) asks for the rows,
+  the banner and the offer only, at most every 0.25 s. Measured (`DownloadTests`, iPhone 17
+  simulator): the 15-Resource Study set at 2 MB/s a connection, 18 s, brought 306
+  `downloads` changes and 83 refreshes, 0.06 s on the main thread (0.34 %).
+- **Free space:** `volumeAvailableCapacityForImportantUsage` of the app folder's volume,
+  passed as `free_bytes` (nil when unknown); the privacy manifest declares reason `E174.1`.
+- **Screens** (where the reader's options menu reaches them until the screen anatomy, #335,
+  S12/S14a, decides; S14b moves Use cellular data into Settings): Library… opens the
+  Library sheet (the banner, Starter library, Get Resources, Storage with its total, Use
+  cellular data), each list pushed; the reader shows the core's banner at its foot while
+  there is one, and tapping it opens the Library; the Study set offer is a sheet over the
+  reader at launch while `study_set_offer` answers one. The core's questions
+  (`AskCellular`, `WontFit`, Remove's question) and refusals are alerts with its words.
+- **Test harness (Debug builds only):** `OBS_STARTER_MIRROR` (the Starter library's base
+  URL: a local mirror), `OBS_TEST_NETWORK=cellular|wifi` (the path `NWPathMonitor` would
+  report), `OBS_TEST_NO_STUDY_SET_OFFER=1` (the tests that do not test the offer), and with
+  `OBS_TEST_APP_FOLDER` the transfers of an earlier test are cancelled at launch.
 
 ## Import (S26, #333 "Import")
 
@@ -222,6 +333,8 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
 | The released manifest last fetched and its pinned files base | User database preference `starter-library.released` (device-only, `DEVICE_PREFERENCES`) |
 | The releases list | `https://api.github.com/repos/inhesrom/openbiblesoftware/releases?per_page=20`, only on a manifest format mismatch |
 | The release's files | `https://github.com/inhesrom/openbiblesoftware/releases/latest/download/`, or the pinned `…/releases/download/<tag>/` |
+| Resume data of a dropped transfer | `<root>/downloads/<file>.resume` (S24, the shell's); deleted when the file is installed, by Cancel, and by the 24 h sweep |
+| Use cellular data, the Study set offer shown | User database preference `mobile.downloads` (device-only, `DEVICE_PREFERENCES`) |
 | Picked and shared files waiting for Import | `<root>/library/imports/picked-<n>/<name>`; deleted when the Import is over, and at boot |
 | A SWORD zip while it is read | `<root>/library/imports/<resource id>.sword/`; removed whatever the outcome |
 | Import reports | User database preference `import-report/<id>`, as on the desktop |
@@ -285,5 +398,44 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   (with `apps/ios/scripts/place-import-files.sh`, `docs/dev/ios-project.md`): a USFM zip, a
   SWORD zip and a `.obr` picked from Files on an iPhone and an iPad, their reports, the
   report sheet's accessibility audit, Open.
-- S24 adds the simulator evidence (background transfers, a bad hash showing Retry, Wi-Fi only
-  on a simulated cellular path).
+- S24, `crates/mobile/src/library_tests.rs`: Use cellular data off by default and kept; the
+  Study set offer looked up, then with its size and the network line (Wi-Fi, cellular,
+  cellular allowed), shown once; a failed lookup with Try again and offered again at the
+  next launch; no offer once nothing of the Study set is missing; the download states in
+  words; a transfer still running after a relaunch adopted (its row, the banner, the
+  won't-fit rule, Cancel) and one failed after it shown with Retry; a network not known
+  yet asking first. `apps/obs-ffi/tests/library.rs`: the setting, the offer (its
+  `looking_up`, the unknown network), adoption and the words across the FFI.
+  `crates/store/tests/sync_schema_db.rs` now reads `crates/mobile/src`'s preference keys
+  too.
+- S24, in the simulator (iOS 27.2, iPhone 17 and iPad Air 11-inch (M4)), against
+  `MirrorServer` (`apps/ios/TestSupport`), a local HTTP mirror of `dist/starter` on
+  127.0.0.1 in the test process, so no test touches the network:
+  `OpenBibleTests/DownloadTests` (its Resources picked from the core's Study set rows):
+  the transport's statuses, a redirect followed; Cancel during a transfer leaves no core
+  file and no resume data, and nothing is handed in after; a finished file that reaches
+  the delegate after Cancel is not installed; a background relaunch simulated through the
+  delegate before the core is up (a finished file moved to the core's path, resume data
+  kept, the completion handler held until `attach`, then the file installed and the
+  failure shown with Retry); the main thread's work during the Study set's download;
+  resume data across a 302 to a signed URL: while valid, the resumed request is
+  `/signed/easton.obr` with `Range: bytes=524288-` and nothing more; expired (2 s), the same
+  request is refused, then `/r/<id>.obr` and `/signed/<id>.obr` afresh, and both install.
+  `OpenBibleTests/AppCoreTests`: a second `start()` during a boot waits for it and the
+  reader ends up ready.
+  `OpenBibleUITests/LibraryTests`: `testLibraryDownload` (the offer at first launch with "15
+  Resources, 136.6 MB" and "You are on Wi-Fi.", its VoiceOver order and audits in Light and
+  Dark; Download; the banner; the app sent home while the 15 transfers run at 512 KB/s a
+  connection: about 55 MB arrived while it was away, the simulator keeping it in the
+  background rather than suspending it within 20 s; back, every file verified and
+  installed, the Starter library with no Study set left, About counting 19 Resources);
+  `testABadHashShowsRetry` (the mirror serves the KJV corrupted: "kjv-strongs.obr failed
+  verification: its sha256 is …, but the Starter library manifest says …. Nothing was
+  added." with Retry; served right, Retry installs it); `testWiFiOnlyAsksFirstOnCellular`
+  (`OBS_TEST_NETWORK=cellular`: the offer's network line, Download asks "Download the Study
+  set (136.6 MB) over cellular data? …", Not now leaves the mirror with no `.obr` request;
+  with Use cellular data on, a download starts without asking and installs);
+  `testCancelStopsADownload`; `testGetResourcesAndStorage`; each screen's accessibility audit
+  (`docs/dev/ios-project.md`, "Library tests"). The counts come from the offer ("N
+  Resources") and the Bundled set of the served manifest, and the Resources are picked from
+  that manifest by set and size, not by name. Previews `docs/previews/ios/s24-*.png`.

@@ -129,6 +129,8 @@ targets:
     platform: iOS
     sources:
       - path: OpenBibleTests
+      # The local Starter library mirror (S24), shared with the UI tests.
+      - path: TestSupport
     dependencies:
       - target: OpenBible
     settings:
@@ -140,6 +142,7 @@ targets:
     platform: iOS
     sources:
       - path: OpenBibleUITests
+      - path: TestSupport
     dependencies:
       - target: OpenBible
     settings:

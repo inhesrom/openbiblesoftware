@@ -19,11 +19,11 @@ use crate::library::{OPEN_DOWNLOAD_FLOOR, download_rule, megabytes};
 use crate::*;
 
 const WIFI: Network = Network {
-    is_wifi: true,
+    is_wifi: Some(true),
     allow_cellular: false,
 };
 const CELLULAR: Network = Network {
-    is_wifi: false,
+    is_wifi: Some(false),
     allow_cellular: false,
 };
 const PLENTY: Option<u64> = Some(1 << 40);
@@ -354,7 +354,7 @@ fn library_cellular_and_free_space_rules() {
         Ok(false)
     );
     let allowed = Network {
-        is_wifi: true,
+        is_wifi: Some(true),
         allow_cellular: true,
     };
     assert_eq!(
@@ -363,7 +363,7 @@ fn library_cellular_and_free_space_rules() {
     );
     // Cellular, allowed: start.
     let cell_allowed = Network {
-        is_wifi: false,
+        is_wifi: Some(false),
         allow_cellular: true,
     };
     assert_eq!(
@@ -705,6 +705,103 @@ fn library_a_transfer_finished_after_a_relaunch_is_installed() {
     std::fs::remove_dir_all(&root).unwrap();
 }
 
+/// A transfer the system carried on across a relaunch is adopted by its first progress: it
+/// shows (its row, the banner), counts in the free space the downloads need, and Cancel
+/// forgets it; one that failed after the relaunch shows its failure and Retry.
+#[test]
+fn library_a_transfer_still_running_after_a_relaunch_is_adopted() {
+    let (root, mut app) = app("adopt");
+    let planned = requests(
+        app.plan_starter_download(&StarterChoice::Set(MobileSet::Study), WIFI, false, PLENTY)
+            .unwrap(),
+    );
+    drop(app);
+    let mut app = boot(&root);
+    assert!(app.downloads().is_empty());
+    assert_eq!(app.download_banner(), None);
+    let (running, failing) = (&planned[0], &planned[1]);
+    app.download_progress(&running.resource_id, running.origin, 10, 1000)
+        .unwrap();
+    assert_eq!(
+        row(&app, &running.resource_id).download,
+        Some(DownloadState::Downloading {
+            done: 10,
+            total: 1000
+        })
+    );
+    assert!(app.download_banner().is_some());
+    assert!(app.pump().contains(&Changed::Downloads));
+    // It counts in the won't-fit rule: another Resource that would fit alone does not.
+    let more = (app.starter_library().rows.into_iter())
+        .find(|r| r.set == Some(MobileSet::More))
+        .unwrap();
+    let needed = obs_engine::library_storage::space_needed;
+    let free = Some(needed(running.bytes.unwrap()) + needed(more.bytes) - 1);
+    let one = StarterChoice::One(more.resource_id.clone());
+    let plan = app.plan_starter_download(&one, WIFI, false, free).unwrap();
+    assert!(matches!(plan, DownloadPlan::WontFit { .. }), "{plan:?}");
+    // Cancel forgets it, and deletes what was written of it.
+    std::fs::write(&running.file, b"partial").unwrap();
+    app.cancel_download(&running.resource_id, running.origin)
+        .unwrap();
+    assert_eq!(row(&app, &running.resource_id).download, None);
+    assert!(!running.file.exists());
+    let plan = app.plan_starter_download(&one, WIFI, false, free).unwrap();
+    assert!(matches!(plan, DownloadPlan::Start(_)), "{plan:?}");
+    // A failure after the relaunch shows, with Retry.
+    app.download_failed(&failing.resource_id, failing.origin, "offline")
+        .unwrap();
+    assert_eq!(
+        row(&app, &failing.resource_id).download,
+        Some(DownloadState::Failed {
+            message: "offline".into(),
+            retry: true
+        })
+    );
+    assert!(
+        (app.download_banner().unwrap()).contains("1 download failed"),
+        "{:?}",
+        app.download_banner()
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Before the shell's first path update the network is not known: it counts as not Wi-Fi,
+/// so Download asks first, and the offer says it is checking.
+#[test]
+fn library_a_network_not_known_yet_asks_before_cellular() {
+    let (root, mut app) = app("network-unknown");
+    let unknown = Network {
+        is_wifi: None,
+        allow_cellular: false,
+    };
+    let offer = app.study_set_offer(unknown).unwrap();
+    assert_eq!(
+        offer.network,
+        "Checking the network. Download asks before it uses cellular data."
+    );
+    let plan = app
+        .plan_starter_download(
+            &StarterChoice::Set(MobileSet::Study),
+            unknown,
+            false,
+            PLENTY,
+        )
+        .unwrap();
+    let DownloadPlan::AskCellular { message, .. } = plan else {
+        panic!("{plan:?}")
+    };
+    assert!(
+        message.ends_with("The network is not known yet, and Use cellular data is off."),
+        "{message}"
+    );
+    let plan = app
+        .plan_starter_download(&StarterChoice::Set(MobileSet::Study), unknown, true, PLENTY)
+        .unwrap();
+    assert!(requests(plan).iter().all(|r| r.cellular));
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
 /// `install_downloaded` takes only the file the core named, and deletes no other.
 #[test]
 fn library_install_downloaded_refuses_a_file_it_did_not_name() {
@@ -976,6 +1073,161 @@ fn library_storage_lists_each_resource_with_its_files() {
     );
     assert!(storage.size.ends_with(" MB"));
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// #333: "Use cellular data" is off by default and kept on this device.
+#[test]
+fn library_use_cellular_is_off_by_default_and_kept() {
+    let root = root("use-cellular");
+    lay_out(&root);
+    let mut app = boot(&root);
+    assert!(!app.use_cellular());
+    app.set_use_cellular(true).unwrap();
+    assert!(app.use_cellular());
+    assert!(app.pump().contains(&Changed::Downloads));
+    drop(app);
+    let mut app = boot(&root);
+    assert!(app.use_cellular(), "kept for the next launch");
+    app.set_use_cellular(false).unwrap();
+    drop(app);
+    assert!(!boot(&root).use_cellular());
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// #333 "At first launch the app offers the Study set": looked up as the sheet appears,
+/// then its size; shown once on this device.
+#[test]
+fn library_the_study_set_offer_is_made_once_with_its_size() {
+    let root = root("offer");
+    lay_out(&root);
+    let mut app = boot(&root);
+    let offer = app
+        .study_set_offer(WIFI)
+        .expect("offered at the first launch");
+    assert_eq!(offer.title, "Get the Study set");
+    assert_eq!(offer.size, None, "the released list is not in yet");
+    assert_eq!(offer.status.as_deref(), Some("Looking up the Study set…"));
+    assert!(offer.looking_up);
+    assert_eq!(offer.network, "You are on Wi-Fi.");
+    assert_eq!(
+        (offer.download.as_str(), offer.not_now.as_str()),
+        ("Download", "Not now")
+    );
+    assert_eq!(offer.retry, None);
+    app.study_set_offer_shown().unwrap();
+    assert!(app.check_starter());
+    settle(&mut app);
+    let offer = app
+        .study_set_offer(CELLULAR)
+        .expect("still answered this launch");
+    let study = app.starter_library().study_set;
+    assert_eq!(offer.size.as_deref(), Some(study.label.as_str()));
+    assert!(
+        offer.size.as_deref().unwrap().starts_with("4 Resources, "),
+        "{:?}",
+        offer.size
+    );
+    assert_eq!(offer.status, None);
+    assert!(!offer.looking_up);
+    assert_eq!(
+        offer.network,
+        "You are not on Wi-Fi. Download asks before it uses cellular data."
+    );
+    let on = Network {
+        is_wifi: Some(false),
+        allow_cellular: true,
+    };
+    assert_eq!(
+        app.study_set_offer(on).unwrap().network,
+        "You are not on Wi-Fi. Use cellular data is on, so it downloads now."
+    );
+    drop(app);
+    // Shown: never made again on this device.
+    assert_eq!(boot(&root).study_set_offer(WIFI), None);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn library_the_study_set_offer_says_why_the_list_could_not_be_fetched() {
+    let root = root("offer-failed");
+    lay_out(&root);
+    let mut app = boot(&root);
+    app.set_starter_source(&file_url(&root.join("nowhere")), None);
+    assert!(app.check_starter());
+    settle(&mut app);
+    let offer = app.study_set_offer(WIFI).unwrap();
+    assert_eq!(offer.size, None);
+    assert!(
+        (offer.status.as_deref().unwrap())
+            .starts_with("The Starter library list could not be fetched: "),
+        "{:?}",
+        offer.status
+    );
+    assert_eq!(offer.retry.as_deref(), Some("Try again"));
+    assert!(!offer.looking_up, "it says why instead");
+    // Not shown yet: offered again at the next launch.
+    drop(app);
+    assert!(boot(&root).study_set_offer(WIFI).is_some());
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Never offered when nothing of the Study set is missing.
+#[test]
+fn library_no_study_set_offer_once_nothing_of_it_is_missing() {
+    let (root, mut app) = app("offer-none");
+    let requests = requests(
+        app.plan_starter_download(&StarterChoice::Set(MobileSet::Study), WIFI, false, PLENTY)
+            .unwrap(),
+    );
+    assert!(
+        app.study_set_offer(WIFI).is_some(),
+        "still missing while it downloads"
+    );
+    for r in &requests {
+        transfer(&mut app, r);
+    }
+    settle(&mut app);
+    assert_eq!(app.study_set_offer(WIFI), None);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn library_download_states_in_words() {
+    assert_eq!(
+        download_label(&DownloadState::Queued),
+        "Waiting to download"
+    );
+    assert_eq!(
+        download_label(&DownloadState::Downloading {
+            done: 12_000_000,
+            total: 26_000_000
+        }),
+        "Downloading · 12.0 MB of 26.0 MB"
+    );
+    assert_eq!(
+        download_label(&DownloadState::Downloading { done: 0, total: 0 }),
+        "Downloading · 0.0 MB"
+    );
+    assert_eq!(
+        download_label(&DownloadState::Verifying),
+        "Checking the file…"
+    );
+    assert_eq!(
+        download_label(&DownloadState::Installing),
+        "Adding it to your Library…"
+    );
+    assert_eq!(
+        download_label(&DownloadState::Indexing),
+        "Building its Search index…"
+    );
+    assert_eq!(download_label(&DownloadState::Done), "In your Library");
+    assert_eq!(
+        download_label(&DownloadState::Failed {
+            message: "sha256 mismatch".into(),
+            retry: true
+        }),
+        "sha256 mismatch"
+    );
 }
 
 /// The real Starter library (after `cargo xtask starter`): its Bundled set installed, then

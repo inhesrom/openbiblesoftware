@@ -159,10 +159,31 @@ impl From<obs_mobile::DownloadState> for DownloadState {
     }
 }
 
+impl From<DownloadState> for obs_mobile::DownloadState {
+    fn from(s: DownloadState) -> Self {
+        match s {
+            DownloadState::Queued => Self::Queued,
+            DownloadState::Downloading { done, total } => Self::Downloading { done, total },
+            DownloadState::Verifying => Self::Verifying,
+            DownloadState::Installing => Self::Installing,
+            DownloadState::Indexing => Self::Indexing,
+            DownloadState::Done => Self::Done,
+            DownloadState::Failed { message, retry } => Self::Failed { message, retry },
+        }
+    }
+}
+
+/// A download's state in words, for its row.
+#[uniffi::export]
+pub fn download_label(state: DownloadState) -> String {
+    obs_mobile::download_label(&state.into())
+}
+
 /// The network as the shell sees it, and "Use cellular data".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct Network {
-    pub is_wifi: bool,
+    /// `None` while the shell does not know yet: counts as not Wi-Fi.
+    pub is_wifi: Option<bool>,
     pub allow_cellular: bool,
 }
 
@@ -364,6 +385,22 @@ impl From<obs_mobile::LicenceClass> for LicenceClass {
     }
 }
 
+impl From<LicenceClass> for obs_mobile::LicenceClass {
+    fn from(c: LicenceClass) -> Self {
+        match c {
+            LicenceClass::FreeToShare => Self::FreeToShare,
+            LicenceClass::PersonalUse => Self::PersonalUse,
+            LicenceClass::Unclear => Self::Unclear,
+        }
+    }
+}
+
+/// A Licence class in words, as the desktop's licence badge says it.
+#[uniffi::export]
+pub fn licence_class_label(class: LicenceClass) -> String {
+    obs_mobile::LicenceClass::from(class).label().to_string()
+}
+
 /// Get Resources' licence filter (#134): each choice includes the stricter ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum LicenceFilter {
@@ -378,6 +415,78 @@ impl From<LicenceFilter> for obs_mobile::LicenceFilter {
             LicenceFilter::FreeToShare => Self::FreeToShare,
             LicenceFilter::PersonalUse => Self::PersonalUse,
             LicenceFilter::All => Self::All,
+        }
+    }
+}
+
+impl From<obs_mobile::LicenceFilter> for LicenceFilter {
+    fn from(f: obs_mobile::LicenceFilter) -> Self {
+        match f {
+            obs_mobile::LicenceFilter::FreeToShare => Self::FreeToShare,
+            obs_mobile::LicenceFilter::PersonalUse => Self::PersonalUse,
+            obs_mobile::LicenceFilter::All => Self::All,
+        }
+    }
+}
+
+/// One choice of the licence filter, with the desktop's words.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LicenceFilterChoice {
+    pub filter: LicenceFilter,
+    pub label: String,
+    /// What the choice shows.
+    pub detail: String,
+}
+
+/// The licence filter's choices in order, and the one it starts on (the desktop's default).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LicenceFilters {
+    pub choices: Vec<LicenceFilterChoice>,
+    pub default: LicenceFilter,
+}
+
+#[uniffi::export]
+pub fn licence_filters() -> LicenceFilters {
+    LicenceFilters {
+        choices: (obs_mobile::LicenceFilter::CHOICES.into_iter())
+            .map(|f| LicenceFilterChoice {
+                filter: f.into(),
+                label: f.label().to_string(),
+                detail: f.hover().to_string(),
+            })
+            .collect(),
+        default: obs_mobile::LicenceFilter::default().into(),
+    }
+}
+
+/// The first-launch Study set offer, every word of it (`obs_mobile::StudySetOffer`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StudySetOffer {
+    pub title: String,
+    pub message: String,
+    pub size: Option<String>,
+    pub status: Option<String>,
+    pub network: String,
+    pub later: String,
+    pub download: String,
+    pub not_now: String,
+    pub retry: Option<String>,
+    pub looking_up: bool,
+}
+
+impl From<obs_mobile::StudySetOffer> for StudySetOffer {
+    fn from(o: obs_mobile::StudySetOffer) -> Self {
+        Self {
+            title: o.title,
+            message: o.message,
+            size: o.size,
+            status: o.status,
+            network: o.network,
+            later: o.later,
+            download: o.download,
+            not_now: o.not_now,
+            retry: o.retry,
+            looking_up: o.looking_up,
         }
     }
 }
@@ -619,5 +728,25 @@ impl MobileApp {
 
     pub fn storage(&self) -> Result<StorageView, MobileError> {
         self.read(|a| a.storage().into())
+    }
+
+    /// "Use cellular data" (off by default): pass it as every `Network`'s `allow_cellular`.
+    pub fn use_cellular(&self) -> Result<bool, MobileError> {
+        self.read(obs_mobile::MobileApp::use_cellular)
+    }
+
+    pub fn set_use_cellular(&self, on: bool) -> Result<(), MobileError> {
+        self.with(|a| a.set_use_cellular(on))
+    }
+
+    /// The first-launch Study set offer while there is one to make (show the sheet while
+    /// this answers one; ask again on `Changed.downloads`).
+    pub fn study_set_offer(&self, network: Network) -> Result<Option<StudySetOffer>, MobileError> {
+        self.read(|a| a.study_set_offer(network.into()).map(StudySetOffer::from))
+    }
+
+    /// The offer's sheet appeared: it is not made at a later launch.
+    pub fn study_set_offer_shown(&self) -> Result<(), MobileError> {
+        self.with(obs_mobile::MobileApp::study_set_offer_shown)
     }
 }
