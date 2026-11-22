@@ -6,7 +6,11 @@
 //! - The ids the database had before are kept in `former_device` (migration 17), and the
 //!   merge counts a clock naming any of them as this device's own ([`UserStore::own_device_ids`]),
 //!   so a Note text or list item written under the old id is still kept as a Sync conflict's
-//!   copy or "Name (2)" when a remote edit that never saw it replaces it.
+//!   copy or "Name (2)" when a remote edit that never saw it replaces it. A restore keeps the
+//!   device's own ids (the one it had and its former ones) and adds the Backup's id, with the
+//!   Backup's former ones, only when that id is one of them: a Backup of another device's
+//!   (restored on a new computer while that device still syncs) does not make that device's
+//!   ops this one's own, which would make Sync conflict copies of them no one needs for good.
 //! - The `applied_up_to` rows stay as they are: the other devices' are what the restored (or
 //!   copied) data has merged of them, and the old id's own row, the last of its op files
 //!   written, is now what it has merged of that id, now another device's, whose later files
@@ -51,20 +55,19 @@ pub(crate) fn read_restore_choice(c: &Connection) -> Result<bool, StoreError> {
     .map_err(sql)
 }
 
-/// Give the database `c` a new device id in one step: the id it had and each of `also` go to
+/// Give the database `c` a new device id in one step: each of `former` goes to
 /// `former_device`, the outbox is emptied, and (`pending`) a restore's choice is waited for.
 /// Returns the new id.
 pub(crate) fn renew_device_id(
     c: &Connection,
-    also: &[String],
+    former: &[String],
     pending: bool,
 ) -> Result<String, StoreError> {
-    let old = read_device_id(c)?;
     let new = new_id();
     let mut insert = c
         .prepare_cached("INSERT INTO former_device (device_id) VALUES (?1) ON CONFLICT DO NOTHING")
         .map_err(sql)?;
-    for id in std::iter::once(&old).chain(also) {
+    for id in former {
         if *id != new && crate::annotation::is_valid_id(id) {
             insert.execute([id]).map_err(sql)?;
         }
@@ -90,7 +93,8 @@ impl UserStore {
     /// outbox is emptied, and it records no ops until it joins again. Returns the new id.
     pub fn take_new_device_id(&self) -> Result<String, StoreError> {
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
-        let new = renew_device_id(&tx, &[], false)?;
+        let old = read_device_id(&tx)?;
+        let new = renew_device_id(&tx, &[old], false)?;
         tx.commit().map_err(sql)?;
         self.reseed_clock();
         Ok(new)

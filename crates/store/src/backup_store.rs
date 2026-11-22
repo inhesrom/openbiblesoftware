@@ -260,11 +260,14 @@ impl UserStore {
                 .map_err(sql)
         };
         let live = page_size(&self.conn)?;
+        // The Backup is staged in a copy, given the device's new id there (ADR 0022 rule 7),
+        // and then copied page by page in one transaction: the restored data, the new id, the
+        // former ids, the empty outbox and a pending choice arrive together or not at all.
         // Pages copy only between databases of one page size. A Backup made with another is
         // rebuilt with this database's in a file beside it (an in-memory database cannot
         // change its page size).
-        let rebuilt = if page_size(&backup.conn)? == live {
-            None
+        let staged = if page_size(&backup.conn)? == live {
+            Staged::Memory(backup.copy_in_memory()?)
         } else {
             std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
             let file = ScratchFile(
@@ -281,22 +284,31 @@ impl UserStore {
                 .map_err(sql)?;
             c.pragma_update(None, "page_size", live).map_err(sql)?;
             c.execute_batch("VACUUM").map_err(sql)?;
-            // The connection is closed before the file is removed: fields drop in order.
-            Some((c, file))
+            Staged::File(c, file)
         };
-        let source = rebuilt.as_ref().map_or(&backup.conn, |(c, _)| c);
+        let source = match &staged {
+            Staged::Memory(store) => &store.conn,
+            Staged::File(c, _) => c,
+        };
         let syncing = self.syncs()?;
-        let live_id = crate::sync_clock::read_device_id(&self.conn)?;
+        let own = crate::sync_device::read_own_ids(&self.conn)?;
+        // A restored device is a new Synced device. Its own ids stay its own; the Backup's
+        // (and the Backup's former ones) only when the Backup is of this device's own
+        // (`sync_device.rs`). On a device that was syncing, the restore waits for the user to
+        // choose to catch up or replace.
+        let tx = source.unchecked_transaction().map_err(sql)?;
+        let mut former = own.clone();
+        if own.contains(&crate::sync_clock::read_device_id(&tx)?) {
+            former.extend(crate::sync_device::read_own_ids(&tx)?);
+        }
+        tx.execute("DELETE FROM former_device", []).map_err(sql)?;
+        crate::sync_device::renew_device_id(&tx, &former, syncing)?;
+        tx.commit().map_err(sql)?;
         let safety = self.safety_backup()?;
         rusqlite::backup::Backup::new(source, &mut self.conn)
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
             .map_err(sql)?;
-        // ADR 0022 rule 7: a restored device is a new Synced device. The Backup's id and the
-        // id it had are its former ones; on a device that was syncing, the restore waits for
-        // the user to choose to catch up or replace (`sync_device.rs`).
-        let tx = self.conn.unchecked_transaction().map_err(sql)?;
-        crate::sync_device::renew_device_id(&tx, &[live_id], syncing)?;
-        tx.commit().map_err(sql)?;
+        drop(staged);
         self.reseed_clock();
         Ok(safety)
     }
@@ -423,6 +435,13 @@ impl UserStore {
 
 /// A file [`UserStore::new_scratch_file`] created, removed when dropped however the work on
 /// it ended, so an error part way never leaves it behind.
+/// A Backup staged for a restore: a copy in memory, or rebuilt in a file at this database's
+/// page size (the connection is closed before the file is removed: fields drop in order).
+enum Staged {
+    Memory(UserStore),
+    File(Connection, ScratchFile),
+}
+
 struct ScratchFile(PathBuf);
 
 impl Drop for ScratchFile {

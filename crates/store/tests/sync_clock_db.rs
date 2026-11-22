@@ -203,9 +203,10 @@ fn migrations_after_13_keep_every_row_of_a_v13_database_and_copy_it_first() {
 }
 
 /// A restored database holds every table of the Backup as it was (`held`), but for what ADR
-/// 0022 rule 7 changes (S28c): the device has a new id, the Backup's among its former ones,
-/// and the outbox (ops under the old id) is empty.
-fn assert_restored_as_held(db: &UserStore, held: &Tables) {
+/// 0022 rule 7 changes (S28c): the device has a new id, the one it had before (`before`)
+/// among its former ones but not the Backup's (another database's), and the outbox (ops under
+/// the old id) is empty.
+fn assert_restored_as_held(db: &UserStore, held: &Tables, before: &str) {
     let restored = everything(&Connection::open(db.path()).unwrap());
     for (table, rows) in held {
         if ["device", "op_outbox", "former_device"].contains(&table.as_str()) {
@@ -215,14 +216,12 @@ fn assert_restored_as_held(db: &UserStore, held: &Tables) {
     }
     assert_eq!(restored["op_outbox"], Vec::<String>::new());
     let ids = db.own_device_ids().unwrap();
+    assert!(ids[0] != before, "a restore gives the device a new id");
+    assert_eq!(ids[1..], [before.to_string()], "its former id");
     for row in held.get("device").into_iter().flatten() {
         assert!(
-            !row.contains(&ids[0]),
-            "a restore gives the device a new id"
-        );
-        assert!(
-            ids[1..].iter().any(|id| row.contains(id.as_str())),
-            "the Backup's id is a former one: {ids:?} {row}"
+            !ids.iter().any(|id| row.contains(id.as_str())),
+            "another database's Backup's id is not this one's own: {ids:?} {row}"
         );
     }
 }
@@ -241,9 +240,10 @@ fn a_v13_backup_restores_into_17_losing_nothing() {
     assert_eq!(UserStore::backup_contents(&backup).unwrap().version, 13);
 
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    let before = db.device_id().unwrap();
     db.restore(&backup).unwrap();
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    assert_restored_as_held(&db, &held);
+    assert_restored_as_held(&db, &held, &before);
     // Restored, it writes clocks.
     let clock = add_notebook(&db, "After");
     assert_eq!(clock.device_id, db.device_id().unwrap());
@@ -274,17 +274,14 @@ fn a_backup_carries_the_item_clocks_and_the_outbox_which_a_restore_empties() {
     for table in ["item_clock", "tombstone", "applied_up_to"] {
         assert_eq!(restored[table], held[table], "{table}");
     }
-    // ADR 0022 rule 7: a new id, the Backup's (A's) and the one B had before kept as its
-    // former ones; the outbox's ops were A's, and what they changed is in the rows.
+    // ADR 0022 rule 7: a new id, the one B had before kept as its former one, but not the
+    // Backup's (A's, another device's: its ops are not B's own); the outbox's ops were A's,
+    // and what they changed is in the rows.
     assert_eq!(restored["op_outbox"], Vec::<String>::new());
     let ids = b.own_device_ids().unwrap();
     let a_id = a.device_id().unwrap();
     assert!(ids[0] != a_id && ids[0] != b_id);
-    let mut former = ids[1..].to_vec();
-    former.sort();
-    let mut expected = vec![a_id, b_id];
-    expected.sort();
-    assert_eq!(former, expected);
+    assert_eq!(ids[1..], [b_id]);
     assert!(!b.records_ops().unwrap(), "the new id has not joined");
     assert!(!b.restore_choice_pending().unwrap(), "B was not syncing");
 }
@@ -493,9 +490,10 @@ fn a_v15_backup_restores_with_no_conflicts_no_kept_rows_and_nothing_held() {
     let held = everything(&Connection::open(&backup).unwrap());
 
     let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    let before = db.device_id().unwrap();
     db.restore(&backup).unwrap();
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    assert_restored_as_held(&db, &held);
+    assert_restored_as_held(&db, &held, &before);
     let columns = schema_16_columns(&Connection::open(db.path()).unwrap());
     assert!(
         columns.iter().all(|r| r.ends_with("=NULL")),
@@ -696,6 +694,106 @@ fn a_clock_merged_in_is_observed_so_the_next_clock_passes_it_unless_more_than_a_
     assert!(db.observe_clock(&first));
     assert!(!db.observe_clock(&remote(now + obs_store::hlc::MAX_FORWARD_SKEW_MS + 1, 0)));
     assert_eq!(add_notebook(&db, "C").tick(), (now + 3_600_000, 7));
+}
+
+/// The ids `former_device` holds, sorted.
+fn former_ids(db: &UserStore) -> Vec<String> {
+    strings(
+        &Connection::open(db.path()).unwrap(),
+        "SELECT device_id FROM former_device ORDER BY device_id",
+    )
+}
+
+#[test]
+fn a_restore_on_a_syncing_device_brings_its_new_id_former_ids_empty_outbox_and_choice_together() {
+    let dir = Dir::new("restore-together");
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    db.start_recording_ops().unwrap();
+    add_notebook(&db, "In the Backup");
+    let path = dir.0.join("a.obsbackup");
+    db.back_up(&path).unwrap();
+    let id = db.device_id().unwrap();
+    let outbox = "SELECT CAST(COUNT(*) AS TEXT) FROM op_outbox";
+    assert_eq!(
+        strings(&Connection::open(db.path()).unwrap(), outbox),
+        ["1"]
+    );
+    db.restore(&path).unwrap();
+    let c = Connection::open(db.path()).unwrap();
+    let new = strings(&c, "SELECT device_id FROM device");
+    assert!(new != [id.clone()], "a new id");
+    assert_eq!(
+        strings(&c, "SELECT CAST(restore_choice AS TEXT) FROM device"),
+        ["1"]
+    );
+    assert_eq!(
+        former_ids(&db),
+        [id],
+        "the Backup's id is this device's own"
+    );
+    assert_eq!(strings(&c, outbox), ["0"]);
+    assert!(db.restore_choice_pending().unwrap());
+}
+
+#[test]
+fn a_restore_that_fails_giving_the_new_id_leaves_the_database_as_it_was() {
+    let dir = Dir::new("restore-atomic");
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    db.start_recording_ops().unwrap();
+    add_notebook(&db, "In the Backup");
+    let path = dir.0.join("a.obsbackup");
+    db.back_up(&path).unwrap();
+    add_notebook(&db, "After the Backup");
+    let id = db.device_id().unwrap();
+    let before = everything(&Connection::open(dir.db()).unwrap());
+    let (backup, _) = UserStore::open_backup(&path).unwrap();
+    // A stop between the steps: giving the restored data its new id fails.
+    backup
+        .execute_unchecked(
+            "CREATE TRIGGER stop_renew BEFORE UPDATE OF device_id ON device
+             BEGIN SELECT RAISE(ABORT, 'stopped'); END",
+        )
+        .unwrap();
+    assert!(db.restore_from(&backup).is_err());
+    // Not the Backup's data under its old id with no choice waiting: nothing restored.
+    assert_eq!(everything(&Connection::open(dir.db()).unwrap()), before);
+    assert_eq!(db.device_id().unwrap(), id);
+    assert!(!db.restore_choice_pending().unwrap());
+    assert!(db.records_ops().unwrap());
+}
+
+#[test]
+fn a_restore_keeps_the_backups_id_as_a_former_one_only_when_it_is_this_devices_own() {
+    let dir = Dir::new("restore-former");
+    let (mut a, _) = UserStore::open(&dir.db()).unwrap();
+    let first = a.device_id().unwrap();
+    let own_backup = dir.0.join("a.obsbackup");
+    a.back_up(&own_backup).unwrap();
+    // Its own Backup, twice: the Backup's id is the one it had, then one of its former ones.
+    a.restore(&own_backup).unwrap();
+    let second = a.device_id().unwrap();
+    assert_eq!(former_ids(&a), [first.clone()]);
+    a.restore(&own_backup).unwrap();
+    let mut expected = vec![first.clone(), second.clone()];
+    expected.sort();
+    assert_eq!(former_ids(&a), expected);
+    // Another device's Backup (B, itself restored once, so with a former id of its own): B's
+    // ids are not this device's own; A's own stay.
+    let (mut b, _) = UserStore::open(&dir.0.join("b").join("user.db")).unwrap();
+    let b_first = b.device_id().unwrap();
+    let b_backup = dir.0.join("b.obsbackup");
+    b.back_up(&b_backup).unwrap();
+    b.restore(&b_backup).unwrap();
+    assert_eq!(former_ids(&b), [b_first.clone()]);
+    let b_backup = dir.0.join("b-restored.obsbackup");
+    b.back_up(&b_backup).unwrap();
+    let third = a.device_id().unwrap();
+    a.restore(&b_backup).unwrap();
+    expected.push(third);
+    expected.sort();
+    assert_eq!(former_ids(&a), expected);
+    let ids = a.own_device_ids().unwrap();
+    assert!(!ids.contains(&b_first) && !ids.contains(&b.device_id().unwrap()));
 }
 
 #[test]
