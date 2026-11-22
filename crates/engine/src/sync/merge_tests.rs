@@ -1255,6 +1255,45 @@ fn a_damaged_whole_list_value_holds_later_items_on_every_device_until_it_is_in_s
     converged(&[&a, &b]);
 }
 
+/// P writes a damaged value at w; R, having it, writes one in shape at f; Q adds an item at x
+/// after f before meeting either, and meets R's value before P's: its item goes on top of
+/// R's value, as on every other device.
+#[test]
+fn an_item_written_after_a_whole_value_goes_on_top_of_it_in_any_arrival_order() {
+    let dir = Dir::new("whole-value-later");
+    let cloud = MemSyncFolder::new();
+    let (p, q, r) = (device(&dir, "p"), device(&dir, "q"), device(&dir, "r"));
+    let key = "library.collections";
+    p.user
+        .set_preference(key, r#"[{"name":"A","ids":[]}]"#)
+        .unwrap();
+    Device::settle(&[&p, &q, &r], &cloud);
+    p.user.set_preference(key, "not a list").unwrap();
+    p.push(&cloud);
+    r.sync(&cloud);
+    let fixed = r#"[{"name":"Fixed","ids":[]}]"#;
+    r.user.set_preference(key, fixed).unwrap();
+    r.push(&cloud);
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    q.user
+        .set_preference(key, r#"[{"name":"A","ids":[]},{"name":"Q","ids":["q"]}]"#)
+        .unwrap();
+    q.push(&cloud);
+    let r_files: Vec<(&str, u64)> = files_of(&cloud, &r.id)
+        .into_iter()
+        .map(|s| (r.id.as_str(), s))
+        .collect();
+    merge_folder(&q.user, &view(&cloud, &r_files)).unwrap();
+    let on_top = r#"[{"name":"Fixed","ids":[]},{"name":"Q","ids":["q"]}]"#;
+    assert_eq!(q.user.preference(key).unwrap().as_deref(), Some(on_top));
+    Device::settle(&[&p, &q, &r], &cloud);
+    for d in [&p, &q, &r] {
+        assert_eq!(d.user.preference(key).unwrap().as_deref(), Some(on_top));
+        assert!(d.user.sync_held().unwrap().is_empty());
+    }
+    converged(&[&p, &q, &r]);
+}
+
 #[test]
 fn an_op_this_build_rejects_is_held_and_the_rest_of_its_file_merges() {
     let dir = Dir::new("held");

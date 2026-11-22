@@ -29,7 +29,8 @@
 //! (`obs_store::clock::fix`) and seeded ids (`obs_store::annotation::seed_ids`) a seed makes
 //! the same case on every run. The CI run takes [`CI_CASES`] cases;
 //! `cargo test -p obs-engine sync -- --include-ignored` runs [`FULL_CASES`] too. A failure
-//! names its seed; `OBS_MERGE_SEED=<seed>` reruns that case first. Not generated: deleting a
+//! names its seed; `OBS_MERGE_SEED=<seed>` reruns that case first, and `OBS_MERGE_TRACE=<text>`
+//! prints every op of each case whose line holds that text. Not generated: deleting a
 //! list preference's whole value (an undo of the first whole write of it), and ops a later app
 //! wrote (`merge_tests` holds one).
 

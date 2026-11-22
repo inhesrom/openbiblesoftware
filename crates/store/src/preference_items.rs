@@ -378,7 +378,7 @@ mod tests {
             r#"{"rules":[{"a":1}],"name":"Greek (2)","ids":["x"]}"#
         );
         assert_eq!(
-            list.items(Some(&list.compose(&[renamed.clone()]))),
+            list.items(Some(&list.compose(std::slice::from_ref(&renamed)))),
             Some(vec![renamed])
         );
         assert!(
