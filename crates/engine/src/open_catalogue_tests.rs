@@ -412,3 +412,61 @@ fn an_unknown_open_entry_is_an_error() {
         .to_string();
     assert!(err.contains("no entry \"nope\""), "{err}");
 }
+
+/// The Mobile app downloads an Open catalogue file itself (#333) and hands the engine its
+/// path: checked as a download is, imported with no report Tab, and deleted once read. A
+/// refused file leaves nothing in the Library, and Retry with a good file replaces it.
+#[test]
+fn an_open_catalogue_file_downloaded_by_the_app_is_checked_imported_and_deleted() {
+    let (mut s, repos, root) = session("from-file", MOCK_OPEN_NOTICE);
+    let downloads = root.join("downloads");
+    std::fs::create_dir_all(&downloads).unwrap();
+    let file = downloads.join("webx_usfm.zip");
+    let bad = crate::testing::zip_of(&[(
+        "copr.htm".into(),
+        "<html><p>Copyright 2030. All rights reserved.</p></html>".into(),
+    )]);
+    std::fs::write(&file, bad).unwrap();
+    let tabs = s.workspace.tabs().count();
+    let (id, _job) = s.install_open_file("web-excerpt", &file).unwrap();
+    s.jobs().pump(1);
+    assert!(s.poll_imports().is_empty());
+    assert_eq!(s.workspace.tabs().count(), tabs, "no report Tab");
+    assert!(!file.exists(), "deleted once read");
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    assert!(
+        record
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("is not the one its evidence quotes"),
+        "{:?}",
+        record.error
+    );
+    assert!(s.library.get(&id).is_none());
+    let listing = s.get_bibles.open_source("web-excerpt").unwrap().listing();
+    assert!(matches!(
+        s.listing_status(&listing),
+        ListingStatus::Failed { .. }
+    ));
+    // Retry: the publisher's file, downloaded again.
+    std::fs::copy(root.join("open/webx_usfm.zip"), &file).unwrap();
+    let (id, _) = s.install_open_file("web-excerpt", &file).unwrap();
+    s.jobs().pump(1);
+    assert!(s.poll_imports().is_empty());
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+    assert_eq!(record.open_origin.as_ref().unwrap().id, "web-excerpt");
+    assert!(s.library.get(&id).is_some());
+    assert!(!file.exists());
+    assert!(matches!(
+        s.listing_status(&listing),
+        ListingStatus::Installed { .. }
+    ));
+    // Nothing was fetched: the app's transport did it.
+    let source = s.get_bibles.open_source("web-excerpt").unwrap().clone();
+    assert!(!repos.fetched.lock().unwrap().contains(&source.url));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}

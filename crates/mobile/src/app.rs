@@ -102,6 +102,8 @@ pub struct MobileApp {
     pub(crate) events: EventState,
     /// The Mobile Last session as last written, to skip writes that change nothing.
     pub(crate) saved_session: Option<String>,
+    /// The downloads planned this run (`library`).
+    pub(crate) downloads: Vec<crate::library::Download>,
 }
 
 impl MobileApp {
@@ -130,6 +132,7 @@ impl MobileApp {
                 error: e.to_string(),
             })?;
         }
+        crate::library::sweep_stale_downloads(&paths.downloads);
         let mut session = Session::new(jobs);
         let mut problems: Vec<String> = (session.library.scan(&paths.library).into_iter())
             .map(|(f, e)| format!("{}: {e}", f.display()))
@@ -143,6 +146,9 @@ impl MobileApp {
             Ok((store, _)) => session.attach_user(Box::new(store)),
             Err(e) => problems.push(format!("User database {}: {e}", paths.user_db.display())),
         }
+        // The Mobile app's Starter library rows come from the released manifest (#333); the
+        // Bundled set installs and revises only what it holds.
+        session.starter.set_released_leads(true);
         problems.extend(session.sync_starter_library(bundle).problems);
         if let Some(dir) = &paths.study_set {
             problems.extend(add_study_set(&mut session, dir));
@@ -162,12 +168,14 @@ impl MobileApp {
             estimate_threads,
             events: EventState::default(),
             saved_session: None,
+            downloads: Vec::new(),
         };
         app.restore_readers();
         // What boot itself queued (a message from the User database, the readers' Visits)
         // is the pump's to report.
         app.events.seen_library = app.session.library.preferred_order();
         app.events.seen_history = app.session.history().first().map(|v| v.id);
+        app.events.seen_starter = app.starter_seen();
         Ok(app)
     }
 

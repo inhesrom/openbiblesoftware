@@ -2589,6 +2589,92 @@ pub fn write_starter_bundle(dir: &Path, resources: &[obs_model::Resource]) {
     .unwrap();
 }
 
+/// A small Starter library split into the Mobile app's sets as #333 splits the real one
+/// (`mobile_set`): Bundled, the BSB (Isaiah 40 and John 1) and Strong's Hebrew; Study, the
+/// KJV with Strong's and the TBESH, TBESG and BDB Lexicon excerpts; More, a WEB Bible
+/// (Genesis 1:1). Seven Resources, each marked as built by `xtask starter`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn mobile_starter_library() -> Vec<(obs_model::Resource, crate::starter::MobileSet)> {
+    use crate::starter::MobileSet;
+    let mut bsb = bibles::bsb_john_1();
+    bsb.manifest.license = "LicenseRef-PublicDomain".into();
+    let mut web = bibles::bible(
+        "web",
+        "WEB",
+        &[(
+            bibles::v(obs_scripture::Book::Genesis, 1, 1),
+            "In the beginning, God created the heavens and the earth.",
+        )],
+        None,
+        &[],
+    );
+    web.manifest.license = "LicenseRef-PublicDomain".into();
+    let mut out = vec![(bsb, MobileSet::Bundled)];
+    for r in starter_set() {
+        let set = if r.manifest.resource_id == "strongs-hebrew" {
+            MobileSet::Bundled
+        } else {
+            MobileSet::Study
+        };
+        out.push((r, set));
+    }
+    out.push((web, MobileSet::More));
+    for (r, _) in &mut out {
+        r.manifest.origin = obs_model::Origin::Starter;
+    }
+    out
+}
+
+/// Write `resources` into `dir` as [`write_starter_bundle`] does, with each one's
+/// `mobile_set` in the manifest, as `cargo xtask starter` writes it since S04.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn write_mobile_starter_bundle(
+    dir: &Path,
+    resources: &[(obs_model::Resource, crate::starter::MobileSet)],
+) {
+    let only: Vec<obs_model::Resource> = resources.iter().map(|(r, _)| r.clone()).collect();
+    write_starter_bundle(dir, &only);
+    let path = dir.join(crate::starter::MANIFEST_FILE);
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for item in manifest["resources"].as_array_mut().unwrap() {
+        let id = item["resource_id"].as_str().unwrap().to_string();
+        let set = resources
+            .iter()
+            .find(|(r, _)| r.manifest.resource_id == id)
+            .map(|(_, s)| s.as_str())
+            .unwrap();
+        item["mobile_set"] = serde_json::json!(set);
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+}
+
+/// Copy the Bundled set out of a built Starter library `from` (`dist/starter`) into `to`, as
+/// `cargo xtask ios bundled-set` lays it out: each bundled `.obr`, its prebuilt Search index
+/// caches, its change record and a manifest listing only those Resources. For the
+/// `#[ignore]`d tests over the real Starter library.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn copy_bundled_set(from: &Path, to: &Path) {
+    let path = from.join(crate::starter::MANIFEST_FILE);
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let items = manifest["resources"].as_array_mut().unwrap();
+    items.retain(|i| i["mobile_set"] == "bundled");
+    std::fs::create_dir_all(to.join("search")).unwrap();
+    for item in items.iter() {
+        let id = item["resource_id"].as_str().unwrap();
+        std::fs::copy(from.join(format!("{id}.obr")), to.join(format!("{id}.obr"))).unwrap();
+        for cache in obs_store::search_index_files(&from.join("search"), id) {
+            std::fs::copy(&cache, to.join("search").join(cache.file_name().unwrap())).unwrap();
+        }
+        let changes = obs_model::changes_record_file(id);
+        if from.join(&changes).is_file() {
+            std::fs::copy(from.join(&changes), to.join(&changes)).unwrap();
+        }
+    }
+    std::fs::write(to.join(crate::starter::MANIFEST_FILE), manifest.to_string()).unwrap();
+}
+
 /// A zip of `(name, text)` files, as a publisher's `*_usfm.zip`.
 pub fn zip_of(files: &[(String, String)]) -> Vec<u8> {
     use std::io::Write;

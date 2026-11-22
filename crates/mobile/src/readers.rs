@@ -61,6 +61,11 @@ impl Reader {
             notes_revision: None,
         }
     }
+
+    /// Whether it shows Resource `id`.
+    pub(crate) fn shows(&self, id: &str) -> bool {
+        self.view.doc.manifest.resource_id == id
+    }
 }
 
 /// The Current location of a reader, as its bar names it: a Verse in the Resource's own
