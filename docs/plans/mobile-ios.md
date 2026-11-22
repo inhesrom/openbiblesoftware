@@ -49,7 +49,7 @@ to Claude Opus 5.5 later on".
 | S10 | #335 screen anatomy clickable prototype (phone + iPad) | AFK | y | S09 (∥ S13) | prototype app, flows, screenshots | todo |
 | S11 | #335 owner review | HITL | y | S10 | decisions on navigation, sheet, split, reference entry | todo |
 | S12 | ADR 0024 (anatomy) + `docs/dev/mobile-anatomy.md` + #335 close + min iOS + mobile extras + i18n/string-location decision | AFK + HITL | n | S11 | ADR, contract, map line | todo |
-| S13 | `obs-mobile` core: boot, paths, Bundled set install, readers, navigation, History, FFI surface | AFK | n | S03, S04, S09 | `MobileApp` object, snapshots, events, tests | done (branch mobile/s13-mobile-core, PR pending; ran before S09, see Outcome) |
+| S13 | `obs-mobile` core: boot, paths, Bundled set install, readers, navigation, History, FFI surface | AFK | n | S03, S04, S09 | `MobileApp` object, snapshots, events, tests | done (PR #403; ran before S09, see Outcome) |
 | S14a | iOS reader: real text view, grid + typed references + keys, Back/History, Last session | AFK | y | S12, S13 | reader screens, previews | todo |
 | S14b | iOS reader: footnotes, Settings, Dynamic Type, Reduce Motion / Increase Contrast, VoiceOver | AFK | y | S14a | Settings screen, a11y pass, previews | todo |
 | S15 | Parallel resources + Split view with Follow | AFK | y | S14b | Rust Follow via Link sets; stacked/side-by-side readers | todo |
