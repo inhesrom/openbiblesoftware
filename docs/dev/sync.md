@@ -165,7 +165,10 @@ an app that does not know the field, and the merge keeps the value here
 ([below](#merging), "Fields an op does not carry"). A field left out when `None` would not be
 seen as missing from an older app's line (`Op::absent` lists only the fields this build would
 write), so the merge would write `None` over the value here. `Annotation.conflict_of`
-(S28b-2) is the first such field; every new top-level `Row` field follows the rule. Nested fields (a Text range's
+(S28b-2) is the first such field; every new top-level `Row` field follows the rule. It is
+also in every Annotation the engine's commands return (`annotations.rs`, `"conflict_of": null`
+on all but a Sync conflict's copy) and in the Data export's `annotations.json`: both additive,
+approved with S28b-2's review. Nested fields (a Text range's
 `native_ref` …) are not compared and may be left out when empty, as they always were.
 
 **Reading** (`read_ops_after(folder, device, applied)`): the device's op files numbered after
@@ -290,7 +293,8 @@ a clash are applied with `MergeTx::record` like any local edit: a new clock, aft
 merged and after the version it replaces (a far-ahead one included, as above, and a list
 item's list base), and into the outbox while recording, written at the next sync. Each op is
 merged in a savepoint (`MergeTx::begin_op`, `end_op`), so one that fails leaves nothing of
-itself behind.
+itself behind; what an op recorded is counted in `MergeReport::recorded` only when its
+savepoint is kept.
 
 ### Sync conflicts
 

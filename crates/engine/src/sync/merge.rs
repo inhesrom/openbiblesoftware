@@ -239,14 +239,16 @@ fn op_of(held: &HeldOp) -> Op {
 }
 
 /// Try a held op again, in a savepoint: whether it applied (or a later write superseded it),
-/// so it leaves `sync_held`.
+/// so it leaves `sync_held`. What it records is counted in `recorded` only if it applied, as
+/// the savepoint keeps it only then.
 fn retry_one(
     tx: &mut MergeTx<'_>,
     held: &HeldOp,
     recorded: &mut Recorded,
 ) -> Result<bool, MergeError> {
     tx.begin_op()?;
-    match merge_op(tx, &op_of(held), &[], recorded) {
+    let mut by_op = Recorded::default();
+    match merge_op(tx, &op_of(held), &[], &mut by_op) {
         Ok(Outcome::Held) => {
             tx.end_op(false)?;
             Ok(false)
@@ -254,6 +256,7 @@ fn retry_one(
         Ok(_) => {
             tx.end_op(true)?;
             tx.unhold(held)?;
+            recorded.add(&by_op);
             recorded.unheld += 1;
             Ok(true)
         }
@@ -310,9 +313,12 @@ fn merge_file(
             // Each op in a savepoint: one this build cannot apply is held, leaving nothing of
             // itself, and the rest of the file merges.
             tx.begin_op()?;
-            match merge_op(tx, op, ops, &mut recorded) {
+            // Counted only if the savepoint keeps what it recorded.
+            let mut by_op = Recorded::default();
+            match merge_op(tx, op, ops, &mut by_op) {
                 Ok(outcome) => {
                     tx.end_op(true)?;
+                    recorded.add(&by_op);
                     outcomes.push(outcome);
                 }
                 Err(MergeError::Store(StoreError::Rejected(why) | StoreError::Conflict(why))) => {
