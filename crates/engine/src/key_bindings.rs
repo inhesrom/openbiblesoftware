@@ -528,7 +528,10 @@ impl Session {
             out.push(self.binding(k.id, k.label, SELECTION_GROUP, Some(k.default)));
         }
         for spec in self.commands().iter() {
-            if runs_from_a_key(spec) && menu_of(spec.id).is_none() {
+            if runs_from_a_key(spec)
+                && menu_of(spec.id).is_none()
+                && crate::sync_session::shown_on_keys(self, spec.id)
+            {
                 out.push(self.binding(spec.id, spec.label, OTHER_GROUP, spec.shortcut));
             }
         }

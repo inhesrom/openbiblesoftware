@@ -170,8 +170,11 @@ pub(super) struct NotesUi {
     notebooks: Vec<Notebook>,
     counts: BTreeMap<String, u64>,
     hidden: BTreeSet<String>,
-    /// How many Orphaned annotations there are (Needs attention).
+    /// How many Orphaned annotations, Sync conflicts and held ops there are (Needs
+    /// attention).
     attention: usize,
+    /// The other devices' ops this device holds back, each as a line (plan S29).
+    held: Vec<String>,
     /// Re-attach clicked on a card: its id, the reading Tab with the selection, and the
     /// selection as command params. Run after the frame's cards.
     reattach: Option<(String, TabId, Value)>,
@@ -407,7 +410,8 @@ impl State {
             .into_iter()
             .collect();
         ui.hidden = self.session.hidden_in_text();
-        ui.attention = self.session.orphaned_annotations().map_or(0, |a| a.len());
+        ui.attention = self.session.needs_attention_count();
+        ui.held = self.session.sync_held_lines();
         ui.loaded = Some(want);
     }
 
@@ -493,9 +497,26 @@ impl State {
             return;
         };
         if ed.text != ed.saved {
-            let params = json!({ "id": ed.id, "body": ed.text, "continue": ed.saved_once });
+            // Saved over the text it started from: a Note a sync changed meanwhile keeps the
+            // other device's text, and this text goes into a Sync conflict's copy (ADR 0022).
+            let params = json!({
+                "id": ed.id,
+                "body": ed.text,
+                "base": ed.saved,
+                "continue": ed.saved_once,
+            });
             match self.session.run("annotation.edit", &params) {
-                Ok(_) => {
+                Ok(out) => {
+                    if let Some(copy) = out["annotation"]["id"].as_str()
+                        && copy != ed.id
+                    {
+                        // The editor goes on in the copy, where its text is.
+                        ed.id = copy.to_string();
+                        ed.focus = !finished;
+                        if ed.place == EditPlace::NotesTool {
+                            self.session.notes.reveal = Some((ed.id.clone(), false));
+                        }
+                    }
                     ed.saved = ed.text.clone();
                     ed.saved_once = true;
                     ed.error = None;
@@ -644,9 +665,9 @@ impl State {
                         ));
                         ui.add_space(space::XS);
                         let r = row(ui, attention, "Needs attention", self.notes_ui.attention as u64)
-                            .on_hover_text(
-                                "Annotations whose text was not found after their Resource changed",
-                            );
+                            .on_hover_text(obs_engine::sync::texts::needs_attention_hover(
+                                self.session.sync_folder().is_some(),
+                            ));
                         if r.clicked() {
                             run.push(("notes.notebook", json!({ "value": "attention" })));
                         }
@@ -870,6 +891,14 @@ impl State {
         ui.add_space(space::XS);
         self.notes_ui.drawn.clear();
         self.notes_ui.drawn_lines.clear();
+        let held_shown = self.session.notes.filter == NotesFilter::NeedsAttention
+            && !self.notes_ui.held.is_empty();
+        if held_shown {
+            self.held_ops(ui);
+        }
+        if cards.is_empty() && held_shown {
+            return;
+        }
         if cards.is_empty() {
             let filtered = self
                 .tabs
@@ -1033,7 +1062,9 @@ impl State {
                     let width = ui.available_width();
                     self.pipeline_text(ui, &format!("“{q}”"), ColorRole::VerseNumber, &[], width);
                 }
-                if card.needs_attention() {
+                if card.is_sync_conflict() {
+                    self.conflict_actions(ui, card, run);
+                } else if card.needs_attention() {
                     self.attention_actions(ui, card, run);
                 }
                 if a.is_note() {
@@ -1047,6 +1078,42 @@ impl State {
             id: a.id.clone(),
             rect: frame.response.rect,
             body: body_rect,
+        });
+    }
+
+    /// Needs attention's held ops (plan S29): the other devices' changes this device cannot
+    /// apply yet, each with why; they are tried again at every sync, so they have no actions.
+    fn held_ops(&mut self, ui: &mut Ui) {
+        super::library_tab::section(ui, obs_engine::sync::texts::CHANGES_WAITING);
+        for line in &self.notes_ui.held {
+            ui.horizontal_top(|ui| {
+                let warn = theme::c().warn;
+                ui.add(icons::image(ui.ctx(), Icon::Warning, icons::SMALL, warn));
+                ui.add(egui::Label::new(RichText::new(line).small().color(warn)).wrap());
+            });
+        }
+        ui.add_space(space::M);
+    }
+
+    /// A Sync conflict's copy's actions (plan S29): Keep this version, Keep the other, Keep
+    /// both, Combine; each is one undo step. The Note being edited saves first (the text typed
+    /// in the copy is what the action keeps); one whose save was refused stays open, and the
+    /// action waits.
+    fn conflict_actions(&mut self, ui: &mut Ui, card: &Card, run: &mut Vec<(&'static str, Value)>) {
+        let a = &card.annotation;
+        ui.horizontal_wrapped(|ui| {
+            for (choice, label) in card.conflict_actions {
+                if ui.button(*label).clicked() {
+                    self.save_card_edit(true);
+                    if self.notes_ui.editing.is_some() {
+                        continue;
+                    }
+                    run.push((
+                        "sync.resolve_conflict",
+                        json!({ "id": a.id, "keep": choice.id() }),
+                    ));
+                }
+            }
         });
     }
 

@@ -27,6 +27,8 @@ pub(crate) enum DataPick {
     Restore,
     /// Where to write the zip (Export everything).
     Export,
+    /// The Sync folder (Settings → Sync, plan S29): a folder, not a file.
+    SyncFolder,
 }
 
 /// Asks for a file: (what for, suggested file name) → the chosen path.
@@ -79,6 +81,9 @@ fn native_dialog(pick: DataPick, name: &str) -> Option<PathBuf> {
             .set_file_name(name)
             .add_filter("Zip", &["zip"])
             .save_file(),
+        DataPick::SyncFolder => rfd::FileDialog::new()
+            .set_title(obs_engine::sync::texts::CHOOSE_FOLDER)
+            .pick_folder(),
     }
 }
 
@@ -368,7 +373,7 @@ impl State {
     }
 
     /// Ask for a file with the native dialog, on its own thread.
-    fn ask_data_file(&mut self, ctx: &egui::Context, pick: DataPick, name: String) {
+    pub(super) fn ask_data_file(&mut self, ctx: &egui::Context, pick: DataPick, name: String) {
         let dialog = Arc::clone(&self.backups_ui.dialog);
         let (tx, rx) = std::sync::mpsc::channel();
         let ctx = ctx.clone();
@@ -411,6 +416,9 @@ impl State {
                 }
             }
             DataPick::Restore => self.preview_restore(&path),
+            DataPick::SyncFolder => {
+                self.run("sync.choose_folder", &p);
+            }
             DataPick::Export => {
                 if let Some(out) = self.run("data.export", &p) {
                     let n = out["files"].as_array().map_or(0, Vec::len);

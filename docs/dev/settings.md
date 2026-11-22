@@ -42,6 +42,7 @@ and is saved in the User database as before.
 | | Get Resources, Starter library | `library.get_resources`, `library.starter` | — (actions) |
 | Search | Word forms | `search.word_forms {value}` | `value: false` |
 | Privacy and data | Clear History, Clear Search history | `history.clear`, `search.clear_history`, after a confirmation | — (actions) |
+| Sync (plan S29) | Sync: before a folder is chosen, what Sync is, which folders work here and Choose Sync folder…; then the Sync folder, This device's name, Sync now with the status, Synced devices and Stop syncing… ([below](#sync)) | `sync.choose_folder {path}`, `sync.device_name {name}`, `sync.now`, `sync.stop {confirm}` | — (no Reset) |
 | Updates (#276) | Check for updates automatically (on), Include pre-releases (off) | `updates.auto_check {on}`, `updates.prereleases {on}` | `on: true`, `on: false` |
 | | Check for updates | a button: Help → Check for updates (`help.check_for_updates`) | — (an action) |
 
@@ -51,6 +52,31 @@ follow the theme." for a chosen tone (`shell/page_tone.rs`, `effective_text`). T
 theme turns dark over a chosen Paper or Sepia, a one-time hint offers Auto (Use Auto runs
 `view.page_tone {value: auto}`); `Session::page_tone_hint_due` remembers it was offered in the
 User database (preference `page-tone-hint`), so it never comes back, even after a restart.
+
+## Sync
+
+Settings → Sync (plan S29, ADR 0022) sits between Privacy and data and Updates (supervisor
+decision D1). It is one Setting (`sync`, `SettingKind::Sync`) whose row is the whole section:
+`shell/sync_ui.rs` lays out `Session::sync_panel(now)` and the words of
+`obs_engine::sync::texts`, and runs `sync.*` commands; [`sync.md`](sync.md#the-desktop-s29)
+has the rules.
+
+- **Before a folder is chosen** (every desktop until the user picks one): what Sync is, which
+  folders work on this platform (`texts::folder_guidance`) and **Choose Sync folder…**, which
+  opens the native folder dialog on its own thread (`DataPick::SyncFolder`, `rfd`'s
+  `pick_folder`). Nothing else of Sync shows anywhere: no status indicator, no Sync now in
+  Help → Keyboard shortcuts.
+- **Once chosen:** the Sync folder (its path), **This device's name** (saved on Enter or when
+  the field lets go), **Sync now** beside the status ("Last synced 2 minutes ago", "Syncing…",
+  "Not synced yet", or "Could not reach the Sync folder…" with Details), a newer app's
+  "update the app" notice with Check for updates, **Synced devices** (this one first, each with
+  its platform and when it was last seen, and "Uses a newer version of Open Bible…" under a
+  device whose files a newer app wrote) and **Stop syncing…**, which asks first.
+- After a Backup is restored on a syncing device the status reads "Restored from a Backup"
+  and the restore prompt (a dialog over the window, not in Settings) asks Catch up or Replace.
+- The menu bar's **status indicator** (the `refresh-cw` icon left of Home, once a folder is
+  chosen; tinted as a warning when something needs the user) opens Settings showing Sync (its
+  search box set to "Sync").
 
 ## Scroll speed (#293)
 

@@ -185,6 +185,18 @@ their query.
 A restore that fails before step 2 changes nothing at all: the Session keeps its User database,
 undo history included, and no Safety backup is taken.
 
+**On a device with a Sync folder** (plan S29, supervisor decision D5): `restore_backup` and
+Undo restore first sync when the folder is reachable (`Session::sync_before_restore`), so edits
+not yet written reach the folder before the restore replaces them; a sync that fails does not
+hold the restore back (the Safety backup has the edits). After `UserStore::restore`, the
+device's own Sync folder preference (`sync.folder`, or none) is written back over whatever the
+Backup held, before the Session reloads: **a restore never starts, stops or moves sync** (a
+Backup from before this device synced, or another computer's, would otherwise drop its folder
+or point it at another), which makes `sync.folder` the one setting a restore does not take
+from the Backup. The trial restore does not compare it (`NOT_COMPARED` in `backups_tests.rs`).
+On a device that was syncing, the restore then waits for Catch up or Replace
+([`sync.md`](sync.md#the-desktop-s29)).
+
 **Undo restore** (`data.undo_restore`, enabled after a restore in this run) restores the last
 restore's Safety backup, taking a Safety backup of its own. It skips the trial restore: the
 Safety backup is the data as it was in use, and is put back as it was.

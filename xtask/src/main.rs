@@ -10,6 +10,7 @@ mod licenses;
 mod release;
 mod starter;
 mod strongs_index;
+mod sync_e2e;
 mod tvtms;
 mod update_e2e;
 
@@ -49,6 +50,9 @@ releases (docs/dev/releasing.md):
   update-e2e       install this version from an archive, update it to the next from a mock
                    release source and restart into it, clicked and photographed; with
                    `--real-release X.Y.Z`, from the published release (`--help`, #276; needs a display)
+  sync-e2e         two desktop devices, each with its own User database, syncing through one
+                   temporary folder: they converge, and a restored Backup's prompt takes Catch up
+                   and Replace (`--help`, plan S29; needs a display)
 
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules
@@ -102,6 +106,10 @@ fn run() -> Result<()> {
         "update-e2e" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             update_e2e::run(&root, &rest)
+        }
+        "sync-e2e" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            sync_e2e::run(&root, &rest)
         }
         "licenses" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

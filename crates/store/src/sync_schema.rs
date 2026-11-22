@@ -60,10 +60,10 @@ pub const SYNCED_PREFERENCES: &[&str] = &[
 /// Own Text sizes, the Custom theme, the toolbar, Keyboard shortcuts, Home), the Search
 /// history and Recent searches, the Command box's recent entries, Removed Starter Resources,
 /// what belongs to the Resources installed here (Import reports, confirmed Attributions), the
-/// app's own settings (updates, Log level, the tour), the Copy verses options last used, the
-/// last Notebook used and the Visual filters (ADR 0022 rule 4 does not list them, and their
-/// numeric ids, which Layouts switch them by, would collide across devices; syncing them is a
-/// later step's). Entries ending in `/` or `.` are prefixes, as in [`SYNCED_PREFERENCES`].
+/// app's own settings (updates, Log level, the tour, the Sync folder), the Copy verses options
+/// last used, the last Notebook used and the Visual filters (ADR 0022 rule 4 does not list
+/// them, and their numeric ids, which Layouts switch them by, would collide across devices;
+/// syncing them is a later step's). Entries ending in `/` or `.` are prefixes, as in [`SYNCED_PREFERENCES`].
 pub const DEVICE_PREFERENCES: &[&str] = &[
     "view",
     "view.resource_text_sizes",
@@ -85,6 +85,7 @@ pub const DEVICE_PREFERENCES: &[&str] = &[
     "annotations.last_notebook",
     "reading.visual_filters",
     "reading.visual_filters_next_id",
+    "sync.folder",
 ];
 
 /// Whether the preference `key` is Synced data.

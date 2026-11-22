@@ -128,6 +128,8 @@ icons! {
     GrammaticalNotes => "list-checks",
     TopicalEntries => "list",
     LibrarySearch => "text-search",
+    // Sync (plan S29): the menu bar's status indicator.
+    Sync => "refresh-cw",
 }
 
 impl Icon {
@@ -162,6 +164,7 @@ pub fn for_command(id: &str) -> Option<Icon> {
         "tool.timeline" => Icon::Timeline,
         "tool.copy_verses" => Icon::Copy,
         "home.open" => Icon::Home,
+        "sync.now" => Icon::Sync,
         _ => return None,
     })
 }

@@ -162,6 +162,9 @@ pub mod starter;
 mod starter_tests;
 pub mod strongs_index;
 pub mod sync;
+pub mod sync_session;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod sync_session_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;
@@ -320,6 +323,9 @@ pub use session::{JobMode, Session};
 pub use settings::{
     SETTINGS, Setting, SettingKind, SettingsSection, setting_asking_first, setting_by_id,
     setting_matches, settings_matching,
+};
+pub use sync_session::{
+    ConflictChoice, SYNC_FOLDER_PREF, SyncDeviceRow, SyncIndicator, SyncPanel, conflict_actions,
 };
 pub use timeline::{Emphasis, Timeline, TimelineEntry, TimelineView};
 pub use toolbar::{

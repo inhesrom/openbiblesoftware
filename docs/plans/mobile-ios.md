@@ -29,7 +29,7 @@ to Claude Opus 5.5 later on".
   #336 (accounts), #337 (trademark) and the privacy policy URL are scheduled (S33) *before* the
   first App Store Connect upload (S35, HITL), because a bundle id is permanent; dev builds use a
   distinct `.dev` bundle id until then.
-- **Size:** 8 milestones, 39 steps + 1 fallback step. 6 are HITL, 2 mixed (S09, S12). 25 need
+- **Size:** 8 milestones, 41 steps + 1 fallback step. 6 are HITL, 2 mixed (S09, S12). 25 need
   Xcode.
 
 ## Step table
@@ -70,9 +70,10 @@ to Claude Opus 5.5 later on".
 | S28b-1 | Sync 2b-1 (Rust): merge rules (LWW, edit beats delete, absent fields, Readings, Preferred order, two defaults, Layout "(2)") + property tests | AFK | n | S28a | `sync/merge.rs`, migration 15, 10k-case property tests | done (PR #370) |
 | S28b-2 | Sync 2b-2 (Rust): Note-text Sync conflicts, deleted parents, list items of one name, a list's whole value | AFK | n | S28b-1 | `conflict_of`, parent rows in tombstones, `sync_held`, wider property tests | done (PR #402) |
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | done (PR #404) |
-| S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
-| S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 | Swift `SyncFolder`, screens | todo |
-| S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S30 | test report, folder list for onboarding | todo |
+| S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | done (PR #407) |
+| S29b | Sync 3b: sync off the UI thread (worker sharing the store's clock and device id, or a chunked merge) | AFK | n | S29 | no frame stall over 16 ms in a 1,000-file catch-up; no iCloud read on the UI thread | todo |
+| S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 (ships after S29b) | Swift `SyncFolder`, screens | todo |
+| S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S29b, S30 | test report, folder list for onboarding | todo |
 | S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | todo |
 | S33 | Before anything permanent: #334, #336, #337, privacy policy URL, release cadence | HITL | n | S12 | decisions recorded, tickets closed, map lines, final bundle id applied | todo |
 | S34 | App Store readiness: `PrivacyInfo.xcprivacy`, icon, Credits, accessibility audit, size, archive + export + validate | AFK | y | S19–S26, S30, S32, S33 | validated archive, review notes, `docs/dev/mobile-release.md` | todo |
@@ -1994,10 +1995,105 @@ under the half they belong to.
   `SyncSchedule` (`at_launch(true)` on the desktop). The contract is `docs/dev/sync.md`
   "Contract".
 
+- **Outcome (2026-11-22, branch `mobile/s29-desktop-sync`):** **Owner decisions (via
+  supervisor):** **D1** Settings → Sync is a section between Privacy and data and Updates;
+  **D2** until a folder is chosen only its onboarding and Choose Sync folder… show (no
+  indicator, no schedule, no Sync now in Help → Keyboard shortcuts), the folder being the
+  device preference `sync.folder` (`DEVICE_PREFERENCES`); **D3** `sync_now` runs on the UI
+  thread on the Session's own connection, "Syncing…" shown for a frame first (the store's clock
+  and device id are per connection); **D4** Stop syncing (asked first) forgets the folder and
+  gives the device a new id, so it records nothing more and a later join is a new device;
+  **D5** (a change to the Backup restore contract) restore and Undo restore sync first when the
+  folder is reachable (a failure does not hold the restore back) and put this device's
+  `sync.folder` back after, so a restore never starts, stops or moves sync, and the trial
+  restore does not compare it; **D6** a Sync conflict's copy has Keep this version, Keep the
+  other, Keep both and Combine (blank line between), each one undo step that syncs; held ops
+  are listed under Changes waiting with no actions; **D7** the status indicator is a new
+  Lucide icon (`refresh-cw`, from the verified lucide-static 1.70.0 archive) left of Home,
+  opening Settings on Sync, and the restore prompt is a dialog; **D8** every word approved as
+  proposed (the Replace body as amended), all in `obs_engine::sync::texts` for S30 to reuse.
+  **Shipped:** engine `sync/texts.rs` and `sync_session.rs` (`Session::sync_tick`,
+  `sync_panel`, `sync_indicator`, `sync_restore_pending`, `sync_held_lines`,
+  `needs_attention_count`, `resolve_sync_conflict`, `reload_synced_data` after a merge,
+  `sync_before_restore`, commands `sync.choose_folder`, `sync.now`, `sync.stop {confirm}`,
+  `sync.device_name`, `sync.restore_choice`, `sync.resolve_conflict`), `SettingKind::Sync`,
+  Needs attention's filter and cards counting Sync conflicts (`notes::needs_attention`); UI
+  `shell/sync_ui.rs` (Settings → Sync, the indicator, the prompt, the frame's tick; the folder
+  dialog is `DataPick::SyncFolder` through `rfd`'s `pick_folder`), Needs attention's conflict
+  actions and Changes waiting in `notes_tab.rs`; `cargo xtask sync-e2e` (and a CI step beside
+  update-e2e); docs `sync.md` "The desktop (S29)", `settings.md` "Sync", `notes-tool.md`,
+  `backups.md`, `CONTEXT.md`'s Settings. **Deviations:** the restore's question is asked only
+  in its dialog (the inline copy in Settings, proposed in D7, made two identical buttons and
+  was dropped; Settings' status reads "Restored from a Backup"); `sync.stop` takes `confirm:
+  true` so no key or Command box entry stops sync unasked. **Measured** (owner's Mac, dev
+  profile, `measure_syncs_on_the_ui_thread`, a local temp folder): one edit 13–20 ms; a
+  folder of 1,002 op files with nothing new 7–8 ms; a new device joining it from snapshots
+  35–37 ms; a device away while another wrote 1,000 op files, catching up in one sync,
+  136–141 ms (over the ~100 ms line: the supervisor accepted it for S29, sync being off until
+  a user chooses a folder, and added S29b); the real two-instance e2e's syncs 9–29 ms each.
+  **Tests:** engine `sync_session_tests` (10: nothing without a folder; two Sessions converge
+  and list each other; the schedule; restore syncs first, keeps the folder, Catch up across a
+  restart; Replace; a restore never takes the Backup's folder; Stop syncing; the conflict's
+  four actions with undo and the other device taking them; held ops; a folder not there and
+  a newer folder) and `sync::texts` (2); UI `sync_tests` (3, through the harness: Choose Sync
+  folder… with the dialog injected, the indicator, the prompt's buttons, Needs attention);
+  `cargo xtask sync-e2e` green (A and B converge; the prompt shows; Catch up brings back what
+  changed since; Replace makes the Backup's Word forms win everywhere while rows it never knew
+  stay; the restores keep A's folder). The gallery gained 24 goldens, all new
+  (`settings-sync-before-a-folder-is-chosen`, `settings-sync-with-two-devices`,
+  `needs-attention-a-sync-conflict-and-a-change-waiting`, `sync-restore-prompt`, each Light,
+  Dark, Sepia at 1× and 2×); every existing golden unchanged. Previews in
+  `docs/previews/s29-*.png` and the icon catalogue. **Found:** a restored device lists its
+  old id as another Synced device of the same name (rule 7's new id; correct, possibly
+  confusing; S30/S31 may want "(before a restore)"); a held op's "why" is the store's own
+  wording. **Verified:** `cargo xtask ci` green (7 m 05 s; 2,451 tests passed, 44 ignored; the
+  first run's only failures were the known `find_bar` flake, green alone, and the menu audit's
+  ellipsis rule, fixed: `sync.choose_folder`'s label is "Choose Sync folder", its button
+  "Choose Sync folder…"); `cargo xtask gallery` green with only the 24 new goldens blessed;
+  `cargo xtask sync-e2e` green (run four times). **Review fixes** (supervisor decisions on
+  the S29 review): a Note card saves with its base text (`annotation.edit {base}`,
+  `Session::save_note_edit`, checked in the engine): when a merge changed the Note while its
+  card was open, the typed text goes into a Sync conflict's copy (the merge's copy of the base
+  text, else a new one on the Note's Anchor and Notebook), never over the merged text, and the
+  editor goes on in that copy (the report's "the autosave is refused" was wrong: it wrote
+  over); the conflict actions save the open editor first and do not run while it stays open;
+  a copy whose Note another device deleted says so and offers Keep this text and Let it go
+  (`conflict_actions(false)`, words in `texts`); Stop syncing takes the new id before it
+  forgets the folder; Needs attention's hover mentions Sync conflicts only with a folder
+  chosen; a failed sync is said once, by its notice; sync-e2e's steps after frame-numbered
+  commands wait on a file (A's Backup; a file the xtask writes once B's Word forms op is in
+  the folder) and B must stop with nothing waiting. New tests: engine 4 (an editor's save
+  after a merge, into a new copy and into the merge's copy; a copy whose Note was deleted
+  elsewhere; the restore prompt across a restart while pending) and Keep this version and
+  Keep both checked on the other device; harness 2 (an autosave after a merge keeps both texts
+  and typing goes on in the copy; Combine clicked while typing in the copy), both failing
+  before the fix. The Summary's step count is 41. Gates after the fixes: `cargo xtask ci`
+  green (7 m 21 s; 2,457 passed, 44 ignored), `cargo xtask gallery` green with no golden
+  changed, `cargo xtask sync-e2e` green twice. **For S30:** reuse `sync::texts` and the
+  Session's APIs through `obs-mobile`, on S29b's off-thread path, and save a Note editor's text
+  with its base (`annotation.edit {base}`) as the desktop does.
+
+#### S29b — Sync 3b: sync off the UI thread
+
+- **Goal:** no sync ever stalls a frame, so iCloud Drive (whose placeholder reads can block for
+  seconds) can be relied on. Added by S29 (supervisor), from S29's measurements.
+- **Type:** AFK. **Xcode:** n. **Size:** M. **Depends on:** S29. **Blocks:** S31, and S30's
+  shipping (S30 uses this same path on iOS).
+- **Do:** run `sync_now` (and `restore_choice`) on a worker with the store's HLC state and
+  device id shared across connections (a copied database's new id and every observed clock
+  seen by the UI connection at once), or chunk the merge per tick with a cap on the files per
+  pass; the Session reloads Synced data when the worker's sync merged anything.
+- **Done when:** no frame stall over 16 ms in the 1,000-file catch-up of
+  `measure_syncs_on_the_ui_thread` (S29: 136–141 ms in one sync); iCloud placeholder reads
+  (`ensure_available`, `read`) never on the UI thread; the merge property tests and
+  `sync-e2e` green.
+- **Stop-and-ask:** the shared clock needs a store schema change; two connections can hand
+  out the same clock.
+
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
 - **Goal:** the iPhone joins a Sync folder through the document picker; every rule stays in Rust.
-- **Type:** AFK. **Xcode:** y. **Size:** L. **Depends on:** S28c, S19.
+- **Type:** AFK. **Xcode:** y. **Size:** L. **Depends on:** S28c, S19; ships only after S29b.
 - **Read first:** A8; `docs/research/mobile-folder-sync.md` iOS bullets; Apple: "Providing access
   to directories", `startAccessingSecurityScopedResource`, `NSFileCoordinator`,
   `startDownloadingUbiquitousItem(at:)`, `URLResourceKey.ubiquitousItemDownloadingStatusKey`
@@ -2020,12 +2116,18 @@ under the half they belong to.
 - **Verify:** UI standard; XCUITest `syncTwoDevices` (host folder injected via launch argument).
 - **Stop-and-ask:** UI standard; the ubiquity container turns out to be required; `NSFileCoordinator`
   blocks the main thread for more than a frame on a cold placeholder.
+- **Added by S29 (supervisor):** iOS syncs on S29b's off-thread path (a worker sharing the
+  store's clock and device id, or the chunked merge), never on the main thread; S30 does not
+  ship before S29b. Every word is `obs_engine::sync::texts`'s (approved for both apps), and the
+  desktop Session's rules (`sync_session.rs`: the schedule, the restore keeping the folder,
+  Stop syncing's new id, the conflict actions, held ops' lines) are the ones `obs-mobile`
+  exposes.
 
 #### S31 — Sync 5: iPhone ↔ Mac over iCloud Drive (HITL)
 
 - **Goal:** the only test that proves the provider behaviour the research could not: a real iCloud
   Drive round trip.
-- **Type:** HITL. **Xcode:** y. **Size:** S–M. **Depends on:** S29, S30.
+- **Type:** HITL. **Xcode:** y. **Size:** S–M. **Depends on:** S29, S29b, S30.
 - **Owner checklist:** pick `Open Bible Sync/` in iCloud Drive on the Mac desktop app and on the
   iPhone; make Highlights/Notes on each; wait; confirm convergence and a deliberate conflict; note
   latency; then (per #332 "Validation") check whether Dropbox, OneDrive and Google Drive folders

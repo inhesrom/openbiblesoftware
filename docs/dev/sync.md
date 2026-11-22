@@ -2,8 +2,9 @@
 
 The Rust side of Sync, from plan steps S28a (the file layer), S28b-1 and S28b-2 (the merge,
 [below](#merging)) and S28c (snapshots, trimming, device ids, restores, when sync runs:
-[the contract](#contract)). The Settings → Sync screens are S29 (desktop) and S30 (iOS); they
-render the states below and hold no rule. Terms are in [CONTEXT.md](../../CONTEXT.md):
+[the contract](#contract)), and the desktop's Settings → Sync, status indicator, restore
+prompt and Needs attention from S29 ([below](#the-desktop-s29)); S30 is the iOS screens. The
+shells render the states and words of the engine and hold no rule. Terms are in [CONTEXT.md](../../CONTEXT.md):
 **Sync folder**, **Synced device**, **Synced data**, **Sync conflict**.
 
 | Layer | Piece | Role |
@@ -22,6 +23,9 @@ render the states below and hold no rule. Terms are in [CONTEXT.md](../../CONTEX
 | `obs-engine` | `sync/lifecycle.rs` | `sync_now`, `needs_restore_choice`, `restore_choice` (`RestoreChoice`), `SyncOptions`, `SyncReport`, `SyncState`; the copied-database check. |
 | `obs-engine` | `sync/schedule.rs` | `SyncSchedule` and `next_sync_due` (ADR 0022 rule 8). Compiles everywhere. |
 | `obs-engine` | `sync/mod.rs` | Paths, `sync.json` (`ensure_sync_json`), `device.json` (`write_device_json`, `read_devices`), `SyncError`. |
+| `obs-engine` | `sync/texts.rs` | Every word the shells show of Sync (S29, owner-approved through the supervisor): onboarding, folder guidance per platform, status lines, device rows, the restore prompt, the Sync conflict's text and actions, held ops' lines. Compiles everywhere; S30 shows the same. |
+| `obs-engine` | `sync_session.rs` | The desktop Session's sync (S29): the Sync folder (`SYNC_FOLDER_PREF`), the `SyncSchedule`, `Session::sync_tick`, `sync_panel`, `sync_indicator`, `sync_restore_pending`, `sync_held_lines`, `resolve_sync_conflict` (`ConflictChoice`), the restore's hooks, commands `sync.*`. |
+| `obs-ui-egui` | `shell/sync_ui.rs` | Settings → Sync, the menu bar's status indicator, the restore prompt, the frame's tick; Needs attention's parts are in `shell/notes_tab.rs`. |
 
 ## Contract
 
@@ -46,6 +50,62 @@ What the shells call, and what they show (S29, S30). Every rule is in Rust; a sh
   `next_sync_due(now)`, `is_due(now)`; `periodic` on the desktop only.
 - **The device's name** others show (`device.json`): `UserStore::set_device_name`.
 - Needs attention lists `UserStore::sync_conflicts()` and `UserStore::sync_held()`.
+
+## The desktop (S29)
+
+The desktop app syncs through a folder the user picks in Settings → Sync
+([`settings.md`](settings.md#sync)); until then nothing of Sync shows or runs, and the app
+behaves as before (the gallery's goldens are unchanged).
+
+- **The Sync folder** is the device preference `sync.folder` (its path; empty: none), in
+  `DEVICE_PREFERENCES`, so it never syncs. `sync.choose_folder {path}` sets it (a folder that
+  is there) and makes a sync due at once, which joins. A folder no longer there (a disk not
+  mounted) is "Could not reach the Sync folder", tried again later; nothing is made at its
+  path. The platform `device.json` names is `std::env::consts::OS` (`Session::set_sync_platform`
+  lets tests and the gallery draw one platform's words on every computer).
+- **When it runs:** `Session::sync_tick(now)` every frame keeps the `SyncSchedule`
+  (`at_launch(true)`: at launch, every 5 minutes, 30 seconds after the first edit not yet
+  synced, which it notes when the outbox has ops, and on Sync now). A due sync shows
+  "Syncing…" for one frame, then `sync_now` runs at the next tick **on the UI thread, on the
+  Session's own connection** (supervisor decision D3: the store's clock and device id live in
+  that connection). Measured on the owner's Mac (`measure_syncs_on_the_ui_thread`, a local
+  folder, dev profile): one edit 13–20 ms; a folder of 1,002 op files with nothing new 7–8 ms;
+  a new device joining it from snapshots 35–37 ms; a device away while another wrote 1,000 op
+  files catching up in one sync 136–141 ms; in the two-instance e2e 9–29 ms a sync. Plan step
+  S29b moves sync off the UI thread before iCloud is relied on.
+- **After a sync** that merged anything, the Session reloads what it keeps of Synced data, as
+  at launch (Preferred order, Guide arrangements, Favorites, Reading plans, Copy presets,
+  Collections, Saved searches, Word forms), moves `annotations_revision`, runs Notes searches
+  again and re-anchors as at launch (`reload_synced_data`); preferences that stay on the device
+  are not touched. The undo history is kept: a step whose rows a merge changed is refused as
+  stale and the history cleared, as before.
+- **The status indicator** (`Session::sync_indicator`) and **Settings → Sync**
+  (`Session::sync_panel`): the status line, the error behind it (Details), `FolderNewer`, each
+  device's `needs_newer_app`, the Synced devices from their `device.json` (this one first,
+  "(this device)"; a restored or copied device lists its old id as another device), the name.
+  Help → Keyboard shortcuts lists Sync now only once a folder is chosen.
+- **Stop syncing** (`sync.stop {confirm: true}`, asked first) gives the device a new id
+  (`take_new_device_id`): it records no more ops, its outbox is emptied, a restore's question
+  is dropped, its files stay in the folder; then it forgets the folder (in that order, so a
+  failure leaves it syncing rather than recording into an outbox nothing reads). Choosing a folder again joins as
+  a new Synced device.
+- **A restore** (`data.restore`, `data.undo_restore`) on a device with a Sync folder syncs first
+  when the folder is reachable (`Session::sync_before_restore`; a failure does not hold the
+  restore back: the Safety backup has the edits), and puts this device's `sync.folder` back
+  after it, whatever the Backup held ([`backups.md`](backups.md#restore)), so a restore never
+  starts, stops or moves sync. On a device that was syncing the prompt "Restored from a
+  Backup" then shows over the window until **Catch up** (the default, Enter) or **Replace**
+  runs `sync.restore_choice {choice}` (`restore_choice`, then a sync); it comes back after a
+  restart.
+- **Needs attention** (`notes-tool.md`) lists the Sync conflicts' copies (with "Sync conflict:
+  this text and the Note's at … were changed on two devices…", and **Keep this version**,
+  **Keep the other**, **Keep both**, **Combine**: `sync.resolve_conflict {id, keep}`, each one
+  undo step that syncs like any edit; Combine puts the Note in place's text, a blank line and
+  the copy's text in the Note in place and opens it to edit; a copy whose Note another device
+  deleted says so and offers **Keep this text** and **Let it go** instead) and, under
+  **Changes waiting**,
+  the held ops, each "A change from <device> to <what> is waiting: <why>. It is tried again at
+  every sync."
 
 ## Data
 
@@ -849,14 +909,36 @@ Mobile app has no period (`at_launch(false)`).
   load; the copies add devices, and each `sync_now` reads its own newest snapshot), 10,000
   about 145–190 s.
 
+- `crates/engine/src/sync_session_tests.rs` (S29): without a Sync folder nothing syncs, shows
+  or is recorded, and a restore leaves it so; two Sessions converge through one folder and list
+  each other; an edit makes a sync due 30 seconds on, else the period; a restore on a syncing
+  device syncs first, keeps its folder (a Backup from before it synced) and Catch up brings the
+  edit back, across a restart; Replace makes the restored data every device's; a restore never
+  takes the Backup's folder; Stop syncing records nothing more and choosing again joins as a new
+  device; a Sync conflict's copy is in Needs attention with its four actions, each undone in
+  one step, the other device taking Keep this version, Keep both and Combine; a copy whose
+  Note another device deleted offers Keep this text and Let it go; a Note editor's save after
+  a merge changed its Note keeps both texts (into a new copy, or the merge's copy of its
+  text); the restore prompt comes back after a restart until it is answered; held ops listed with why; a folder not
+  there and one a newer app set up. `measure_syncs_on_the_ui_thread` (ignored) measures.
+- `crates/ui-egui/src/sync_tests.rs` (S29): the same through the harness (Choose Sync folder…
+  with the folder dialog injected, the indicator opening Settings on Sync, the prompt's two
+  buttons, Needs attention's buttons, an autosave after a merge keeping both texts and typing
+  on in the copy, Combine clicked while typing in the copy); the gallery's Sync goldens.
+- `cargo xtask sync-e2e` (S29, `xtask/src/sync_e2e.rs`): the real app twice, each with its own
+  `OBS_USER_DB`, through one temporary folder: they converge, and a restored Backup's prompt
+  takes Catch up and Replace, photographed. Steps that follow frame-numbered commands wait on a
+  file (`after_file`: A's Backup; for B, a file the xtask writes once B's Word forms op is in
+  the folder), so a slow software renderer cannot reach them first; B must stop with nothing
+  waiting to sync.
+
 ## For later steps
 
-- **S29, S30:** Needs attention lists `UserStore::sync_conflicts()` (a copy's `conflict_of`
-  names the Note in place) and `UserStore::sync_held()` (each with why); sync must not be turned
-  on for users before Needs attention shows the copies, which until then look like ordinary
-  Notes.
-- **S29, S30:** render `SyncState` (`needs_newer_app` per device, `FolderNewer`,
-  `NeedsRestoreChoice` with Catch up as the default and Replace), let the user name the device
-  (`set_device_name`), drive `SyncSchedule`, and implement `SyncFolder`. A restore on a
-  syncing device runs `sync_now` first when the folder is reachable, so edits never written
-  reach it before the restore replaces them.
+- **S29b:** sync off the UI thread (a worker on a second connection sharing the store's clock
+  and device id, or the merge chunked per tick), so no frame stalls over 16 ms and no iCloud
+  placeholder read happens on the UI thread.
+- **S30:** Needs attention lists the Sync conflicts and held ops as the desktop does
+  (`texts`, `Session::sync_held_lines`, `resolve_sync_conflict`); render `SyncState`
+  (`needs_newer_app` per device, `FolderNewer`, `NeedsRestoreChoice` with Catch up as the
+  default and Replace), let the user name the device, drive `SyncSchedule` (`at_launch(false)`),
+  and implement `SyncFolder` in Swift, on S29b's off-thread path. The words are `texts`'s.

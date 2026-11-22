@@ -25,8 +25,9 @@ managing every Annotation (#18 rule 7). The Search Tool's Notes mode searches No
   renamed but not deleted. Either way it is one undo step: Ctrl+Z brings the Notebook and its
   Annotations back exactly.
 - **⚠ Needs attention** (#65, #17 rule 12) lists the Orphaned annotations of every
-  Notebook, with their count. It shows only when there are some, or while it is chosen
-  (then, once all are dealt with: "Nothing needs attention"). `notes.notebook` with
+  Notebook, the Sync conflicts' copies and the changes other Synced devices sent that this one
+  holds back (plan S29), with their count. It shows only when there are some, or while it is
+  chosen (then, once all are dealt with: "Nothing needs attention"). `notes.notebook` with
   `value: attention` chooses it.
 
 ### Orphaned cards
@@ -43,6 +44,31 @@ not found in *TB* after it changed", shows its quote, and offers:
 - **Delete**.
 
 Each is one undo step. Re-anchoring itself is described in [annotations.md](annotations.md).
+
+### Sync conflicts and changes waiting (plan S29)
+
+A **Sync conflict**'s copy (ADR 0022 rule 3: `conflict_of` names the Note in place) is listed
+in Needs attention, and in its Notebook, with "Sync conflict: this text and the Note's at
+*Genesis 1:1* were changed on two devices. Keep one, combine them or keep both." and four
+actions (`sync.resolve_conflict {id, keep}`, each one undo step that syncs like any edit):
+
+- **Keep this version** (`this`): the copy's text goes into the Note in place; the copy goes.
+- **Keep the other** (`other`): the copy goes.
+- **Keep both** (`both`): the copy becomes an ordinary Note (`conflict_of` cleared).
+- **Combine** (`combine`): the Note in place gets its text, a blank line and the copy's text;
+  the copy goes, and the Note opens to edit.
+
+When another device deleted the Note in place (a delete that never saw this device's text
+keeps it as a copy), the card says "Sync conflict: this text was changed here while the Note
+was deleted on another device. Keep this text or let it go." and offers two actions
+(`obs_engine::conflict_actions(false)`): **Keep this text** (`both`: the copy becomes an
+ordinary Note) and **Let it go** (`other`: the copy is deleted, undoably). Clicking any action
+saves the card being edited first (`save_card_edit(true)`), so text typed in the copy within
+the autosave's second is what the action keeps; an editor whose save was refused stays open
+and the action does not run. Above the cards, **Changes waiting** lists the held ops
+(`Session::sync_held_lines`), each "A change from *Ian's iPhone* to *the Collection
+“Gospels”* is waiting: *why*. It is tried again at every sync."; they have no actions. The
+words are `obs_engine::sync::texts`'s.
 
 ### Show in text
 
@@ -80,6 +106,12 @@ annotation its warning.
   moment (1 s) after the last keystroke, and when focus leaves it, on Esc or Ctrl+Enter, and on
   quitting. All saves of one editing pass are one undo step (`annotation.edit` with
   `continue: true` merges into the previous step when that step edited this same Note's text).
+  Each save carries `base`, the text the editor opened on or last saved: when the Note's text
+  is another (a sync merged another device's edit while the card was open), the engine
+  (`Session::save_note_edit`) never writes the typed text over it but into a Sync conflict's
+  copy of the Note (the copy the merge made of `base`, else a new one on its Anchor and in its
+  Notebook), and the editor goes on in that copy, scrolled to; Needs attention then offers the
+  four actions.
   Every save moves `annotations_revision`, so the marker preview in the text shows the new
   words at once. The Shell checks the autosave after every frame (`notes_after_frame`), not
   the Notes Tab, and in any frame the Notes Tab is not drawn (Search or another Tab opened over

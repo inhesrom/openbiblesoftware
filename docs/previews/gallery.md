@@ -258,6 +258,27 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Import report: the file does not exist, Light](gallery/import-report-the-file-does-not-exist-light-1x.png) | ![Import report: the file does not exist, Dark](gallery/import-report-the-file-does-not-exist-dark-1x.png) | ![Import report: the file does not exist, Sepia](gallery/import-report-the-file-does-not-exist-sepia-1x.png) |
 | [2×](gallery/import-report-the-file-does-not-exist-light-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-dark-2x.png) | [2×](gallery/import-report-the-file-does-not-exist-sepia-2x.png) |
 
+### Settings, Sync before a folder is chosen
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Settings, Sync before a folder is chosen, Light](gallery/settings-sync-before-a-folder-is-chosen-light-1x.png) | ![Settings, Sync before a folder is chosen, Dark](gallery/settings-sync-before-a-folder-is-chosen-dark-1x.png) | ![Settings, Sync before a folder is chosen, Sepia](gallery/settings-sync-before-a-folder-is-chosen-sepia-1x.png) |
+| [2×](gallery/settings-sync-before-a-folder-is-chosen-light-2x.png) | [2×](gallery/settings-sync-before-a-folder-is-chosen-dark-2x.png) | [2×](gallery/settings-sync-before-a-folder-is-chosen-sepia-2x.png) |
+
+### Settings, Sync with two devices
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Settings, Sync with two devices, Light](gallery/settings-sync-with-two-devices-light-1x.png) | ![Settings, Sync with two devices, Dark](gallery/settings-sync-with-two-devices-dark-1x.png) | ![Settings, Sync with two devices, Sepia](gallery/settings-sync-with-two-devices-sepia-1x.png) |
+| [2×](gallery/settings-sync-with-two-devices-light-2x.png) | [2×](gallery/settings-sync-with-two-devices-dark-2x.png) | [2×](gallery/settings-sync-with-two-devices-sepia-2x.png) |
+
+### Needs attention, a Sync conflict and a change waiting
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Needs attention, a Sync conflict and a change waiting, Light](gallery/needs-attention-a-sync-conflict-and-a-change-waiting-light-1x.png) | ![Needs attention, a Sync conflict and a change waiting, Dark](gallery/needs-attention-a-sync-conflict-and-a-change-waiting-dark-1x.png) | ![Needs attention, a Sync conflict and a change waiting, Sepia](gallery/needs-attention-a-sync-conflict-and-a-change-waiting-sepia-1x.png) |
+| [2×](gallery/needs-attention-a-sync-conflict-and-a-change-waiting-light-2x.png) | [2×](gallery/needs-attention-a-sync-conflict-and-a-change-waiting-dark-2x.png) | [2×](gallery/needs-attention-a-sync-conflict-and-a-change-waiting-sepia-2x.png) |
+
 ### Timeline: crowded, 1 Kings 6
 
 | Light | Dark | Sepia |
@@ -625,6 +646,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![About Open Bible, Light](gallery/about-open-bible-light-1x.png) | ![About Open Bible, Dark](gallery/about-open-bible-dark-1x.png) | ![About Open Bible, Sepia](gallery/about-open-bible-sepia-1x.png) |
 | [2×](gallery/about-open-bible-light-2x.png) | [2×](gallery/about-open-bible-dark-2x.png) | [2×](gallery/about-open-bible-sepia-2x.png) |
+
+### Sync restore prompt
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Sync restore prompt, Light](gallery/sync-restore-prompt-light-1x.png) | ![Sync restore prompt, Dark](gallery/sync-restore-prompt-dark-1x.png) | ![Sync restore prompt, Sepia](gallery/sync-restore-prompt-sepia-1x.png) |
+| [2×](gallery/sync-restore-prompt-light-2x.png) | [2×](gallery/sync-restore-prompt-dark-2x.png) | [2×](gallery/sync-restore-prompt-sepia-2x.png) |
 
 ## Menus and choosers in Tabs and windows
 

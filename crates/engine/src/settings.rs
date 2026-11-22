@@ -35,11 +35,13 @@ pub enum SettingsSection {
     LibraryAndDownloads,
     Search,
     PrivacyAndData,
+    /// Settings → Sync (plan S29): between Privacy and data and Updates.
+    Sync,
     Updates,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 11] = [
+    pub const ALL: [SettingsSection; 12] = [
         SettingsSection::TextAndFonts,
         SettingsSection::InterfaceSize,
         SettingsSection::ThemeAndPageTone,
@@ -50,6 +52,7 @@ impl SettingsSection {
         SettingsSection::LibraryAndDownloads,
         SettingsSection::Search,
         SettingsSection::PrivacyAndData,
+        SettingsSection::Sync,
         SettingsSection::Updates,
     ];
 
@@ -65,6 +68,7 @@ impl SettingsSection {
             SettingsSection::LibraryAndDownloads => "Library folders and downloads",
             SettingsSection::Search => "Search",
             SettingsSection::PrivacyAndData => "Privacy and data",
+            SettingsSection::Sync => crate::sync::texts::SECTION,
             SettingsSection::Updates => "Updates",
         }
     }
@@ -107,6 +111,10 @@ pub enum SettingKind {
     KeyboardShortcuts,
     /// Where the library is kept. Shown, not changed here; it has no Reset.
     LibraryFolder,
+    /// Settings → Sync (plan S29): the Sync folder, this device's name, Sync now, the status
+    /// and the Synced devices, Stop syncing (`sync.*`, [`Session::sync_panel`]). Before a
+    /// folder is chosen, only what Sync is and Choose Sync folder…. It has no Reset.
+    Sync,
     /// A button that runs a command: something to do, not a value, so it has no Reset. With
     /// `confirm`, the Tab asks first (it cannot be undone).
     Action {
@@ -134,7 +142,7 @@ impl Setting {
     pub fn has_reset(&self) -> bool {
         !matches!(
             self.kind,
-            SettingKind::Action { .. } | SettingKind::LibraryFolder
+            SettingKind::Action { .. } | SettingKind::LibraryFolder | SettingKind::Sync
         )
     }
 }
@@ -576,6 +584,14 @@ pub const SETTINGS: &[Setting] = &[
         },
     ),
     setting(
+        "sync",
+        S::Sync,
+        crate::sync::texts::SECTION,
+        crate::sync::texts::ONBOARDING,
+        "sync cloud icloud dropbox onedrive google drive syncthing devices folder computers iphone ipad",
+        SettingKind::Sync,
+    ),
+    setting(
         "auto_update_check",
         S::Updates,
         "Check for updates automatically",
@@ -688,7 +704,9 @@ impl Session {
             SettingKind::KeyboardShortcuts => {
                 !(self.key_bindings().iter()).any(crate::key_bindings::KeyBinding::is_custom)
             }
-            SettingKind::LibraryFolder | SettingKind::Action { .. } => return None,
+            SettingKind::LibraryFolder | SettingKind::Action { .. } | SettingKind::Sync => {
+                return None;
+            }
         })
     }
 }
@@ -782,7 +800,7 @@ fn reset(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         SettingKind::KeyboardShortcuts => {
             s.run("keys.reset_all", &Value::Null)?;
         }
-        SettingKind::LibraryFolder | SettingKind::Action { .. } => {
+        SettingKind::LibraryFolder | SettingKind::Action { .. } | SettingKind::Sync => {
             return Err(failed(format!("“{}” has no default", setting.label)));
         }
     }

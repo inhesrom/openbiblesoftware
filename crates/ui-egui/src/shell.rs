@@ -72,6 +72,7 @@ mod search_tab;
 mod search_views;
 mod settings_tab;
 mod starter_tab;
+mod sync_ui;
 mod text_size_controls;
 mod theme_editor_window;
 mod tile_handles;
@@ -281,6 +282,8 @@ pub(crate) struct State {
     settings_ui: settings_tab::SettingsUi,
     /// The Back up & restore Tab's file dialog and restore preview (#217).
     backups_ui: backups_tab::BackupsUi,
+    /// Settings → Sync's state (plan S29).
+    sync_ui: sync_ui::SyncUi,
     /// The Report a problem window and how folders are shown (#219).
     pub(crate) report_ui: report_problem::ReportProblemUi,
     /// The Last session has a save due that a later frame must make (#219): set when a
@@ -415,6 +418,7 @@ impl Shell {
                 keys_ui: Default::default(),
                 settings_ui: Default::default(),
                 backups_ui: Default::default(),
+                sync_ui: Default::default(),
                 report_ui: Default::default(),
                 save_due: false,
                 timed_tab: TimedTab::default(),
@@ -1129,6 +1133,8 @@ impl Shell {
         self.st.poll_csv_picker();
         self.st.poll_zip_dialog();
         self.st.poll_folder_opening();
+        // A sync due (plan S29) runs here, on the Session's connection; none without a folder.
+        self.st.sync_frame(ui.ctx());
         self.st.launch_update_check(ui.ctx());
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
@@ -1433,6 +1439,8 @@ impl Shell {
                 if self.st.home_button(ui) {
                     self.apply_effects();
                 }
+                // Sync's status (plan S29), once a Sync folder is chosen.
+                self.st.sync_indicator(ui);
                 ui.min_rect().width()
             });
             // What the Launchers leave room for next frame: the right side and gaps.
@@ -3864,6 +3872,7 @@ impl State {
         self.collection_editor_window(&ctx);
         self.page_tone_hint_ui(&ctx);
         self.update_notice(&ctx);
+        self.sync_restore_prompt(&ctx);
         self.coach_mark(&ctx);
         self.report_problem_window(&ctx);
         if let Some((msg, t)) = &self.toast {

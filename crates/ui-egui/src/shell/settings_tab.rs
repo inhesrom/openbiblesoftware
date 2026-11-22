@@ -62,6 +62,11 @@ impl State {
     }
 
     pub(super) fn settings_body(&mut self, ui: &mut Ui, tab: TabId) {
+        // Opened by Sync's status indicator: it shows Sync (plan S29).
+        if self.sync_ui.show_in == Some(tab) {
+            self.sync_ui.show_in = None;
+            self.tabs.entry(tab).or_default().filter = obs_engine::sync::texts::SECTION.to_string();
+        }
         let query = (self.tabs.get(&tab))
             .map(|t| t.filter.trim().to_lowercase())
             .unwrap_or_default();
@@ -122,6 +127,11 @@ impl State {
     /// One Setting: its name (a check box for an on/off one) and Reset link, the line saying
     /// what it does, and its control.
     fn setting_row(&mut self, ui: &mut Ui, setting: &'static Setting, query: &str) -> Run {
+        // Sync is its section's one row: its own words under the section's title (plan S29).
+        if matches!(setting.kind, SettingKind::Sync) {
+            ui.add_space(space::M);
+            return self.sync_setting(ui);
+        }
         let mut run = None;
         let is_default = self.session.setting_is_default(setting.id);
         ui.add_space(space::M);
@@ -387,6 +397,7 @@ impl State {
             SettingKind::Action { command, confirm } => {
                 run = self.action(ui, setting, command, confirm);
             }
+            SettingKind::Sync => run = self.sync_setting(ui),
         }
         run
     }
