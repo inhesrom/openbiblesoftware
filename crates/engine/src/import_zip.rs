@@ -19,9 +19,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// The folder in the library folder where Imports unpack and the Mobile app's picked files
-/// wait (`<library>/imports/`). The library's scan reads only `.obr` files beside it.
-pub const IMPORTS_DIR: &str = "imports";
+pub use crate::import::IMPORTS_DIR;
 
 /// Most bytes a zip Import decompresses (a SWORD module unpacked, or a USFM zip's file read).
 pub const ZIP_IMPORT_LIMIT: u64 = 512 * 1024 * 1024;

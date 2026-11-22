@@ -19,6 +19,8 @@ use obs_mobile::ReaderId;
 
 uniffi::setup_scaffolding!();
 
+mod import;
+pub use import::{ImportReport, ImportState, ReportSection};
 mod library;
 pub use library::{
     DownloadOrigin, DownloadPlan, DownloadRequest, DownloadRow, DownloadState, LicenceClass,
@@ -598,6 +600,8 @@ pub enum Changed {
     },
     /// Library → Starter library, Get Resources or a download changed.
     Downloads,
+    /// An Import's report changed (`import_report`).
+    Imports,
 }
 
 impl From<obs_mobile::Changed> for Changed {
@@ -608,6 +612,7 @@ impl From<obs_mobile::Changed> for Changed {
             obs_mobile::Changed::History => Self::History,
             obs_mobile::Changed::Message(text) => Self::Message { text },
             obs_mobile::Changed::Downloads => Self::Downloads,
+            obs_mobile::Changed::Imports => Self::Imports,
         }
     }
 }

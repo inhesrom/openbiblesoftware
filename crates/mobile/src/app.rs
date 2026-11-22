@@ -104,6 +104,10 @@ pub struct MobileApp {
     pub(crate) saved_session: Option<String>,
     /// The downloads planned this run (`library`).
     pub(crate) downloads: Vec<crate::library::Download>,
+    /// The files named for an Import this run, and their Imports (`import`).
+    pub(crate) picked: Vec<crate::import::Picked>,
+    /// The number of the next Import.
+    pub(crate) next_import: u64,
 }
 
 impl MobileApp {
@@ -133,6 +137,7 @@ impl MobileApp {
             })?;
         }
         crate::library::sweep_stale_downloads(&paths.downloads);
+        crate::import::sweep_imports(&paths.library.join(obs_engine::import::IMPORTS_DIR));
         let mut session = Session::new(jobs);
         let mut problems: Vec<String> = (session.library.scan(&paths.library).into_iter())
             .map(|(f, e)| format!("{}: {e}", f.display()))
@@ -169,6 +174,8 @@ impl MobileApp {
             events: EventState::default(),
             saved_session: None,
             downloads: Vec::new(),
+            picked: Vec::new(),
+            next_import: 1,
         };
         app.restore_readers();
         // What boot itself queued (a message from the User database, the readers' Visits)

@@ -19,6 +19,11 @@ use crate::{
 /// up for it); the Session builds it in the background instead (#58).
 pub const DEFERRED_INDEX: &str = "Search index: built in the background";
 
+/// The folder in the library folder where Imports unpack and the Mobile app's picked files
+/// wait (`<library>/imports/`, `crate::import_zip`). The library's scan reads only `.obr`
+/// files beside it.
+pub const IMPORTS_DIR: &str = "imports";
+
 /// Shown when nothing can build the Search index here (no cache directory).
 pub const UNAVAILABLE_INDEX: &str = "Search index: unavailable (no cache folder)";
 

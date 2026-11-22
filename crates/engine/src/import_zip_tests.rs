@@ -13,6 +13,7 @@ use crate::import_zip::{
     IMPORTS_DIR, USFM_BESIDE_SWORD, ZIP_IMPORT_ENTRIES, ZIP_IMPORT_LIMIT, ZipBounds, ZipKind,
     read_usfm_zip, sword_layout, unpack_sword_zip, zip_kind,
 };
+use crate::testing::{sword_module_files, web_usfm_files, zip_files};
 use crate::*;
 
 fn fixture(name: &str) -> (Session, PathBuf) {
@@ -27,62 +28,16 @@ fn fixture(name: &str) -> (Session, PathBuf) {
     (s, root)
 }
 
-fn sword_assets() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/sword")
-}
-
-/// Every file under `dir`, as (path relative to `dir` with `/`, bytes), sorted.
-fn files_under(dir: &Path, prefix: &str) -> Vec<(String, Vec<u8>)> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        for entry in std::fs::read_dir(&d).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                stack.push(path);
-            } else {
-                let rel = path
-                    .strip_prefix(dir)
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.push((format!("{prefix}{rel}"), std::fs::read(&path).unwrap()));
-            }
-        }
-    }
-    out.sort();
-    out
-}
-
-/// The ObsKjvOsis test module's files (its conf and its zText data) under `prefix`.
 fn kjv_module(prefix: &str) -> Vec<(String, Vec<u8>)> {
-    let mut files = vec![(
-        format!("{prefix}mods.d/obskjvosis.conf"),
-        std::fs::read(sword_assets().join("mods.d/obskjvosis.conf")).unwrap(),
-    )];
-    files.extend(files_under(
-        &sword_assets().join("modules/texts/ztext/obskjvosis"),
-        &format!("{prefix}modules/texts/ztext/obskjvosis/"),
-    ));
-    files
+    sword_module_files("obskjvosis.conf", "texts/ztext/obskjvosis", prefix)
 }
 
-/// The ObsNotes test module's files under `prefix`.
 fn notes_module(prefix: &str) -> Vec<(String, Vec<u8>)> {
-    let mut files = vec![(
-        format!("{prefix}mods.d/obsnotes.conf"),
-        std::fs::read(sword_assets().join("mods.d/obsnotes.conf")).unwrap(),
-    )];
-    files.extend(files_under(
-        &sword_assets().join("modules/comments/rawcom/obsnotes"),
-        &format!("{prefix}modules/comments/rawcom/obsnotes/"),
-    ));
-    files
+    sword_module_files("obsnotes.conf", "comments/rawcom/obsnotes", prefix)
 }
 
 fn web_books(prefix: &str) -> Vec<(String, Vec<u8>)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/usfm/web");
-    files_under(&dir, prefix)
+    web_usfm_files(prefix)
 }
 
 fn options() -> zip::write::SimpleFileOptions {
@@ -90,12 +45,7 @@ fn options() -> zip::write::SimpleFileOptions {
 }
 
 fn write_zip(path: &Path, files: &[(String, Vec<u8>)]) {
-    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
-    for (name, bytes) in files {
-        zip.start_file(name.as_str(), options()).unwrap();
-        zip.write_all(bytes).unwrap();
-    }
-    zip.finish().unwrap();
+    std::fs::write(path, zip_files(files)).unwrap();
 }
 
 /// Import the zip at `path` as the Mobile app does; return the Resource id.
@@ -519,14 +469,7 @@ fn an_obr_copy_is_moved_into_the_library_and_a_second_revision_replaces_it() {
 fn a_sword_zip_whose_module_the_importer_refuses_fails_after_unpacking_and_leaves_no_temp_folder() {
     let (mut s, root) = fixture("sword-unsupported");
     let zip = root.join("picked/hebrewnotes.zip");
-    let mut files = vec![(
-        "mods.d/obshebrewnotes.conf".to_string(),
-        std::fs::read(sword_assets().join("mods.d/obshebrewnotes.conf")).unwrap(),
-    )];
-    files.extend(files_under(
-        &sword_assets().join("modules/comments/rawcom/obshebrewnotes"),
-        "modules/comments/rawcom/obshebrewnotes/",
-    ));
+    let files = sword_module_files("obshebrewnotes.conf", "comments/rawcom/obshebrewnotes", "");
     write_zip(&zip, &files);
     let id = import_zip(&mut s, &zip);
     let (error, message) = failed_with(&s, &id);
