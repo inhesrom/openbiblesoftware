@@ -17,7 +17,7 @@ struct StudySetOfferSheet: View {
                         .accessibilityIdentifier("offer.message")
                     if let size = offer.size {
                         Text(size)
-                            .font(.headline)
+                            .fontWeight(.semibold)
                             .accessibilityIdentifier("offer.size")
                     }
                     if let status = offer.status {
@@ -30,28 +30,35 @@ struct StudySetOfferSheet: View {
                     }
                     Text(offer.network)
                         .accessibilityIdentifier("offer.network")
+                    // Label-coloured buttons: the system blue on white is short of the
+                    // audit's contrast (as S06 found for secondary text).
                     VStack(spacing: 12) {
                         if let retry = offer.retry {
-                            Button(retry) { model.offerRetry() }
-                                .buttonStyle(.bordered)
-                                .accessibilityIdentifier("offer.retry")
+                            Button { model.offerRetry() } label: {
+                                Text(retry).frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("offer.retry")
                         }
                         Button { model.offerDownload() } label: {
-                            Text(offer.download).frame(maxWidth: .infinity, minHeight: 44)
+                            Text(offer.download).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(offer.size == nil)
                         .accessibilityIdentifier("offer.download")
                         Button { model.offerNotNow() } label: {
-                            Text(offer.notNow).frame(maxWidth: .infinity, minHeight: 44)
+                            Text(offer.notNow).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("offer.notNow")
                     }
+                    .controlSize(.large)
+                    .tint(Color(.label))
                     Text(offer.later)
                         .font(.footnote)
                         .accessibilityIdentifier("offer.later")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
             .navigationTitle(offer.title)

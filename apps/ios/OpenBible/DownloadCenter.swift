@@ -121,11 +121,17 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         }
         let origin = Self.origin(request.origin)
         let item = Item(id: request.resourceId, origin: origin, file: file, url: request.url, resumed: false)
-        let running: Bool = locked {
+        let stale: URLSessionDownloadTask? = locked {
             files["\(origin)/\(request.resourceId)"] = file
-            return tasks[file].map { $0.state == .running || $0.state == .suspended } ?? false
+            return tasks[file].flatMap { $0.state == .running || $0.state == .suspended ? $0 : nil }
         }
-        if running { return }
+        if let stale {
+            // The same file from the same URL: it carries on. From another (a new release, a
+            // mirror), it is replaced.
+            if Self.decode(stale)?.url == request.url { return }
+            locked { _ = cancelled.insert(Self.key(stale)) }
+            stale.cancel()
+        }
         begin(item, cellular: request.cellular)
     }
 
@@ -299,6 +305,15 @@ final class DownloadCenter: NSObject, URLSessionDownloadDelegate, @unchecked Sen
 
     /// Transfers that were running before a relaunch: known again by their files.
     private func reconnect(_ found: [URLSessionDownloadTask]) {
+        #if DEBUG
+            // Test harness: a launch in a fresh test folder (`OBS_TEST_APP_FOLDER`) has no
+            // download from before; an earlier test's transfers are stopped.
+            if ProcessInfo.processInfo.environment["OBS_TEST_APP_FOLDER"] != nil {
+                locked { for task in found { cancelled.insert(Self.key(task)) } }
+                for task in found { task.cancel() }
+                return
+            }
+        #endif
         locked {
             for task in found {
                 guard let item = Self.decode(task), task.state == .running || task.state == .suspended else { continue }

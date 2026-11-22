@@ -57,9 +57,12 @@ struct DownloadBanner: View {
     let text: String
 
     var body: some View {
-        Label(text, systemImage: "arrow.down.circle")
-            .font(.subheadline)
-            .accessibilityIdentifier("library.banner")
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "arrow.down.circle").accessibilityHidden(true)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("library.banner")
     }
 }
 
@@ -116,7 +119,7 @@ struct StarterRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.headline)
+                Text(row.title).font(.headline).fixedSize(horizontal: false, vertical: true)
                 Text([row.abbreviation, row.size].joined(separator: " · "))
                 if !row.license.isEmpty { Text(row.license) }
                 ForEach(row.features, id: \.self) { Text($0).font(.footnote) }
@@ -237,7 +240,7 @@ struct OpenRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.headline)
+                Text(row.title).font(.headline).fixedSize(horizontal: false, vertical: true)
                 Text([row.abbreviation, row.publisher].joined(separator: " · "))
                 Text([row.licence, licenceClassLabel(class: row.licenceClass)].joined(separator: " · "))
             }

