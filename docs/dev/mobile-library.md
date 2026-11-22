@@ -30,20 +30,36 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     `?per_page=20`, parsed by `updates::parse_releases`), newest first, skipping drafts and
     pre-releases, at most `RELEASES_SEARCHED` (20), fetching each release's
     `starter-manifest.json` asset until one has this app's format; it stops at the first
-    older format. That release's asset folder (`…/releases/download/<tag>/`) becomes
-    `StarterLibrary::files_base()`, so its `.obr` files come from the same release. If none
-    matches (or the latest is older than this app's format) `needs_app_update()` is true and
-    the error says to update the app; the rows stay the bundle's. The releases list is read
-    only on a format mismatch, and only when the user opens the Starter library or starts a
-    download (#333 "Network"); every request goes through the shell's transport.
+    older format. That release's asset folder becomes `StarterLibrary::files_base()`, so its
+    `.obr` files come from the same release; from GitHub's list it must be
+    `https://github.com/<owner>/<repo>/releases/download/<tag>/` of this app's repository
+    (`release_files_base`: the owner and repository of `RELEASE_DOWNLOADS`, a tag free of
+    `/`, `?` and `#`), or the check fails. A releases API set with `set_releases_api` (a
+    mirror, a `file://` list in tests) is trusted for its own assets. If none matches,
+    `needs_app_update()` is true and the error says to update the app; the rows stay as they
+    were. If the latest release's format is older than this app's (a test build ahead of
+    the releases), the error says so and that a release of this format is needed;
+    `needs_app_update()` stays false. The releases list is read only on a format mismatch,
+    and only when the user opens the Starter library, starts a download or hands in a file
+    the manifest does not list (#333 "Network"); every request goes through the shell's
+    transport.
+  - **Kept on the device** (`RELEASED_PREF`, `starter-library.released`, a device-only
+    preference, never synced): the released manifest found and its pinned files base. A
+    launch with the switch on reads it in `sync_starter_library`, so the rows, Study set and
+    `files_base()` are the last release's before any check, and a transfer that finishes
+    after a relaunch is still known. The desktop never reads or writes it.
   - With the switch off the desktop keeps its either/or (the bundle's manifest, else the
     released one) and its refusal of another format ("Starter library manifest format 2
     (this app reads 1)"); `starter.check` with a bundle stays a no-op for the rows.
 - **Installing files the shell downloaded.**
-  `Session::add_starter_from_files(items, &[(id, path)])` is the Starter download's `install`
-  with each file read from disk: every file checked against its sha256, staged, then all put
-  in place or none; they join the Library as a download does (a Removed one is no longer
-  removed). `Session::install_open_file(entry, path)` imports an Open catalogue file as
+  `Session::add_starter_from_files(items, &[(id, path)])` submits a job running the Starter
+  download's `install` with each file read from disk: every file checked against its sha256,
+  staged, then all put in place or none. `StarterLibrary::file_install(job)` is its
+  `FileInstallPhase` (`Verifying`, `Installing` once every file is verified, `Installed`,
+  `Failed(why)`) until `forget_file_install`; when it finishes the pump's `poll_starter`
+  applies `starter_added`, so they join the Library as a download does (a Removed one is no
+  longer removed). While it runs, `is_starter_downloading` is true for its ids (the
+  desktop's Remove refusal, `StarterStatus::Adding`). `Session::install_open_file(entry, path)` imports an Open catalogue file as
   `download_open` does (`ImportSource::OpenDownloaded`: the pinned sha256 or the pinned
   licence notice, then the importer) with no report Tab. Either deletes a file once it has
   read it, so a refused file is downloaded again for Retry.
@@ -65,21 +81,30 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     `DownloadRequest` names the URL (`files_base()<id>.obr`), the size, the file in
     `downloads/` the shell writes, and whether the transfer may use cellular data.
     `plan_open_download(entry, …)` does the same for an Open catalogue entry (its size is not
-    known: the space check is skipped and the cellular question says so).
-  - `download_rule`: free space first (`WontFit` with both sizes when `space_needed` exceeds
-    the free bytes the shell passes), then the network: on Wi-Fi, start (cellular allowed
-    only with "Use cellular data"); on cellular with it on, start; with it off, `AskCellular`
-    with the size, and asking again with `cellular_confirmed` starts it over cellular.
+    known: it needs `OPEN_DOWNLOAD_FLOOR`, 100 MB, free, and the cellular question says so).
+  - `download_rule`: free space first (`WontFit` with both sizes when `space_needed`, or the
+    floor, exceeds the free bytes the shell passes less what the downloads already planned
+    need), then the network: on Wi-Fi, start (cellular allowed only with "Use cellular
+    data"); on cellular with it on, start; with it off, `AskCellular` with the size, and
+    asking again with `cellular_confirmed` starts it over cellular.
   - Download states: `Queued` → `Downloading { done, total }` (`download_progress`) →
     `Verifying` → `Installing` → `Indexing` → `Done`, or `Failed { message, retry }`
     (`download_failed` from the shell; a refused file from `install_downloaded`).
-    `install_downloaded(id, path, origin)` checks and installs a Starter file before it
-    returns (it holds the core's lock for the copy: call it off the main thread) and starts an
-    Open catalogue import on the job queue; it also accepts a finished transfer the core does
-    not know (one that completed after a relaunch). `cancel_download` forgets a queued,
-    downloading or failed download and deletes its file. The pump moves Open imports and
-    Search index builds on, and reports `Changed::Downloads` whenever the Starter library or a
-    download changes.
+    `install_downloaded(id, path, origin)` takes only the file the core named for it (in
+    `downloads/`; any other path is refused and not deleted), and starts a job: a Starter
+    file's `add_starter_from_files` (it returns `Verifying`), an Open catalogue import
+    (`Installing`); the core's lock is not held while either reads, hashes or copies. A call
+    for a download already verifying, installing, indexing or done is ignored (its state is
+    returned). It also accepts a finished transfer the core does not know (one that
+    completed after a relaunch): with the kept released manifest it installs at once; a
+    Starter Resource that manifest does not list stays `Queued`, its file kept, while a
+    released manifest check runs (it starts one), and is installed when the check lists it,
+    refused (file deleted) when the check lists it not or finds no release this app reads,
+    and keeps waiting after a check that failed. `cancel_download` forgets a queued,
+    downloading or failed download and deletes its file. The pump moves Starter installs,
+    Open imports and Search index builds on (a download that fails there has its file
+    deleted: an Import cancelled before it read it), and reports `Changed::Downloads`
+    whenever the Starter library or a download changes.
   - `download_banner()`: "Downloading 4 Resources · 12.0 MB of 40.0 MB", "Building the
     Search index of 2 Resources", "1 download failed", or nothing.
   - `open_catalogue(LicenceFilter)`: the Open catalogue rows the desktop's licence filter
@@ -88,8 +113,14 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   - `remove_resource(id, confirmed)`: without `confirmed`, the question
     (`library.remove`'s, with the Annotations that refer to it); then removed as on the
     desktop. A removed Starter Resource stays removed (on this device; ADR 0022): never added
-    back by a launch, left out of the Study set. A Resource a reader shows is not removed
-    (the reader would lose its Tab); the error says to show another Resource first.
+    back by a launch, left out of the Study set. While its Starter download is active
+    (queued to installing) it is refused with the desktop's words ("… is being downloaded
+    with the Starter library. Cancel the download, or wait for it to finish, then remove
+    it."): the download would add it back. A reader that shows it moves on first: the second
+    reader of a Split view closes (`Changed::Reader(1)`; `readers()` no longer lists it); the
+    reader switches to the first other Resource of the same type in Preferred order through
+    `tab.parallel`, else to the first other Resource it can show; only when there is none is
+    the removal refused ("… is the only Resource the reader can show").
   - `storage()`: `library_storage` with titles and sizes in words.
 - **`obs-ffi`** (`apps/obs-ffi/src/library.rs`): the Swift-implemented `Transport { get(url)
   -> bytes }` (foreign trait; errors `TransportError.notFound | rateLimited | network`, an
@@ -102,8 +133,9 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
 
 | What | Where |
 |---|---|
-| Downloads in flight | `<root>/downloads/<id>.obr` (Starter), `<root>/downloads/open-<entry>.download` (Open catalogue); deleted once installed, refused or cancelled |
+| Downloads in flight | `<root>/downloads/<id>.obr` (Starter), `<root>/downloads/open-<entry>.download` (Open catalogue); deleted once installed, refused or cancelled; at boot, a file there older than `STALE_DOWNLOAD` (24 h) is deleted |
 | Starter state (known, removed) | User database preference `starter-library`, as on the desktop (per device) |
+| The released manifest last fetched and its pinned files base | User database preference `starter-library.released` (device-only, `DEVICE_PREFERENCES`) |
 | The releases list | `https://api.github.com/repos/inhesrom/openbiblesoftware/releases?per_page=20`, only on a manifest format mismatch |
 | The release's files | `https://github.com/inhesrom/openbiblesoftware/releases/latest/download/`, or the pinned `…/releases/download/<tag>/` |
 | Space a download needs | 2.5 × its size: the file, its staged copy, room for its Search index (the Study set's indexes are 0.34 of its files) |
@@ -118,16 +150,26 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   the app verified, installed and deleted (a mismatch adds nothing); a newer manifest format
   looked past (drafts and pre-releases skipped) to the release this app reads, its files
   pinned; no release of this format (and an older format stopping the search): the
-  update-the-app state, and the desktop's refusal unchanged; storage per Resource.
+  update-the-app state, and the desktop's refusal unchanged; a latest release older than
+  this app's format (not "update the app"); only this app's release downloads pinned from
+  GitHub's list (`file://` lists keep their own); the released manifest and its pinned
+  files kept for the next launch (the desktop neither reads nor writes it); a downloaded
+  file's install job, Verifying then Installing; storage per Resource.
   `#[ignore]`d over `dist/starter`: the real Bundled set, then TBESG from the release, 22
   rows before and after (0.3 s for TBESG, release build).
 - `crates/engine/src/open_catalogue_tests.rs`: an Open catalogue file downloaded by the app,
   refused by its licence notice (deleted, Failed), then imported (no report Tab).
 - `crates/mobile/src/library_tests.rs` (`cargo test -p obs-mobile library`): the rows before
   and after the release; the Study set through every state into the library; a sha256
-  mismatch deletes the file and offers Retry; Cancel; the cellular and free-space rules;
-  Remove, a relaunch, Add back from the bundle and by download; the Open catalogue's licence
-  filter and download; Storage. `#[ignore]`d over `dist/starter`: the real Study set (15
+  mismatch deletes the file and offers Retry; Cancel; the cellular and free-space rules
+  (what is already planned counts; the Open floor); Remove, a relaunch, Add back from the
+  bundle and by download; Remove refused while the Resource's download is under way; a
+  transfer handed in after a relaunch installed (boot → plan → drop → boot → install), and
+  one the kept manifest does not list waiting for the check; a file the core did not name
+  refused and left alone; a second hand-in ignored; a cancelled Import's file deleted and
+  stale downloads swept at boot; removing a reader's Resource (the reader switches, the
+  second reader closes, the only Resource refused); the Open catalogue's licence filter and
+  download; Storage. `#[ignore]`d over `dist/starter`: the real Study set (15
   Resources, 136.6 MB) through the states, 19 Resources in the library and 22 rows (installed
   in 0.13 s, indexed by 3.3 s, release build; Storage 226.4 MB).
 - `apps/obs-ffi/tests/library.rs`: the Study set fetched through a Rust `Transport` standing
