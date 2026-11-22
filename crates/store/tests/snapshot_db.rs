@@ -10,7 +10,9 @@
 use std::path::PathBuf;
 
 use obs_store::annotation::new_id;
-use obs_store::{Change, Notebook, Row, RowKey, SNAPSHOT_EMPTIED, SYNCED_TABLES, UserStore};
+use obs_store::{
+    Annotation, Change, Content, Notebook, Row, RowKey, SNAPSHOT_EMPTIED, SYNCED_TABLES, UserStore,
+};
 use rusqlite::Connection;
 use rusqlite::types::Value;
 
@@ -175,6 +177,68 @@ fn a_snapshot_never_holds_what_stays_on_the_device() {
         first_child.is_none_or(|c| last_parent.is_none_or(|p| p < c)),
         "parents first"
     );
+}
+
+#[test]
+fn a_snapshots_bytes_hold_no_local_string_nor_the_text_of_a_note_deleted_before_the_join() {
+    let dir = Dir::new("raw");
+    let (user, _) = UserStore::open(&dir.0.join("user.db")).unwrap();
+    // Each local string one word of its own, as the Notes search index would keep it.
+    user.record_visit("Zqxvisitlabel", "{\"v\":\"Zqxvisitplace\"}")
+        .unwrap();
+    user.save_last_session("{\"tabs\":[\"Zqxsession\"]}")
+        .unwrap();
+    user.save_resource_names(&[(
+        "zqxresource".into(),
+        "Zqxabbrev".into(),
+        "Zqxresourcename".into(),
+    )])
+    .unwrap();
+    for (key, value) in [
+        ("search.history", "[\"Zqxsearched\"]"),
+        ("view", "{\"theme\":\"Zqxtheme\"}"),
+    ] {
+        user.set_preference(key, value).unwrap();
+    }
+    let default = user.notebooks().unwrap().remove(0);
+    let note = |body: &str| Annotation {
+        id: new_id(),
+        notebook_id: default.id.clone(),
+        content: Content::Note { body: body.into() },
+        anchor: None,
+        created_at: 1,
+        modified_at: 1,
+        conflict_of: None,
+    };
+    let deleted = note("Zqxdeletednote words");
+    user.apply_changes(&[Change::insert(Row::Annotation(deleted.clone()))])
+        .unwrap();
+    user.apply_changes(&[Change::delete(Row::Annotation(deleted))])
+        .unwrap();
+    let kept = note("Zqxkeptnote");
+    user.apply_changes(&[Change::insert(Row::Annotation(kept))])
+        .unwrap();
+    user.join_sync().unwrap();
+    let bytes = user.snapshot_bytes().unwrap().to_ascii_lowercase();
+    let holds = |s: &str| {
+        let s = s.to_ascii_lowercase();
+        bytes.windows(s.len()).any(|w| w == s.as_bytes())
+    };
+    for local in [
+        "Zqxvisitlabel",
+        "Zqxvisitplace",
+        "Zqxsession",
+        "Zqxresource",
+        "Zqxabbrev",
+        "Zqxsearched",
+        "Zqxtheme",
+        "Zqxdeletednote",
+    ] {
+        assert!(!holds(local), "`{local}` left the device");
+    }
+    assert!(holds("Zqxkeptnote"), "a Note's text is Synced data");
+    // It still reads back as a Backup.
+    user.open_snapshot(&user.snapshot_bytes().unwrap()).unwrap();
 }
 
 #[test]

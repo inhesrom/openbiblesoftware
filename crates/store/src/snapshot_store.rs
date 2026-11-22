@@ -5,9 +5,10 @@
 //! op files it covers: [`UserStore::snapshot_bytes`] copies the database, empties what stays on
 //! the device ([`SNAPSHOT_EMPTIED`], and every preference that is not Synced data) and
 //! vacuums it, so nothing local leaves the device (rule 4). It keeps the synced tables with
-//! their clocks, the Anchors and `notes_fts`, every tombstone (what it covers, a parent's
-//! row), the item clocks (positions, list bases), the `device` row (the id of the device that
-//! wrote it), `applied_up_to` (the clocks it covers: for each device the last of its op files
+//! their clocks and the Anchors (not `notes_fts`, the Notes search index, which is emptied:
+//! it stays on the device), every tombstone (what it covers, a parent's row), the item clocks
+//! (positions, list bases), the `device` row (the id of the device that wrote it),
+//! `applied_up_to` (the clocks it covers: for each device the last of its op files
 //! merged, for its own id the last of its own written) and `sync_held` (ops of files it covers
 //! that it could not apply yet, which a device starting from it would otherwise never see).
 //!
@@ -274,8 +275,16 @@ impl UserStore {
                     .map_err(sql)?;
             }
         }
+        // The Notes search index stays on the device (ADR 0022): its segments keep the words
+        // of deleted Notes until they merge, so it is emptied and merged into nothing
+        // (`optimize`; `delete-all` is only for an index without its own content). No reader
+        // of a snapshot searches it.
         copy.conn
-            .execute_batch("UPDATE device SET restore_choice = 0; VACUUM;")
+            .execute_batch(
+                "DELETE FROM notes_fts;
+                 INSERT INTO notes_fts (notes_fts) VALUES ('optimize');
+                 UPDATE device SET restore_choice = 0; VACUUM;",
+            )
             .map_err(sql)?;
         let mut bytes = copy
             .conn
