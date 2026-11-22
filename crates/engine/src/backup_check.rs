@@ -328,6 +328,11 @@ impl Session {
                 "Starter library",
                 self.starter.state().and_then(written),
             ),
+            held(
+                crate::starter::RELEASED_PREF,
+                "Starter library list",
+                self.starter.saved_release(),
+            ),
         ];
         for guide in crate::Guide::ALL {
             out.push(held(

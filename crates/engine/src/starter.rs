@@ -520,6 +520,17 @@ impl StarterLibrary {
         self.released.as_ref()
     }
 
+    /// What [`RELEASED_PREF`] holds for the released manifest now: with
+    /// [`Self::released_leads`] only, once there is one.
+    pub(crate) fn saved_release(&self) -> Option<String> {
+        let manifest = self.released.clone().filter(|_| self.released_leads)?;
+        serde_json::to_string(&SavedRelease {
+            manifest,
+            base: self.released_base.clone(),
+        })
+        .ok()
+    }
+
     /// The bundle's manifest, when there is a bundle.
     pub fn bundled(&self) -> Option<&StarterManifest> {
         self.bundled.as_ref()
@@ -903,10 +914,12 @@ fn copy_bundle_extras(bundle: &Path, lib: &Path, id: &str) {
 struct Installed(Vec<LibraryEntry>);
 
 impl Session {
-    /// Read the [`StarterState`] from the User database just attached.
+    /// Read the [`StarterState`] (and, with released leads, the [`RELEASED_PREF`]) from the
+    /// User database just attached.
     pub(crate) fn reload_starter_state(&mut self) {
         self.starter.state_loaded = false;
         self.load_starter_state();
+        self.load_released_manifest();
     }
 
     fn load_starter_state(&mut self) {
@@ -1443,16 +1456,10 @@ impl Session {
 
     /// Keep the released manifest and its pinned files on this device ([`RELEASED_PREF`]).
     fn save_released_manifest(&mut self) {
-        let (Some(user), Some(manifest)) = (&self.user, &self.starter.released) else {
+        let (Some(user), Some(json)) = (&self.user, self.starter.saved_release()) else {
             return;
         };
-        let saved = SavedRelease {
-            manifest: manifest.clone(),
-            base: self.starter.released_base.clone(),
-        };
-        let result = serde_json::to_string(&saved)
-            .map_err(|e| e.to_string())
-            .and_then(|json| user.set_preference(RELEASED_PREF, &json));
+        let result = user.set_preference(RELEASED_PREF, &json);
         if let Err(e) = result {
             self.workspace.push_effect(crate::Effect::Message(format!(
                 "Could not save the Starter library list: {e}"
@@ -1460,12 +1467,12 @@ impl Session {
         }
     }
 
-    /// With [`StarterLibrary::released_leads`], at launch: the released manifest last fetched
-    /// on this device, and its pinned files, until a check fetches it again. One of another
-    /// format, or that does not parse, is ignored.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// With [`StarterLibrary::released_leads`], at launch (and when a User database is
+    /// attached): the released manifest last fetched on this device, and its pinned files,
+    /// until a check fetches it again. One of another format, or that does not parse, is
+    /// ignored.
     fn load_released_manifest(&mut self) {
-        if !self.starter.released_leads || self.starter.released.is_some() {
+        if !self.starter.released_leads {
             return;
         }
         let saved = (self.user.as_ref())
