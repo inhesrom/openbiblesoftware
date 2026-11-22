@@ -412,21 +412,19 @@ pub fn snapshot_due(
     let Some((covered, name)) = newest_snapshot(folder, &device)? else {
         return Ok(true);
     };
-    if written <= covered {
-        // One the others cannot read (partly written, changed, damaged) is written again, or
-        // a device writing no more ops would never be met by one joining.
-        return Ok(matches!(
-            read_snapshot(user, folder, &device, &name)?,
-            SnapshotRead::NotWhole(_)
-        ));
-    }
-    if written - covered >= policy.after_files {
+    let by_policy = written > covered
+        && (written - covered >= policy.after_files
+            || last_op_wall_ms(folder, &device, covered + 1)?
+                .is_some_and(|wall| now_ms.saturating_sub(wall) >= policy.after_ms));
+    if by_policy {
         return Ok(true);
     }
-    Ok(match last_op_wall_ms(folder, &device, covered + 1)? {
-        Some(wall) => now_ms.saturating_sub(wall) >= policy.after_ms,
-        None => false,
-    })
+    // One the others cannot read (partly written, changed, damaged) is written again: a
+    // device writing few ops or none would otherwise leave one joining stopped on it.
+    Ok(matches!(
+        read_snapshot(user, folder, &device, &name)?,
+        SnapshotRead::NotWhole(_)
+    ))
 }
 
 /// The wall time of the last op in `device`'s op file `seq`, if it is there and whole.

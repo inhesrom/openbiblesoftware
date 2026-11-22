@@ -284,11 +284,14 @@ impl UserStore {
                 .map_err(sql)?;
             c.pragma_update(None, "page_size", live).map_err(sql)?;
             c.execute_batch("VACUUM").map_err(sql)?;
-            Staged::File(c, file)
+            Staged::File {
+                conn: c,
+                _file: file,
+            }
         };
         let source = match &staged {
             Staged::Memory(store) => &store.conn,
-            Staged::File(c, _) => c,
+            Staged::File { conn, .. } => conn,
         };
         let syncing = self.syncs()?;
         let own = crate::sync_device::read_own_ids(&self.conn)?;
@@ -439,7 +442,10 @@ impl UserStore {
 /// page size (the connection is closed before the file is removed: fields drop in order).
 enum Staged {
     Memory(UserStore),
-    File(Connection, ScratchFile),
+    File {
+        conn: Connection,
+        _file: ScratchFile,
+    },
 }
 
 struct ScratchFile(PathBuf);
