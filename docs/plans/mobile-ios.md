@@ -2146,7 +2146,8 @@ under the half they belong to.
   e2e). **Verified:** `cargo test -p obs-store --all-features`; `cargo test -p obs-engine
   --lib sync`; the merge property tests, 1,000 cases and 10,000 from the default seed and
   10,000 from `OBS_MERGE_SEED=777000`, green; `cargo xtask sync-e2e` green; `cargo xtask
-  gallery` green with no golden changed; `cargo xtask ci` (below). S30's entry now says how
+  gallery` green with no golden changed; `cargo xtask ci` green (10 m 23 s; 2,467 tests passed, 44 ignored; fmt, layers, assets,
+  licenses, clippy, a11y, test, wasm). S30's entry now says how
   iOS plugs in ("Added by S29b").
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
