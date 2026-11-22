@@ -154,7 +154,7 @@ impl From<obs_mobile::ResourceType> for ResourceType {
 
 /// One Resource of the library.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct LibraryItem {
+pub struct LibraryResource {
     pub resource_id: String,
     pub title: String,
     pub abbreviation: String,
@@ -163,8 +163,8 @@ pub struct LibraryItem {
     pub right_to_left: bool,
 }
 
-impl From<obs_mobile::LibraryItem> for LibraryItem {
-    fn from(r: obs_mobile::LibraryItem) -> Self {
+impl From<obs_mobile::LibraryResource> for LibraryResource {
+    fn from(r: obs_mobile::LibraryResource) -> Self {
         Self {
             resource_id: r.resource_id,
             title: r.title,
@@ -742,8 +742,8 @@ impl MobileApp {
     }
 
     /// The library's Resources, in Preferred order.
-    pub fn library(&self) -> Result<Vec<LibraryItem>, MobileError> {
-        self.read(|a| a.library().into_iter().map(LibraryItem::from).collect())
+    pub fn library(&self) -> Result<Vec<LibraryResource>, MobileError> {
+        self.read(|a| a.library().into_iter().map(LibraryResource::from).collect())
     }
 
     /// Every reader, first one first.
@@ -853,9 +853,9 @@ impl MobileApp {
     }
 
     /// The Resources the reader can switch to: its Resource type's, in Preferred order.
-    pub fn parallel_resources(&self, reader: u32) -> Result<Vec<LibraryItem>, MobileError> {
+    pub fn parallel_resources(&self, reader: u32) -> Result<Vec<LibraryResource>, MobileError> {
         let items = self.read(|a| a.parallel_resources(ReaderId(reader)))??;
-        Ok(items.into_iter().map(LibraryItem::from).collect())
+        Ok(items.into_iter().map(LibraryResource::from).collect())
     }
 
     // The hosted text view.

@@ -69,7 +69,7 @@ pub(crate) fn failed(e: obs_engine::CommandError) -> MobileError {
 
 /// One Resource of the library, as the library list shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LibraryItem {
+pub struct LibraryResource {
     pub resource_id: String,
     pub title: String,
     pub abbreviation: String,
@@ -186,11 +186,11 @@ impl MobileApp {
     }
 
     /// The library's Resources, in Preferred order.
-    pub fn library(&self) -> Vec<LibraryItem> {
+    pub fn library(&self) -> Vec<LibraryResource> {
         let library = &self.session.library;
         (library.preferred_order().iter())
             .filter_map(|id| library.get(id))
-            .map(|e| LibraryItem {
+            .map(|e| LibraryResource {
                 resource_id: e.manifest.resource_id.clone(),
                 title: e.manifest.title.clone(),
                 abbreviation: e.manifest.abbreviation.clone(),

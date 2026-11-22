@@ -1,15 +1,15 @@
 import OpenBibleCore
 import SwiftUI
 
-/// S07 prototype (#331): the reader screen. The chrome is deliberately plain (the screen
-/// anatomy is #335's); every choice and answer in it comes from the core. Its own labels and
-/// chrome colours are Swift's, an accepted prototype gap (`docs/dev/mobile-text-view.md`).
+/// The reader screen (S07's, on the designed core surface; S14a builds the real one). The
+/// chrome is deliberately plain (the screen anatomy is #335's); every choice and answer in it
+/// comes from the core. Its own labels and chrome colours are Swift's, an accepted prototype
+/// gap (`docs/dev/mobile-text-view.md`).
 struct ReaderScreen: View {
     @Bindable var model: ReaderModel
     @State private var reference = ""
     @State private var showBooks = false
     @State private var showAbout = false
-    let hello: HelloModel
 
     var body: some View {
         switch model.state {
@@ -52,7 +52,7 @@ struct ReaderScreen: View {
                     }
                 Menu {
                     Picker("Bible", selection: Binding(get: { model.bible }, set: { model.open(bible: $0) })) {
-                        ForEach(model.bibles, id: \.id) { Text($0.label).tag($0.id) }
+                        ForEach(model.bibles, id: \.resourceId) { Text($0.abbreviation).tag($0.resourceId) }
                     }
                     Picker("Page tone", selection: Binding(get: { model.tone }, set: { model.setTone($0) })) {
                         ForEach(model.tones, id: \.id) { Text($0.label).tag($0.id) }
@@ -97,7 +97,7 @@ struct ReaderScreen: View {
             }
         }
         .sheet(item: $model.sheet) { sheet in
-            StudySheetStubView(stub: sheet.stub)
+            StudySheetStubView(verse: sheet.verse, word: sheet.word)
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showBooks) {
@@ -107,35 +107,33 @@ struct ReaderScreen: View {
             }
         }
         .sheet(isPresented: $showAbout) {
-            // Boots a second core over the same folder: the S06 check, kept for comparison.
-            HelloView(model: hello).task { await hello.start() }
+            AboutView(app: model.app)
         }
     }
 }
 
-/// The Study sheet stub (S16 builds the real one): what the core says a tap opened.
+/// The Study sheet stub (S16 builds the real one): what the core says a tap is on.
 struct StudySheetStubView: View {
-    let stub: StudySheetStub
+    let verse: HitVerse
+    let word: HitWord?
 
     var body: some View {
         NavigationStack {
             List {
-                if let word = stub.word {
+                if let word {
                     Section("Word") {
-                        Text(word).font(.title2).accessibilityIdentifier("sheet.word")
-                        if let strongs = stub.strongs {
-                            LabeledContent("Strong's", value: strongs).accessibilityIdentifier("sheet.strongs")
-                        }
-                        if let lemma = stub.lemma { LabeledContent("Lemma", value: lemma) }
-                        if let gloss = stub.gloss { LabeledContent("Gloss", value: gloss) }
+                        Text(word.written).font(.title2).accessibilityIdentifier("sheet.word")
+                        LabeledContent("Strong's", value: word.strongs).accessibilityIdentifier("sheet.strongs")
+                        if let lemma = word.lemma { LabeledContent("Lemma", value: lemma) }
+                        if let gloss = word.gloss { LabeledContent("Gloss", value: gloss) }
                     }
                 }
                 Section("Verse") {
-                    Text(stub.verseText)
-                    Text(stub.crossReferenceLabel).accessibilityIdentifier("sheet.crossReferences")
+                    Text(verse.text)
+                    Text(verse.crossReferenceLabel).accessibilityIdentifier("sheet.crossReferences")
                 }
             }
-            .navigationTitle(stub.title)
+            .navigationTitle(verse.title)
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("sheet")
         }

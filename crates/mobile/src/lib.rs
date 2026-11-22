@@ -28,7 +28,7 @@ mod settings;
 mod text_input;
 pub mod tokens;
 
-pub use app::{LibraryItem, MobileApp, MobileError};
+pub use app::{LibraryResource, MobileApp, MobileError};
 pub use events::Changed;
 pub use frame::{
     AROUND, BAND, Footnote, FootnoteMarkerHit, Hit, HitVerse, HitWord, MAX_TILE_PX, ReaderFrame,

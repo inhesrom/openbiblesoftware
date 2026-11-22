@@ -2,14 +2,21 @@ import SwiftUI
 
 @main
 struct OpenBibleApp: App {
-    @State private var hello = HelloModel()
-    @State private var reader = ReaderModel()
+    /// The reader screen's model; the core under it is `AppCore.shared`, one per process.
+    @State private var reader = ReaderModel(app: .shared)
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            // S07 prototype: the reader. The S06 hello screen is its About sheet.
-            ReaderScreen(model: reader, hello: hello)
+            ReaderScreen(model: reader)
                 .task { await reader.start() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background: AppCore.shared.background()
+            case .active: AppCore.shared.resume()
+            default: break
+            }
         }
     }
 }

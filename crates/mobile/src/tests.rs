@@ -119,7 +119,7 @@ fn first_launch_installs_the_bundled_set_and_opens_the_first_bible_at_its_start(
     let readers = app.readers();
     assert_eq!(readers.len(), 1);
     let first = &readers[0];
-    let bibles: Vec<LibraryItem> = (app.library().into_iter())
+    let bibles: Vec<LibraryResource> = (app.library().into_iter())
         .filter(|r| r.resource_type == ResourceType::Bible)
         .collect();
     assert_eq!(

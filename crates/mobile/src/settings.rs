@@ -6,7 +6,7 @@ use obs_engine::Session;
 use obs_engine::appearance::{FontSlot, PageTone, TEXT_SIZE_MAX, TEXT_SIZE_MIN, Theme};
 use serde_json::json;
 
-use crate::app::{LibraryItem, failed};
+use crate::app::{LibraryResource, failed};
 use crate::{MobileApp, MobileError, ReaderId};
 
 /// One choice of a setting, and its name in the shell's menus.
@@ -173,7 +173,10 @@ impl MobileApp {
 
     /// The Resources reader `reader` can switch to (CONTEXT.md: Parallel resources): every
     /// Resource of its Resource type, in Preferred order, its own among them.
-    pub fn parallel_resources(&self, reader: ReaderId) -> Result<Vec<LibraryItem>, MobileError> {
+    pub fn parallel_resources(
+        &self,
+        reader: ReaderId,
+    ) -> Result<Vec<LibraryResource>, MobileError> {
         let ty = self.reader_at(reader)?.view.doc.manifest.resource_type;
         Ok((self.library().into_iter())
             .filter(|r| r.resource_type == ty)
