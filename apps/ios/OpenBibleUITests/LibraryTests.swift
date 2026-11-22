@@ -124,8 +124,9 @@ final class LibraryTests: XCTestCase {
         shot(app, "s24-offer", dark: true)
         try audit(app)
 
-        // Slow enough that the transfers are still running when the app is suspended.
-        server.throttle(2 * 1024 * 1024)
+        // Slow enough (about 45 s in all) that the transfers outlast the app's time in the
+        // background before it is suspended.
+        server.throttle(512 * 1024)
         app.buttons["offer.download"].tap()
         XCTAssertTrue(app.buttons["offer.download"].waitForNonExistence(timeout: 10), "the offer stayed")
         let banner = app.buttons["reader.banner"]
@@ -133,15 +134,17 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(banner.label.hasPrefix("Downloading "), banner.label)
         shot(app, "s24-banner", dark: true)
 
-        // Suspended: the system carries the transfers on.
+        // Away: the system carries the transfers on while the app is in the background (the
+        // simulator may keep it running there rather than suspend it; the state is printed).
+        let before = banner.label
+        sleep(2)
+        let sent = server.bytesServed
         XCUIDevice.shared.press(.home)
-        // Suspended, or running in the background while the system hands it its sessions'
-        // events.
-        let away = NSPredicate { _, _ in app.state == .runningBackgroundSuspended || app.state == .runningBackground }
-        expectation(for: away, evaluatedWith: nil)
-        waitForExpectations(timeout: 20)
-        print("suspended: app state \(app.state.rawValue), banner was \(banner.label)")
-        sleep(8)
+        let suspended = app.wait(for: .runningBackgroundSuspended, timeout: 20)
+        XCTAssertNotEqual(app.state, .runningForeground)
+        let away = server.bytesServed - sent
+        print("away: suspended \(suspended) (state \(app.state.rawValue)), \(away) bytes sent while away; banner was \(before)")
+        XCTAssertGreaterThan(away, 5_000_000, "the transfers stopped while the app was away")
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
         // Every transfer done, checked and installed: the core's banner goes (it stays while

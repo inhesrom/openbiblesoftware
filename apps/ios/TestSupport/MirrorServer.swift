@@ -25,6 +25,7 @@ final class MirrorServer: @unchecked Sendable {
     private var _held: Set<String> = []
     private var _bytesPerSecond: Int?
     private var _signedLifetime: TimeInterval = 600
+    private var _bytesServed: UInt64 = 0
     private(set) var port: UInt16 = 0
 
     init(root: URL) throws {
@@ -57,6 +58,9 @@ final class MirrorServer: @unchecked Sendable {
     var base: String { "http://127.0.0.1:\(port)/" }
 
     var requests: [Request] { locked { _requests } }
+
+    /// The body bytes sent so far, on every connection.
+    var bytesServed: UInt64 { locked { _bytesServed } }
 
     /// Serve these file names with their bytes changed (a sha256 mismatch).
     func corrupt(_ names: Set<String>) { locked { _corrupt = names } }
@@ -179,6 +183,7 @@ final class MirrorServer: @unchecked Sendable {
                 try? handle.close()
                 return connection.cancel()
             }
+            self.locked { self._bytesServed += UInt64(chunk.count) }
             let next = offset + UInt64(chunk.count)
             let delay = rate.map { Double(chunk.count) / Double($0) } ?? 0
             self.queue.asyncAfter(deadline: .now() + delay) {
