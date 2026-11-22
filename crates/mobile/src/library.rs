@@ -14,7 +14,8 @@
 //! downloads it again; Cancel forgets the download and deletes what the shell wrote. A
 //! Starter file the core cannot place yet (handed in after a relaunch, of a Resource the
 //! released manifest kept on the device does not list) stays `Queued`, its file kept, until
-//! a check of the released manifest lands.
+//! a check of the released manifest lands. A transfer the core does not know (one the system
+//! carried on across a relaunch) is adopted by its first progress, failure or finished file.
 
 use std::path::{Path, PathBuf};
 
@@ -100,7 +101,9 @@ pub fn download_label(state: &DownloadState) -> String {
 /// The device's network as the shell sees it, and the "Use cellular data" setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Network {
-    pub is_wifi: bool,
+    /// On Wi-Fi (or another path that is not cellular); `None` while the shell does not know
+    /// yet (before its first path update), which counts as not Wi-Fi: Download asks first.
+    pub is_wifi: Option<bool>,
     /// "Use cellular data" (off by default, #333).
     pub allow_cellular: bool,
 }
@@ -361,18 +364,22 @@ pub fn download_rule(
             });
         }
     }
-    if network.is_wifi {
+    if network.is_wifi == Some(true) {
         return Ok(network.allow_cellular);
     }
     if network.allow_cellular || cellular_confirmed {
         return Ok(true);
     }
     let size = bytes.map_or_else(|| "its size is not known".to_string(), megabytes);
+    let network = match network.is_wifi {
+        Some(_) => "You are not on Wi-Fi",
+        None => "The network is not known yet",
+    };
     Err(DownloadPlan::AskCellular {
         bytes,
         message: format!(
-            "Download {what} ({size}) over cellular data? You are not on Wi-Fi, and Use \
-             cellular data is off."
+            "Download {what} ({size}) over cellular data? {network}, and Use cellular data is \
+             off."
         ),
     })
 }
@@ -639,7 +646,37 @@ impl MobileApp {
             .ok_or_else(|| MobileError::Failed(format!("No download of {id} is planned")))
     }
 
-    /// The shell's transfer of `id` has `done` of `total` bytes.
+    /// The download of `id`; for a transfer the core does not know (one still running, or
+    /// finished or failed, after a relaunch), a new one, `Queued`, at the file the core names
+    /// for it, so it shows in the rows and the banner, can be cancelled and counts in the
+    /// free space the downloads need.
+    fn adopted(&mut self, id: &str, origin: DownloadOrigin) -> &mut Download {
+        let i =
+            match (self.downloads.iter()).position(|d| d.resource_id == id && d.origin == origin) {
+                Some(i) => i,
+                None => {
+                    let bytes = match origin {
+                        DownloadOrigin::Starter => self.starter_item(id).map(|i| i.bytes),
+                        DownloadOrigin::Open => None,
+                    };
+                    self.downloads.push(Download {
+                        resource_id: id.to_string(),
+                        origin,
+                        file: self.download_file(id, origin),
+                        bytes,
+                        state: DownloadState::Queued,
+                        installed: None,
+                        job: None,
+                        waiting: false,
+                    });
+                    self.downloads.len() - 1
+                }
+            };
+        &mut self.downloads[i]
+    }
+
+    /// The shell's transfer of `id` has `done` of `total` bytes. One the core does not know
+    /// (still running after a relaunch) is adopted.
     pub fn download_progress(
         &mut self,
         id: &str,
@@ -647,7 +684,7 @@ impl MobileApp {
         done: u64,
         total: u64,
     ) -> Result<(), MobileError> {
-        let d = self.tracked(id, origin)?;
+        let d = self.adopted(id, origin);
         if matches!(
             d.state,
             DownloadState::Queued | DownloadState::Downloading { .. }
@@ -659,14 +696,15 @@ impl MobileApp {
     }
 
     /// The shell's transfer of `id` failed (no network, a server error): Retry downloads it
-    /// again. A partial file is deleted.
+    /// again. A partial file is deleted. One the core does not know (it failed after a
+    /// relaunch) is adopted, so the failure shows.
     pub fn download_failed(
         &mut self,
         id: &str,
         origin: DownloadOrigin,
         message: &str,
     ) -> Result<(), MobileError> {
-        let d = self.tracked(id, origin)?;
+        let d = self.adopted(id, origin);
         let _ = std::fs::remove_file(&d.file);
         d.state = DownloadState::Failed {
             message: message.to_string(),
@@ -728,16 +766,9 @@ impl MobileApp {
                 return Ok(d.state.clone());
             }
             Some(_) => {}
-            None => self.downloads.push(Download {
-                resource_id: id.to_string(),
-                origin,
-                file: named.clone(),
-                bytes: None,
-                state: DownloadState::Queued,
-                installed: None,
-                job: None,
-                waiting: false,
-            }),
+            None => {
+                self.adopted(id, origin);
+            }
         }
         let state = match origin {
             DownloadOrigin::Starter => {

@@ -53,6 +53,8 @@ pub struct StudySetOffer {
     pub not_now: String,
     /// The label of the button that fetches the list again, after a failure.
     pub retry: Option<String>,
+    /// The released Starter library list is being looked up (`status` says so).
+    pub looking_up: bool,
 }
 
 /// "Use cellular data", as the setting is named everywhere.
@@ -95,6 +97,7 @@ impl MobileApp {
         let error = (!known && !starter.is_checking())
             .then(|| starter.error())
             .flatten();
+        let looking_up = !known && error.is_none();
         let status = match (known, error) {
             (true, _) => None,
             (false, Some(e)) => Some(format!(
@@ -102,12 +105,19 @@ impl MobileApp {
             )),
             (false, None) => Some("Looking up the Study set…".to_string()),
         };
-        let network = if network.is_wifi {
-            "You are on Wi-Fi.".to_string()
+        // Not known yet counts as not Wi-Fi ([`Network::is_wifi`]); the shell asks again
+        // when its path changes.
+        let now = match network.is_wifi {
+            Some(true) => "You are on Wi-Fi.",
+            Some(false) => "You are not on Wi-Fi.",
+            None => "Checking the network.",
+        };
+        let network = if network.is_wifi == Some(true) {
+            now.to_string()
         } else if network.allow_cellular {
-            format!("You are not on Wi-Fi. {USE_CELLULAR_LABEL} is on, so it downloads now.")
+            format!("{now} {USE_CELLULAR_LABEL} is on, so it downloads now.")
         } else {
-            "You are not on Wi-Fi. Download asks before it uses cellular data.".to_string()
+            format!("{now} Download asks before it uses cellular data.")
         };
         Some(StudySetOffer {
             title: "Get the Study set".into(),
@@ -125,6 +135,7 @@ impl MobileApp {
             download: "Download".into(),
             not_now: "Not now".into(),
             retry: error.is_some().then(|| "Try again".to_string()),
+            looking_up,
         })
     }
 

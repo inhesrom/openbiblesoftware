@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use obs_engine::starter::MobileSet as EngineSet;
 use obs_engine::testing::{mobile_starter_library, write_mobile_starter_bundle};
 use obs_ffi::{
-    DownloadPlan, DownloadState, MobileApp, MobileSet, Network, StarterChoice, StarterRowStatus,
-    Transport, TransportError,
+    DownloadOrigin, DownloadPlan, DownloadState, MobileApp, MobileSet, Network, StarterChoice,
+    StarterRowStatus, Transport, TransportError,
 };
 
 const MIRROR: &str = "https://mirror.test/starter/";
@@ -81,7 +81,7 @@ fn the_study_set_is_fetched_through_the_shells_transport_and_installed() {
     assert_eq!(view.rows.len(), 7);
     assert_eq!(view.study_set.resources, 4);
     let wifi = Network {
-        is_wifi: true,
+        is_wifi: Some(true),
         allow_cellular: false,
     };
     let plan = app
@@ -167,7 +167,7 @@ fn the_cellular_setting_the_study_set_offer_and_the_words_cross_the_ffi() {
         || MobileApp::boot(s(&root.join("app")), Some(s(&root.join("bundle"))), None).unwrap();
     let app = boot();
     let wifi = Network {
-        is_wifi: true,
+        is_wifi: Some(true),
         allow_cellular: false,
     };
     assert!(!app.use_cellular().unwrap());
@@ -178,6 +178,15 @@ fn the_cellular_setting_the_study_set_offer_and_the_words_cross_the_ffi() {
         .unwrap()
         .expect("offered at the first launch");
     assert_eq!(offer.size, None);
+    assert!(offer.looking_up);
+    let unknown = Network {
+        is_wifi: None,
+        allow_cellular: false,
+    };
+    assert!(
+        (app.study_set_offer(unknown).unwrap().unwrap().network)
+            .starts_with("Checking the network.")
+    );
     app.study_set_offer_shown().unwrap();
     app.set_transport(Arc::new(Mirror {
         dir: root.join("release"),
@@ -191,6 +200,16 @@ fn the_cellular_setting_the_study_set_offer_and_the_words_cross_the_ffi() {
     assert_eq!(
         offer.size.as_deref(),
         Some(app.starter_library().unwrap().study_set.label.as_str())
+    );
+    assert!(!offer.looking_up);
+    // A transfer the core does not know (still running after a relaunch) is adopted.
+    app.download_progress("tbesg".into(), DownloadOrigin::Starter, 1, 2)
+        .unwrap();
+    let rows = app.downloads().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].state,
+        DownloadState::Downloading { done: 1, total: 2 }
     );
     drop(app);
     let app = boot();

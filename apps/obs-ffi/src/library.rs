@@ -182,7 +182,8 @@ pub fn download_label(state: DownloadState) -> String {
 /// The network as the shell sees it, and "Use cellular data".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct Network {
-    pub is_wifi: bool,
+    /// `None` while the shell does not know yet: counts as not Wi-Fi.
+    pub is_wifi: Option<bool>,
     pub allow_cellular: bool,
 }
 
@@ -470,6 +471,7 @@ pub struct StudySetOffer {
     pub download: String,
     pub not_now: String,
     pub retry: Option<String>,
+    pub looking_up: bool,
 }
 
 impl From<obs_mobile::StudySetOffer> for StudySetOffer {
@@ -484,6 +486,7 @@ impl From<obs_mobile::StudySetOffer> for StudySetOffer {
             download: o.download,
             not_now: o.not_now,
             retry: o.retry,
+            looking_up: o.looking_up,
         }
     }
 }
