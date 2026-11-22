@@ -752,6 +752,24 @@ fn words_verses_rects_and_copy_come_from_the_text_under_a_point() {
 }
 
 #[test]
+fn moving_an_offset_in_a_document_with_no_text_stays_at_zero() {
+    let (_root, mut app) = app("no-units");
+    let r = bsb(&mut app);
+    let mut doc = obs_reading::ReadingDoc::from_resource(bsb_john_1());
+    doc.units.clear();
+    doc.blocks.clear();
+    doc.verses.clear();
+    let reader = &app.readers[r.0 as usize];
+    let (tab, settings) = (reader.tab, *reader.view.settings());
+    let view = obs_reading::ReadingView::new(std::sync::Arc::new(doc), settings);
+    let empty = ReaderId(app.readers.len() as u32);
+    app.readers.push(crate::readers::Reader::new(tab, view));
+    assert_eq!(app.text_end(empty), Ok(0));
+    assert_eq!(app.move_offset(empty, 0, 3), Ok(0));
+    assert_eq!(app.move_offset(empty, 7, -2), Ok(0));
+}
+
+#[test]
 fn one_accessibility_element_per_verse_in_reading_order() {
     let (_root, mut app) = app("a11y");
     let r = bsb(&mut app);
@@ -837,6 +855,19 @@ fn the_pump_reports_each_change_once() {
     );
     assert!(app.pump().is_empty(), "once");
     assert!(!app.busy());
+}
+
+#[test]
+fn on_resume_tells_the_shell_to_redraw_history() {
+    let (_root, mut app) = app("resume");
+    bsb(&mut app);
+    app.navigate(R0, "John 1:14").unwrap();
+    app.save_session().unwrap();
+    let _ = app.pump();
+    let days = app.history();
+    app.on_resume();
+    assert_eq!(app.pump(), vec![Changed::History]);
+    assert_eq!(app.history(), days, "the same day");
 }
 
 /// The real Bundled set (`apps/ios/Bundled/starter` from `cargo xtask ios bundled-set`), else

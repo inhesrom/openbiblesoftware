@@ -1019,6 +1019,29 @@ mod tests {
         assert_eq!(engine_version(), obs_mobile::MobileApp::engine_version());
     }
 
+    #[test]
+    fn a_lock_poisoned_by_a_panic_stops_every_later_call() {
+        let root = std::env::temp_dir().join(format!("obs-ffi-poison-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = MobileApp::boot(root.to_string_lossy().into_owned(), None, None).unwrap();
+        assert!(app.library().is_ok());
+        let holder = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _core = app.lock().unwrap();
+            panic!("an internal error while the core is locked");
+        }));
+        assert!(holder.is_err());
+        assert_eq!(app.library().unwrap_err(), stopped());
+        assert_eq!(app.reader(0).unwrap_err(), stopped());
+        assert_eq!(app.poll_changed().unwrap_err(), stopped());
+        assert_eq!(app.on_resume().unwrap_err(), stopped());
+        assert!(matches!(
+            app.navigate(0, "Jn 3:16".into()),
+            Err(MobileError::Stopped { .. })
+        ));
+        drop(app);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The bytes `Vec<u8>`'s own (per-item) lowering makes, and `TilePixels`'.
     fn lowered(bytes: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
         let vec = <Vec<u8> as uniffi::Lower<crate::UniFfiTag>>::lower(bytes.clone());

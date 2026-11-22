@@ -182,6 +182,47 @@ fn the_pump_thread_tells_the_observer_what_changed() {
     );
 }
 
+/// Wait up to 5 s for `done`.
+fn eventually(done: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !done() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    done()
+}
+
+#[test]
+fn the_pump_thread_ends_with_its_observer_or_the_app() {
+    let (_root, app) = app("pump-ends");
+    // Each pump thread holds its observer until it ends.
+    let first = Arc::new(Heard::default());
+    app.set_observer(first.clone()).unwrap();
+    assert_eq!(Arc::strong_count(&first), 2);
+    let second = Arc::new(Heard::default());
+    app.set_observer(second.clone()).unwrap();
+    assert!(
+        eventually(|| Arc::strong_count(&first) == 1),
+        "a replaced observer's thread ends"
+    );
+    assert_eq!(Arc::strong_count(&second), 2);
+    drop(app);
+    assert!(
+        eventually(|| Arc::strong_count(&second) == 1),
+        "the app's drop ends its thread"
+    );
+}
+
+#[test]
+fn on_resume_tells_the_observer_history_may_have_changed() {
+    let (_root, app) = app("resume");
+    assert!(app.poll_changed().is_ok());
+    app.on_resume().unwrap();
+    assert!(
+        app.poll_changed().unwrap().contains(&Changed::History),
+        "the day headings are redrawn"
+    );
+}
+
 /// The Bundled set `cargo xtask ios bundled-set` copies, or the whole Starter library.
 fn real_bundle() -> Option<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -228,6 +269,10 @@ fn write_png(path: &Path, tile: &Tile) {
     png.set_color(png::ColorType::Rgba);
     png.set_depth(png::BitDepth::Eight);
     // Every pixel is opaque, so premultiplied and straight alpha are the same bytes.
+    assert!(
+        (tile.rgba.0.as_chunks::<4>().0.iter()).all(|p| p[3] == 255),
+        "a transparent pixel"
+    );
     png.write_header()
         .unwrap()
         .write_image_data(&tile.rgba.0)
