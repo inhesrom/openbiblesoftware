@@ -54,8 +54,9 @@ jobs:
   ios:
     name: iOS build and tests (simulator)
     runs-on: macos-latest
-    # S32's stop-and-ask is a job over 30 minutes; this only stops a hung simulator.
-    timeout-minutes: 45
+    # S32's stop-and-ask is a job over 30 minutes; this only stops a hung simulator. 60, not
+    # 45, since S24's LibraryTests and DownloadTests download the Study set several times.
+    timeout-minutes: 60
     permissions:
       contents: read
       # `gh run download` of starter.yml's artifact from another run.
