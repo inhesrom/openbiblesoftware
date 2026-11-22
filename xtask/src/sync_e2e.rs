@@ -84,14 +84,20 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
         ),
         &json!([
             { "click": SYNCED, "after_secs": 2.0 },
-            { "when": "Synced devices", "after_secs": 1.0, "shot": shot("1-a-joined") },
+            // The Backup is made at a frame, which a software renderer reaches late.
+            { "when": "Synced devices", "after_secs": 1.0, "after_file": backup, "shot": shot("1-a-joined") },
         ]),
         &shot("1-a-joined"),
+        None,
     )?;
     ensure!(backup.is_file(), "A's Backup was not written");
 
-    // 2. B joins with "From B" and turns Word forms on.
+    // 2. B joins with "From B" and turns Word forms on. Its last steps wait until that
+    // change is in the folder, however late a software renderer reaches the frames that make
+    // and sync it.
     eprintln!("sync-e2e: B joins");
+    let b_sent = work.join("b-sent-word-forms");
+    let word_forms_sent = || folder_sets_word_forms(&folder, "true");
     run_app(
         &app,
         &b,
@@ -103,15 +109,20 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
              70 sync.now"
         ),
         &json!([
-            { "click": SYNCED, "after_secs": 5.0 },
+            { "click": SYNCED, "after_secs": 2.0, "after_file": b_sent },
             { "when": "Synced devices", "after_secs": 1.0, "shot": shot("2-b-joined") },
         ]),
         &shot("2-b-joined"),
+        Some((&b_sent, &word_forms_sent)),
     )?;
     let after_b = State::read(&b)?;
     ensure!(
         after_b.has(&["From A", "From B"]) && after_b.word_forms.as_deref() == Some("true"),
         "B did not take A's Notebook: {after_b:?}"
+    );
+    ensure!(
+        !after_b.pending,
+        "B stopped with changes not synced: {after_b:?}"
     );
 
     // 3. A takes B's changes at launch, makes "After backup", restores and catches up.
@@ -130,6 +141,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             { "when": "Synced devices", "after_secs": 1.0, "shot": shot("4-a-caught-up") },
         ]),
         &shot("4-a-caught-up"),
+        None,
     )?;
     let caught_up = State::read(&a)?;
     ensure!(
@@ -155,6 +167,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             { "when": "Synced devices", "after_secs": 1.0, "shot": shot("5-a-replaced") },
         ]),
         &shot("5-a-replaced"),
+        None,
     )?;
     let replaced = State::read(&a)?;
     ensure!(
@@ -177,6 +190,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             { "when": "Synced devices", "after_secs": 1.0, "shot": shot("6-b-converged") },
         ]),
         &shot("6-b-converged"),
+        None,
     )?;
     let (a_now, b_now) = (State::read(&a)?, State::read(&b)?);
     ensure!(
@@ -213,13 +227,36 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Whether an op file in the Sync folder `folder` sets Word forms to `value`: a device's
+/// change of it reached the folder.
+fn folder_sets_word_forms(folder: &Path, value: &str) -> bool {
+    use obs_engine::sync::ops::{OpFileRead, decode_op_file};
+    let Ok(devices) = fs::read_dir(folder.join(obs_engine::sync::DEVICES_DIR)) else {
+        return false;
+    };
+    (devices.filter_map(Result::ok))
+        .filter_map(|device| fs::read_dir(device.path().join("ops")).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|file| fs::read(file.path()).ok())
+        .any(|bytes| match decode_op_file(&bytes) {
+            OpFileRead::Whole(ops) => ops.iter().any(|op| {
+                matches!(&op.after, Some(obs_store::Row::Preference(p))
+                    if p.key == WORD_FORMS && p.value == value)
+            }),
+            _ => false,
+        })
+}
+
 /// Run the app on the data in `data` with `script` and `steps`, until `last` is written.
+/// With `go`, its file is written (for a step's `after_file`) once its check holds.
 fn run_app(
     app: &Path,
     data: &Path,
     script: &str,
     steps: &serde_json::Value,
     last: &Path,
+    go: Option<(&Path, &dyn Fn() -> bool)>,
 ) -> Result<()> {
     fs::create_dir_all(data)?;
     let mut cmd = update_e2e::command(app, data, Some(NO_UPDATES));
@@ -233,6 +270,12 @@ fn run_app(
     let started = Instant::now();
     let logs = data.join("logs");
     while !last.exists() {
+        if let Some((go, ready)) = go
+            && !go.exists()
+            && ready()
+        {
+            fs::write(go, b"")?;
+        }
         if let Some(status) = child.try_wait()? {
             bail!(
                 "the app exited ({status}) before {} was written:\n{}",
@@ -264,6 +307,8 @@ struct State {
     notebooks: BTreeSet<String>,
     word_forms: Option<String>,
     folder: Option<String>,
+    /// Changes recorded and not yet synced.
+    pending: bool,
 }
 
 impl State {
@@ -275,6 +320,7 @@ impl State {
             notebooks: store.notebooks()?.into_iter().map(|n| n.name).collect(),
             word_forms: store.preference(WORD_FORMS)?,
             folder: store.preference(obs_engine::SYNC_FOLDER_PREF)?,
+            pending: store.has_pending_ops()?,
         })
     }
 
