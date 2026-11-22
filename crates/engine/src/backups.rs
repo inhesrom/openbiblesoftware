@@ -201,6 +201,9 @@ impl Session {
         path: &Path,
         backup: &dyn crate::persist::UserData,
     ) -> Result<PathBuf, String> {
+        // A syncing device syncs first, so edits not yet written reach the folder before the
+        // restore replaces them; its Sync folder is put back after (plan S29).
+        let sync_folder = self.sync_before_restore();
         let Some(mut user) = self.user.take() else {
             return Err(NO_USER.into());
         };
@@ -212,6 +215,17 @@ impl Session {
                 return Err(e);
             }
         };
+        // The Sync folder stays on the device: the Backup's (another computer's, or none from
+        // before this device synced) never starts, stops or moves this device's sync.
+        let restored = (user.preference(crate::sync_session::SYNC_FOLDER_PREF))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if restored != sync_folder
+            && let Err(e) = user.set_preference(crate::sync_session::SYNC_FOLDER_PREF, &sync_folder)
+        {
+            log::warn!("the Sync folder could not be kept after the restore: {e}");
+        }
         // Reload everything the Session keeps of the User database, as at launch: a
         // preference the Backup does not have is back at its default.
         self.forget_user_preferences();

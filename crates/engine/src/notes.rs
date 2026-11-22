@@ -42,6 +42,11 @@ use crate::library::Library;
 use crate::session::Session;
 use crate::workspace::{Effect, OpenRequest, TabId, TabKind, Tool};
 
+/// Whether Needs attention lists `a`: an Orphaned annotation or a Sync conflict's copy.
+pub fn needs_attention(a: &Annotation) -> bool {
+    a.is_orphaned() || a.conflict_of.is_some()
+}
+
 /// Longest Notes-search snippet, in characters.
 pub const SNIPPET_CHARS: usize = 220;
 
@@ -51,7 +56,8 @@ pub enum NotesFilter {
     #[default]
     All,
     Notebook(String),
-    /// **Needs attention** (#17 rule 12): the Orphaned annotations, of every Notebook.
+    /// **Needs attention** (#17 rule 12): the Orphaned annotations and Sync conflicts' copies
+    /// (ADR 0022 rule 3), of every Notebook.
     NeedsAttention,
 }
 
@@ -109,14 +115,21 @@ pub struct Card {
     pub quote: Option<String>,
     /// For a Text-range anchor whose Resource left the library: "LXX is not in the library".
     pub missing: Option<String>,
-    /// For an Orphaned annotation: why it needs attention.
+    /// For an Orphaned annotation or a Sync conflict's copy: why it needs attention.
     pub attention: Option<String>,
 }
 
 impl Card {
-    /// Whether it is an Orphaned annotation (listed under Needs attention).
+    /// Whether it is listed under Needs attention: an Orphaned annotation or a Sync
+    /// conflict's copy.
     pub fn needs_attention(&self) -> bool {
-        self.annotation.is_orphaned()
+        needs_attention(&self.annotation)
+    }
+
+    /// Whether it is a Sync conflict's copy (its actions are Keep this version, Keep the
+    /// other, Keep both and Combine).
+    pub fn is_sync_conflict(&self) -> bool {
+        self.annotation.conflict_of.is_some()
     }
 
     /// Whether following it can show its text. An Orphaned annotation's offsets point at
@@ -382,7 +395,7 @@ impl Session {
         let mut cards: Vec<Card> = self
             .annotations(only)?
             .into_iter()
-            .filter(|a| !attention_only || a.is_orphaned())
+            .filter(|a| !attention_only || needs_attention(a))
             .map(|a| self.card(a, &notebooks))
             .filter(|c| {
                 if words.is_empty() {
@@ -437,6 +450,9 @@ impl Session {
                     ", or delete it"
                 }
             )),
+            _ if a.conflict_of.is_some() => Some(crate::sync::texts::conflict_attention(
+                &anchor_label(&self.library, a.anchor.as_ref()),
+            )),
             _ => None,
         };
         Card {
@@ -475,7 +491,7 @@ impl Session {
             let listed = match &self.notes.filter {
                 NotesFilter::All => true,
                 NotesFilter::Notebook(n) => *n == a.notebook_id,
-                NotesFilter::NeedsAttention => a.is_orphaned(),
+                NotesFilter::NeedsAttention => needs_attention(&a),
             };
             if !listed {
                 self.notes.filter = NotesFilter::All;

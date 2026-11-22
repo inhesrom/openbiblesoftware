@@ -1404,8 +1404,13 @@ fn write_everything(s: &mut Session) {
 }
 
 /// Settings the trial restore does not compare: each names another record and falls back to
-/// the default when that record is gone, as at launch (see `backup_check.rs`).
-const NOT_COMPARED: &[&str] = &["highlights.palette", "annotations.last_notebook"];
+/// the default when that record is gone, as at launch (see `backup_check.rs`); and the Sync
+/// folder, which a restore never takes from the Backup (this device's is put back, plan S29).
+const NOT_COMPARED: &[&str] = &[
+    "highlights.palette",
+    "annotations.last_notebook",
+    "sync.folder",
+];
 
 /// Everything the app itself writes is kept by the trial restore: a Backup of a Session that
 /// has used every setting it can reach here previews and restores, and every setting it wrote

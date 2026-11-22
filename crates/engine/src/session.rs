@@ -113,6 +113,8 @@ pub struct Session {
     pub(crate) user_guide: crate::user_guide::UserGuide,
     /// The First-run tour (#218).
     pub(crate) tour: crate::tour::Tour,
+    /// The Sync folder, when sync runs and what it found (plan S29).
+    pub(crate) sync: crate::sync_session::SessionSync,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
@@ -170,6 +172,7 @@ impl Session {
             updates: crate::updates::Updates::default(),
             user_guide: crate::user_guide::UserGuide::default(),
             tour: crate::tour::Tour::default(),
+            sync: crate::sync_session::SessionSync::default(),
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
     }
@@ -267,6 +270,7 @@ impl Session {
         self.load_update_settings();
         self.load_tour();
         self.load_resource_text_sizes();
+        self.load_sync();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

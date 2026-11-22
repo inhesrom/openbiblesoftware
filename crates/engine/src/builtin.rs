@@ -141,6 +141,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::keyboard_navigation::COMMANDS)
         .chain(crate::settings::COMMANDS)
         .chain(crate::backups::COMMANDS)
+        .chain(crate::sync_session::COMMANDS)
         .chain(crate::drag_drop::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.

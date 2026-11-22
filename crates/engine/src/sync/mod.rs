@@ -11,7 +11,8 @@
 //! [`folder`] is how the engine reaches the folder, [`clock`] the hybrid logical clock every
 //! op carries, [`merge`] how other devices' ops and snapshots are merged here (ADR 0022 rule
 //! 3), [`snapshot`] snapshots and trimming (rule 5), [`lifecycle`] a sync and the device-id
-//! rules (`sync_now`, the restore choice, rules 6–7), [`schedule`] when sync runs (rule 8).
+//! rules (`sync_now`, the restore choice, rules 6–7), [`schedule`] when sync runs (rule 8),
+//! [`texts`] every word the shells show of it (the Session's side is `crate::sync_session`).
 //! `docs/dev/sync.md` documents the files, the merge and the contract the shells use.
 
 pub mod clock;
@@ -29,6 +30,7 @@ mod merge_props;
 mod merge_tests;
 pub mod ops;
 pub mod schedule;
+pub mod texts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod snapshot;
 #[cfg(all(test, not(target_arch = "wasm32")))]
