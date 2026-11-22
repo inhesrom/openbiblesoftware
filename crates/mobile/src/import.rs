@@ -9,6 +9,9 @@
 //! Import report ([`ImportReportView`]) is Rust's; the copy is deleted once the Import is
 //! over.
 
+// The browser build has no files to import: its stubs refuse.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use std::path::{Path, PathBuf};
 
 use obs_engine::import::{IMPORTS_DIR, LICENCE_MISSING, source_line, summary_counts};
