@@ -48,25 +48,13 @@ pub struct Settings {
     pub reading_fonts: Vec<ReadingFont>,
 }
 
-/// The Text size for UIKit's content size categories (`UIContentSizeCategory` raw values),
-/// within the app's 12–40 pt: Large is the desktop's default, 20 pt. Android's font scale
-/// can use the same bounds later (plan A4).
+/// The Text size for UIKit's content size category `category` (Dynamic Type), from
+/// [`crate::tokens::DYNAMIC_TYPE`]; an unknown category is the default Text size.
 pub fn text_size_for_content_size(category: &str) -> f32 {
-    let size: f32 = match category {
-        "UICTContentSizeCategoryXS" => 15.0,
-        "UICTContentSizeCategoryS" => 17.0,
-        "UICTContentSizeCategoryM" => 18.0,
-        "UICTContentSizeCategoryXL" => 22.0,
-        "UICTContentSizeCategoryXXL" => 24.0,
-        "UICTContentSizeCategoryXXXL" => 26.0,
-        "UICTContentSizeCategoryAccessibilityM" => 29.0,
-        "UICTContentSizeCategoryAccessibilityL" => 32.0,
-        "UICTContentSizeCategoryAccessibilityXL" => 35.0,
-        "UICTContentSizeCategoryAccessibilityXXL" => 38.0,
-        "UICTContentSizeCategoryAccessibilityXXXL" => 40.0,
-        _ => obs_engine::appearance::TEXT_SIZE_DEFAULT,
-    };
-    size.clamp(TEXT_SIZE_MIN, TEXT_SIZE_MAX)
+    (crate::tokens::DYNAMIC_TYPE.iter())
+        .find(|(c, _)| *c == category)
+        .map_or(obs_engine::appearance::TEXT_SIZE_DEFAULT, |(_, size)| *size)
+        .clamp(TEXT_SIZE_MIN, TEXT_SIZE_MAX)
 }
 
 /// Whether the chrome is dark: the Theme's own ground, or, following the system, the system
@@ -226,20 +214,10 @@ mod tests {
     fn the_content_size_table_stays_in_the_text_size_range() {
         assert_eq!(text_size_for_content_size("UICTContentSizeCategoryL"), 20.0);
         assert_eq!(text_size_for_content_size("unknown"), 20.0);
-        let all = [
-            "UICTContentSizeCategoryXS",
-            "UICTContentSizeCategoryS",
-            "UICTContentSizeCategoryM",
-            "UICTContentSizeCategoryL",
-            "UICTContentSizeCategoryXL",
-            "UICTContentSizeCategoryXXL",
-            "UICTContentSizeCategoryXXXL",
-            "UICTContentSizeCategoryAccessibilityM",
-            "UICTContentSizeCategoryAccessibilityL",
-            "UICTContentSizeCategoryAccessibilityXL",
-            "UICTContentSizeCategoryAccessibilityXXL",
-            "UICTContentSizeCategoryAccessibilityXXXL",
-        ];
+        let all: Vec<&str> = crate::tokens::DYNAMIC_TYPE
+            .iter()
+            .map(|(c, _)| *c)
+            .collect();
         let sizes: Vec<f32> = all.iter().map(|c| text_size_for_content_size(c)).collect();
         assert!(sizes.windows(2).all(|p| p[0] < p[1]), "{sizes:?}");
         assert_eq!(sizes.first(), Some(&15.0));

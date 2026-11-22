@@ -323,7 +323,7 @@ impl MobileApp {
         )?;
         let caret = |r: &ContentRect, leading: bool| ContentRect {
             x: if leading != rtl { r.x } else { r.x + r.width },
-            width: 2.0,
+            width: crate::tokens::CARET_WIDTH,
             ..*r
         };
         if let Some(r) = rects.first() {

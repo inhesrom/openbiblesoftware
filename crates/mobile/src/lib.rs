@@ -26,6 +26,7 @@ mod readers;
 mod session;
 mod settings;
 mod text_input;
+pub mod tokens;
 
 pub use app::{LibraryItem, MobileApp, MobileError};
 pub use events::Changed;
