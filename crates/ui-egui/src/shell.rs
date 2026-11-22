@@ -1133,7 +1133,8 @@ impl Shell {
         self.st.poll_csv_picker();
         self.st.poll_zip_dialog();
         self.st.poll_folder_opening();
-        // A sync due (plan S29) runs here, on the Session's connection; none without a folder.
+        // A sync due (plan S29) starts here on its worker, off the UI thread (S29b), and its
+        // result is taken here; none without a folder.
         self.st.sync_frame(ui.ctx());
         self.st.launch_update_check(ui.ctx());
         self.apply_effects();
