@@ -42,8 +42,8 @@ What the shells call, and what they show (S29, S30). Every rule is in Rust; a sh
   the default) or **Replace** (`RestoreChoice::Replace`), then syncs
   ([restores](#restores-and-copies-new-device-ids)). The question survives a restart.
 - **`SyncSchedule`** ([when sync runs](#when-sync-runs)): `at_launch(periodic)`, `resumed`,
-  `requested`, `edited(now)`, `synced(now)`, `sync_failed(now)`, `next_sync_due(now)`,
-  `is_due(now)`; `periodic` on the desktop only.
+  `requested`, `edited(now)`, `synced(started, finished)`, `sync_failed(now)`,
+  `next_sync_due(now)`, `is_due(now)`; `periodic` on the desktop only.
 - **The device's name** others show (`device.json`): `UserStore::set_device_name`.
 - Needs attention lists `UserStore::sync_conflicts()` and `UserStore::sync_held()`.
 
@@ -638,7 +638,10 @@ wrote its files (`sync_device.rs`, migration 17):
 
 Rule 8 (`schedule.rs`): at launch, on resume, about 30 seconds after the first edit not yet
 synced (`EDIT_DELAY_MS`; later edits do not push it back, so typing never holds a sync off),
-every 5 minutes while the desktop app is open (`DESKTOP_PERIOD_MS`), and on demand. A failed
+every 5 minutes while the desktop app is open (`DESKTOP_PERIOD_MS`), and on demand. An edit
+made while a sync ran (on another connection) may have missed it, so `synced(started,
+finished)` keeps a sync due 30 seconds after the first edit since the sync started (after its
+start, when an edit before it came first). A failed
 sync is due again 30 seconds on if edits wait, else at the next period, resume or request. The
 shells tell a `SyncSchedule` what happened and call `sync_now` when `next_sync_due` comes; the
 Mobile app has no period (`at_launch(false)`).

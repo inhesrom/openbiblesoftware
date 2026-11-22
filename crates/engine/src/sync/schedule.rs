@@ -18,6 +18,8 @@ pub struct SyncSchedule {
     last_sync_ms: Option<i64>,
     /// The first edit since the last sync, if any.
     first_edit_ms: Option<i64>,
+    /// The last edit, if any: one made while a sync ran may have missed it.
+    last_edit_ms: Option<i64>,
 }
 
 impl SyncSchedule {
@@ -28,6 +30,7 @@ impl SyncSchedule {
             now: true,
             last_sync_ms: None,
             first_edit_ms: None,
+            last_edit_ms: None,
         }
     }
 
@@ -45,13 +48,24 @@ impl SyncSchedule {
     /// not yet synced (later edits do not push it back, so typing never holds it off).
     pub fn edited(&mut self, now_ms: i64) {
         self.first_edit_ms.get_or_insert(now_ms);
+        self.last_edit_ms = Some(now_ms);
     }
 
-    /// A sync ran to its end at `now_ms`: what it was due for is done.
-    pub fn synced(&mut self, now_ms: i64) {
+    /// A sync that started at `started_ms` ran to its end at `finished_ms`: what it was due
+    /// for is done, but an edit made while it ran (at or after `started_ms`, on another
+    /// connection) may not be in it, so a sync stays due [`EDIT_DELAY_MS`] after the first
+    /// edit since it started (or after its start, when an edit before it came first: the
+    /// schedule keeps only the first and the last).
+    pub fn synced(&mut self, started_ms: i64, finished_ms: i64) {
         self.now = false;
-        self.last_sync_ms = Some(now_ms);
-        self.first_edit_ms = None;
+        self.last_sync_ms = Some(finished_ms);
+        self.first_edit_ms = match (self.first_edit_ms, self.last_edit_ms) {
+            (Some(first), Some(last)) if last >= started_ms => Some(first.max(started_ms)),
+            _ => None,
+        };
+        if self.first_edit_ms.is_none() {
+            self.last_edit_ms = None;
+        }
     }
 
     /// A sync failed at `now_ms` (the folder unreachable): it is due again as if the edits
@@ -96,7 +110,7 @@ mod tests {
     fn a_sync_is_due_at_launch_on_resume_and_on_demand() {
         let mut s = SyncSchedule::at_launch(false);
         assert!(s.is_due(1_000));
-        s.synced(1_000);
+        s.synced(1_000, 1_000);
         assert_eq!(
             s.next_sync_due(2_000),
             None,
@@ -104,7 +118,7 @@ mod tests {
         );
         s.resumed();
         assert!(s.is_due(3_000));
-        s.synced(3_000);
+        s.synced(3_000, 3_000);
         s.requested();
         assert_eq!(s.next_sync_due(4_000), Some(4_000));
     }
@@ -112,24 +126,47 @@ mod tests {
     #[test]
     fn a_sync_is_due_30_seconds_after_the_first_edit_not_synced() {
         let mut s = SyncSchedule::at_launch(false);
-        s.synced(0);
+        s.synced(0, 0);
         s.edited(10_000);
         s.edited(25_000);
         assert_eq!(s.next_sync_due(26_000), Some(10_000 + EDIT_DELAY_MS));
         assert!(!s.is_due(39_999));
         assert!(s.is_due(40_000));
-        s.synced(40_000);
+        s.synced(40_000, 40_000);
         assert_eq!(s.next_sync_due(41_000), None);
+    }
+
+    #[test]
+    fn an_edit_made_while_a_sync_ran_is_still_due_after_it() {
+        let mut s = SyncSchedule::at_launch(false);
+        s.synced(0, 0);
+        // The first edit not synced came while the sync ran.
+        s.edited(45_000);
+        s.synced(40_000, 50_000);
+        assert_eq!(s.next_sync_due(50_001), Some(45_000 + EDIT_DELAY_MS));
+        // One before the sync started and one while it ran: due after its start.
+        let mut s = SyncSchedule::at_launch(false);
+        s.synced(0, 0);
+        s.edited(10_000);
+        s.edited(45_000);
+        s.synced(40_000, 50_000);
+        assert_eq!(s.next_sync_due(50_001), Some(40_000 + EDIT_DELAY_MS));
+        // Edits only before it started: done.
+        s.edited(60_000);
+        s.synced(61_000, 62_000);
+        assert_eq!(s.next_sync_due(62_001), None);
+        s.edited(70_000);
+        assert_eq!(s.next_sync_due(70_001), Some(70_000 + EDIT_DELAY_MS));
     }
 
     #[test]
     fn the_desktop_syncs_every_5_minutes_and_sooner_after_an_edit() {
         let mut s = SyncSchedule::at_launch(true);
-        s.synced(0);
+        s.synced(0, 0);
         assert_eq!(s.next_sync_due(1), Some(DESKTOP_PERIOD_MS));
         s.edited(60_000);
         assert_eq!(s.next_sync_due(60_001), Some(60_000 + EDIT_DELAY_MS));
-        s.synced(90_000);
+        s.synced(90_000, 90_000);
         assert_eq!(s.next_sync_due(90_001), Some(90_000 + DESKTOP_PERIOD_MS));
     }
 
