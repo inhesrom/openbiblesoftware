@@ -88,7 +88,9 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     floor, exceeds the free bytes the shell passes less what the downloads already planned
     need), then the network: on Wi-Fi, start (cellular allowed only with "Use cellular
     data"); on cellular with it on, start; with it off, `AskCellular` with the size, and
-    asking again with `cellular_confirmed` starts it over cellular.
+    asking again with `cellular_confirmed` starts it over cellular. A network the shell
+    does not know yet (`Network.is_wifi: None`, before its first path update) counts as not
+    Wi-Fi: Download asks first, saying the network is not known yet.
   - Download states: `Queued` → `Downloading { done, total }` (`download_progress`) →
     `Verifying` → `Installing` → `Indexing` → `Done`, or `Failed { message, retry }`
     (`download_failed` from the shell; a refused file from `install_downloaded`).
@@ -102,7 +104,11 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     Starter Resource that manifest does not list stays `Queued`, its file kept, while a
     released manifest check runs (it starts one), and is installed when the check lists it,
     refused (file deleted) when the check lists it not or finds no release this app reads,
-    and keeps waiting after a check that failed. `cancel_download` forgets a queued,
+    and keeps waiting after a check that failed. `download_progress`, `download_failed` and
+    `install_downloaded` adopt a transfer the core does not know (one the system carried on
+    across a relaunch): it gets a download at the file the core names, with the manifest's
+    size, so it shows in its row and the banner, can be cancelled, shows a failure with
+    Retry, and counts in the free space the downloads need. `cancel_download` forgets a queued,
     downloading or failed download and deletes its file. The pump moves Starter installs,
     Open imports and Search index builds on (a download that fails there has its file
     deleted: an Import cancelled before it read it), and reports `Changed::Downloads`
@@ -140,8 +146,11 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
     (every Resource of it in the library or Removed, once the released list says which), or
     with the debug Study set override. Before the released list is in (the first launch) it
     has no size and its status says the Study set is being looked up ("Looking up the Study
-    set…"), or why the list could not be fetched, with `retry`; a list kept on the device
-    gives the size at once, and a later failed check changes nothing in it.
+    set…", with `looking_up` true: the sheet shows a spinner), or why the list could not be
+    fetched, with `retry`; a list kept on the device gives the size at once, and a later
+    failed check changes nothing in it. The `network` line is "You are on Wi-Fi.", "You are
+    not on Wi-Fi." or, before the shell knows, "Checking the network.", then what Download
+    does there.
   - `study_set_offer_shown()`: called as the sheet appears; recorded at once, so the offer is
     not made at a later launch even if the app is closed while it shows (as the desktop's
     First-run tour). This launch keeps answering `study_set_offer`, so the open sheet follows
@@ -169,7 +178,9 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   `notFound`, 429 and a 403 with `x-ratelimit-remaining: 0` `rateLimited`, anything else
   `network("<url>: http status: <code>")`; a transfer error `network("<url>: <error>")`;
   `file://` read locally (missing: `notFound`); another scheme `network("<url>: unsupported
-  protocol \"<scheme>\"")`. Redirects are followed (GitHub's release assets).
+  protocol \"<scheme>\"")`. Redirects are followed (GitHub's release assets). Release
+  builds take `https` only (the transport and `DownloadCenter` refuse `http` and `file://`
+  with the same words); Debug builds keep them for the local mirror.
 - **Background transfers** (`DownloadCenter`): for each `DownloadRequest` of a
   `DownloadPlan.start`, a `URLSessionDownloadTask` in one of two
   `URLSessionConfiguration.background` sessions, `<bundle id>.downloads.wifi`
@@ -177,15 +188,27 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   (the `URLRequest` says the same), `sessionSendsLaunchEvents`, not discretionary, no
   cookies or cache. The task's `taskDescription` carries the Resource id, origin, URL and
   the core's file relative to the app folder, so a transfer is known again after a
-  relaunch. Progress goes to `download_progress` at most every 0.25 s; a finished file is
-  checked for its HTTP status, moved to the core's path at once (aside first if the core is
-  not up yet) and handed in with `install_downloaded`; a failure goes to `download_failed`.
-  A request whose file has a transfer running already from the same URL carries on with it
-  (a relaunch the core forgot it in); one from another URL replaces it. The app delegate's
-  `application(_:handleEventsForBackgroundURLSession:completionHandler:)` boots the core if
-  needed, and the handler is called on the main thread from
-  `urlSessionDidFinishEvents(forBackgroundURLSession:)`. No entitlement, capability or
-  background mode is needed.
+  relaunch. Progress goes to `download_progress` at most every 0.25 s (its last update
+  always; with no length known, every one is throttled); a finished file is checked for its
+  HTTP status, moved to the core's path at once and handed in with `install_downloaded`; a
+  failure goes to `download_failed`; a request whose file is outside the app folder fails
+  in the core. A request whose file has a transfer running already from the same URL
+  carries on with it (a relaunch the core forgot it in); one from another URL replaces it.
+  Cancel and the hand-in of a finished file take one lock, and a file whose download was
+  cancelled is deleted rather than handed in, so a Cancel tapped as a transfer finishes
+  installs nothing (the core would accept a finished file it does not know). No
+  entitlement, capability or background mode is needed.
+- **Background relaunch:** the app delegate's
+  `application(_:handleEventsForBackgroundURLSession:completionHandler:)` stores the
+  handler and starts the core (`AppCore.start()`; a later `start()`, the scene's, waits
+  for the same boot). The app folder is known without the core
+  (`AppCore.locateAppFolder()`, which changes nothing; the Debug test folder is made
+  afresh only by the boot's `appFolder()`), so before the core is up a finished file still
+  goes straight to the core's path and resume data is still kept; what is handed to the
+  core waits for `attach`. `urlSessionDidFinishEvents(forBackgroundURLSession:)` calls the
+  handler on the main thread, unless something waits for the core: then `attach` calls it
+  once everything is handed in (or the boot failed), so a suspension or termination right
+  after it loses no finished file.
 - **Resume data:** the `NSURLSessionDownloadTaskResumeData` the system leaves with a
   dropped transfer is kept as `<the core's file>.resume`; Retry (a new `Start` for the same
   file) resumes from it. Resume data names the URL the transfer had reached, which for
@@ -196,7 +219,14 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   file; the core's 24 h sweep removes any left over.
 - **Network** (`NetworkMonitor`): `NWPathMonitor`; `is_wifi` is `!path.usesInterfaceType(.cellular)`
   (Wi-Fi, wired and no network at all count as not cellular, which is what
-  `allowsCellularAccess = false` waits for), `allow_cellular` the core's `use_cellular()`.
+  `allowsCellularAccess = false` waits for), and not known (`nil`) until the first path
+  update; `allow_cellular` the core's `use_cellular()`. When the path changes, the open
+  offer is asked for again, so its network line follows.
+- **Refreshes:** `Changed.library` asks the core again for everything shown, Storage
+  included; `Changed.downloads` (every progress update wakes the pump) asks for the rows,
+  the banner and the offer only, at most every 0.25 s. Measured (`DownloadTests`, iPhone 17
+  simulator): the 15-Resource Study set at 2 MB/s a connection, 18 s, brought 306
+  `downloads` changes and 83 refreshes, 0.06 s on the main thread (0.34 %).
 - **Free space:** `volumeAvailableCapacityForImportantUsage` of the app folder's volume,
   passed as `free_bytes` (nil when unknown); the privacy manifest declares reason `E174.1`.
 - **Screens** (where the reader's options menu reaches them until the screen anatomy, #335,
@@ -372,17 +402,27 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   Study set offer looked up, then with its size and the network line (Wi-Fi, cellular,
   cellular allowed), shown once; a failed lookup with Try again and offered again at the
   next launch; no offer once nothing of the Study set is missing; the download states in
-  words. `apps/obs-ffi/tests/library.rs`: the setting, the offer and the words across the
-  FFI. `crates/store/tests/sync_schema_db.rs` now reads `crates/mobile/src`'s preference keys
+  words; a transfer still running after a relaunch adopted (its row, the banner, the
+  won't-fit rule, Cancel) and one failed after it shown with Retry; a network not known
+  yet asking first. `apps/obs-ffi/tests/library.rs`: the setting, the offer (its
+  `looking_up`, the unknown network), adoption and the words across the FFI.
+  `crates/store/tests/sync_schema_db.rs` now reads `crates/mobile/src`'s preference keys
   too.
 - S24, in the simulator (iOS 27.2, iPhone 17 and iPad Air 11-inch (M4)), against
   `MirrorServer` (`apps/ios/TestSupport`), a local HTTP mirror of `dist/starter` on
   127.0.0.1 in the test process, so no test touches the network:
-  `OpenBibleTests/DownloadTests`: the transport's statuses, a redirect followed; Cancel
-  during a transfer leaves no core file and no resume data, and nothing is handed in
-  after; resume data across a 302 to a signed URL: while valid, the resumed request is
+  `OpenBibleTests/DownloadTests` (its Resources picked from the core's Study set rows):
+  the transport's statuses, a redirect followed; Cancel during a transfer leaves no core
+  file and no resume data, and nothing is handed in after; a finished file that reaches
+  the delegate after Cancel is not installed; a background relaunch simulated through the
+  delegate before the core is up (a finished file moved to the core's path, resume data
+  kept, the completion handler held until `attach`, then the file installed and the
+  failure shown with Retry); the main thread's work during the Study set's download;
+  resume data across a 302 to a signed URL: while valid, the resumed request is
   `/signed/easton.obr` with `Range: bytes=524288-` and nothing more; expired (2 s), the same
-  request is refused, then `/r/smith.obr` and `/signed/smith.obr` afresh, and both install.
+  request is refused, then `/r/<id>.obr` and `/signed/<id>.obr` afresh, and both install.
+  `OpenBibleTests/AppCoreTests`: a second `start()` during a boot waits for it and the
+  reader ends up ready.
   `OpenBibleUITests/LibraryTests`: `testLibraryDownload` (the offer at first launch with "15
   Resources, 136.6 MB" and "You are on Wi-Fi.", its VoiceOver order and audits in Light and
   Dark; Download; the banner; the app sent home while the 15 transfers run at 512 KB/s a
@@ -396,4 +436,6 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   set (136.6 MB) over cellular data? …", Not now leaves the mirror with no `.obr` request;
   with Use cellular data on, a download starts without asking and installs);
   `testCancelStopsADownload`; `testGetResourcesAndStorage`; each screen's accessibility audit
-  (`docs/dev/ios-project.md`, "Library tests"). Previews `docs/previews/ios/s24-*.png`.
+  (`docs/dev/ios-project.md`, "Library tests"). The counts come from the offer ("N
+  Resources") and the Bundled set of the served manifest, and the Resources are picked from
+  that manifest by set and size, not by name. Previews `docs/previews/ios/s24-*.png`.

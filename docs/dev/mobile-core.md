@@ -234,19 +234,36 @@ it is under the ignored `/target`.
     does (`HTTPStatus`: 2xx, 404/410, 429 and GitHub's 403 with no requests left, anything
     else with its status), with `fetch.rs`'s GitHub API headers and 30 s timeout;
     `NWPathMonitor`'s path becomes `is_wifi = !usesInterfaceType(.cellular)` (supervisor
-    decision: what `allowsCellularAccess = false` waits for), and a core error reading Use
-    cellular data passes `false`; the free bytes are the volume's
+    decision: what `allowsCellularAccess = false` waits for), `nil` before the first path
+    update (the core counts it as not Wi-Fi, so Download asks first; the open offer is asked
+    for again when the path changes), and a core error reading Use cellular data passes
+    `false`; the free bytes are the volume's
     `volumeAvailableCapacityForImportantUsage`, nil when unknown; a request goes to the
     Wi-Fi-only or the cellular background session as its `cellular` says; resume data is
     kept as `<the core's file>.resume` (deleted by Cancel and on install), a resumed
     transfer that fails starts afresh once, a running transfer of the same file and URL is
-    kept and one from another URL replaced; progress reaches the core at most every 0.25 s;
-    a finished file is moved to the path the core named. On the screens, `switch`es over
+    kept and one from another URL replaced; progress reaches the core at most every 0.25 s
+    (the last update always, and with no length known none counts as the last); a finished
+    file is moved to the path the core named, before the core is up too (the app folder from
+    `AppCore.locateAppFolder()`), and a file whose download was cancelled is deleted, not
+    handed in (Cancel and the hand-in share a lock); a request whose file is outside the app
+    folder is handed to `download_failed`; the system's background-events handler is held
+    while files wait for the core, until `attach` has handed them in; an unknown origin
+    string in a task's description reads as `starter` (the center writes only `starter` and
+    `open`); Release builds refuse any scheme but `https` in the transport and the center.
+    `AppCore.start()` keeps its boot as a task that every later call awaits. The Library's
+    screens are asked again for everything on `Changed.library`, and on `Changed.downloads`
+    for all but Storage, at most every 0.25 s. On the screens, `switch`es over
     the core's answers choose a view: `DownloadPlan` (start the transfers, an alert with
     the core's words for `AskCellular` and `WontFit`, nothing), `StarterRowStatus` (Remove,
     Update, Add back or Download), `DownloadState` (progress and Cancel, a spinner, the
     failure and Retry when the core says `retry`), `RemoveAnswer` (its question as an
     alert); a yes to the cellular question asks the core again with `cellular_confirmed`.
+    Views shown or hidden by a core field: the Starter library's spinner while `checking &&
+    !released`, the Study set section while `study_set.resources > 0`, a row's licence line
+    hidden when the core's licence is empty, a determinate progress bar when a download's
+    `total > 0` (else indeterminate), an Open catalogue row's "In your Library" when the core
+    gives its `installed` id, and the offer's spinner while the core's `looking_up` is true.
     The offer sheet shows while the core answers an offer (and closes when it does not, on
     Not now, or once Download has started; it stays for the core's question), Download is
     disabled while the core gives no size (before the list is in there is nothing to
