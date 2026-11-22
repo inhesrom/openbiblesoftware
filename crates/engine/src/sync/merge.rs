@@ -571,9 +571,9 @@ fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> O
     let own = state.clock.as_ref()?.device_id == tx.device_id();
     let unseen = |o: &obs_store::SyncedListItem| match &op.before {
         None => true,
-        Some(
-            Row::Collection(before) | Row::CopyPreset(before) | Row::SavedSearch(before),
-        ) => op.before_clock != state.clock && before.json != o.json,
+        Some(Row::Collection(before) | Row::CopyPreset(before) | Row::SavedSearch(before)) => {
+            op.before_clock != state.clock && before.json != o.json
+        }
         Some(_) => false,
     };
     match (ours, winner) {

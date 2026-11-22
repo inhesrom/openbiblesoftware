@@ -65,14 +65,14 @@ fn everything(c: &Connection) -> Tables {
     tables
         .into_iter()
         .map(|t| {
-            // `tombstone.covers` (schema 15), `tombstone.row` and `annotations.conflict_of`
-            // (16) are `NULL` on every row written before them; the migration tests below
-            // check that on their own.
+            // `tombstone.covers` (schema 15), `tombstone.row` with its `row_covers` and
+            // `row_clock`, and `annotations.conflict_of` (16) are `NULL` on every row written
+            // before them; the migration tests below check that on their own.
             let columns = strings(
                 c,
                 &format!(
                     "SELECT name FROM pragma_table_info('{t}')
-                     WHERE name NOT IN ('covers', 'row', 'conflict_of')"
+                     WHERE name NOT IN ('covers', 'row', 'row_covers', 'row_clock', 'conflict_of')"
                 ),
             );
             let list = columns
@@ -388,11 +388,13 @@ fn schema_16_rows(db: &UserStore) -> String {
     note.id
 }
 
-/// `annotations.conflict_of`, `tombstone.row`, `sync_held` and the list bases, as text.
+/// `annotations.conflict_of`, `tombstone.row` (with the covers and clock of its delete),
+/// `sync_held` and the list bases, as text.
 fn schema_16_columns(c: &Connection) -> Vec<String> {
     [
         "SELECT 'conflict_of ' || id || '=' || coalesce(conflict_of, 'NULL') FROM annotations",
-        "SELECT 'row ' || row_id || '=' || coalesce(row, 'NULL') FROM tombstone",
+        "SELECT 'row ' || row_id || '=' || coalesce(row || ' ' || row_covers || ' ' || row_clock, 'NULL')
+         FROM tombstone",
         "SELECT 'held ' || row_table || '/' || row_id || ' ' || clock || ' ' || change FROM sync_held",
         "SELECT 'base ' || row_id || ' ' || clock FROM item_clock WHERE row_table = 'preference'",
     ]

@@ -256,12 +256,14 @@ impl MergeTx<'_> {
             ),
             _ => None,
         };
+        let delete_clock = clock.encode()?;
+        let delete_covers = covers.map(Hlc::encode).transpose()?.unwrap_or_default();
         let keep_row = match &row {
             Some(row) => crate::synced_store::tombstone_row_wins(
                 self.tx,
                 key,
-                &clock.encode()?,
-                &covers.map(Hlc::encode).transpose()?.unwrap_or_default(),
+                &delete_clock,
+                &delete_covers,
             )?
             .then_some(row.as_str()),
             None => None,
@@ -291,7 +293,13 @@ impl MergeTx<'_> {
             )
             .map_err(sql)?;
         if let Some(row) = keep_row {
-            crate::synced_store::keep_tombstone_row(self.tx, key, row)?;
+            crate::synced_store::keep_tombstone_row(
+                self.tx,
+                key,
+                row,
+                &delete_covers,
+                &delete_clock,
+            )?;
         }
         Ok(())
     }

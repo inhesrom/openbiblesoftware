@@ -42,8 +42,9 @@ pub(crate) fn has_table(c: &Connection, name: &str) -> Result<bool, StoreError> 
 /// newer of what they cover, so every device ends with the same tombstone whatever order its
 /// deletes and writes arrived in. Before schema 15 a row made again took its tombstone away.
 /// An update changes neither. From schema 16 the tombstone of a parent ([`keeps_row`]) also
-/// keeps `row`, the deleted version's serialized row: that of the delete covering the newest
-/// version (of two covering the same, the later delete's).
+/// keeps `row`, the deleted version's serialized row, with that delete's own `row_covers` and
+/// `row_clock`: of the deletes that kept a row, the one covering the newest version (of two
+/// covering the same, the later delete), each compared with those two ([`tombstone_row_wins`]).
 pub(crate) fn mark_tombstone(
     c: &Connection,
     change: &Change,
@@ -79,8 +80,8 @@ pub(crate) fn mark_tombstone(
         _ => Ok(0),
     }
     .map_err(sql)?;
-    if let Some(row) = keep_row {
-        keep_tombstone_row(c, key, row)?;
+    if let (Some(row), Some(covers)) = (keep_row, covers) {
+        keep_tombstone_row(c, key, row, covers, clock)?;
     }
     Ok(())
 }
@@ -99,10 +100,10 @@ pub(crate) fn keeps_row(key: &RowKey) -> bool {
 }
 
 /// Whether a delete at `clock` covering `covers` (text forms) is the one whose row the
-/// tombstone of `key` keeps, against the tombstone there before it is noted: it covers a newer
-/// version than any delete before it, or the same one and is the later delete, or the
-/// tombstone keeps no row yet. Every device keeps the same row whatever order the deletes
-/// came in.
+/// tombstone of `key` keeps, against the delete whose row it keeps now (its `row_covers` and
+/// `row_clock`, not the tombstone's newest of every delete): it covers a newer version, or the
+/// same one and is the later delete, or the tombstone keeps no row yet. Every device keeps the
+/// same row whatever order the deletes came in.
 pub(crate) fn tombstone_row_wins(
     c: &Connection,
     key: &RowKey,
@@ -110,34 +111,42 @@ pub(crate) fn tombstone_row_wins(
     covers: &str,
 ) -> Result<bool, StoreError> {
     let (kind, id) = key.tombstone();
-    let old: Option<(String, String, bool)> = c
+    let kept: Option<(Option<String>, Option<String>)> = c
         .prepare_cached(
-            "SELECT coalesce(covers, clock), clock, row IS NOT NULL FROM tombstone
-             WHERE row_table = ?1 AND row_id = ?2",
+            "SELECT row_covers, row_clock FROM tombstone
+             WHERE row_table = ?1 AND row_id = ?2 AND row IS NOT NULL",
         )
         .and_then(|mut s| {
-            s.query_row(params![kind, id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            s.query_row(params![kind, id], |r| Ok((r.get(0)?, r.get(1)?)))
                 .optional()
         })
         .map_err(sql)?;
-    Ok(match old {
-        Some((old_covers, old_clock, true)) => {
-            (covers, clock) >= (old_covers.as_str(), old_clock.as_str())
+    Ok(match kept {
+        Some((kept_covers, kept_clock)) => {
+            (covers, clock)
+                >= (
+                    kept_covers.as_deref().unwrap_or_default(),
+                    kept_clock.as_deref().unwrap_or_default(),
+                )
         }
-        _ => true,
+        None => true,
     })
 }
 
-/// Keep `row` (a serialized `Row`) in the tombstone of `key`.
+/// Keep `row` (a serialized `Row`) in the tombstone of `key`, with the `covers` and `clock` of
+/// the delete it is from.
 pub(crate) fn keep_tombstone_row(
     c: &Connection,
     key: &RowKey,
     row: &str,
+    covers: &str,
+    clock: &str,
 ) -> Result<(), StoreError> {
     let (kind, id) = key.tombstone();
     c.execute(
-        "UPDATE tombstone SET row = ?3 WHERE row_table = ?1 AND row_id = ?2",
-        params![kind, id, row],
+        "UPDATE tombstone SET row = ?3, row_covers = ?4, row_clock = ?5
+         WHERE row_table = ?1 AND row_id = ?2",
+        params![kind, id, row, covers, clock],
     )
     .map(drop)
     .map_err(sql)

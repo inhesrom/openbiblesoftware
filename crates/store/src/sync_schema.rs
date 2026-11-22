@@ -238,7 +238,8 @@ ALTER TABLE item_clock ADD COLUMN position INTEGER;
 ///   Highlight palette or Highlight style (the version with the newest clock a delete
 ///   covered): another device's child of it arriving later (a Note added to the Notebook
 ///   meanwhile) restores it from here. `NULL` for every other kind and every tombstone written
-///   before schema 16.
+///   before schema 16. `row_covers` and `row_clock` are what the delete it is from covered and
+///   its clock, which a later delete's are compared with (`synced_store::tombstone_row_wins`).
 /// - `sync_held`: another device's ops this device could not apply (a synced preference a
 ///   later app added, an item of a list whose value is not in its shape, a child of a parent
 ///   deleted before schema 16), each with its row, clock and `change` JSON, so the rest of its
@@ -246,6 +247,8 @@ ALTER TABLE item_clock ADD COLUMN position INTEGER;
 pub(crate) const SCHEMA_16: &str = "
 ALTER TABLE annotations ADD COLUMN conflict_of TEXT;
 ALTER TABLE tombstone ADD COLUMN row TEXT;
+ALTER TABLE tombstone ADD COLUMN row_covers TEXT;
+ALTER TABLE tombstone ADD COLUMN row_clock TEXT;
 CREATE TABLE sync_held (
     row_table TEXT NOT NULL,
     row_id    TEXT NOT NULL,

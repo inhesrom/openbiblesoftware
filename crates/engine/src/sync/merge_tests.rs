@@ -1117,6 +1117,61 @@ fn a_deleted_reading_plan_or_palette_comes_back_for_a_reading_or_style_added_mea
     converged(&[&a, &b]);
 }
 
+/// Three devices delete Notebook N, each its own version: A covers v5 at 10, B v7 at 8, C v7
+/// at 9 (as wall clocks). A device meeting them in either order keeps C's row in N's
+/// tombstone (the newest version covered, then the later delete), each compared with the
+/// delete whose row is kept, not with the tombstone's newest of all (the S28b-2 review's
+/// P2-2: A, B, C kept B's row and C, B, A kept C's).
+#[test]
+fn a_parents_tombstone_keeps_the_same_row_in_every_order_of_its_deletes() {
+    let dir = Dir::new("tombstone-row");
+    let now = u64::try_from(obs_store::clock::now_ms()).unwrap();
+    let hlc = |ms: u64, device: &str| Hlc {
+        wall_ms: now + ms,
+        counter: 0,
+        device_id: device.into(),
+    };
+    let nb = notebook("N");
+    let writer = new_id();
+    let cloud = MemSyncFolder::new();
+    let mut files = Vec::new();
+    for (name, covers, at) in [("A", 5, 10), ("B", 7, 8), ("C", 7, 9)] {
+        let device = new_id();
+        let delete = Op {
+            device: device.clone(),
+            clock: hlc(at, &device),
+            before: Some(Row::Notebook(Notebook {
+                name: format!("as {name} had it"),
+                ..nb.clone()
+            })),
+            after: None,
+            before_clock: Some(hlc(covers, &writer)),
+            absent: Vec::new(),
+        };
+        cloud.put(
+            &op_file_path(&device, 1),
+            &encode_op_file(std::slice::from_ref(&delete)).unwrap(),
+        );
+        files.push(device);
+    }
+    let mut dumps = Vec::new();
+    for order in [[0, 1, 2], [2, 1, 0], [1, 0, 2]] {
+        let d = device(&dir, &format!("d{}{}{}", order[0], order[1], order[2]));
+        for i in order {
+            merge_folder(&d.user, &view(&cloud, &[(files[i].as_str(), 1)])).unwrap();
+        }
+        let dump = d.user.synced_dump().unwrap();
+        let tombstones = dump.split("[tombstone]").nth(1).unwrap();
+        assert!(
+            tombstones.contains("as C had it"),
+            "{order:?}: {tombstones}"
+        );
+        dumps.push(tombstones.split("[item_clock]").next().unwrap().to_string());
+    }
+    assert_eq!(dumps[0], dumps[1]);
+    assert_eq!(dumps[0], dumps[2]);
+}
+
 /// A child arriving at a parent deleted before schema 16 (its tombstone keeps no row) is
 /// held, not waited for, and applies once another device brings the parent back.
 #[test]
@@ -1130,7 +1185,7 @@ fn a_child_of_a_parent_deleted_before_schema_16_is_held_until_the_parent_comes_b
     a.apply(&[Change::delete(Row::Notebook(nb.clone()))]);
     // As a tombstone from before schema 16 is.
     a.user
-        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .execute_unchecked("UPDATE tombstone SET row = NULL, row_covers = NULL, row_clock = NULL")
         .unwrap();
     let added = note_in(&nb.id, "added on B");
     b.apply(&[Change::insert(Row::Annotation(added.clone()))]);
@@ -1149,10 +1204,10 @@ fn a_child_of_a_parent_deleted_before_schema_16_is_held_until_the_parent_comes_b
     converged(&[&b, &c]);
     // The one difference: A's own tombstone, from before schema 16, still keeps no row.
     a.user
-        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .execute_unchecked("UPDATE tombstone SET row = NULL, row_covers = NULL, row_clock = NULL")
         .unwrap();
     b.user
-        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .execute_unchecked("UPDATE tombstone SET row = NULL, row_covers = NULL, row_clock = NULL")
         .unwrap();
     converged(&[&a, &b]);
 }
@@ -1181,7 +1236,7 @@ fn a_child_of_a_held_parent_is_held_too_and_applies_after_it() {
     a.apply(&[Change::delete(Row::HighlightPalette(palette.clone()))]);
     // As a tombstone from before schema 16 is.
     a.user
-        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .execute_unchecked("UPDATE tombstone SET row = NULL, row_covers = NULL, row_clock = NULL")
         .unwrap();
     let style = obs_store::HighlightStyle {
         id: new_id(),
@@ -1230,10 +1285,10 @@ fn a_child_of_a_held_parent_is_held_too_and_applies_after_it() {
     assert!(a.row(&Row::HighlightStyle(style.clone()).key()).is_some());
     assert_eq!(annotation_of(&a, &highlight.id), Some(highlight));
     a.user
-        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .execute_unchecked("UPDATE tombstone SET row = NULL, row_covers = NULL, row_clock = NULL")
         .unwrap();
     b.user
-        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .execute_unchecked("UPDATE tombstone SET row = NULL, row_covers = NULL, row_clock = NULL")
         .unwrap();
     converged(&[&a, &b]);
 }
@@ -1297,7 +1352,8 @@ fn an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both() 
     }
     converged(&[&d, &g]);
     // An edit that saw D's item (its `before` is D's version) replaces it: no third copy.
-    let seen = r#"[{"name":"Greek","ids":["lxx","wlc"]},{"name":"Greek (2)","ids":["sblgnt","na28"]}]"#;
+    let seen =
+        r#"[{"name":"Greek","ids":["lxx","wlc"]},{"name":"Greek (2)","ids":["sblgnt","na28"]}]"#;
     g.user.set_preference(key, seen).unwrap();
     Device::settle(&[&d, &g], &cloud);
     for dev in [&d, &g] {

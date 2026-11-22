@@ -10,7 +10,7 @@ the Settings → Sync screens (S29, S30) come later and finish this page. Terms 
 |---|---|---|
 | `obs-store` | `hlc.rs` | `Hlc`: the hybrid logical clock, its text form, `Hlc::next`, `MAX_FORWARD_SKEW_MS`. Compiles everywhere. |
 | `obs-store` | `sync_clock.rs` | From schema 14, `apply_changes` gives each `Change` the next clock and writes it into the row, item or tombstone; while this device records ops, keeps each `Change` with its clock in `op_outbox`. `device_id`, `observe_clock`, `start_recording_ops`, `records_ops`, `reserve_op_files`, `op_file_written`. |
-| `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`), 14 → 15 (`tombstone.covers`, `item_clock.position`) and 15 → 16 (`annotations.conflict_of`, `tombstone.row`, `sync_held`); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
+| `obs-store` | `sync_schema.rs` | Migration 13 → 14 (`item_clock`, `op_outbox`), 14 → 15 (`tombstone.covers`, `item_clock.position`) and 15 → 16 (`annotations.conflict_of`, `tombstone.row` with `row_covers` and `row_clock`, `sync_held`); `ensure_device` at `open` and `open_backup` (a missing or damaged device id gets a new one). |
 | `obs-store` | `merge_store.rs` | `UserStore::merge_op_file`: one op file merged in one transaction with its `applied_up_to`; `UserStore::merge_held`: the held ops tried again in one transaction; `MergeTx` (`state`, `write_merged`, `delete_merged`, `note_delete`, `note_item_op`, `note_list_op`, `write_kept`, `record`, `begin_op` / `end_op`, `hold` / `unhold` / `held`, `list_base`, `list_in_shape`, `write_list_base`, `tombstone_row`, `renamed_for_clash`); `row_state`, `applied_up_to`, `sync_held`; `UserStore::sync_conflicts` (`annotation_store.rs`). |
 | `obs-engine` | `sync/folder.rs` | `SyncFolder` (`list`, `read`, `write_new`, `remove`, `ensure_available`), `FsSyncFolder` (`std::fs`, the desktop's), `MemSyncFolder` (tests, feature `test-support`). The Mobile app implements `SyncFolder` in Swift (S30). |
 | `obs-engine` | `sync/clock.rs` | Re-exports `obs_store::Hlc`: the store stamps rows itself (its own writes, such as `save_layout`, plan their Changes), so the clock lives there. |
@@ -328,8 +328,14 @@ Readings or styles: the deletes in the same op file), so nothing is lost (ADR 00
 S28b-2 D3):
 
 - **A parent's tombstone keeps the deleted row** (migration 16, `tombstone.row`, a serialized
-  `Row`): the row as the deleting device had it, from the delete that covered the newest
-  version (of two covering the same one, the later delete's), so every device keeps the same.
+  `Row`): the row as the deleting device had it, with that delete's own `covers` and clock
+  (`tombstone.row_covers`, `row_clock`). A later delete's row replaces it when that delete
+  covers a newer version than the kept row's delete, or the same one and is the later delete
+  (`synced_store::tombstone_row_wins`). It is compared with the kept row's delete, not with the
+  tombstone's `covers` and `clock` (the newest of every delete), so every device keeps the same
+  row whatever order the deletes came in
+  (`merge_tests::a_parents_tombstone_keeps_the_same_row_in_every_order_of_its_deletes`). A
+  tombstone from before schema 16 keeps no row, and the first delete with one is kept.
 - **A child arriving at a deleted parent** restores the parent from that row (its own parent
   first: a style's palette) and records it, then the child merges. Nothing waits for the
   child's maker: its own record of the parent is in a later file of its own, after the child.
