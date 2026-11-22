@@ -271,8 +271,8 @@ pub fn merge_folder(user: &UserStore, folder: &dyn SyncFolder) -> Result<MergeRe
             report.stopped.push((id, 0, OpsStop::NoSnapshot));
         }
     }
-    // Former ids met through a snapshot (theirs, their files trimmed) go first again, the
-    // last given up first.
+    // Former ids whose snapshot waited above and merged since go first again, the last
+    // given up first.
     let former_rank = |id: &String| own_ids.iter().position(|o| o == id).unwrap_or(usize::MAX);
     ready.sort_by_key(|id| (former_rank(id), id.clone()));
     for id in ready {
