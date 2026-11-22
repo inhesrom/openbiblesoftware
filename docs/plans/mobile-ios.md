@@ -1663,11 +1663,10 @@ this in addition to its own lines):
     path after the real Bundled set 0.3 s; the whole Study set (15 Resources, 136.6 MB)
     through the states 0.13 s to install, its Search indexes by 3.3 s; 19 Resources in the
     library, 22 rows; Storage 226.4 MB. The simulator staticlib is 28.0 MB.
-  - **Decided here, for S24/S25 to revisit:** a Resource a reader shows is not removed (the
-    engine's Remove closes its Tab, which would leave the reader without one); the error
-    asks to show another Resource first. `install_downloaded` checks and copies a Starter
-    file while holding the core's lock (Swift calls it off the main thread). `downloads/` is
-    not in `backup_excluded()` (files there are deleted once installed); S25 may add it.
+  - **Decided here, for S24/S25 to revisit:** `downloads/` is not in `backup_excluded()`
+    (files there are deleted once installed); S25 may add it. (The first cut's refusal to
+    remove a Resource a reader shows, and its Starter install under the core's lock, were
+    replaced by the review fixes below.)
   - **Follow-up (a desktop ticket, not a step):** let the desktop's released manifest lead
     too, so "Check the released Starter library" with a bundle shows newer released
     revisions as Update (today it is a no-op with a bundle).
@@ -1677,6 +1676,35 @@ this in addition to its own lines):
     --ignored`, `cargo test -p obs-mobile -- --ignored` and `cargo test -p obs-ffi --test
     mobile_app -- --ignored` pass over `dist/starter`. No later step's assumption proved
     wrong.
+  - **Review fixes** (the S23 review; supervisor decisions). Remove is refused, in the
+    desktop's words, while the Resource's mobile Starter download is active (it would be
+    added back, no longer Removed). The released manifest and its pinned files base are kept
+    on the device (`starter::RELEASED_PREF`, `starter-library.released`, in
+    `DEVICE_PREFERENCES`), read at launch with released leads only, so a transfer iOS hands
+    in after a relaunch installs; a Starter file of a Resource that kept manifest does not
+    list stays `Queued`, its file kept, until a released manifest check lands.
+    `install_downloaded` refuses, without deleting, any path but the file the core named in
+    `downloads/`, and ignores a call for a download already verifying, installing, indexing
+    or done. A Starter file installs on a job (`add_starter_from_files` returns its `JobId`;
+    `StarterLibrary::file_install` gives `Verifying` / `Installing` / `Installed` /
+    `Failed`; the pump's `poll_starter` applies `starter_added`), so the core's lock is not
+    held for the read, hash and copy, and Verifying and Installing are visible states. From
+    GitHub's releases list only `https://github.com/<owner>/<repo>/releases/download/<tag>/`
+    of this app's repository is pinned (`release_files_base`; a mirror's or `file://` list,
+    through `set_releases_api`, keeps its own). A latest release older than the app's
+    format says so instead of "Update the app" (`needs_app_update` stays false). A failed
+    or cancelled Open import deletes its file, and boot deletes files in `downloads/` older
+    than `STALE_DOWNLOAD` (24 h; a transfer handed in after a relaunch is moments old).
+    "Won't fit" subtracts what the active downloads need, and an Open download of unknown
+    size needs `OPEN_DOWNLOAD_FLOOR` (100 MB) free. Removing a Resource a reader shows: the
+    second reader of a Split view closes (`Changed::Reader(1)`); the reader switches through
+    `tab.parallel` to the first other Resource of its type in Preferred order, else to the
+    first other Resource it can show; refused only when there is none. The S23 report's note
+    that the generated Swift error enums are not public was wrong: `ObsFFI.swift` declares
+    `public enum TransportError`, `public enum MobileError` and `public protocol Transport`
+    (`public` on the line before). S24: after removing a Resource, re-read `readers()` (a
+    closed second reader); a shell that moves a finished transfer into `downloads/` must
+    pass that same path.
 
 #### S24 — iOS downloads and Library screens
 
