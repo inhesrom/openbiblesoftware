@@ -120,8 +120,10 @@ final class StorageTests: XCTestCase {
         XCTAssertTrue(built.label.hasSuffix("Search index ready"), built.label)
         try previewAndAudit(app, "s25-storage-ready")
 
-        // Dismissed on Storage, the sheet opens again on the Library list.
-        app.navigationBars["Storage"].swipeDown(velocity: .fast)
+        // Dismissed on Storage (dragged down by its title bar), the sheet opens again on the
+        // Library list.
+        let bar = app.navigationBars["Storage"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        bar.press(forDuration: 0.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
         let options = app.buttons["reader.options"]
         XCTAssertTrue(options.waitForExistence(timeout: 10), "the Library sheet did not close")
         expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: options)
