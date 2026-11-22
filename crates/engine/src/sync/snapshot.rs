@@ -137,7 +137,8 @@ pub fn snapshot_file(user: &UserStore) -> Result<SnapshotFile, SyncError> {
     Ok(SnapshotFile { seq, name, bytes })
 }
 
-/// Write `device`'s snapshot `file` to `folder` (unless it is there) and delete its older ones.
+/// Write `device`'s snapshot `file` to `folder` (unless it is there with its bytes: one of
+/// its name with other bytes, damaged, is replaced) and delete its older ones.
 pub fn put_snapshot(
     folder: &dyn SyncFolder,
     device: &str,
@@ -147,8 +148,13 @@ pub fn put_snapshot(
     let name = name.clone();
     let dir = snapshots_dir(device);
     let names = folder.list(&dir)?;
-    if !names.contains(&name) {
-        folder.write_new(&format!("{dir}/{name}"), bytes)?;
+    let path = format!("{dir}/{name}");
+    let there = names.contains(&name);
+    if !(there && folder.read(&path).is_ok_and(|b| b == *bytes)) {
+        if there {
+            folder.remove(&path)?;
+        }
+        folder.write_new(&path, bytes)?;
     }
     for old in names {
         if old != name && snapshot_file_seq(&old).is_some() {
@@ -389,8 +395,9 @@ pub fn merge_snapshot(
 }
 
 /// Whether this device should write a new snapshot now (`policy`): it records ops, its outbox
-/// is empty, and it has none in the folder, or has written `after_files` op files since its
-/// newest, or the first of them is older than `after_ms` at `now_ms`.
+/// is empty, and it has none in the folder, or its newest there is not whole
+/// ([`read_snapshot`]), or it has written `after_files` op files since its newest, or the
+/// first of them is older than `after_ms` at `now_ms`.
 pub fn snapshot_due(
     user: &UserStore,
     folder: &dyn SyncFolder,
@@ -402,11 +409,16 @@ pub fn snapshot_due(
         return Ok(false);
     }
     let written = user.applied_up_to(&device)?;
-    let Some((covered, _)) = newest_snapshot(folder, &device)? else {
+    let Some((covered, name)) = newest_snapshot(folder, &device)? else {
         return Ok(true);
     };
     if written <= covered {
-        return Ok(false);
+        // One the others cannot read (partly written, changed, damaged) is written again, or
+        // a device writing no more ops would never be met by one joining.
+        return Ok(matches!(
+            read_snapshot(user, folder, &device, &name)?,
+            SnapshotRead::NotWhole(_)
+        ));
     }
     if written - covered >= policy.after_files {
         return Ok(true);

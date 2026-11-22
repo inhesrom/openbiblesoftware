@@ -868,3 +868,41 @@ fn a_database_copied_before_it_joins_takes_a_new_id_and_trims_none_of_the_others
     }
     assert_eq!(folder.list(&ops_dir(&a_id)).unwrap(), a_files);
 }
+
+#[test]
+fn an_own_snapshot_the_others_cannot_read_is_written_again_by_an_idle_device() {
+    let dir = Dir::new("snapshot-rewrite");
+    let folder = MemSyncFolder::new();
+    let a = open(&dir, "a");
+    add(&a, Row::Notebook(notebook("Romans")));
+    sync(&a, &folder);
+    let a_id = a.device_id().unwrap();
+    // A's only snapshot damaged in the folder (its hash no longer its name's).
+    let (_, name) = newest_snapshot(&folder, &a_id).unwrap().unwrap();
+    let path = format!("{}/{name}", snapshots_dir(&a_id));
+    let whole = folder.get(&path).unwrap();
+    folder.put(&path, &whole[..whole.len() / 2]);
+    // Written again with the same bytes, under the same name: the damaged file is replaced.
+    let report = sync(&a, &folder);
+    assert_eq!(report.snapshot, Some(0), "{report:?}");
+    assert_eq!(folder.get(&path).unwrap(), whole);
+    folder.put(&path, &whole[..whole.len() / 2]);
+    let b = open(&dir, "b");
+    let report = sync(&b, &folder);
+    assert!(
+        matches!(
+            &report.merge.stopped[..],
+            [(id, _, OpsStop::SnapshotNotWhole(_))] if *id == a_id
+        ),
+        "{report:?}"
+    );
+    // A writes no ops, but its next sync writes its snapshot again, and B meets it.
+    let report = sync(&a, &folder);
+    assert!(report.written.is_empty(), "{report:?}");
+    assert_eq!(report.snapshot, Some(0), "{report:?}");
+    let report = sync(&b, &folder);
+    assert_eq!(report.merge.snapshots, [(a_id, 0)], "{report:?}");
+    assert!(names(&b).contains(&"Romans".to_string()));
+    settle(&[&a, &b], &folder);
+    converged(&[&a, &b]);
+}
