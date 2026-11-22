@@ -533,3 +533,49 @@ fn a_folder_not_there_or_set_up_by_a_newer_app_says_so() {
         "tried again later, not every frame"
     );
 }
+
+/// The op files of every device in `folder`.
+fn op_files(folder: &Path) -> usize {
+    let devices = folder.join(crate::sync::DEVICES_DIR);
+    (std::fs::read_dir(devices).unwrap().filter_map(Result::ok))
+        .filter_map(|d| std::fs::read_dir(d.path().join("ops")).ok())
+        .map(|files| files.count())
+        .sum()
+}
+
+/// How long a sync holds the UI thread (supervisor decision D3, plan S29): a sync of one
+/// edit through a local folder, a device merging 1,000 op files another wrote while it was
+/// away, a sync with nothing new beside them, and a new device joining that folder.
+/// `cargo test -p obs-engine --lib measure_ -- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn measure_syncs_on_the_ui_thread() {
+    let dir = Dir::new("measure");
+    let mut a = dir.syncing("a");
+    let mut b = dir.syncing("b");
+    sync(&mut a);
+    sync(&mut b);
+    sync(&mut a);
+    a.create_notebook("One edit").unwrap();
+    sync(&mut a);
+    let one_edit = a.last_sync_duration_ms().unwrap();
+    for i in 0..1000 {
+        b.create_notebook(&format!("Notebook {i}")).unwrap();
+        sync(&mut b);
+    }
+    let files = op_files(&dir.folder());
+    sync(&mut a);
+    let merged_1000 = a.last_sync_duration_ms().unwrap();
+    assert!(notebook_names(&a).contains(&"Notebook 999".to_string()));
+    sync(&mut a);
+    let nothing_new = a.last_sync_duration_ms().unwrap();
+    let mut c = dir.syncing("c");
+    sync(&mut c);
+    let joined = c.last_sync_duration_ms().unwrap();
+    assert!(notebook_names(&c).contains(&"Notebook 999".to_string()));
+    eprintln!(
+        "sync on the UI thread, local folder ({files} op files): one edit {one_edit} ms; \
+         merging 1,000 op files {merged_1000} ms; nothing new {nothing_new} ms; a new device \
+         joining {joined} ms"
+    );
+}
