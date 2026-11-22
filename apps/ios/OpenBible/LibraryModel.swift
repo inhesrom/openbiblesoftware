@@ -7,8 +7,9 @@ import os
 /// first-launch Study set offer over the shared core (`docs/dev/mobile-library.md`). Every
 /// row, size, licence, state and question is the core's; this forwards the taps (with the
 /// network `NetworkMonitor` sees and the free bytes the volume reports), starts the
-/// transfers the core plans on `DownloadCenter`, and asks again on `Changed.library` (Storage
-/// too) and `Changed.downloads` (at most every 0.25 s: each transfer's progress wakes it).
+/// transfers the core plans on `DownloadCenter`, and asks again on `Changed.library` and
+/// `Changed.indexes` (Storage too) and `Changed.downloads` (at most every 0.25 s: each
+/// transfer's progress wakes it).
 @MainActor
 @Observable
 final class LibraryModel {
@@ -125,6 +126,12 @@ final class LibraryModel {
 
     /// `Changed.library`: everything shown, Storage included.
     func libraryChanged() {
+        refresh()
+    }
+
+    /// `Changed.indexes`: a Search index started or stopped being built, so Storage's row
+    /// and sizes change.
+    func indexesChanged() {
         refresh()
     }
 

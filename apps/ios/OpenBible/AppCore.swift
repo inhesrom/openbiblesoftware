@@ -171,11 +171,14 @@ final class AppCore {
         }
     }
 
-    /// The app went to the background: the core saves what would be lost.
+    /// The app went to the background: the core saves what would be lost, and the
+    /// background processing task is asked for while the core has work for it.
     func background() {
-        do { try core?.onBackground() } catch {
+        guard let core else { return }
+        do { try core.onBackground() } catch {
             Self.log.error("background: \(Self.message(error), privacy: .public)")
         }
+        BackgroundIndexer.shared.schedule(core)
     }
 
     /// The app came back to the foreground.

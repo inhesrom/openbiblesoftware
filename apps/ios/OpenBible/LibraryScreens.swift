@@ -266,7 +266,8 @@ struct OpenRowView: View {
     }
 }
 
-/// Library → Storage: the space each Resource takes, and the total, as the core counts it.
+/// Library → Storage: the space each Resource takes, its Search index, and the total, as the
+/// core counts and words them.
 struct StorageScreen: View {
     let model: LibraryModel
 
@@ -277,7 +278,19 @@ struct StorageScreen: View {
                     .accessibilityIdentifier("storage.total")
                 ForEach(storage.rows, id: \.resourceId) { row in
                     HStack {
-                        LabeledContent(row.title, value: row.size)
+                        VStack(alignment: .leading, spacing: 2) {
+                            LabeledContent(row.title, value: row.size)
+                            if let index = row.index {
+                                HStack(spacing: 6) {
+                                    if index.state == .building {
+                                        ProgressView().accessibilityHidden(true)
+                                    }
+                                    Text(index.label).font(.footnote)
+                                }
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("storage.row.\(row.resourceId)")
                         Button("Remove", role: .destructive) { model.remove(row.resourceId) }
                             .accessibilityLabel("Remove \(row.title)")
                             .accessibilityIdentifier("storage.remove.\(row.resourceId)")

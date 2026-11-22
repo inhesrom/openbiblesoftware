@@ -43,6 +43,8 @@ final class ReaderModel {
     @ObservationIgnored var onLibrary: (() -> Void)?
     /// A download or the Study set offer changed (`LibraryModel` shows them).
     @ObservationIgnored var onDownloads: (() -> Void)?
+    /// A Search index started or stopped being built (`LibraryModel`'s Storage shows it).
+    @ObservationIgnored var onIndexes: (() -> Void)?
     /// The measurements strip (frames dropped, tile times) under the text.
     var showMeasurements = UserDefaults.standard.bool(forKey: "OBSMeasurements")
     private(set) var coldStart: Duration?
@@ -104,6 +106,8 @@ final class ReaderModel {
             Self.log.info("core: \(text, privacy: .public)")
         case .imports:
             onImports?()
+        case .indexes:
+            onIndexes?()
         default:
             break
         }

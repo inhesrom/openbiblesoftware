@@ -2,13 +2,16 @@ import SwiftUI
 import UIKit
 
 /// The app delegate, for what SwiftUI has no scene for: the system waking the app for its
-/// background downloads' events (`DownloadCenter`), when no scene may be connected.
+/// background downloads' events (`DownloadCenter`) or its background processing task
+/// (`BackgroundIndexer`), when no scene may be connected.
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         // The background sessions are made again at once, so finished transfers are heard.
         _ = DownloadCenter.shared
+        // The background processing task's handler, before launching ends (S25).
+        BackgroundIndexer.shared.register()
         return true
     }
 
@@ -46,6 +49,7 @@ struct OpenBibleApp: App {
                     reader.onImports = { [importer] in importer.refresh() }
                     reader.onLibrary = { [library] in library.libraryChanged() }
                     reader.onDownloads = { [library] in library.downloadsChanged() }
+                    reader.onIndexes = { [library] in library.indexesChanged() }
                     importer.onOpen = { [reader] id in reader.open(bible: id) }
                     await reader.start()
                     importer.coreReady()
