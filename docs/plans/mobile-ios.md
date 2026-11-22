@@ -2176,7 +2176,7 @@ under the half they belong to.
   **`OBS_MERGE_SEED=20266453`** (case 0: "the Collection {"n":5} added at
   01a3189b1d7d-0000-01a3189b-1106-7389-ab3f-8a0111211392 was lost"; case 5331 of a 10k run
   from 20261122); it fails the same at `d468f1b` (S29, before S29b, on one connection), so it
-  is the merge's: a fix-up step on the sync stack takes it (`sync.md` "Known issue").
+  is the merge's: a fix-up step on the sync stack takes it (`sync.md` "Known issue") (fixed: see the Sync merge fix under S28c's Outcome).
   `sync-e2e` makes a Notebook named "Mac B" on B (there at `d468f1b` too, not checked by the
   e2e). **Verified:** `cargo test -p obs-store --all-features`; `cargo test -p obs-engine
   --lib sync`; the merge property tests, 1,000 cases and 10,000 from the default seed and
