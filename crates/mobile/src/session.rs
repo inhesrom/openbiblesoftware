@@ -5,7 +5,7 @@
 //! another format is ignored (the default reader opens) and replaced at the next save.
 //!
 //! ```json
-//! {"mobile":1,"readers":[{"resource":"bsb","verse":{"book":"John","chapter":3,"verse":16}}]}
+//! {"mobile":1,"readers":[{"resource":"bsb","verse":{"book":"JHN","chapter":3,"verse":16}}]}
 //! ```
 
 use obs_model::Key;
