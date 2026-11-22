@@ -444,6 +444,17 @@ impl MergeTx<'_> {
             .map_err(sql)
     }
 
+    /// Whether an op of the row `key` names is held here.
+    pub fn is_held(&self, key: &RowKey) -> Result<bool, StoreError> {
+        let (kind, id) = key.tombstone();
+        self.tx
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM sync_held WHERE row_table = ?1 AND row_id = ?2)",
+            )
+            .and_then(|mut s| s.query_row(params![kind, id], |r| r.get(0)))
+            .map_err(sql)
+    }
+
     /// `op` (held before) is applied or superseded: it leaves `sync_held`.
     pub fn unhold(&mut self, op: &HeldOp) -> Result<(), StoreError> {
         let (kind, id) = held_key(&op.change);

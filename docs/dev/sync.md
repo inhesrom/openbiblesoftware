@@ -398,7 +398,10 @@ An op this device cannot apply goes to `sync_held` (migration 16: `row_table`, `
 carry and why it is held), and the rest of its file merges: the stream never stalls. Held are an
 item of a list whose value is not in shape (D7), a synced preference this build does not know
 (a later app's, which `apply_changes` refuses as "not Synced data"), a child of a parent deleted
-before schema 16, and any other op this build refuses (`StoreError::Rejected` or `Conflict`).
+before schema 16, a child of a parent whose own op is held here (rather than waiting for it,
+which would stall its device's stream; the held ops are tried again in clock order, so the
+parent first: `merge_tests::a_child_of_a_held_parent_is_held_too_and_applies_after_it`), and
+any other op this build refuses (`StoreError::Rejected` or `Conflict`).
 `merge_folder` tries every held op again at its start and end, and a whole value that puts a
 list in shape tries that list's at once; one that applies, or that a later write supersedes
 (it lost by last writer wins), leaves `sync_held`. `UserStore::sync_held()` lists them for

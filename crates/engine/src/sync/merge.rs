@@ -703,8 +703,9 @@ fn with_fields_here(after: &Row, here: Option<&Row>, absent: &[String]) -> Resul
 
 /// Make sure the rows `row` needs are here: a deleted one is restored from its tombstone's
 /// row and recorded (D3; its own parents first: a style's palette); one not here yet waits
-/// for another device's op file to bring it; one deleted before schema 16 (its tombstone has
-/// no row) is refused, so the op is held until another device brings it back.
+/// for another device's op file to bring it, unless its own op is held here; one deleted
+/// before schema 16 (its tombstone has no row) or held is refused, so the op is held until
+/// the parent is here.
 fn ensure_parents(
     tx: &mut MergeTx<'_>,
     row: &Row,
@@ -745,6 +746,17 @@ fn ensure_parents(
                 return Err(StoreError::Rejected(format!(
                     "{} needs {}, deleted here before this app kept deleted rows: it is held \
                      until another device brings it back",
+                    row.key().describe(),
+                    parent.describe()
+                ))
+                .into());
+            }
+            // Held here itself (a child of a parent deleted before schema 16, or an op this
+            // build refuses): the child is held too, so its file merges on, and they are tried
+            // again in clock order, the parent first.
+            None if tx.is_held(&parent)? => {
+                return Err(StoreError::Rejected(format!(
+                    "{} needs {}, which is held here: it is held until that applies",
                     row.key().describe(),
                     parent.describe()
                 ))

@@ -1157,6 +1157,87 @@ fn a_child_of_a_parent_deleted_before_schema_16_is_held_until_the_parent_comes_b
     converged(&[&a, &b]);
 }
 
+/// A child whose parent's own op is held here (a style held under a palette deleted before
+/// schema 16) is held too, not waited for, so its device's stream goes on; both apply, the
+/// parent first, once another device brings the palette back (the S28b-2 review's P2-1).
+#[test]
+fn a_child_of_a_held_parent_is_held_too_and_applies_after_it() {
+    let dir = Dir::new("parent-held");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let nb = notebook("Romans");
+    let palette = obs_store::HighlightPalette {
+        id: new_id(),
+        name: "Mine".into(),
+        position: 1,
+        created_at: 1,
+        modified_at: 1,
+    };
+    b.apply(&[
+        Change::insert(Row::Notebook(nb.clone())),
+        Change::insert(Row::HighlightPalette(palette.clone())),
+    ]);
+    Device::settle(&[&a, &b], &cloud);
+    a.apply(&[Change::delete(Row::HighlightPalette(palette.clone()))]);
+    // As a tombstone from before schema 16 is.
+    a.user
+        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .unwrap();
+    let style = obs_store::HighlightStyle {
+        id: new_id(),
+        palette_id: palette.id.clone(),
+        position: 0,
+        name: "Promise".into(),
+        appearance: obs_store::StyleAppearance::new(
+            obs_store::HighlightLook::Underline,
+            obs_store::Rgb::new(1, 2, 3),
+        ),
+        created_at: 1,
+        modified_at: 1,
+    };
+    let verse = obs_scripture::Verse::new(obs_scripture::Book::Romans, 8, 28);
+    let highlight = Annotation {
+        id: new_id(),
+        notebook_id: nb.id.clone(),
+        content: Content::Highlight {
+            style: style.id.clone(),
+        },
+        anchor: Some(obs_store::Anchor::Passage {
+            passage: obs_scripture::Passage::verse(verse),
+            origin: None,
+        }),
+        created_at: 1,
+        modified_at: 1,
+        conflict_of: None,
+    };
+    b.apply(&[Change::insert(Row::HighlightStyle(style.clone()))]);
+    b.apply(&[Change::insert(Row::Annotation(highlight.clone()))]);
+    b.push(&cloud);
+    let report = a.sync(&cloud);
+    assert!(report.waiting.is_empty(), "{report:?}");
+    assert_eq!(report.outcomes.get(&Outcome::Held), Some(&2), "{report:?}");
+    // B's next op file merges on A.
+    let later = note_in(&nb.id, "later on B");
+    b.apply(&[Change::insert(Row::Annotation(later.clone()))]);
+    b.push(&cloud);
+    let report = a.sync(&cloud);
+    assert!(report.waiting.is_empty(), "{report:?}");
+    assert!(annotation_of(&a, &later.id).is_some());
+    // B meets A's delete with its style there: it keeps the palette and records it, which
+    // brings it back on A, where the held style and then its Highlight apply.
+    Device::settle(&[&a, &b], &cloud);
+    assert!(a.user.sync_held().unwrap().is_empty());
+    assert!(a.row(&Row::HighlightStyle(style.clone()).key()).is_some());
+    assert_eq!(annotation_of(&a, &highlight.id), Some(highlight));
+    a.user
+        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .unwrap();
+    b.user
+        .execute_unchecked("UPDATE tombstone SET row = NULL")
+        .unwrap();
+    converged(&[&a, &b]);
+}
+
 #[test]
 fn two_collections_of_one_name_added_on_two_devices_both_stay_the_loser_renamed() {
     let dir = Dir::new("items-one-name");
