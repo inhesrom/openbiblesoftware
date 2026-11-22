@@ -17,7 +17,9 @@
 //!    brings what it made before to the others.
 //! 5. Its pending ops are written (an own file reserved here found there with other ops is
 //!    a copy's too: a new id, as in 3); then its snapshot, when one is due
-//!    (`snapshot::snapshot_due`: none yet, or enough written since).
+//!    (`snapshot::snapshot_due`: none yet, or enough written since), unless an edit made
+//!    meanwhile has an op in the outbox (S29b: the user edits while the sync runs): then the
+//!    snapshot is not due yet.
 //! 6. Every other device's snapshots and op files are merged (`merge::merge_folder`); what the
 //!    merge recorded (a Sync conflict's copy, a rename, a restored parent …) is written at once.
 //! 7. A snapshot again if one is now due, then this device's own op files that may go are
@@ -30,7 +32,7 @@ use super::merge::{MergeReport, merge_folder};
 use super::ops::{op_file_seq, ops_dir, write_pending_ops};
 use super::snapshot::{
     SnapshotPolicy, snapshot_due, snapshot_file_seq, snapshots_dir, trim_own_op_files,
-    write_snapshot,
+    write_snapshot_unless_edited,
 };
 use super::{DeviceJson, FolderFormat, SyncError, SyncFolder, ensure_sync_json, write_device_json};
 
@@ -187,15 +189,17 @@ pub fn sync_now(
         }
         written => written?,
     };
+    // An edit made meanwhile (on the UI thread while this runs on its worker) makes a
+    // snapshot not due: none is written then rather than the sync failing.
     if snapshot_due(user, folder, &options.policy, now)? {
-        report.snapshot = Some(write_snapshot(user, folder)?);
+        report.snapshot = write_snapshot_unless_edited(user, folder)?;
     }
     report.merge = merge_folder(user, folder)?;
     if user.has_pending_ops()? {
         report.written.extend(write_pending_ops(user, folder)?);
     }
     if snapshot_due(user, folder, &options.policy, now)? {
-        report.snapshot = Some(write_snapshot(user, folder)?);
+        report.snapshot = write_snapshot_unless_edited(user, folder)?.or(report.snapshot);
     }
     report.trimmed = trim_own_op_files(user, folder, &options.policy, now)?;
     let device = user.device_id()?;
