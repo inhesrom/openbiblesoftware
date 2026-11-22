@@ -70,6 +70,7 @@ be there first, made from the repository's open-text test assets:
 
 ```sh
 simctl boot <udid>                                    # the simctl path S05 names
+simctl launch <udid> com.apple.DocumentsApp           # Files, once, on a fresh simulator
 bash apps/ios/scripts/place-import-files.sh <udid>     # from the repository root
 cd apps/ios
 TEST_RUNNER_OBS_IMPORT_FILES=1 xcodebuild test -scheme OpenBible -destination 'id=<udid>' \
@@ -79,8 +80,11 @@ TEST_RUNNER_OBS_IMPORT_FILES=1 xcodebuild test -scheme OpenBible -destination 'i
 The script zips `crates/formats/tests/assets/usfm/web` (`WEB excerpt.zip`) and the
 `ObsKjvOsis` test module (`KJV module.zip`), makes `KJV excerpt.obr` with `obs-cli import`,
 and copies them into the `File Provider Storage` of the simulator's
-`group.com.apple.FileProvider.LocalStorage` container. Without `TEST_RUNNER_OBS_IMPORT_FILES`
-the three tests are skipped (CI's `ios.yml` does not place the files yet). The app under test
+`group.com.apple.FileProvider.LocalStorage` container. A fresh simulator has no Files storage until
+the Files app has run once (`simctl launch <udid> com.apple.DocumentsApp`); the script waits up
+to 30 s for it. CI's `ios.yml` does just that before `xcodebuild test` ("Place the Import tests'
+files": launch Files, run the script, quit Files) and sets `TEST_RUNNER_OBS_IMPORT_FILES=1`.
+Without `TEST_RUNNER_OBS_IMPORT_FILES` the three tests are skipped. The app under test
 boots in `Application Support/OpenBible-ImportTests`, made afresh each launch (the Debug-only
 `OBS_TEST_APP_FOLDER`), so the other tests still find the Bundled set alone. "Open in Open
 Bible" can be tried by hand with `simctl openurl <udid> file:///path/to/file.obr`
