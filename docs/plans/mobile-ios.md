@@ -67,7 +67,7 @@ to Claude Opus 5.5 later on".
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | done (PR #361) |
 | S28a | Sync 2a (Rust): `SyncFolder` trait, HLC, op file writer/reader, `sync.json`, device files | AFK | n | S27b | `obs-engine::sync` skeleton, `docs/dev/sync.md` draft | done (PR #362) |
-| S28b-1 | Sync 2b-1 (Rust): merge rules (LWW, edit beats delete, absent fields, Readings, Preferred order, two defaults, Layout "(2)") + property tests | AFK | n | S28a | `sync/merge.rs`, migration 15, 10k-case property tests | done (branch mobile/s28b-sync-merge, PR pending) |
+| S28b-1 | Sync 2b-1 (Rust): merge rules (LWW, edit beats delete, absent fields, Readings, Preferred order, two defaults, Layout "(2)") + property tests | AFK | n | S28a | `sync/merge.rs`, migration 15, 10k-case property tests | done (PR #370) |
 | S28b-2 | Sync 2b-2 (Rust): Note-text Sync conflicts, deleted parents, list items of one name, a list's whole value | AFK | n | S28b-1 | `conflict_of`, parent rows in tombstones, `sync_held`, wider property tests | todo |
 | S28c | Sync 2c (Rust): snapshots, trimming, format versioning, device-id rules, restore choice, scheduling | AFK | n | S28b-2 | `sync_now`, `next_sync_due`, `restore_choice`, `docs/dev/sync.md` final | todo |
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
