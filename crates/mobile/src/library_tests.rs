@@ -15,7 +15,7 @@ use obs_engine::testing::{
     MOCK_OPEN_NOTICE, mobile_starter_library, mock_open_catalogue, write_mobile_starter_bundle,
 };
 
-use crate::library::{download_rule, megabytes};
+use crate::library::{OPEN_DOWNLOAD_FLOOR, download_rule, megabytes};
 use crate::*;
 
 const WIFI: Network = Network {
@@ -229,14 +229,17 @@ fn library_study_set_downloads_through_the_states_and_installs() {
         app.download_banner()
     );
     for r in &requests {
-        let state = transfer(&mut app, r);
-        assert!(
-            matches!(state, DownloadState::Indexing | DownloadState::Done),
-            "{state:?}"
+        // Checked and put in place on a job, off the caller's lock.
+        assert_eq!(transfer(&mut app, r), DownloadState::Verifying);
+        assert_eq!(
+            row(&app, &r.resource_id).download,
+            Some(DownloadState::Verifying)
         );
-        assert!(!r.file.exists(), "the download is deleted once installed");
     }
     settle(&mut app);
+    for r in &requests {
+        assert!(!r.file.exists(), "the download is deleted once installed");
+    }
     for r in &requests {
         assert_eq!(
             row(&app, &r.resource_id).download,
@@ -281,6 +284,9 @@ fn library_a_sha256_mismatch_deletes_the_file_and_offers_retry() {
     let r = requests(plan).remove(0);
     std::fs::write(&r.file, b"not the release's file").unwrap();
     let state = app.install_downloaded("bdb", &r.file, r.origin).unwrap();
+    assert_eq!(state, DownloadState::Verifying);
+    settle(&mut app);
+    let state = row(&app, "bdb").download.unwrap();
     let DownloadState::Failed { message, retry } = &state else {
         panic!("{state:?}");
     };
@@ -343,13 +349,16 @@ fn library_cancel_forgets_the_download_and_deletes_its_partial_file() {
 fn library_cellular_and_free_space_rules() {
     let mb = 1_000_000;
     // Wi-Fi: start, cellular only if allowed.
-    assert_eq!(download_rule(Some(mb), "BDB", WIFI, false, None), Ok(false));
+    assert_eq!(
+        download_rule(Some(mb), "BDB", WIFI, false, None, 0),
+        Ok(false)
+    );
     let allowed = Network {
         is_wifi: true,
         allow_cellular: true,
     };
     assert_eq!(
-        download_rule(Some(mb), "BDB", allowed, false, None),
+        download_rule(Some(mb), "BDB", allowed, false, None, 0),
         Ok(true)
     );
     // Cellular, allowed: start.
@@ -358,12 +367,12 @@ fn library_cellular_and_free_space_rules() {
         allow_cellular: true,
     };
     assert_eq!(
-        download_rule(Some(mb), "BDB", cell_allowed, false, None),
+        download_rule(Some(mb), "BDB", cell_allowed, false, None, 0),
         Ok(true)
     );
     // Cellular, not allowed: ask with the size; yes starts it over cellular.
     let Err(DownloadPlan::AskCellular { bytes, message }) =
-        download_rule(Some(137 * mb), "the Study set", CELLULAR, false, None)
+        download_rule(Some(137 * mb), "the Study set", CELLULAR, false, None, 0)
     else {
         panic!()
     };
@@ -373,11 +382,11 @@ fn library_cellular_and_free_space_rules() {
         "{message}"
     );
     assert_eq!(
-        download_rule(Some(mb), "BDB", CELLULAR, true, None),
+        download_rule(Some(mb), "BDB", CELLULAR, true, None, 0),
         Ok(true)
     );
     let Err(DownloadPlan::AskCellular { message, .. }) =
-        download_rule(None, "WEBX", CELLULAR, false, None)
+        download_rule(None, "WEBX", CELLULAR, false, None, 0)
     else {
         panic!()
     };
@@ -387,7 +396,14 @@ fn library_cellular_and_free_space_rules() {
         needed,
         free,
         message,
-    }) = download_rule(Some(100 * mb), "the Study set", WIFI, false, Some(200 * mb))
+    }) = download_rule(
+        Some(100 * mb),
+        "the Study set",
+        WIFI,
+        false,
+        Some(200 * mb),
+        0,
+    )
     else {
         panic!()
     };
@@ -397,14 +413,40 @@ fn library_cellular_and_free_space_rules() {
         "{message}"
     );
     assert_eq!(
-        download_rule(Some(100 * mb), "x", WIFI, false, Some(250 * mb)),
+        download_rule(Some(100 * mb), "x", WIFI, false, Some(250 * mb), 0),
         Ok(false)
     );
     // Won't fit is said before the cellular question.
     assert!(matches!(
-        download_rule(Some(100 * mb), "x", CELLULAR, false, Some(mb)),
+        download_rule(Some(100 * mb), "x", CELLULAR, false, Some(mb), 0),
         Err(DownloadPlan::WontFit { .. })
     ));
+    // What the downloads already planned need is not free.
+    let Err(DownloadPlan::WontFit { message, .. }) =
+        download_rule(Some(100 * mb), "x", WIFI, false, Some(400 * mb), 200 * mb)
+    else {
+        panic!()
+    };
+    assert!(
+        message.contains(
+            "this device has 400.0 MB, and the downloads already planned need \
+             200.0 MB of it"
+        ),
+        "{message}"
+    );
+    // A size not known needs the floor.
+    let Err(DownloadPlan::WontFit {
+        needed, message, ..
+    }) = download_rule(None, "WEBX", WIFI, false, Some(OPEN_DOWNLOAD_FLOOR - 1), 0)
+    else {
+        panic!()
+    };
+    assert_eq!(needed, OPEN_DOWNLOAD_FLOOR);
+    assert!(message.contains("needs at least 100.0 MB"), "{message}");
+    assert_eq!(
+        download_rule(None, "WEBX", WIFI, false, Some(OPEN_DOWNLOAD_FLOOR), 0),
+        Ok(false)
+    );
 
     // Through the plan: nothing is queued until the rule says go.
     let (root, mut app) = app("cellular");
@@ -439,6 +481,49 @@ fn library_cellular_and_free_space_rules() {
     std::fs::remove_dir_all(&root).unwrap();
 }
 
+/// Two plans in a row do not both count the same free space; an Open catalogue download of
+/// a size not known needs the floor.
+#[test]
+fn library_wont_fit_counts_the_downloads_already_planned() {
+    let (root, mut app) = app("planned-space");
+    let item = |app: &MobileApp, id: &str| {
+        (app.starter_library().rows.into_iter())
+            .find(|r| r.resource_id == id)
+            .unwrap()
+            .bytes
+    };
+    let (tbesg, tbesh) = (item(&app, "tbesg"), item(&app, "tbesh"));
+    let needed = obs_engine::library_storage::space_needed;
+    // Room for either, not both.
+    let free = Some(needed(tbesg) + needed(tbesh) - 1);
+    let one = |id: &str| StarterChoice::One(id.into());
+    let plan = app
+        .plan_starter_download(&one("tbesg"), WIFI, false, free)
+        .unwrap();
+    assert!(matches!(plan, DownloadPlan::Start(_)), "{plan:?}");
+    let plan = app
+        .plan_starter_download(&one("tbesh"), WIFI, false, free)
+        .unwrap();
+    assert!(matches!(plan, DownloadPlan::WontFit { .. }), "{plan:?}");
+    // Open: the floor, on top of what is planned.
+    let sources = mock_open_catalogue(&root.join("open"), MOCK_OPEN_NOTICE);
+    app.session.get_bibles.set_open_catalogue(sources);
+    let plan = app
+        .plan_open_download("web-excerpt", WIFI, false, Some(needed(tbesg)))
+        .unwrap();
+    assert!(matches!(plan, DownloadPlan::WontFit { .. }), "{plan:?}");
+    let plan = app
+        .plan_open_download(
+            "web-excerpt",
+            WIFI,
+            false,
+            Some(needed(tbesg) + OPEN_DOWNLOAD_FLOOR),
+        )
+        .unwrap();
+    assert!(matches!(plan, DownloadPlan::Start(_)), "{plan:?}");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
 /// Remove and Add back (#333): a removed Starter Resource stays removed across launches and
 /// leaves the Study set; Add back of a Bundled set Resource comes from the bundle at once,
 /// of another, through a download.
@@ -465,14 +550,11 @@ fn library_removed_stays_removed_and_add_back_restores_it() {
     assert_eq!(row(&app, "tbesg").status, StarterRowStatus::Removed);
     assert_eq!(app.starter_library().study_set.resources, 3);
     assert!(app.pump().contains(&Changed::Library));
-    // A Bundled set Resource too, and not the one a reader shows.
+    // A Bundled set Resource too.
     assert_eq!(
         app.remove_resource("strongs-hebrew", true).unwrap(),
         RemoveAnswer::Removed
     );
-    let shown = app.reader(ReaderId(0)).unwrap().resource_id;
-    let err = app.remove_resource(&shown, true).unwrap_err();
-    assert!(err.to_string().contains("is open in the reader"), "{err}");
     drop(app);
 
     // Relaunch: still removed, not added back from the bundle.
@@ -508,6 +590,322 @@ fn library_removed_stays_removed_and_add_back_restores_it() {
     transfer(&mut app, &r);
     settle(&mut app);
     assert_eq!(row(&app, "tbesg").status, StarterRowStatus::InLibrary);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// A Resource whose newer revision is being downloaded is not removed (the download would
+/// add it back, no longer Removed), as the desktop refuses it.
+#[test]
+fn library_remove_refuses_while_its_starter_download_is_under_way() {
+    let (root, mut app) = app("remove-downloading");
+    let r = requests(
+        app.plan_starter_download(&StarterChoice::One("tbesg".into()), WIFI, false, PLENTY)
+            .unwrap(),
+    )
+    .remove(0);
+    transfer(&mut app, &r);
+    settle(&mut app);
+    // A newer revision is released: Update.
+    let mut library = mobile_starter_library();
+    for (r, _) in &mut library {
+        if r.manifest.resource_id == "tbesg" {
+            r.manifest.revision += 1;
+        }
+    }
+    write_mobile_starter_bundle(&root.join("release"), &library);
+    assert!(app.check_starter());
+    settle(&mut app);
+    assert!(
+        matches!(row(&app, "tbesg").status, StarterRowStatus::Outdated { .. }),
+        "{:?}",
+        row(&app, "tbesg")
+    );
+    let r = requests(
+        app.plan_starter_download(&StarterChoice::One("tbesg".into()), WIFI, false, PLENTY)
+            .unwrap(),
+    )
+    .remove(0);
+    for confirmed in [false, true] {
+        let err = app.remove_resource("tbesg", confirmed).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "TBESG is being downloaded with the Starter library. Cancel the download, or \
+             wait for it to finish, then remove it."
+        );
+    }
+    assert!(ids(&app).contains(&"tbesg".to_string()));
+    app.cancel_download("tbesg", r.origin).unwrap();
+    assert_eq!(
+        app.remove_resource("tbesg", true).unwrap(),
+        RemoveAnswer::Removed
+    );
+    assert_eq!(row(&app, "tbesg").status, StarterRowStatus::Removed);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// iOS relaunches the app to hand it a background transfer: the released manifest and its
+/// pinned files were kept on the device, so the file is installed. One whose Resource the
+/// kept manifest does not list waits, its file kept, for the released manifest check.
+#[test]
+fn library_a_transfer_finished_after_a_relaunch_is_installed() {
+    let (root, mut app) = app("relaunch");
+    let planned = requests(
+        app.plan_starter_download(&StarterChoice::Set(MobileSet::Study), WIFI, false, PLENTY)
+            .unwrap(),
+    );
+    drop(app);
+    let mut app = boot(&root);
+    assert_eq!(
+        app.starter_library().rows.len(),
+        7,
+        "the kept release's rows"
+    );
+    assert!(app.downloads().is_empty());
+    let r = &planned[0];
+    std::fs::write(&r.file, std::fs::read(url_path(&r.url)).unwrap()).unwrap();
+    let state = app
+        .install_downloaded(&r.resource_id, &r.file, r.origin)
+        .unwrap();
+    assert_eq!(state, DownloadState::Verifying);
+    assert!(!app.starter_library().checking, "nothing to fetch first");
+    settle(&mut app);
+    assert_eq!(
+        row(&app, &r.resource_id).status,
+        StarterRowStatus::InLibrary
+    );
+    // Without the kept manifest (another Resource than it lists): the file waits.
+    let user = app.session.user.as_ref().unwrap();
+    user.set_preference(obs_engine::starter::RELEASED_PREF, "null")
+        .unwrap();
+    drop(app);
+    let mut app = boot(&root);
+    assert_eq!(
+        app.starter_library().rows.len(),
+        2,
+        "the Bundled set's rows"
+    );
+    let r = &planned[1];
+    std::fs::write(&r.file, std::fs::read(url_path(&r.url)).unwrap()).unwrap();
+    let state = app
+        .install_downloaded(&r.resource_id, &r.file, r.origin)
+        .unwrap();
+    assert_eq!(state, DownloadState::Queued);
+    assert!(r.file.exists(), "kept until the manifest is in");
+    assert!(app.starter_library().checking);
+    settle(&mut app);
+    assert_eq!(
+        row(&app, &r.resource_id).status,
+        StarterRowStatus::InLibrary
+    );
+    assert_eq!(
+        row(&app, &r.resource_id).download,
+        Some(DownloadState::Done)
+    );
+    assert!(!r.file.exists());
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// `install_downloaded` takes only the file the core named, and deletes no other.
+#[test]
+fn library_install_downloaded_refuses_a_file_it_did_not_name() {
+    let (root, mut app) = app("other-file");
+    let r = requests(
+        app.plan_starter_download(&StarterChoice::One("tbesg".into()), WIFI, false, PLENTY)
+            .unwrap(),
+    )
+    .remove(0);
+    let bytes = std::fs::read(url_path(&r.url)).unwrap();
+    let elsewhere = root.join("tbesg.obr");
+    let other_name = r.file.with_file_name("tbesh.obr");
+    for wrong in [elsewhere, other_name, app.paths().user_db.clone()] {
+        if !wrong.exists() {
+            std::fs::write(&wrong, &bytes).unwrap();
+        }
+        let err = app
+            .install_downloaded("tbesg", &wrong, r.origin)
+            .unwrap_err();
+        assert!(err.to_string().contains("was left where it is"), "{err}");
+        assert!(wrong.exists(), "{} not deleted", wrong.display());
+        assert_eq!(row(&app, "tbesg").download, Some(DownloadState::Queued));
+    }
+    // An id that names a file outside the downloads folder.
+    let outside = app.paths().downloads.join("../escape.obr");
+    std::fs::write(&outside, b"x").unwrap();
+    assert!(
+        app.install_downloaded("../escape", &outside, r.origin)
+            .is_err()
+    );
+    assert!(outside.exists());
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// A Starter file is checked on a job (Verifying shows until the pump moves it on); handing
+/// it in again while it installs, or once it is done, changes nothing.
+#[test]
+fn library_a_second_hand_in_of_a_file_being_installed_is_ignored() {
+    let (root, mut app) = app("hand-in-twice");
+    let r = requests(
+        app.plan_starter_download(&StarterChoice::One("tbesg".into()), WIFI, false, PLENTY)
+            .unwrap(),
+    )
+    .remove(0);
+    assert_eq!(transfer(&mut app, &r), DownloadState::Verifying);
+    assert!(app.busy(), "a job checks it");
+    assert_eq!(
+        app.install_downloaded("tbesg", &r.file, r.origin).unwrap(),
+        DownloadState::Verifying
+    );
+    settle(&mut app);
+    assert_eq!(row(&app, "tbesg").download, Some(DownloadState::Done));
+    assert_eq!(
+        app.install_downloaded("tbesg", &r.file, r.origin).unwrap(),
+        DownloadState::Done
+    );
+    assert_eq!(row(&app, "tbesg").download, Some(DownloadState::Done));
+    assert_eq!(app.download_banner(), None);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// An Open catalogue Import cancelled before it read its file deletes it; boot deletes the
+/// files a past run left in the downloads folder, not one that just finished.
+#[test]
+fn library_a_cancelled_import_deletes_its_file_and_boot_sweeps_stale_downloads() {
+    let (root, mut app) = app("orphans");
+    let sources = mock_open_catalogue(&root.join("open"), MOCK_OPEN_NOTICE);
+    app.session.get_bibles.set_open_catalogue(sources);
+    let r = requests(
+        app.plan_open_download("web-excerpt", WIFI, false, PLENTY)
+            .unwrap(),
+    )
+    .remove(0);
+    std::fs::write(&r.file, std::fs::read(url_path(&r.url)).unwrap()).unwrap();
+    assert_eq!(
+        app.install_downloaded(&r.resource_id, &r.file, r.origin)
+            .unwrap(),
+        DownloadState::Installing
+    );
+    let resource = app.open_catalogue(LicenceFilter::All)[0]
+        .download
+        .clone()
+        .map(|_| {
+            app.downloads
+                .iter()
+                .find_map(|d| d.installed.clone())
+                .unwrap()
+        })
+        .unwrap();
+    let job = app.session.imports.job_of(&resource).unwrap();
+    assert!(app.session.jobs().cancel(job));
+    settle(&mut app);
+    assert!(
+        matches!(
+            app.open_catalogue(LicenceFilter::All)[0].download,
+            Some(DownloadState::Failed { .. })
+        ),
+        "{:?}",
+        app.open_catalogue(LicenceFilter::All)[0]
+    );
+    assert!(!r.file.exists(), "the cancelled Import's file is deleted");
+    drop(app);
+    let downloads = root.join("app/downloads");
+    let (stale, fresh) = (downloads.join("bdb.obr"), downloads.join("tbesh.obr"));
+    for f in [&stale, &fresh] {
+        std::fs::write(f, b"left over").unwrap();
+    }
+    let long_ago = std::time::SystemTime::now() - crate::library::STALE_DOWNLOAD * 2;
+    (std::fs::File::options().write(true).open(&stale).unwrap())
+        .set_modified(long_ago)
+        .unwrap();
+    let _app = boot(&root);
+    assert!(!stale.exists(), "a past run's file is swept");
+    assert!(fresh.exists(), "a transfer that just finished is kept");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Removing the Resource the reader shows: the reader switches to another Resource of its
+/// type, the first in Preferred order (as the Parallel resources switch does); with none of
+/// its type, to the first other Resource it can show.
+#[test]
+fn library_removing_the_readers_resource_switches_the_reader_to_another() {
+    let (root, mut app) = app("remove-shown");
+    let r = requests(
+        app.plan_starter_download(
+            &StarterChoice::One("kjv-strongs".into()),
+            WIFI,
+            false,
+            PLENTY,
+        )
+        .unwrap(),
+    )
+    .remove(0);
+    transfer(&mut app, &r);
+    settle(&mut app);
+    assert_eq!(app.reader(ReaderId(0)).unwrap().resource_id, "bsb");
+    assert!(matches!(
+        app.remove_resource("bsb", false).unwrap(),
+        RemoveAnswer::Confirm(_)
+    ));
+    assert_eq!(
+        app.reader(ReaderId(0)).unwrap().resource_id,
+        "bsb",
+        "asked only"
+    );
+    assert_eq!(
+        app.remove_resource("bsb", true).unwrap(),
+        RemoveAnswer::Removed
+    );
+    assert_eq!(app.reader(ReaderId(0)).unwrap().resource_id, "kjv-strongs");
+    assert!(!ids(&app).contains(&"bsb".to_string()));
+    assert!(app.pump().contains(&Changed::Reader(ReaderId(0))));
+    // A Lexicon with no other Lexicon: the reader shows the Bible.
+    app.open(ReaderId(0), "strongs-hebrew", None).unwrap();
+    assert_eq!(
+        app.remove_resource("strongs-hebrew", true).unwrap(),
+        RemoveAnswer::Removed
+    );
+    let reader = app.reader(ReaderId(0)).unwrap();
+    assert_eq!(reader.resource_id, "kjv-strongs");
+    assert_eq!(reader.resource_type, ResourceType::Bible);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Removing the Resource the second reader of a Split view shows closes that reader.
+#[test]
+fn library_removing_the_second_readers_resource_closes_it() {
+    let (root, mut app) = app("remove-split");
+    app.open(ReaderId(1), "strongs-hebrew", None).unwrap();
+    assert_eq!(app.readers().len(), 2);
+    assert_eq!(
+        app.remove_resource("strongs-hebrew", true).unwrap(),
+        RemoveAnswer::Removed
+    );
+    let readers = app.readers();
+    assert_eq!(readers.len(), 1);
+    assert_eq!(readers[0].resource_id, "bsb");
+    assert!(app.reader(ReaderId(1)).is_err());
+    assert!(app.pump().contains(&Changed::Reader(ReaderId(1))));
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// The only Resource the reader can show is not removed.
+#[test]
+fn library_the_only_resource_the_reader_can_show_is_not_removed() {
+    let (root, mut app) = app("remove-only");
+    assert_eq!(
+        app.remove_resource("strongs-hebrew", true).unwrap(),
+        RemoveAnswer::Removed
+    );
+    assert_eq!(ids(&app), ["bsb"]);
+    for confirmed in [false, true] {
+        let err = app.remove_resource("bsb", confirmed).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("BSB is the only Resource the reader can show"),
+            "{err}"
+        );
+    }
+    assert_eq!(ids(&app), ["bsb"]);
+    assert_eq!(app.reader(ReaderId(0)).unwrap().resource_id, "bsb");
     std::fs::remove_dir_all(&root).unwrap();
 }
 

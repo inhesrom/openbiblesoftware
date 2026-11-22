@@ -564,9 +564,10 @@ impl MobileApp {
         self.with(|a| a.cancel_download(&resource_id, origin.into()))
     }
 
-    /// The transfer of `resource_id` finished at `path`: the core checks it (sha256 or the
-    /// licence notice), adds it and deletes the file. A Starter file is checked and copied
-    /// before this returns (call it off the main thread).
+    /// The transfer of `resource_id` finished at `path` (the request's `file`; any other path
+    /// is refused and left alone): a job checks it (sha256 or the licence notice), adds it
+    /// and deletes the file; `poll_changed` reports `downloads` as it moves on. Handing it in
+    /// again once it is verifying, installing or done changes nothing.
     pub fn install_downloaded(
         &self,
         resource_id: String,
@@ -602,7 +603,8 @@ impl MobileApp {
         })
     }
 
-    /// Remove a Resource: without `confirmed`, the question to ask.
+    /// Remove a Resource: without `confirmed`, the question to ask. A reader that shows it
+    /// switches to another Resource first (the second reader of a Split view closes).
     pub fn remove_resource(
         &self,
         resource_id: String,

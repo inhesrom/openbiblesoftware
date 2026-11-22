@@ -8,22 +8,33 @@
 //! [`DownloadRequest::file`] the core names, then [`MobileApp::install_downloaded`].
 //!
 //! **A download's states** ([`DownloadState`]): `Queued` when planned, `Downloading` as the
-//! shell reports progress, `Verifying` and `Installing` while the core checks the file and
-//! puts it in place (a Starter file within [`MobileApp::install_downloaded`]; an Open
-//! catalogue file on the job queue), `Indexing` while its Search index is built, then `Done`;
-//! `Failed { retry }` from any of them. A failed check deletes the file, so Retry downloads it
-//! again; Cancel forgets the download and deletes what the shell wrote.
+//! shell reports progress, `Verifying` and `Installing` while a job checks the file and puts
+//! it in place (the pump moves them on), `Indexing` while its Search index is built, then
+//! `Done`; `Failed { retry }` from any of them. A failed check deletes the file, so Retry
+//! downloads it again; Cancel forgets the download and deletes what the shell wrote. A
+//! Starter file the core cannot place yet (handed in after a relaunch, of a Resource the
+//! released manifest kept on the device does not list) stays `Queued`, its file kept, until
+//! a check of the released manifest lands.
 
 use std::path::{Path, PathBuf};
 
 use obs_engine::licence::{LicenceClass, LicenceFilter};
-use obs_engine::starter::{MobileSet, StarterItem, StarterStatus};
-use obs_engine::{ImportPhase, IndexStatus};
+use obs_engine::starter::{FileInstallPhase, MobileSet, StarterItem, StarterStatus};
+use obs_engine::{ImportPhase, IndexStatus, JobId};
 use obs_model::ResourceType;
 use serde_json::json;
 
 use crate::app::failed;
-use crate::{Changed, MobileApp, MobileError};
+use crate::{Changed, MobileApp, MobileError, ReaderId};
+
+/// The free space an Open catalogue download needs before it starts, its size not being
+/// known: a whole Bible's file, staged copy and Search index (a few MB each), with room to
+/// spare.
+pub const OPEN_DOWNLOAD_FLOOR: u64 = 100_000_000;
+
+/// A file in the downloads folder this much older than a launch is left over (an install the
+/// app quit during, an Import that never ran) and deleted at boot.
+pub const STALE_DOWNLOAD: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 /// Where a download comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -236,9 +247,16 @@ pub(crate) struct Download {
     pub(crate) resource_id: String,
     pub(crate) origin: DownloadOrigin,
     pub(crate) file: PathBuf,
+    /// Its size, when known (a Starter file's).
+    pub(crate) bytes: Option<u64>,
     pub(crate) state: DownloadState,
     /// The library's Resource it became (an Open catalogue import's new id).
     pub(crate) installed: Option<String>,
+    /// The job installing a Starter file.
+    pub(crate) job: Option<JobId>,
+    /// A finished Starter file of a Resource the manifest does not list yet: it waits for the
+    /// released manifest check.
+    pub(crate) waiting: bool,
 }
 
 /// One download as the shell lists it.
@@ -255,31 +273,70 @@ pub fn megabytes(bytes: u64) -> String {
     format!("{}.{} MB", tenths / 10, tenths % 10)
 }
 
+/// At boot: delete the files in the downloads folder `dir` older than [`STALE_DOWNLOAD`]. No
+/// download is planned yet, and a transfer that finished during a relaunch is moments old.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn sweep_stale_downloads(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.filter_map(Result::ok) {
+        let stale = (entry.metadata().ok())
+            .filter(std::fs::Metadata::is_file)
+            .and_then(|m| m.modified().ok())
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > STALE_DOWNLOAD);
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 fn resources(n: usize) -> String {
     format!("{n} Resource{}", if n == 1 { "" } else { "s" })
 }
 
-/// The rule for a planned download (#333): free space first, then the network. Wi-Fi only by
-/// default: on cellular with "Use cellular data" off, the size is shown and the user asked
-/// first; `cellular_confirmed` is their yes.
+/// The rule for a planned download (#333): free space first, then the network. The space a
+/// download needs ([`obs_engine::library_storage::space_needed`], or
+/// [`OPEN_DOWNLOAD_FLOOR`] when its size is not known) must fit in the `free` bytes less
+/// `planned`, what the downloads already planned need. Wi-Fi only by default: on cellular
+/// with "Use cellular data" off, the size is shown and the user asked first;
+/// `cellular_confirmed` is their yes.
 pub fn download_rule(
     bytes: Option<u64>,
     what: &str,
     network: Network,
     cellular_confirmed: bool,
     free: Option<u64>,
+    planned: u64,
 ) -> Result<bool, DownloadPlan> {
-    if let (Some(bytes), Some(free)) = (bytes, free) {
-        let needed = obs_engine::library_storage::space_needed(bytes);
-        if needed > free {
+    if let Some(free) = free {
+        let needed = bytes.map_or(
+            OPEN_DOWNLOAD_FLOOR,
+            obs_engine::library_storage::space_needed,
+        );
+        if needed > free.saturating_sub(planned) {
+            let needs = if bytes.is_some() {
+                megabytes(needed)
+            } else {
+                format!("at least {}", megabytes(needed))
+            };
+            let has = if planned == 0 {
+                megabytes(free)
+            } else {
+                format!(
+                    "{}, and the downloads already planned need {} of it",
+                    megabytes(free),
+                    megabytes(planned)
+                )
+            };
             return Err(DownloadPlan::WontFit {
                 needed,
                 free,
                 message: format!(
-                    "{what} needs {} of free space; this device has {}. Free some space, then \
-                     try again.",
-                    megabytes(needed),
-                    megabytes(free)
+                    "{what} needs {needs} of free space; this device has {has}. Free some \
+                     space, then try again."
                 ),
             });
         }
@@ -381,6 +438,27 @@ impl MobileApp {
         (self.downloads.iter_mut()).find(|d| d.resource_id == id && d.origin == origin)
     }
 
+    /// The file in the downloads folder the shell writes the download of `id` to.
+    fn download_file(&self, id: &str, origin: DownloadOrigin) -> PathBuf {
+        self.paths.downloads.join(match origin {
+            DownloadOrigin::Starter => format!("{id}.obr"),
+            DownloadOrigin::Open => format!("open-{id}.download"),
+        })
+    }
+
+    /// The free space the downloads not yet in the library need.
+    fn planned_space(&self) -> u64 {
+        (self.downloads.iter())
+            .filter(|d| d.state.is_active())
+            .map(|d| {
+                (d.bytes).map_or(
+                    OPEN_DOWNLOAD_FLOOR,
+                    obs_engine::library_storage::space_needed,
+                )
+            })
+            .sum()
+    }
+
     /// Every download this run, in the order they were planned.
     pub fn downloads(&self) -> Vec<DownloadRow> {
         (self.downloads.iter())
@@ -442,7 +520,15 @@ impl MobileApp {
             (_, [one]) => one.abbreviation.clone(),
             _ => resources(items.len()),
         };
-        let cellular = match download_rule(Some(bytes), &what, network, cellular_confirmed, free) {
+        let planned = self.planned_space();
+        let cellular = match download_rule(
+            Some(bytes),
+            &what,
+            network,
+            cellular_confirmed,
+            free,
+            planned,
+        ) {
             Ok(cellular) => cellular,
             Err(plan) => return Ok(plan),
         };
@@ -453,7 +539,7 @@ impl MobileApp {
                 origin: DownloadOrigin::Starter,
                 url: format!("{base}{}.obr", i.resource_id),
                 bytes: Some(i.bytes),
-                file: self.paths.downloads.join(format!("{}.obr", i.resource_id)),
+                file: self.download_file(&i.resource_id, DownloadOrigin::Starter),
                 cellular,
             })
             .collect();
@@ -462,7 +548,8 @@ impl MobileApp {
     }
 
     /// Plan the download of Open catalogue entry `id` (Get Resources), as
-    /// [`Self::plan_starter_download`] does; its size is not known before it downloads.
+    /// [`Self::plan_starter_download`] does; its size is not known before it downloads, so it
+    /// needs [`OPEN_DOWNLOAD_FLOOR`] free.
     pub fn plan_open_download(
         &mut self,
         id: &str,
@@ -485,12 +572,14 @@ impl MobileApp {
         {
             return Ok(DownloadPlan::Nothing);
         }
+        let planned = self.planned_space();
         let cellular = match download_rule(
             None,
             &source.abbreviation,
             network,
             cellular_confirmed,
             free,
+            planned,
         ) {
             Ok(cellular) => cellular,
             Err(plan) => return Ok(plan),
@@ -500,10 +589,7 @@ impl MobileApp {
             origin: DownloadOrigin::Open,
             url: source.url.clone(),
             bytes: None,
-            file: self
-                .paths
-                .downloads
-                .join(format!("open-{}.download", source.id)),
+            file: self.download_file(&source.id, DownloadOrigin::Open),
             cellular,
         };
         self.queue(std::slice::from_ref(&request));
@@ -518,8 +604,11 @@ impl MobileApp {
                 resource_id: r.resource_id.clone(),
                 origin: r.origin,
                 file: r.file.clone(),
+                bytes: r.bytes,
                 state: DownloadState::Queued,
                 installed: None,
+                job: None,
+                waiting: false,
             });
         }
         self.events.push(Changed::Downloads);
@@ -588,34 +677,102 @@ impl MobileApp {
     }
 
     /// The shell's transfer of `id` finished at `path`: check it against its pinned sha256 (or
-    /// licence notice) and add it to the library (module docs). A Starter file is checked and
-    /// put in place before this returns; an Open catalogue file is imported on the job queue.
-    /// The file is deleted once read. Returns the download's state.
+    /// licence notice) and add it to the library (module docs), on the job queue; the pump
+    /// moves its state on. The file is deleted once read. `path` must be the file the core
+    /// named for it ([`DownloadRequest::file`]); any other is refused and left where it is. A
+    /// finished transfer the core does not know (one that completed after a relaunch) is
+    /// accepted; one handed in again once it is verifying, installing or done is ignored.
+    /// Returns the download's state.
     pub fn install_downloaded(
         &mut self,
         id: &str,
         path: &Path,
         origin: DownloadOrigin,
     ) -> Result<DownloadState, MobileError> {
-        let file = path.to_path_buf();
-        if self.download(id, origin).is_none() {
-            self.downloads.push(Download {
+        let named = self.download_file(id, origin);
+        if path.parent() != Some(self.paths.downloads.as_path()) || path != named {
+            return Err(MobileError::Failed(format!(
+                "{} is not the file the download of {id} was planned to; it was left where it is",
+                path.display()
+            )));
+        }
+        match self.download(id, origin) {
+            Some(d)
+                if !matches!(
+                    d.state,
+                    DownloadState::Queued
+                        | DownloadState::Downloading { .. }
+                        | DownloadState::Failed { .. }
+                ) =>
+            {
+                return Ok(d.state.clone());
+            }
+            Some(_) => {}
+            None => self.downloads.push(Download {
                 resource_id: id.to_string(),
                 origin,
-                file: file.clone(),
+                file: named.clone(),
+                bytes: None,
                 state: DownloadState::Queued,
                 installed: None,
-            });
+                job: None,
+                waiting: false,
+            }),
         }
-        self.tracked(id, origin)?.state = DownloadState::Verifying;
-        let outcome = match origin {
-            DownloadOrigin::Starter => self.install_starter_file(id, &file),
-            DownloadOrigin::Open => self.install_open_file(id, &file),
+        let state = match origin {
+            DownloadOrigin::Starter => {
+                if self.starter_item(id).is_none() {
+                    // Not in the manifest kept on the device: keep the file until the
+                    // released manifest is fetched again.
+                    let d = self.tracked(id, origin)?;
+                    d.waiting = true;
+                    d.state = DownloadState::Queued;
+                    let _ = self.session.check_starter_release();
+                    DownloadState::Queued
+                } else {
+                    self.start_starter_install(id)?
+                }
+            }
+            DownloadOrigin::Open => match self.install_open_file(id, &named) {
+                Ok(installed) => {
+                    self.tracked(id, origin)?.installed = Some(installed);
+                    DownloadState::Installing
+                }
+                Err(message) => {
+                    let _ = std::fs::remove_file(&named);
+                    DownloadState::Failed {
+                        message,
+                        retry: true,
+                    }
+                }
+            },
         };
-        let state = match outcome {
-            Ok((installed, state)) => {
-                self.tracked(id, origin)?.installed = Some(installed);
-                state
+        self.tracked(id, origin)?.state = state.clone();
+        self.events.push(Changed::Downloads);
+        Ok(state)
+    }
+
+    /// Starter Resource `id` as the manifest lists it.
+    fn starter_item(&self, id: &str) -> Option<StarterItem> {
+        (self.session.starter.manifest())
+            .and_then(|m| m.get(id))
+            .cloned()
+    }
+
+    /// Start the job that checks and installs the finished Starter file of `id`: `Verifying`,
+    /// or `Failed` (its file deleted) when it cannot start.
+    fn start_starter_install(&mut self, id: &str) -> Result<DownloadState, MobileError> {
+        let file = self.download_file(id, DownloadOrigin::Starter);
+        let started = match self.starter_item(id) {
+            Some(item) => self.submit_starter_install(item, &file),
+            None => Err(format!("{id} is not part of the Starter library")),
+        };
+        let d = self.tracked(id, DownloadOrigin::Starter)?;
+        d.waiting = false;
+        Ok(match started {
+            Ok(job) => {
+                d.job = Some(job);
+                DownloadState::Verifying
             }
             Err(message) => {
                 let _ = std::fs::remove_file(&file);
@@ -624,35 +781,19 @@ impl MobileApp {
                     retry: true,
                 }
             }
-        };
-        self.tracked(id, origin)?.state = state.clone();
-        self.events.push(Changed::Downloads);
-        Ok(state)
+        })
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn install_starter_file(
-        &mut self,
-        id: &str,
-        file: &Path,
-    ) -> Result<(String, DownloadState), String> {
-        let item = (self.session.starter.manifest())
-            .and_then(|m| m.get(id))
-            .cloned()
-            .ok_or_else(|| format!("{id} is not part of the Starter library"))?;
-        self.session
-            .add_starter_from_files(&[item], &[(id.to_string(), file.to_path_buf())])?;
-        Ok((id.to_string(), self.indexing_state(id)))
+    fn submit_starter_install(&mut self, item: StarterItem, file: &Path) -> Result<JobId, String> {
+        let files = [(item.resource_id.clone(), file.to_path_buf())];
+        self.session.add_starter_from_files(&[item], &files)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn install_open_file(
-        &mut self,
-        id: &str,
-        file: &Path,
-    ) -> Result<(String, DownloadState), String> {
+    fn install_open_file(&mut self, id: &str, file: &Path) -> Result<String, String> {
         let (resource, _job) = self.session.install_open_file(id, file)?;
-        Ok((resource, DownloadState::Installing))
+        Ok(resource)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -671,16 +812,12 @@ impl MobileApp {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn install_starter_file(
-        &mut self,
-        _: &str,
-        _: &Path,
-    ) -> Result<(String, DownloadState), String> {
+    fn submit_starter_install(&mut self, _: StarterItem, _: &Path) -> Result<JobId, String> {
         Err("Installing a download needs files".into())
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn install_open_file(&mut self, _: &str, _: &Path) -> Result<(String, DownloadState), String> {
+    fn install_open_file(&mut self, _: &str, _: &Path) -> Result<String, String> {
         Err("Installing a download needs files".into())
     }
 
@@ -692,17 +829,64 @@ impl MobileApp {
         }
     }
 
-    /// Move each download on from what the engine did since (the pump calls it): an Open
-    /// catalogue import's phases, and Search indexes finished.
+    /// Move each download on from what the engine did since (the pump calls it): a Starter
+    /// file's install job, a file waiting for the released manifest, an Open catalogue
+    /// import's phases, and Search indexes finished. A download that fails here has its file
+    /// deleted (an Import cancelled before it read it).
     pub(crate) fn advance_downloads(&mut self) {
         let mut changed = false;
         for i in 0..self.downloads.len() {
-            let d = &self.downloads[i];
-            let Some(resource) = d.installed.clone() else {
-                continue;
-            };
+            let d = self.downloads[i].clone();
             let next = match (&d.state, d.origin) {
+                (DownloadState::Queued, DownloadOrigin::Starter) if d.waiting => {
+                    match self.waited_for(&d.resource_id) {
+                        None => continue,
+                        Some(Ok(())) => match self.start_starter_install(&d.resource_id) {
+                            Ok(state) => state,
+                            Err(_) => continue,
+                        },
+                        Some(Err(message)) => {
+                            self.downloads[i].waiting = false;
+                            DownloadState::Failed {
+                                message,
+                                retry: true,
+                            }
+                        }
+                    }
+                }
+                (DownloadState::Verifying | DownloadState::Installing, DownloadOrigin::Starter) => {
+                    let Some(job) = d.job else {
+                        continue;
+                    };
+                    let phase = (self.session.starter.file_install(job)).map(|f| f.phase.clone());
+                    if !phase.as_ref().is_some_and(FileInstallPhase::is_running) {
+                        self.session.starter.forget_file_install(job);
+                        self.downloads[i].job = None;
+                    }
+                    match phase {
+                        Some(FileInstallPhase::Verifying) => DownloadState::Verifying,
+                        Some(FileInstallPhase::Installing) => DownloadState::Installing,
+                        Some(FileInstallPhase::Installed) => {
+                            self.downloads[i].installed = Some(d.resource_id.clone());
+                            self.indexing_state(&d.resource_id)
+                        }
+                        Some(FileInstallPhase::Failed(message)) => DownloadState::Failed {
+                            message,
+                            retry: true,
+                        },
+                        None => DownloadState::Failed {
+                            message: "The install was stopped".into(),
+                            retry: true,
+                        },
+                    }
+                }
+                (DownloadState::Indexing, DownloadOrigin::Starter) => {
+                    self.indexing_state(&d.resource_id)
+                }
                 (DownloadState::Installing | DownloadState::Indexing, DownloadOrigin::Open) => {
+                    let Some(resource) = d.installed.clone() else {
+                        continue;
+                    };
                     match self.session.imports.report(&resource) {
                         Some(r) => match r.phase {
                             ImportPhase::Failed => DownloadState::Failed {
@@ -719,18 +903,37 @@ impl MobileApp {
                         },
                     }
                 }
-                (DownloadState::Indexing, DownloadOrigin::Starter) => {
-                    self.indexing_state(&resource)
-                }
-                (state, _) => state.clone(),
+                _ => continue,
             };
-            if next != self.downloads[i].state {
-                self.downloads[i].state = next;
-                changed = true;
+            if next == self.downloads[i].state {
+                continue;
             }
+            if matches!(next, DownloadState::Failed { .. }) {
+                let _ = std::fs::remove_file(&d.file);
+            }
+            self.downloads[i].state = next;
+            changed = true;
         }
         if changed {
             self.events.push(Changed::Downloads);
+        }
+    }
+
+    /// Whether the released manifest a finished Starter file of `id` waits for has landed:
+    /// `None` while it is being fetched, or after a check that failed (the next one decides);
+    /// `Ok` once the manifest lists `id`; else why it is refused.
+    fn waited_for(&self, id: &str) -> Option<Result<(), String>> {
+        let starter = &self.session.starter;
+        if starter.is_checking() {
+            return None;
+        }
+        if self.starter_item(id).is_some() {
+            return Some(Ok(()));
+        }
+        match starter.error() {
+            Some(_) if !starter.needs_app_update() => None,
+            Some(e) => Some(Err(e.to_string())),
+            None => Some(Err(format!("{id} is not part of the Starter library"))),
         }
     }
 
@@ -816,32 +1019,89 @@ impl MobileApp {
     /// Remove Resource `id` from the library (Library → Starter library or Storage). Without
     /// `confirmed`, only the question (what goes and how many Annotations refer to it). A
     /// removed Starter Resource stays removed: it is never added back silently, and the Study
-    /// set leaves it out. Not while a reader shows it.
+    /// set leaves it out. Not while its Starter download is under way (it would be added back
+    /// when it lands). A reader that shows it moves on first: the second reader of a Split
+    /// view closes; the reader switches to another Resource of the same type (as the Parallel
+    /// resources switch does), the first in Preferred order, else to the first other
+    /// Resource it can show; with none, the Resource is not removed.
     pub fn remove_resource(
         &mut self,
         id: &str,
         confirmed: bool,
     ) -> Result<RemoveAnswer, MobileError> {
-        if let Some(entry) = self.session.library.get(id)
-            && (self.readers.iter()).any(|r| r.view.doc.manifest.resource_id == id)
-        {
-            return Err(MobileError::Failed(format!(
-                "{} is open in the reader. Show another Resource there, then remove it.",
-                entry.manifest.abbreviation
-            )));
+        let shown_by_reader = (self.readers.first()).is_some_and(|r| r.shows(id));
+        let mut replacement = None;
+        if let Some(entry) = self.session.library.get(id) {
+            let abbreviation = entry.manifest.abbreviation.clone();
+            let ty = entry.manifest.resource_type;
+            if (self.download(id, DownloadOrigin::Starter)).is_some_and(|d| d.state.is_active()) {
+                return Err(MobileError::Failed(format!(
+                    "{abbreviation} is being downloaded with the Starter library. Cancel the \
+                     download, or wait for it to finish, then remove it."
+                )));
+            }
+            if shown_by_reader {
+                replacement = self.replacement_for(id, ty);
+                if replacement.is_none() {
+                    return Err(MobileError::Failed(format!(
+                        "{abbreviation} is the only Resource the reader can show. Add another \
+                         Resource to your Library, then remove it."
+                    )));
+                }
+            }
         }
+        // The engine's question, or its refusal, before anything changes.
         let out = self
             .session
-            .run("library.remove", &json!({ "id": id, "confirm": confirmed }))
+            .run("library.remove", &json!({ "id": id, "confirm": false }))
             .map_err(failed)?;
         // The question is the shell's to ask; the desktop's dialog effect is dropped.
         self.apply_effects();
-        if let Some(question) = out["confirm"].as_str() {
-            return Ok(RemoveAnswer::Confirm(question.to_string()));
+        if !confirmed {
+            let question = out["confirm"].as_str().unwrap_or_default().to_string();
+            return Ok(RemoveAnswer::Confirm(question));
         }
+        if (self.readers.get(1)).is_some_and(|r| r.shows(id)) {
+            self.close_second_reader()?;
+        }
+        if let Some(other) = replacement {
+            self.open(ReaderId(0), &other, None)?;
+            self.events.push(Changed::Reader(ReaderId(0)));
+        }
+        self.session
+            .run("library.remove", &json!({ "id": id, "confirm": true }))
+            .map_err(failed)?;
+        self.apply_effects();
         self.docs.remove(id);
         self.events.push(Changed::Downloads);
         Ok(RemoveAnswer::Removed)
+    }
+
+    /// What the reader shows instead of Resource `id` (of type `ty`) when it is removed: the
+    /// first other Resource of its type in Preferred order that opens, else the first other
+    /// Resource that opens.
+    fn replacement_for(&mut self, id: &str, ty: ResourceType) -> Option<String> {
+        let library = &self.session.library;
+        let others: Vec<String> = (library.preferred_order().into_iter())
+            .filter(|r| r != id)
+            .collect();
+        let of_type = |r: &String| library.get(r).map(|e| e.manifest.resource_type) == Some(ty);
+        let (same, rest): (Vec<String>, Vec<String>) = others.into_iter().partition(of_type);
+        (same.into_iter().chain(rest)).find(|r| self.doc(r).is_ok())
+    }
+
+    /// Close the second reader of the Split view; `readers()` no longer lists it.
+    fn close_second_reader(&mut self) -> Result<(), MobileError> {
+        let Some(reader) = self.readers.get(1) else {
+            return Ok(());
+        };
+        let tab = reader.tab;
+        self.readers.truncate(1);
+        self.new_epoch();
+        (self.session.run("tab.close", &json!({ "tab": tab.0 }))).map_err(failed)?;
+        self.apply_effects();
+        self.events.push(Changed::Reader(ReaderId(1)));
+        Ok(())
     }
 
     /// Library → Storage: the space each Resource takes, in Preferred order.

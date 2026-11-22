@@ -132,6 +132,7 @@ impl MobileApp {
                 error: e.to_string(),
             })?;
         }
+        crate::library::sweep_stale_downloads(&paths.downloads);
         let mut session = Session::new(jobs);
         let mut problems: Vec<String> = (session.library.scan(&paths.library).into_iter())
             .map(|(f, e)| format!("{}: {e}", f.display()))
