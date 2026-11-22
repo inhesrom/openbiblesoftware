@@ -7,7 +7,8 @@ and Add back, **Library → Storage**, and **Import** (S26: a file from the docu
 sha256 pinning, each download's state, "Wi-Fi only", "ask first over cellular", "won't fit")
 is in Rust; the shell owns only the transfers. S23 of [the iOS plan](../plans/mobile-ios.md)
 built the Rust side; S24 built the iOS screens and the background transfers on it (§ The
-shell's downloads). The
+shell's downloads); S25 the Search index status, the background processing task and the
+backup exclusion (§ Storage and background work). The
 desktop's Starter library is unchanged ([starter-library](starter-library.md)).
 
 ## Contract
@@ -241,6 +242,78 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   report), `OBS_TEST_NO_STUDY_SET_OFFER=1` (the tests that do not test the offer), and with
   `OBS_TEST_APP_FOLDER` the transfers of an earlier test are cancelled at launch.
 
+## Storage and background work (S25, #333 "Storage")
+
+Every rule is the core's (`obs_mobile::background`, `MobileApp::search_index_status`); the
+shell registers the system's task, submits the core's request, steps until the core says the
+work is done or the system takes the time back, marks the core's folders, and lays out.
+
+- **Where files live.** Everything is under `Application Support/OpenBible` (never Caches).
+  `Paths::backup_excluded()` lists `library/`, `search/` and `aliases/`: what the app can copy,
+  download or build again. At every boot the shell sets `isExcludedFromBackup` on exactly
+  those (`AppCore.boot`, since S13); `user.db` and the app folder stay in device backups
+  (`AppCoreTests` reads all of it back). `downloads/` is not excluded: its files are deleted
+  once installed, and at boot when a day old.
+- **Search index status** (`search_index_status(resource)` → `SearchIndexStatus`): `state`
+  `Ready`, `Building` (queued or being built), `Failed` (tried again at the next launch) or
+  `Unavailable`; `label` for a Storage row ("Search index ready", "Still being indexed",
+  "Search index failed", "No Search index"); `searchable` (ready, or rebuilt with its older
+  index searched meanwhile); `note`, the sentence Search (S20) shows for a Resource it cannot
+  search yet ("TBESG is still being indexed. Search will find it once it is ready.", "… Search
+  reads its older index until the new one is ready.", the failure with its error). `None`
+  for a Resource not in the library. Each `storage()` row carries it as `index`.
+  `Changed::Indexes` is reported when any Resource's state changes (not its progress), and
+  the shell then asks for Storage again.
+- **Background work** (`background_work()` → `BackgroundWork`): a Search index build queued
+  or running (`SearchIndexes::is_building`), the People & places ↔ Dictionary alias caches
+  being made current (`Guides::is_refreshing_aliases`), downloaded files being verified or
+  installed (their index follows), and Imports not over yet (their index follows). Transfers
+  are not in it: the system's background downloads carry those on.
+  `pending_background_work()` → `Option<BackgroundRequest>`: while there is any,
+  `INDEX_REQUEST` (`requires_external_power: false`: the builds take seconds to a minute and
+  are wanted soon after a download; `requires_network: false`: they read files on the
+  device).
+- **Stepping** (`step_background(deadline)` → whether work is left): with jobs on threads
+  (the app), one round of the pump's work (finished jobs routed, the next index build
+  started), whose `Changed`s wait for the next `pump()`; with jobs inline (tests), job steps
+  one at a time until the deadline has passed, so it ends at most one job step late. The FFI's
+  `step_background()` repeats that for `BACKGROUND_STEP` (0.5 s) at most, releasing the
+  core's lock between rounds (it waits as the pump thread does, 50 ms), so the screens'
+  calls are answered meanwhile.
+- **Alias caches.** Boot makes them current after the Starter sync and the Debug Study set
+  override (so the library they see is the one the app shows), and the pump does again
+  whenever the library changes (a download, an Import or Remove): a new pair's table is
+  built in the background, a pair gone has its file deleted.
+- **Work cut short is not lost.** A build in flight carries on when the app runs again; a
+  launch queues every index without a cache again (`refresh_search_indexes`), and the alias
+  refresh runs at every launch.
+
+### The shell's task
+
+- `project.yml` `info`: `UIBackgroundModes: [processing]` and
+  `BGTaskSchedulerPermittedIdentifiers: [$(PRODUCT_BUNDLE_IDENTIFIER).index]`
+  (`BGTaskScheduler.h`: without the mode, or with an identifier not listed, a submission is
+  `notPermitted`). No entitlement.
+- `BackgroundIndexer.register()` in the app delegate's `didFinishLaunching` (the system wants
+  every launch handler registered before launching ends, once). The handler starts the core
+  (`AppCore.start()`, which waits for a boot already under way) and runs.
+- `schedule(core)` when the scene goes to the background (`AppCore.background()`) and when a
+  run ends with work left: with the core's request, a `BGProcessingTaskRequest` with its
+  `requiresExternalPower` and `requiresNetworkConnectivity` (no `earliestBeginDate`), submitted
+  with `BGTaskScheduler.shared.submit(_:)`; with none, nothing. A refused submission is
+  logged; the work then carries on the next time the app runs.
+- `run(task, core)`: sets the task's `expirationHandler` (it sets a flag), calls
+  `stepBackground()` off the main thread until the core says no work is left or the flag is
+  set (so an expiration stops the run within one step), asks for another task while work is
+  left, then `setTaskCompleted(success:)` with whether none is left.
+- **Simulator.** iOS 27.2's simulator refuses the request: `submit` fails with
+  `BGTaskSchedulerErrorDomain` code 1 (`unavailable`), "BGTaskScheduler is not available on
+  this platform", as `BGTaskScheduler.h` says. The lldb command
+  `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"io.github.inhesrom.openbible.dev.index"]`
+  exists there (the framework logs "Simulating launch for task with identifier …") but finds
+  "No task request with identifier … has been scheduled", so the system's launch of the task
+  is checked on a device (`docs/dev/ios-project.md`, "Background task"; plan S31/S35).
+
 ## Import (S26, #333 "Import")
 
 - **The shell's part** (`apps/ios`, `ImportModel`). Import… (for now in the reader's options
@@ -338,6 +411,9 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
 | Picked and shared files waiting for Import | `<root>/library/imports/picked-<n>/<name>`; deleted when the Import is over, and at boot |
 | A SWORD zip while it is read | `<root>/library/imports/<resource id>.sword/`; removed whatever the outcome |
 | Import reports | User database preference `import-report/<id>`, as on the desktop |
+| Search indexes of downloaded and imported Resources | `<root>/search/` (the cache folder; the Bundled set's prebuilt ones in `<root>/library/search/`); excluded from device backups |
+| Alias caches built on the device | `<root>/aliases/`; excluded from device backups |
+| The background processing task | `<bundle id>.index` (`BGTaskSchedulerPermittedIdentifiers`); nothing kept: each launch has its work again |
 | Space a download needs | 2.5 × its size: the file, its staged copy, room for its Search index (the Study set's indexes are 0.34 of its files) |
 
 ## Evidence
@@ -439,3 +515,27 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   (`docs/dev/ios-project.md`, "Library tests"). The counts come from the offer ("N
   Resources") and the Bundled set of the served manifest, and the Resources are picked from
   that manifest by set and size, not by name. Previews `docs/previews/ios/s24-*.png`.
+- S25, `crates/mobile/src/background_tests.rs` (`cargo test -p obs-mobile background`, and
+  `storage`): after a download the core asks for the task (`INDEX_REQUEST`); steps whose
+  deadline has passed run one job step each; Storage and `search_index_status` say "Still
+  being indexed" (with Search's note) until the steps have built it, then "Search index
+  ready", and the pump reports `Changed::Indexes`; three downloads take at least five steps
+  past the deadline; an expired run's work is pending again after a relaunch, and once built
+  a relaunch has no index to build (only its own alias refresh); a People & places index and
+  a Dictionary imported mid-run get their alias cache in the background, counted in
+  Storage. `apps/obs-ffi/tests/background.rs`: with jobs on threads, every
+  `step_background()` ends within `BACKGROUND_STEP` + 0.4 s, another thread's calls are
+  answered meanwhile (slowest under 0.3 s), and the index ends ready.
+- S25, in the simulator (iPhone 17 and iPad Air 11-inch (M4), iOS 27.2):
+  `OpenBibleTests/BackgroundIndexerTests` (with `TEST_RUNNER_OBS_STUDY_SET_DIR`): every
+  Starter library Resource outside the Bundled set copied into the core's library without
+  its index (18), the core asks for the task and Storage says "Still being indexed"; a run
+  with a stand-in task builds all 18 (8.4 s on the iPhone 17, Debug) and completes it
+  successfully with nothing left; a task that expires at once completes unsuccessfully, asks
+  for another (refused in the simulator) and leaves the work, which the next launch has
+  again; the simulator's refusal (`BGTaskSchedulerErrorDomain` code 1). `AppCoreTests`:
+  exactly `library`, `search` and `aliases` are excluded from backups, read back, and the app
+  folder and `user.db` are not. `OpenBibleUITests/StorageTests`: Library → Storage at launch
+  over those 18 Resources read in place without their indexes, rows "Still being indexed"
+  (one element: title, size, state; Remove after it), then "Search index ready"; the
+  accessibility audit in Light and Dark in both states. Previews `docs/previews/ios/s25-*.png`.

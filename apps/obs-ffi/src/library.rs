@@ -541,6 +541,8 @@ pub struct StorageRow {
     pub aliases: u64,
     pub total: u64,
     pub size: String,
+    /// Its Search index (`None` if it has none to build).
+    pub index: Option<crate::SearchIndexStatus>,
 }
 
 /// Library → Storage.
@@ -563,6 +565,7 @@ impl From<obs_mobile::StorageView> for StorageView {
                     aliases: r.aliases,
                     total: r.total,
                     size: r.size,
+                    index: r.index.map(Into::into),
                 })
                 .collect(),
             total: v.total,

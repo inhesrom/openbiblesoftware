@@ -245,6 +245,38 @@ pub struct StorageRow {
     pub total: u64,
     /// "26.0 MB".
     pub size: String,
+    /// Its Search index: ready, still being built, failed (`None` if it has none to build).
+    pub index: Option<SearchIndexStatus>,
+}
+
+/// Where a Resource's Search index stands, as the Mobile app tells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SearchIndexState {
+    /// Searchable.
+    Ready,
+    /// Queued or being built (on the device, after a download or an Import, and in the
+    /// background task when the app is closed).
+    Building,
+    /// The last build failed; it is tried again at the next launch.
+    Failed,
+    /// Nothing can build it here.
+    Unavailable,
+}
+
+/// A Resource's Search index (`MobileApp::search_index_status`): Library → Storage shows
+/// `label` on its row; Search (S20) shows `note` for a Resource it cannot search yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchIndexStatus {
+    pub resource_id: String,
+    pub state: SearchIndexState,
+    /// "Search index ready", "Still being indexed", "Search index failed", "No Search index".
+    pub label: String,
+    /// Whether Search finds it now: ready, or being rebuilt with its older index searched
+    /// meanwhile.
+    pub searchable: bool,
+    /// A sentence for Search while it is not ready ("BSB is still being indexed. Search
+    /// will find it once it is ready."), `None` when it is.
+    pub note: Option<String>,
 }
 
 /// Library → Storage.
@@ -1168,6 +1200,7 @@ impl MobileApp {
                 obr: r.obr,
                 search_index: r.search_index,
                 aliases: r.aliases,
+                index: self.search_index_status(&r.resource_id),
                 resource_id: r.resource_id,
             })
             .collect();
@@ -1176,5 +1209,58 @@ impl MobileApp {
             total: storage.total,
             size: megabytes(storage.total),
         }
+    }
+
+    /// Where Resource `id`'s Search index stands (`None`: not in the library, or nothing
+    /// tracks an index for it).
+    pub fn search_index_status(&self, id: &str) -> Option<SearchIndexStatus> {
+        let search = &self.session.search;
+        let status = search.status(id)?;
+        let name = (self.session.library.get(id))
+            .map_or_else(|| id.to_string(), |e| e.manifest.abbreviation.clone());
+        let stale = search.stale_path(id).is_some();
+        let (state, label, note) = match status {
+            IndexStatus::Ready => (SearchIndexState::Ready, "Search index ready", None),
+            IndexStatus::Indexing { .. } => (
+                SearchIndexState::Building,
+                "Still being indexed",
+                Some(if stale {
+                    format!(
+                        "{name} is still being indexed. Search reads its older index until the \
+                         new one is ready."
+                    )
+                } else {
+                    format!("{name} is still being indexed. Search will find it once it is ready.")
+                }),
+            ),
+            IndexStatus::Failed(e) => (
+                SearchIndexState::Failed,
+                "Search index failed",
+                Some(format!(
+                    "{name}'s Search index could not be built ({e}). It is tried again at the \
+                     next launch."
+                )),
+            ),
+            IndexStatus::Unavailable => (
+                SearchIndexState::Unavailable,
+                "No Search index",
+                Some(format!("{name} cannot be searched on this device.")),
+            ),
+        };
+        Some(SearchIndexStatus {
+            resource_id: id.to_string(),
+            state,
+            label: label.to_string(),
+            searchable: state == SearchIndexState::Ready
+                || (stale && state == SearchIndexState::Building),
+            note,
+        })
+    }
+
+    /// Each tracked Resource's Search index state, to tell when one changes.
+    pub(crate) fn index_states(&self) -> Vec<(String, SearchIndexState)> {
+        (self.session.search.statuses())
+            .filter_map(|(id, _)| Some((id.to_string(), self.search_index_status(id)?.state)))
+            .collect()
     }
 }

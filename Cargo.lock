@@ -2738,6 +2738,7 @@ dependencies = [
  "obs-engine",
  "obs-mobile",
  "obs-model",
+ "obs-store",
  "png",
  "uniffi",
 ]

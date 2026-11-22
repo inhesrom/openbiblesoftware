@@ -601,8 +601,15 @@ impl AliasCache {
 
     /// Make every pair of the library current (run at library load, on the job queue), and
     /// delete cache files in the cache folder that no pair uses any more, and temp files a
-    /// crashed write left behind. Returns how many pairs there are.
-    pub fn refresh(&self, library: &crate::Library) -> Result<usize, String> {
+    /// crashed write left behind. Returns how many pairs there are. `superseded` says a
+    /// refresh of a newer library replaced this one: the delete is skipped then, since this
+    /// library's pairs are out of date and the newer refresh may have written a file for a
+    /// pair this one does not have.
+    pub fn refresh(
+        &self,
+        library: &crate::Library,
+        superseded: impl Fn() -> bool,
+    ) -> Result<usize, String> {
         use obs_model::ResourceType;
         let mut names = Vec::new();
         let mut errors = Vec::new();
@@ -614,7 +621,8 @@ impl AliasCache {
                 }
             }
         }
-        if let Some(dir) = self.dir()
+        if !superseded()
+            && let Some(dir) = self.dir()
             && let Ok(list) = std::fs::read_dir(&dir)
         {
             for entry in list.flatten() {
@@ -689,7 +697,7 @@ impl AliasCache {
         Err("Opening Resources is not supported here".into())
     }
 
-    pub fn refresh(&self, _: &crate::Library) -> Result<usize, String> {
+    pub fn refresh(&self, _: &crate::Library, _: impl Fn() -> bool) -> Result<usize, String> {
         Err("Opening Resources is not supported here".into())
     }
 }

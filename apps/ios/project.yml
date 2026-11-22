@@ -45,6 +45,12 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSSupportsOpeningDocumentsInPlace: false
+        # The background processing task (S25, #333 "Storage"): Search indexes and alias caches
+        # of downloaded and imported Resources are built on the device and carry on when the
+        # app is closed. BGProcessingTask needs the `processing` mode and its identifier listed
+        # (BGTaskScheduler.h: otherwise `notPermitted`); no entitlement.
+        UIBackgroundModes: [processing]
+        BGTaskSchedulerPermittedIdentifiers: [$(PRODUCT_BUNDLE_IDENTIFIER).index]
         CFBundleDocumentTypes:
           - CFBundleTypeName: USFM books
             LSHandlerRank: Default

@@ -109,6 +109,35 @@ it ships). `XCUIDevice.shared.press(.home)` sends the app to the background; on 
 simulator it stayed in `runningBackground` for the 20 s the test waits rather than being
 suspended, while the system's transfers carried on.
 
+### Background task
+
+The background processing task (S25, `docs/dev/mobile-library.md` § Storage and background
+work) is `<bundle id>.index`, listed in `BGTaskSchedulerPermittedIdentifiers` with the
+`processing` background mode in `project.yml`'s `info` (no entitlement). **The simulator does
+not run it:** on iOS 27.2 `BGTaskScheduler.shared.submit(_:)` fails with
+`BGTaskSchedulerErrorDomain` code 1, "BGTaskScheduler is not available on this platform"
+(`BGTaskScheduler.h` lists the simulator under `unavailable`), and lldb's
+`_simulateLaunchForTaskWithIdentifier:` finds no scheduled request. So the tests run the
+launch handler's code in process with a stand-in task (`OpenBibleTests/BackgroundIndexerTests`),
+and `OpenBibleUITests/StorageTests` checks Storage while indexes are built (both need
+`TEST_RUNNER_OBS_STUDY_SET_DIR`, and are skipped without it).
+
+**Device-only check** (owner, with a device build: plan S31, S35):
+
+1. Run the app from Xcode on the iPhone (Debug, so lldb attaches), add Resources whose Search
+   indexes are not built yet (the Study set from Library → Starter library, or several `.obr`
+   files through "Open in"), and send the app home at once. The console shows
+   `background task io.github.inhesrom.openbible.dev.index: submitted` (category `background`).
+2. Pause the app in Xcode's debugger and run
+   `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"io.github.inhesrom.openbible.dev.index"]`,
+   then continue. The console shows `background run ended, work left: false` once the indexes
+   are built; Library → Storage then says "Search index ready" on every row.
+3. Expiration: repeat 1, then `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateExpirationForTaskWithIdentifier:@"io.github.inhesrom.openbible.dev.index"]`
+   while it runs: `work left: true` and a new `submitted`; the next launch finishes the work.
+4. Without the debugger: leave the phone on charge with the app closed after adding
+   Resources; the system runs the task when it chooses (within a day or two), and Storage
+   shows the indexes ready at the next launch without waiting.
+
 ## The run-script phase
 
 The app target's first build phase, "Rust core and Bundled set", runs

@@ -39,10 +39,19 @@ final class AppCoreTests: XCTestCase {
         let reader = try core.reader(reader: 0)
         XCTAssertEqual(reader.resourceId, "bsb")
         XCTAssertEqual(reader.location, "Genesis 1:1")
-        // The folders the core lists are kept out of device backups; the User database is not.
-        for path in try core.backupExcluded() {
+        // The folders the core lists (the library, the Search indexes, the alias caches: what
+        // the app can copy, download or build again, #333 "Storage") are kept out of device
+        // backups, read back from the file system; the User database and the app folder are not.
+        let excluded = try core.backupExcluded()
+        XCTAssertEqual(
+            excluded.map { URL(fileURLWithPath: $0).lastPathComponent }, ["library", "search", "aliases"])
+        for path in excluded {
             let values = try URL(fileURLWithPath: path).resourceValues(forKeys: [.isExcludedFromBackupKey])
             XCTAssertEqual(values.isExcludedFromBackup, true, path)
+        }
+        for kept in [folder!, folder.appendingPathComponent("user.db")] {
+            let values = try kept.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            XCTAssertEqual(values.isExcludedFromBackup, false, kept.path)
         }
         _ = try core.navigate(reader: 0, text: "Jn 3:16")
         try core.saveSession()

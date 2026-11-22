@@ -7,8 +7,9 @@ import os
 /// first-launch Study set offer over the shared core (`docs/dev/mobile-library.md`). Every
 /// row, size, licence, state and question is the core's; this forwards the taps (with the
 /// network `NetworkMonitor` sees and the free bytes the volume reports), starts the
-/// transfers the core plans on `DownloadCenter`, and asks again on `Changed.library` (Storage
-/// too) and `Changed.downloads` (at most every 0.25 s: each transfer's progress wakes it).
+/// transfers the core plans on `DownloadCenter`, and asks again on `Changed.library` and
+/// `Changed.indexes` (Storage too) and `Changed.downloads` (at most every 0.25 s: each
+/// transfer's progress wakes it).
 @MainActor
 @Observable
 final class LibraryModel {
@@ -41,6 +42,8 @@ final class LibraryModel {
     let downloads: DownloadCenter
     /// The Library sheet is up.
     var showing = false
+    /// The Library sheet's pushed lists.
+    var path: [LibrarySheet.Page] = []
     private(set) var starter: StarterLibraryView?
     private(set) var openRows: [OpenRow] = []
     let filters = licenceFilters()
@@ -78,6 +81,12 @@ final class LibraryModel {
         network.start()
         refresh()
         #if DEBUG
+            // Test harness: StorageTests opens Library → Storage at launch, while the indexes
+            // the launch queued are still being built.
+            if ProcessInfo.processInfo.environment["OBS_TEST_OPEN_STORAGE"] == "1" {
+                open()
+                path = [.storage]
+            }
             // Test harness: the UI tests that do not test the offer launch without it.
             if ProcessInfo.processInfo.environment["OBS_TEST_NO_STUDY_SET_OFFER"] == "1" { return }
         #endif
@@ -110,8 +119,10 @@ final class LibraryModel {
         offer = nil
     }
 
-    /// The Library sheet opened.
+    /// The Library sheet opened, on its Library list (the pages pushed before it was last
+    /// dismissed are not shown again).
     func open() {
+        path = []
         showing = true
         refresh()
     }
@@ -125,6 +136,12 @@ final class LibraryModel {
 
     /// `Changed.library`: everything shown, Storage included.
     func libraryChanged() {
+        refresh()
+    }
+
+    /// `Changed.indexes`: a Search index started or stopped being built, so Storage's row
+    /// and sizes change.
+    func indexesChanged() {
         refresh()
     }
 

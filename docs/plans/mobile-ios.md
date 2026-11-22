@@ -62,7 +62,7 @@ to Claude Opus 5.5 later on".
 | S22 | Reading plans + optional local reminder | AFK | y | S14b | plans screens, `UNUserNotificationCenter` | todo |
 | S23 | Library Rust side: install-from-file seam, manifest merge, Study set, Open catalogue, storage accounting | AFK | n | S13 (∥ S14–S22) | engine/mobile APIs, tests, `docs/dev/mobile-library.md` | done (PR #405) |
 | S24 | iOS downloads: background `URLSession`, Wi-Fi-only, first-launch Study set offer, Library screens | AFK | y | S23 | Library → Starter library / Get Resources | done (PR #409) |
-| S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | todo |
+| S25 | On-device index builds + `BGProcessingTask` + Storage + backup exclusion | AFK | y | S24 | Storage screen, index status | done (PR #410; the task itself is device-only, see Outcome) |
 | S26 | Import: document picker, Open In, SWORD zip, Import report | AFK | y | S23 | UTType declarations, `ImportSource::SwordZip` (engine-only on desktop) | done (PR #406) |
 | S27a | Sync 1a (Rust): User database migration 13 — clocks, tombstones, device id, `applied_up_to`, Layout ids | AFK | n | — (∥ M2–M5) | `obs-store` migration, tests | done (PR #356) |
 | S27b | Sync 1b (Rust): `Row` variants for every synced table; every synced write via `apply_changes` | AFK | n | S27a | engine/store changes, tests | todo |
@@ -1541,7 +1541,9 @@ this in addition to its own lines):
   index status), `annotations.rs` (`annotation.search_notes`); `text.normalize` command.
 - **Do:** Rust: `search(query, mode: Bible|Notes, scope) -> results|error|indexing(resource)`,
   suggestions, open-hit → navigate. Swift: search screen with mode/scope pickers, results list,
-  "still being indexed" row; system keyboards for Hebrew/Greek (no custom keyboard; D16, decided in
+  "still being indexed" row (**from S25:** its words are `MobileApp::search_index_status(resource)`'s
+  `note`, and `searchable` says whether Search reads it meanwhile; `Changed::Indexes` says
+  when one changes; reuse them rather than wording it again); system keyboards for Hebrew/Greek (no custom keyboard; D16, decided in
   S12).
 - **Don't:** query parsing, scope rules or result ranking in Swift; Search Library mode (deferred).
 - **Deliverables:** Rust methods + tests, Swift Search screen, `docs/dev/mobile-search.md`,
@@ -1865,6 +1867,79 @@ this in addition to its own lines):
 - **Verify:** UI standard; `cargo test -p obs-mobile storage`.
 - **Stop-and-ask:** UI standard; the task is never granted in the simulator (then document the
   device-only check for S31/S35).
+- **Outcome (2026-11-22, branch `mobile/s25-index-storage`, on S24/S26/S23/S13; S08 has
+  not happened, so the screen anatomy is not decided):**
+  - **Decisions (supervisor, at the stop-and-ask).** (1) `BGTaskScheduler.h` (iOS 27.2 SDK)
+    makes a submission `notPermitted` without the `processing` background mode, so
+    `project.yml` declares `UIBackgroundModes: [processing]` with
+    `BGTaskSchedulerPermittedIdentifiers: [$(PRODUCT_BUNDLE_IDENTIFIER).index]`; no
+    entitlement (S34's review notes now say why). (2) The simulator never grants the task
+    (below), so the launch handler's code is tested in process with a stand-in task and the
+    device-only check is written down (`docs/dev/ios-project.md` "Background task"; S31's and
+    S35's entries). (3) There is no mobile Search screen yet (S20), so "still being indexed"
+    is shown on Library → Storage's rows, and `search_index_status(resource)` gives S20 its
+    words (S20's entry says so). (4) The task's request is the core's:
+    `pending_background_work() -> Option<BackgroundRequest { requires_external_power: false,
+    requires_network: false }>`.
+  - **Shipped, Rust.** `obs_mobile::background`: `background_work()` (Search index builds
+    queued or running, the alias refresh, installs and Imports heading to an index),
+    `pending_background_work()`, `step_background(deadline)` (threads: one round of the
+    pump's work; inline: job steps until the deadline, so at most one step late), and
+    `BACKGROUND_STEP` (0.5 s). `search_index_status` (`SearchIndexState` Ready / Building /
+    Failed / Unavailable, a `label`, `searchable`, Search's `note`), on every `storage()` row
+    as `index`; `Changed::Indexes`; the pump's work without taking its changes
+    (`advance()`); alias caches made current whenever the library changes, and at boot after
+    the Starter sync and the Debug Study set override (whose Resources now get their index
+    status; before, the override's Resources had none). Engine:
+    `Guides::is_refreshing_aliases()`. `obs-ffi`: `pending_background_work`,
+    `step_background()` (the lock released between rounds), `search_index_status`, the
+    Records, `StorageRow.index`, `Changed.indexes`.
+  - **Shipped, iOS.** `BackgroundIndexer` (registered in `didFinishLaunching`; submitted
+    when the scene goes to the background and after a run with work left, only while the
+    core has work, with its flags; the run steps until the core says done or
+    `expirationHandler` fires, then `setTaskCompleted(success: no work left)`); the handler
+    boots the core when the system launches the app for it. Storage's rows lay out title,
+    size and the core's index label (a spinner while building), one VoiceOver element before
+    Remove, sizes in the primary colour (the old `LabeledContent` value failed the audit's
+    contrast once the rows held more), refreshed on `Changed.indexes`. Backup exclusion was
+    already set at boot since S13 on exactly the core's list; `AppCoreTests` now reads back
+    `library`, `search` and `aliases` as excluded and the app folder and `user.db` as not.
+  - **The simulator (verified).** `BGTaskScheduler.shared.submit(_:)` fails with
+    `BGTaskSchedulerErrorDomain` code 1, "BGTaskScheduler is not available on this
+    platform". The lldb incantation is right for this SDK: `[BGTaskScheduler sharedScheduler]`
+    answers YES to `respondsToSelector:` for `_simulateLaunchForTaskWithIdentifier:` and
+    `_simulateExpirationForTaskWithIdentifier:` (iOS 27.2 simulator), and the first logs
+    "Simulating launch for task with identifier …" but then "No task request with identifier
+    … has been scheduled" (it needs the refused request). Evaluated while the app was
+    suspended in the background it is interrupted by SIGSTOP; run it with the app in front
+    and paused, as the device check says. Unverified on a device: the launch, the
+    expiration, how soon the system runs a `requiresExternalPower = false` task.
+  - **Measured.** Simulator (iOS 27.2, Debug app, `[profile.ios]` core): a background run
+    over the 18 Starter library Resources outside the Bundled set without indexes (345 MB of
+    library) builds all 18 in 8.4 s on an iPhone 17 and 8.8 s on an iPad Air 11-inch (M4).
+    `xcodebuild test`, all 26 tests (4 new, 1 extended), iPhone 17 8 min 38 s, iPad 9 min
+    33 s, both passing with the Import files placed and `TEST_RUNNER_OBS_STUDY_SET_DIR`.
+    Host: a threaded `step_background()` ends within `BACKGROUND_STEP` + 0.4 s and other calls
+    are answered in under 0.3 s while it runs (`apps/obs-ffi/tests/background.rs`).
+  - **Accessibility audit.** Storage passes in Light and Dark, both while indexes are built
+    and once ready, on iPhone and iPad (the same filter as `LibraryTests`: the toolbar's
+    Done, and element-less findings behind the iPad sheet). The navigation title failed
+    contrast when audited within a second of an appearance change; the test waits 2–3 s.
+    The audit of the "building" state may run after the last index finished (it is the same
+    layout with a spinner).
+  - **Deferred / for later steps.** The banner still counts only downloads' indexes ("Building
+    the Search index of N Resources"), not an index a relaunch queued. A Search screen's row
+    is S20's (it reuses `search_index_status`). `BGContinuedProcessingTaskRequest` (iOS 26:
+    work that starts at once and shows progress to the user) was not used: the plan names
+    `BGProcessingTask`, and its UI is a product choice. The words of the Storage screen's
+    buttons and titles stay Swift's (S12's string decision). No later step's assumption
+    proved wrong beyond the S20, S31, S34 and S35 notes above.
+  - Checks: `cargo test -p obs-mobile storage` and `background`, `cargo test -p obs-ffi`
+    (`--test background` new), `cargo test -p obs-mobile -- --ignored` and `cargo test -p
+    obs-ffi --test mobile_app -- --ignored` over the real Bundled set; `cargo xtask ios
+    build --sim-only`, `xcodegen generate`, the two runs above; previews
+    `docs/previews/ios/s25-storage-*.png` (iPhone, Light and Dark, and the iPad while
+    indexing); `cargo xtask gallery` unchanged; `cargo xtask ci` green.
 
 #### S26 — Import: document picker, Open In, SWORD zip, Import report
 
@@ -2197,7 +2272,11 @@ this in addition to its own lines):
   iPhone; make Highlights/Notes on each; wait; confirm convergence and a deliberate conflict; note
   latency; then (per #332 "Validation") check whether Dropbox, OneDrive and Google Drive folders
   can be picked in the iOS picker at all. Report back; the executor updates the supported-folders
-  copy (Rust strings) and `docs/dev/sync.md`.
+  copy (Rust strings) and `docs/dev/sync.md`. **From S25 (device-only, the simulator refuses
+  `BGTaskScheduler`):** with the same iPhone and a Debug run from Xcode, the background
+  processing task's check in `docs/dev/ios-project.md` ("Background task": submitted on
+  going home, the lldb simulated launch building the indexes, the simulated expiration
+  leaving work and asking again), and report what the console said.
 - **Done when:** the report names latency, the conflict outcome and the pickable providers; the
   follow-up PR with the Rust strings is merged.
 
@@ -2355,6 +2434,10 @@ this in addition to its own lines):
   4.0"); accessibility audit pass on every screen (XCUITest `performAccessibilityAudit`); size:
   `.ipa` ≤ 200 MB (expect ≈ 43 MB Bundled set, measured in S04, + Rust ≈ 20–40 MB; record); first-launch offline path
   (4.2.3(ii)); review notes (what the app does without download, how Import works, no accounts;
+  **from S25:** why the app declares the `processing` background mode: it builds the Search
+  indexes and alias caches of Resources the user downloaded or imported on the device, from
+  files already there, with no network, in a `BGProcessingTask` that carries on when the app
+  is closed (#333 "Storage");
   **from the S26 review:** the app claims `public.zip-archive` at rank Alternate, so the share
   sheet lists Open Bible for every `.zip`, and a zip that holds neither USFM books nor one SWORD
   module is refused in plain words; it is not listed for an `.epub` or a `.docx`, checked in
@@ -2386,7 +2469,10 @@ this in addition to its own lines):
   upload** of the S34 `.ipa` from Xcode Organizer or Transporter (or, if preferred, generate an ASC
   API key, store it as a repo secret and let the agent run the upload command once the record
   exists); (4) internal TestFlight on the owner's devices for a week; external
-  TestFlight optional; (5) submit for review with the S34 notes; on rejection, open a ticket quoting
+  TestFlight optional, during which (**from S25**) the background processing task is checked
+  on a TestFlight build without the debugger (`docs/dev/ios-project.md`, "Background task",
+  step 4: Resources added, the app closed on charge, the indexes ready at a later launch),
+  unless S31 has already done the lldb check; (5) submit for review with the S34 notes; on rejection, open a ticket quoting
   the reviewer and loop to the responsible step. After (3), an AFK follow-up adds `ios-release.yml`
   per S34's design.
 - **Done when:** a TestFlight build is installable; the review is submitted; the Outcome records
