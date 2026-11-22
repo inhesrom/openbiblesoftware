@@ -27,7 +27,7 @@ final class BackgroundIndexer: @unchecked Sendable {
     private static let log = Logger(subsystem: "io.github.inhesrom.openbible", category: "background")
 
     /// What the last submission did, for the log and the tests: nil until one was made.
-    private let lastSubmission = OSAllocatedUnfairLock<String?>(initialState: nil)
+    let lastSubmission = OSAllocatedUnfairLock<String?>(initialState: nil)
 
     var lastSubmissionResult: String? { lastSubmission.withLock { $0 } }
 
@@ -36,25 +36,41 @@ final class BackgroundIndexer: @unchecked Sendable {
     func register() {
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.identifier, using: nil) {
             task in
-            BackgroundIndexer.shared.launched(task)
+            BackgroundIndexer.shared.launched(task) {
+                await AppCore.shared.start()
+                return AppCore.shared.core
+            }
         }
         if !registered {
             Self.log.error("\(Self.identifier, privacy: .public) is not in BGTaskSchedulerPermittedIdentifiers")
         }
     }
 
-    /// The system launched (or woke) the app for the task: boot the core if it is not up,
-    /// then run.
-    private func launched(_ task: BGTask) {
+    /// The system launched (or woke) the app for the task: watch for its expiration at once,
+    /// since the boot can take seconds and a task without a handler is ended unsuccessfully
+    /// (BGTask.h), then boot the core if it is not up (`boot`) and run.
+    @discardableResult
+    func launched(
+        _ task: some BackgroundTaskHandle,
+        boot: @escaping @MainActor @Sendable () async -> MobileApp?
+    ) -> Task<Void, Never> {
+        let expired = Self.watchExpiration(of: task)
         nonisolated(unsafe) let task = task
-        Task { @MainActor in
-            await AppCore.shared.start()
-            guard let core = AppCore.shared.core else {
+        return Task { @MainActor in
+            guard let core = await boot() else {
                 task.setTaskCompleted(success: false)
                 return
             }
-            await self.run(task, core: core)
+            await self.run(task, core: core, expired: expired)
         }
+    }
+
+    /// Set the task's expiration handler: the flag it returns turns true when the system
+    /// takes the time back.
+    static func watchExpiration(of task: some BackgroundTaskHandle) -> OSAllocatedUnfairLock<Bool> {
+        let expired = OSAllocatedUnfairLock(initialState: false)
+        task.expirationHandler = { expired.withLock { $0 = true } }
+        return expired
     }
 
     /// Ask the system for the task while the core has work for it (the app is going to the
@@ -86,13 +102,12 @@ final class BackgroundIndexer: @unchecked Sendable {
         Self.log.info("background task \(Self.identifier, privacy: .public): \(outcome, privacy: .public)")
     }
 
-    /// Step the core's work until it says none is left or the task expires, then complete
-    /// the task (successful when nothing is left) and ask for another while work is left.
-    /// Each step is the core's (`stepBackground`, half a second at most), so an expiration
-    /// stops the run within one step.
-    func run(_ task: some BackgroundTaskHandle, core: MobileApp) async {
-        let expired = OSAllocatedUnfairLock(initialState: false)
-        task.expirationHandler = { expired.withLock { $0 = true } }
+    /// Step the core's work until it says none is left or the task expires (`expired`, from
+    /// `watchExpiration`), then complete the task (successful when nothing is left) and ask
+    /// for another while work is left. Each step is the core's (`stepBackground`, half a
+    /// second at most), so an expiration stops the run within one step, and one before the
+    /// run stops it before its first.
+    func run(_ task: some BackgroundTaskHandle, core: MobileApp, expired: OSAllocatedUnfairLock<Bool>) async {
         let pending = await Task.detached(priority: .utility) {
             var pending = true
             while pending, !expired.withLock({ $0 }) {

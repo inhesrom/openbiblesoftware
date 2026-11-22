@@ -17,11 +17,11 @@ import XCTest
 final class BackgroundIndexerTests: XCTestCase {
     private var folder: URL!
 
-    /// A `BGTask` stand-in: records the completion, and can expire as soon as the run sets
+    /// A `BGTask` stand-in: records each completion, and can expire as soon as the run sets
     /// its handler.
-    final class StandInTask: BackgroundTaskHandle {
+    final class StandInTask: BackgroundTaskHandle, @unchecked Sendable {
         let expireAtOnce: Bool
-        var completed: Bool?
+        var completions: [Bool] = []
         var expirationHandler: (() -> Void)? {
             didSet { if expireAtOnce { expirationHandler?() } }
         }
@@ -31,7 +31,7 @@ final class BackgroundIndexerTests: XCTestCase {
         }
 
         func setTaskCompleted(success: Bool) {
-            completed = success
+            completions.append(success)
         }
     }
 
@@ -92,9 +92,9 @@ final class BackgroundIndexerTests: XCTestCase {
         let task = StandInTask()
         let clock = ContinuousClock()
         let began = clock.now
-        await BackgroundIndexer.shared.run(task, core: core)
+        await BackgroundIndexer.shared.run(task, core: core, expired: BackgroundIndexer.watchExpiration(of: task))
         print("background run: \(ids.count) indexes in \(clock.now - began)")
-        XCTAssertEqual(task.completed, true)
+        XCTAssertEqual(task.completions, [true])
         XCTAssertNil(try core.pendingBackgroundWork())
         XCTAssertEqual(Set(try labels(core, ids)), ["Search index ready"])
         XCTAssertEqual(try labels(core, ids).count, ids.count)
@@ -108,8 +108,9 @@ final class BackgroundIndexerTests: XCTestCase {
         var core: MobileApp? = try await boot()
         XCTAssertNotNil(try core?.pendingBackgroundWork())
         let task = StandInTask(expireAtOnce: true)
-        await BackgroundIndexer.shared.run(task, core: try XCTUnwrap(core))
-        XCTAssertEqual(task.completed, false)
+        await BackgroundIndexer.shared.run(
+            task, core: try XCTUnwrap(core), expired: BackgroundIndexer.watchExpiration(of: task))
+        XCTAssertEqual(task.completions, [false])
         XCTAssertNotNil(try core?.pendingBackgroundWork(), "work left after the expiration")
         let submission = try XCTUnwrap(BackgroundIndexer.shared.lastSubmissionResult)
         XCTAssertTrue(submission.hasPrefix("not submitted") || submission == "submitted", submission)
@@ -118,8 +119,35 @@ final class BackgroundIndexerTests: XCTestCase {
         let again = try await boot()
         XCTAssertNotNil(try again.pendingBackgroundWork(), "pending again at the next launch")
         let done = StandInTask()
-        await BackgroundIndexer.shared.run(done, core: again)
-        XCTAssertEqual(done.completed, true)
+        await BackgroundIndexer.shared.run(done, core: again, expired: BackgroundIndexer.watchExpiration(of: done))
+        XCTAssertEqual(done.completions, [true])
+    }
+
+    /// The system takes the time back while the launch still boots the core: the handler set
+    /// at launch catches it, so the run takes no step, completes the task once, unsuccessfully,
+    /// and asks for another.
+    func testAnExpirationDuringTheBootStopsTheRunBeforeItsFirstStep() async throws {
+        let ids = try placeUnindexedResources()
+        let task = StandInTask()
+        BackgroundIndexer.shared.lastSubmission.withLock { $0 = nil }
+        let folder = folder!
+        let bundle = try XCTUnwrap(AppCore.bundledSet()).path
+        nonisolated(unsafe) var booted: MobileApp?
+        let launch = BackgroundIndexer.shared.launched(task) {
+            XCTAssertNotNil(task.expirationHandler, "no expiration handler while the core boots")
+            let core = try? await Task.detached { try AppCore.boot(folder: folder, bundle: bundle, studySet: nil) }.value
+            task.expirationHandler?()
+            booted = core
+            return core
+        }
+        await launch.value
+        let core = try XCTUnwrap(booted)
+        XCTAssertEqual(task.completions, [false])
+        XCTAssertNotNil(try core.pendingBackgroundWork(), "work left after the expiration")
+        XCTAssertTrue(try labels(core, ids).contains("Still being indexed"))
+        let submission = try XCTUnwrap(BackgroundIndexer.shared.lastSubmissionResult, "no new request")
+        XCTAssertTrue(submission.hasPrefix("not submitted") || submission == "submitted", submission)
+        while try core.stepBackground() {}
     }
 
     /// The simulator has no background processing: a submission is refused as unavailable,
