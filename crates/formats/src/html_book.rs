@@ -343,8 +343,30 @@ fn names_gutenberg(text: &str) -> bool {
 }
 
 /// The tokens of the book's own text: after the "*** START OF" line, before the "*** END OF"
-/// line. `None` when either is missing.
+/// line. A file with neither (PG's newest posted HTML leaves the boilerplate to its generated
+/// files) is read from its `<body>`; a block naming PG is dropped as anywhere else. `None` when
+/// only one of the lines is there.
 fn body(tokens: &[Token]) -> Option<&[Token]> {
+    let marked = |word: &str| {
+        tokens.iter().any(|t| match t {
+            Token::Text(s) => {
+                let upper = s.to_uppercase();
+                upper.contains("***") && upper.contains(word) && upper.contains("PROJECT GUTENBERG")
+            }
+            _ => false,
+        })
+    };
+    if !marked("START OF") && !marked("END OF") {
+        let start = tokens
+            .iter()
+            .position(|t| matches!(t, Token::Start { name, .. } if name == "body"))?;
+        return Some(&tokens[start + 1..]);
+    }
+    marked_body(tokens)
+}
+
+/// [`body`] of a file with PG's start and end lines.
+fn marked_body(tokens: &[Token]) -> Option<&[Token]> {
     let marker = |t: &Token, word: &str| match t {
         Token::Text(s) => {
             let upper = s.to_uppercase();

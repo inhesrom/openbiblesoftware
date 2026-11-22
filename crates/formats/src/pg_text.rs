@@ -2,7 +2,8 @@
 //! with no HTML: one eBook → a Book (ADR 0023) plus an [`ImportReport`].
 //!
 //! Only the text between PG's "*** START OF THE PROJECT GUTENBERG EBOOK" and "*** END OF …"
-//! lines is read, and any paragraph naming Project Gutenberg is dropped (as for HTML,
+//! lines (in a text of before 2002, between the end of its "SMALL PRINT" and its "End of
+//! Project Gutenberg" line) is read, and any paragraph naming Project Gutenberg is dropped (as for HTML,
 //! [`crate::import_pg_html`]). PG's plain text follows a convention:
 //!
 //! | Text | Book |
@@ -225,9 +226,32 @@ fn body(text: &str) -> Option<&str> {
         }
         None
     };
-    let (_, start) = line_with(0, "START OF")?;
-    let (end, _) = line_with(start, "END OF")?;
-    Some(&text[start..end])
+    if let Some((_, start)) = line_with(0, "START OF")
+        && let Some((end, _)) = line_with(start, "END OF")
+    {
+        return Some(&text[start..end]);
+    }
+    // PG's texts of before 2002: the header ends "*END*THE SMALL PRINT! … *END*", the text
+    // ends at "End of Project Gutenberg's …" or "End of the Project Gutenberg Etext …", or
+    // at the end of the file.
+    let mut at = 0;
+    let mut start = None;
+    for line in text.split_inclusive('\n') {
+        let upper = line.to_uppercase();
+        if start.is_none() && upper.contains("*END") && upper.contains("SMALL PRINT") {
+            start = Some(at + line.len());
+        } else if let Some(s) = start
+            && (upper.trim_start().starts_with("END OF PROJECT GUTENBERG")
+                || upper
+                    .trim_start()
+                    .starts_with("END OF THE PROJECT GUTENBERG"))
+        {
+            return Some(&text[s..at]);
+        }
+        at += line.len();
+    }
+    // Some end with no such line: to the end (a paragraph naming PG is dropped anyway).
+    start.map(|s| &text[s..])
 }
 
 /// Bible references in a unit's text, as `scripture_ref` spans.

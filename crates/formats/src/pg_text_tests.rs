@@ -169,6 +169,18 @@ fn credits_dates_and_braced_pages_are_not_chapters() {
     assert_eq!(pages, ["1", "2", "3", "iv", "5"]);
 }
 
+/// A text of before 2002: its licence ("SMALL PRINT") before the text, "End of Project
+/// Gutenberg's …" after it.
+#[test]
+fn an_old_gutenberg_text_is_read_between_its_small_print_and_its_end() {
+    let text = "Project Gutenberg Etext of X\n\n***START**THE SMALL PRINT!**FOR PUBLIC DOMAIN ETEXTS**START***\nLawyers.\n*END*THE SMALL PRINT! FOR PUBLIC DOMAIN ETEXTS*Ver.04.29.93*END*\n\nThe text.\n\nEnd of Project Gutenberg's X\n\nMore licence.\n";
+    let (r, _) = import(text);
+    assert_eq!(r.units.len(), 1);
+    assert_eq!(r.units[0].text, "The text.");
+    let no_end = "*END*THE SMALL PRINT! FOR PUBLIC DOMAIN ETEXTS*END*\n\nThe text.\n\nProject Gutenberg Etext of X\n";
+    assert_eq!(import(no_end).0.units[0].text, "The text.");
+}
+
 #[test]
 fn what_is_not_a_gutenberg_text_is_refused() {
     assert!(import_pg_text("Just text.", &options("pg-text-bad"), |_, _| true).is_err());

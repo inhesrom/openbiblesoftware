@@ -230,7 +230,15 @@ fn latin_1_files_are_read_as_windows_1252() {
 
 #[test]
 fn what_is_not_a_gutenberg_book_is_refused_plainly() {
-    for bad in ["", "<html><body><p>No markers.</p></body></html>"] {
+    // Neither PG line: the body is read (PG's newest posted HTML); a start with no end is not.
+    let (r, _) = import(
+        "<html><head><title>X | A Project Gutenberg eBook</title></head><body><p>Plain.</p></body></html>",
+    );
+    assert_eq!(r.units[0].text, "Plain.");
+    for bad in [
+        "",
+        "<html><body><p>*** START OF THE PROJECT GUTENBERG EBOOK X ***</p><p>No end.</p></body></html>",
+    ] {
         assert!(
             import_pg_html(bad, &options("pg-bad"), |_, _| true).is_err(),
             "{bad:?}"
