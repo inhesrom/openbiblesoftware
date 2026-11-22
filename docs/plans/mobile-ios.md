@@ -1912,7 +1912,10 @@ under the half they belong to.
   parent kept 231, held 331; conflict copies 529, parents restored 688, items renamed 1,045,
   items kept 19; late joins 3,043, snapshots merged 42,027 (676 for files trimmed), own files
   trimmed 1,512, restores catching up 388, replacing 420. 10k runs with seeds 7, 424242,
-  99999999, 1, 31337 and 2026 green (about 94 s each). MEASURED. **Not done:** S29 and S30's screens; only
+  99999999, 1, 31337 and 2026 green (about 94 s each). Measured: `cargo xtask ci` green
+  (12 m 18 s, 2,425 tests passed, 43 ignored); `cargo test -p obs-store --all-features` 160
+  passed; `cargo test -p obs-engine sync` 68 passed, 1 ignored (12.8 s); clippy (`-D
+  warnings`) and the wasm check clean. **Not done:** S29 and S30's screens; only
   own op files are trimmed, so a restored or copied device leaves its old id's files in the
   folder for good. S29's entry gained an "Added by S28c" bullet.
 
