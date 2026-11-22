@@ -342,7 +342,11 @@ S28b-2 D3):
 - **A parent's delete meeting a live child here** (an Annotation the delete had not seen) keeps
   the parent, notes the delete in the tombstone, records the parent again (a clock after what
   the tombstone covers), and records again each row its op file deleted with it that is not
-  here (`ParentKept`).
+  here (`ParentKept`), except one this device's user deleted too, later: its tombstone here
+  has a clock other than the file's delete
+  (`merge_tests::a_kept_parent_does_not_bring_back_a_row_this_devices_user_deleted_too`). A
+  Sync conflict's copy made for a Note deleted with its Notebook is in that Notebook, so the
+  Notebook comes back with every Note its delete took (S29's Needs attention should expect it).
 - **Every device that restores a parent records it**, not only the child's maker: the maker may
   move or delete its child before it meets the delete, so it would delete the parent while the
   devices that restored it for the child kept it

@@ -995,6 +995,46 @@ fn a_deleted_notebook_comes_back_with_its_notes_when_another_device_added_to_it(
     converged(&[&a, &b, &c]);
 }
 
+/// A deletes Notebook N with its Note; B, not having seen that, adds a Note to N and then
+/// deletes A's Note itself. B keeps N for its Note when A's delete arrives, but does not
+/// bring back the Note its own user deleted (the S28b-2 review's P2-4).
+#[test]
+fn a_kept_parent_does_not_bring_back_a_row_this_devices_user_deleted_too() {
+    let dir = Dir::new("parent-own-delete");
+    let cloud = MemSyncFolder::new();
+    let (a, b) = (device(&dir, "a"), device(&dir, "b"));
+    let nb = notebook("Romans");
+    let old = note_in(&nb.id, "old note");
+    a.apply(&[
+        Change::insert(Row::Notebook(nb.clone())),
+        Change::insert(Row::Annotation(old.clone())),
+    ]);
+    Device::settle(&[&a, &b], &cloud);
+    a.apply(&[
+        Change::delete(Row::Annotation(old.clone())),
+        Change::delete(Row::Notebook(nb.clone())),
+    ]);
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let added = note_in(&nb.id, "added on B");
+    b.apply(&[Change::insert(Row::Annotation(added.clone()))]);
+    b.apply(&[Change::delete(Row::Annotation(old.clone()))]);
+    a.push(&cloud);
+    let report = b.sync(&cloud);
+    assert_eq!(
+        report.outcomes.get(&Outcome::ParentKept),
+        Some(&1),
+        "{report:?}"
+    );
+    assert_eq!(report.recorded.children_restored, 0, "{report:?}");
+    Device::settle(&[&a, &b], &cloud);
+    for d in [&a, &b] {
+        assert!(d.row(&Row::Notebook(nb.clone()).key()).is_some());
+        assert!(annotation_of(d, &added.id).is_some());
+        assert_eq!(annotation_of(d, &old.id), None, "deleted on both");
+    }
+    converged(&[&a, &b]);
+}
+
 /// B adds a Note to N, then moves it (or deletes it) before it meets A's delete of N: B has
 /// no child of N then and deletes it, but A restored N for B's Note and recorded that, so
 /// every device ends the same.

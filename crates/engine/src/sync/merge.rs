@@ -649,7 +649,8 @@ fn is_child_of(child: &Row, parent: &RowKey) -> bool {
 
 /// Record again the children of `parent` that the op file `file` deleted and that are not
 /// here (D3: "a deleted Notebook and its Annotations" come back). One whose other parent is
-/// gone for good is left deleted.
+/// gone for good is left deleted, and so is one this device's user deleted too, later: its
+/// tombstone here has a clock other than the file's delete.
 fn restore_deleted_with(
     tx: &mut MergeTx<'_>,
     parent: &RowKey,
@@ -660,7 +661,15 @@ fn restore_deleted_with(
         let (Some(child), None) = (&op.before, &op.after) else {
             continue;
         };
-        if !is_child_of(child, parent) || tx.state(&child.key())?.row.is_some() {
+        if !is_child_of(child, parent) {
+            continue;
+        }
+        let here = tx.state(&child.key())?;
+        let deleted_by_this_op = here
+            .tombstone
+            .as_ref()
+            .is_some_and(|t| t.clock.as_ref() == Some(&op.clock));
+        if here.row.is_some() || !deleted_by_this_op {
             continue;
         }
         match ensure_parents(tx, child, None, recorded) {
