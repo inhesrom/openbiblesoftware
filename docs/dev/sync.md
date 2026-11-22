@@ -186,6 +186,79 @@ what was merged; a worker that stopped without an outcome (it panicked) is a fai
   (`sync_worker::FolderMaker`, crate-private; the desktop's is `FsSyncFolder` at the chosen
   path, checked to be there).
 
+## Merges in batches (S29c)
+
+S29b left one merge transaction per op file or snapshot: 0.5–0.9 s for a snapshot or op file
+of 10,000 Notes, and an edit on the UI thread waited for all of it (past `BUSY_TIMEOUT`, 10 s,
+it would be refused). From S29c an op file, a snapshot and the held ops' retry merge in
+**batches**, each its own write transaction (`BEGIN IMMEDIATE`), so `WriteTurns` lets a waiting
+edit in between two of them: it waits for one batch, not the file.
+
+- **A batch** (`merge::MergeBatch`) ends after the op that takes its merge work past the
+  budget (`MERGE_BATCH_BUDGET`, 4 ms) or past `max_ops` (unbounded in the app; the tests force
+  1–3), and holds at least one op. The ops, their order, each op's savepoint and every rule
+  are the unsplit merge's; a batch boundary changes only when the work is committed. D3's
+  "the rows its op file deleted with it" is still read from the whole file.
+- **All or none, per file.** `applied_up_to` moves only with a file's last batch, as before.
+  Each earlier batch commits, with its rows, where the merge stands: the **merge cursor**
+  (migration 19, `merge_cursor`: per other device, the op file being merged, or the snapshot
+  by its file name (its `seq` and hash) and the op files it covers, and how many of its ops,
+  a snapshot's as `snapshot_ops` lists them, are merged). The snapshot's own last batch moves
+  `applied_up_to` for its device and the others it covers, and raises the lists' clocks, as
+  the one transaction did. A merge of another source of that device than the cursor names
+  starts at its first op and replaces the cursor.
+- **A file that might wait merges whole.** A file waits (rolled back, merged after the other
+  devices' files) when an op needs a row only another device's file brings, or deletes this
+  device's default Notebook. Waiting after some batches were committed would merge its first
+  ops before those other files and the rest after them: an order the unsplit merge never
+  makes, so a Sync conflict's copy or a "(2)" could differ. So before its first batch the
+  merge checks the ops it is about to merge (`merge::may_wait`): every write's parents (an
+  Annotation's Notebook and Highlight style, a style's palette, a Reading's plan) are here, or
+  deleted here (restored from the tombstone's row, whose own parents are checked the same
+  way, or held when it keeps none), or held here, or written by an earlier op of the same
+  file that no op before it deletes; no op deletes the default Notebook or a Notebook an op
+  before it writes as a default; no op lacks fields (an older app's, whose missing fields come
+  from the row here). Rows here only ever leave with a tombstone, so what is known before the
+  first batch stays known after it. When the check fails, the file (or what is left of it)
+  merges in one transaction, as before S29c, and may wait as before
+  (`MergeReport::whole`). A join from a snapshot, parents first, passes it.
+- **A crash or an abandon between batches** (the app quits, the worker abandoned by a restore
+  or Stop syncing, its commits refused) leaves the batches committed and the cursor where
+  they end. The next `merge_folder` **finishes it first**, before the held ops' retry and every
+  other file, so the ops merge in the order the interrupted sync would have merged them, from
+  the op after the last committed; then it syncs as usual. A file it cannot read now (still
+  downloading) is finished in its turn, later. Redoing a file from its first op is not
+  idempotent (a former id's list item that loses is renamed again "(3)"), so no op is merged
+  twice.
+- **The cursor's file is gone** (supervisor decision 2): the device it names wrote a newer
+  snapshot (the cursor's snapshot is no longer listed, another is), or trimmed the op file
+  (no longer listed, a later file or a snapshot covering it is), or `applied_up_to` already
+  covers it (another device's snapshot did). The cursor is dropped and the newer file merges
+  from its first op, as a snapshot merges after files were trimmed: the rows the old file's
+  batches brought settle by last writer wins. This is the one case where a Sync conflict's
+  copy or a "(n)" can differ from the unsplit merge (one no one needed, never a loss), and it
+  needs a crash and the file replaced before the next sync.
+- **The held ops' retry** runs in batches too, in the same clock order, over the list read at
+  its start. `sync_held` is its own cursor: an op that applies leaves it in the same batch.
+- **No snapshot while a merge is partly done** (`snapshot_due` says not due,
+  `write_snapshot_unless_edited` writes none): it would hold the first batches' rows without
+  covering their file. The merge that finishes it comes first in the same sync, so the
+  snapshot is written at its step 7.
+- **The cursor in Backups and restores.** Snapshots hold `merge_cursor` empty; a Backup keeps
+  it, consistent with its rows. A restore that catches up finishes the Backup's partly merged
+  file from where it stood; Replace (`restamp_for_replace`) empties it (the restored data
+  replaces every version, and the file merges again from its first op on top of it).
+  Migrations 18 and 19 both come with the sync stack (the merge fix and S29c), so a snapshot
+  or Backup this build writes is "newer" to a build at 18.
+- **What a merge touched.** `MergeReport::touched` names the Annotations a merge wrote,
+  deleted or recorded, and whether it touched a Notebook, Highlight style or palette or the
+  active palette. After a sync, the Session's reload says which Annotations changed
+  (`Session::annotations_changed_since`) when those are all it changed and they are few
+  (at most `PATCH_LIMIT`); the text's Annotations (`MarkCache`) and the Notes Tool's cards then
+  read only those and patch what they hold (the cards read in full while one is edited, to
+  keep their order); Needs attention's count is one SQL count. Any other change of
+  `annotations_revision` reads everything, as before.
+
 ## Data
 
 
