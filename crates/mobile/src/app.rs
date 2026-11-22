@@ -118,8 +118,8 @@ impl MobileApp {
     /// Start over `paths` and the Bundled set folder `bundle`, as the desktop starts
     /// (`obs_ui_egui::App::with_file`), with jobs on worker threads: make the folders, scan
     /// the library, set the Search index, alias and log folders, open (or create) the User
-    /// database, add the Starter library from the bundle on the first run, then open the
-    /// readers of the Mobile Last session, or the first Bible in Preferred order at its start.
+    /// database, add the Starter library from the bundle on the first run, make the alias
+    /// caches current in the background, then open the readers of the Mobile Last session, or the first Bible in Preferred order at its start.
     /// What went wrong without stopping it is in [`Self::problems`].
     #[cfg(not(target_arch = "wasm32"))]
     pub fn boot(paths: Paths, bundle: Option<&std::path::Path>) -> Result<Self, MobileError> {
@@ -149,7 +149,6 @@ impl MobileApp {
         session.set_search_cache_dir(paths.search_cache.clone());
         session.refresh_search_indexes();
         session.set_alias_cache_dir(paths.alias_cache.clone());
-        session.refresh_alias_caches();
         session.set_log_dir(paths.logs.clone());
         match obs_store::UserStore::open(&paths.user_db) {
             Ok((store, _)) => session.attach_user(Box::new(store)),
@@ -162,6 +161,8 @@ impl MobileApp {
         if let Some(dir) = &paths.study_set {
             problems.extend(add_study_set(&mut session, dir));
         }
+        // Over the library as the Starter sync and the override left it.
+        session.refresh_alias_caches();
         let download_settings =
             crate::download_settings::DownloadSettings::read(session.user.as_deref());
         let estimate_threads = std::thread::available_parallelism()
@@ -269,8 +270,11 @@ fn add_study_set(session: &mut Session, dir: &std::path::Path) -> Vec<String> {
             continue;
         }
         let file = dir.join(format!("{}.obr", item.resource_id));
-        if let Err(e) = session.library.add_file(&file) {
-            problems.push(format!("{}: {e}", file.display()));
+        let added = (session.library.add_file(&file)).map(|_| ());
+        match added {
+            // Its index: found beside it (`search/`), or built.
+            Ok(_) => session.refresh_search_index(&item.resource_id),
+            Err(e) => problems.push(format!("{}: {e}", file.display())),
         }
     }
     problems
