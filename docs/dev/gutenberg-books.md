@@ -30,9 +30,17 @@ as PG asks of programs, and never from www.gutenberg.org. A book is added only w
   out of copyright in life-plus-70 countries too, not only in the United States, where PG has
   checked it. "Anonymous", "Various" or an open-ended date leaves it out;
 - PG does not mark it "COPYRIGHTED Project Gutenberg eBook";
+- its text does not name ccel.org or the Christian Classics Ethereal Library: a transcription
+  made for CCEL is never used, whoever hosts it (#20; PG's *Summa Theologica* is one);
 - it imports as a Book with at least one Division.
 
-The engine makes each row an entry (`PgBook::source`): id `pg-<n>`, importer `pg-html`, the
+A book PG posts no HTML of is read from its plain text (`<n>-0.txt`, `<n>.txt`, `<n>-8.txt`)
+by `obs_formats::import_pg_text` (`pg_text.rs`): chapters after three or more blank lines (or,
+with fewer than three, paragraphs starting "CHAPTER", "SERMON", "QUESTION", …), subtitles in
+capitals, indented lines as poetry, `_italics_`, and `{23}` page marks.
+
+The engine makes each row an entry (`PgBook::source`): id `pg-<n>`, importer `pg-html` (or
+`pg-text` for a text file), the
 mirror URL pinned by sha256, the title cut at its first colon, the first author who is not a
 translator or other contributor as a name (`display_author`), "Public domain"
 (`LicenseRef-PublicDomain`, free-to-share), PG's archived licence page as `evidence_url`.

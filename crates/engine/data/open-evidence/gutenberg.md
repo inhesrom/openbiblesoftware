@@ -42,5 +42,6 @@ A row is added only when every person PG's catalogue names for the book (author,
 editor, writer of an introduction, …) has a known death year no later than **1955**
 (`PG_LAST_DEATH_YEAR`): 70 years on, the book is out of copyright in countries whose term is the
 author's life plus 70 years as well. A book PG marks as copyrighted ("COPYRIGHTED Project
-Gutenberg eBook") is never added. `cargo xtask pg-books` applies both rules, and checks that the
+Gutenberg eBook") is never added, nor one whose text says it came from the Christian Classics
+Ethereal Library (ccel.org), whose transcriptions are never used (#20). `cargo xtask pg-books` applies both rules, and checks that the
 book imports.

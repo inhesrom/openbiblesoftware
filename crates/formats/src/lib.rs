@@ -15,6 +15,7 @@ mod markdown_book;
 mod openbible;
 mod openbible_geo;
 mod parallels;
+mod pg_text;
 mod report;
 mod stepbible;
 mod sword;
@@ -51,6 +52,7 @@ pub use parallels::{
     DROPPED_PARALLEL_NOT_STANDARD, DROPPED_PARALLEL_SELF, DROPPED_PARALLEL_SPANS_BOOKS,
     USFM_PARALLELS_FORMAT, import_usfm_parallel_passages,
 };
+pub use pg_text::{MAX_TEXT_BYTES, PG_TEXT_FORMAT, import_pg_text};
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use stepbible::{StepbibleImport, StepbibleOptions, StepbibleText};
 pub use sword::repo as sword_repo;

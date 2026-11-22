@@ -1,12 +1,15 @@
 //! `cargo xtask pg-books`: the Project Gutenberg collection of the Open catalogue (#345),
 //! `crates/engine/data/collections/pg-books.tsv`.
 //!
-//! Each row pins one eBook's posted HTML (`<n>-h/<n>-h.htm`) on PG's mirror
+//! Each row pins one eBook's posted HTML (`<n>-h/<n>-h.htm`), else its plain text, on PG's
+//! mirror
 //! (`obs_engine::open_catalogue::PG_MIRROR`) by its sha256, with its language, PG's catalogue
 //! authors, the latest year any of them died, and its title. A book is added only when
 //! - PG's catalogue (`pg_catalog.csv`) lists it as a Text, with a death year for every person
 //!   it names, none later than `PG_LAST_DEATH_YEAR`;
 //! - it is not marked "COPYRIGHTED Project Gutenberg eBook";
+//! - its text does not name ccel.org or the Christian Classics Ethereal Library (#20: CCEL's
+//!   transcriptions are never used, whoever hosts them);
 //! - it imports as a Book (`obs_formats::import_pg_html`) with at least one Division.
 //!
 //! Usage:
@@ -231,17 +234,31 @@ fn short_title(title: &str) -> String {
     format!("{}…", cut[..at].trim_end_matches([',', ';', ' ']))
 }
 
-/// The posted HTML file's path under the mirror, from its folder's listing.
-fn posted_html(number: u32) -> Result<String> {
+/// The posted file's path under the mirror, from its folder's listing: its HTML
+/// (`<n>-h/<n>-h.htm`), else its plain text (`<n>-0.txt`, UTF-8; `<n>.txt`; `<n>-8.txt`).
+fn posted_file(number: u32) -> Result<String> {
     let folder = PgBook::folder(number);
-    let dir = format!("{folder}/{number}-h/");
-    let listing = get_text(&format!("{PG_MIRROR}{dir}"))?;
-    for name in [format!("{number}-h.htm"), format!("{number}-h.html")] {
-        if listing.contains(&format!("href=\"{name}\"")) {
-            return Ok(format!("{dir}{name}"));
+    let listing = get_text(&format!("{PG_MIRROR}{folder}/"))?;
+    let has = |name: &str| listing.contains(&format!("href=\"{name}\""));
+    if has(&format!("{number}-h/")) {
+        let dir = format!("{folder}/{number}-h/");
+        let inner = get_text(&format!("{PG_MIRROR}{dir}"))?;
+        for name in [format!("{number}-h.htm"), format!("{number}-h.html")] {
+            if inner.contains(&format!("href=\"{name}\"")) {
+                return Ok(format!("{dir}{name}"));
+            }
         }
     }
-    bail!("no {number}-h.htm in {PG_MIRROR}{dir}")
+    for name in [
+        format!("{number}-0.txt"),
+        format!("{number}.txt"),
+        format!("{number}-8.txt"),
+    ] {
+        if has(&name) {
+            return Ok(format!("{folder}/{name}"));
+        }
+    }
+    bail!("no posted HTML or text in {PG_MIRROR}{folder}/")
 }
 
 fn check(number: u32, path: &str, bytes: &[u8], cat: &CatalogRow) -> Result<PgBook> {
@@ -260,6 +277,11 @@ fn check(number: u32, path: &str, bytes: &[u8], cat: &CatalogRow) -> Result<PgBo
     if head.contains("COPYRIGHTED") {
         bail!("PG marks it copyrighted");
     }
+    // A transcription made for the Christian Classics Ethereal Library is never used (#20).
+    let lower = html.to_lowercase();
+    if lower.contains("ccel.org") || lower.contains("christian classics ethereal") {
+        bail!("its text came from the Christian Classics Ethereal Library");
+    }
     let language = cat
         .language
         .split(';')
@@ -275,8 +297,12 @@ fn check(number: u32, path: &str, bytes: &[u8], cat: &CatalogRow) -> Result<PgBo
         tool_version: "xtask".into(),
         ..obs_formats::HtmlBookOptions::default()
     };
-    let (_, report) = obs_formats::import_pg_html(&html, &options, |_, _| true)
-        .map_err(|e| anyhow::anyhow!("does not import: {e}"))?;
+    let imported = if path.ends_with(".txt") {
+        obs_formats::import_pg_text(&html, &options, |_, _| true)
+    } else {
+        obs_formats::import_pg_html(&html, &options, |_, _| true)
+    };
+    let (_, report) = imported.map_err(|e| anyhow::anyhow!("does not import: {e}"))?;
     if report.entries == 0 {
         bail!("no Divisions");
     }
@@ -339,9 +365,10 @@ pub fn run(root: &Path, rest: &[String]) -> Result<()> {
             let cat = catalog.get(&number).context("not in PG's catalogue")?;
             let path = match (&row, args.refresh) {
                 (Some(r), false) => r.path.clone(),
-                _ => posted_html(number)?,
+                _ => posted_file(number)?,
             };
-            let cached = args.cache.join(format!("{number}-h.htm"));
+            let file = path.rsplit('/').next().unwrap_or(&path);
+            let cached = args.cache.join(file);
             if args.refresh || !cached.exists() {
                 curl(&format!("{PG_MIRROR}{path}"), &cached)?;
             }

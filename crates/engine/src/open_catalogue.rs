@@ -34,7 +34,8 @@ const PG_BOOKS_TSV: &str = include_str!("../data/collections/pg-books.tsv");
 /// books (eBible.org's `<id>_usfm.zip`) → a Bible. `tcp-tei`: one TEI text of the Text
 /// Creation Partnership (EEBO-TCP, Evans-TCP, ECCO-TCP) → a Book (#345). `pg-html`: one
 /// Project Gutenberg eBook's posted HTML → a Book, PG's licence and name removed (#345).
-pub const OPEN_IMPORTERS: &[&str] = &["usfm-zip", "tcp-tei", "pg-html"];
+/// `pg-text`: the same from PG's plain text, for a book PG posts no HTML of.
+pub const OPEN_IMPORTERS: &[&str] = &["usfm-zip", "tcp-tei", "pg-html", "pg-text"];
 
 /// The Open catalogue section's title in Get Resources.
 pub const OPEN_CATALOGUE: &str = "Open catalogue";
@@ -170,7 +171,8 @@ pub const PG_BOOKS_HEADER: &str = "# number\tpath\tsha256\tbytes\tlanguage\tauth
 pub struct PgBook {
     /// The eBook number.
     pub number: u32,
-    /// The HTML file under [`PG_MIRROR`] (`3/0/4/4/30449/30449-h/30449-h.htm`).
+    /// The posted file under [`PG_MIRROR`]: its HTML (`3/0/4/4/30449/30449-h/30449-h.htm`),
+    /// else its plain text (`9/4/7/9471/9471-0.txt`, `9471.txt`, `9471-8.txt`).
     pub path: String,
     /// Lowercase hex sha256 of the file.
     pub sha256: String,
@@ -265,9 +267,12 @@ impl PgBook {
         let posted = [
             format!("{folder}/{n}-h/{n}-h.htm"),
             format!("{folder}/{n}-h/{n}-h.html"),
+            format!("{folder}/{n}-0.txt"),
+            format!("{folder}/{n}.txt"),
+            format!("{folder}/{n}-8.txt"),
         ];
         if n == 0 || !posted.contains(&self.path) {
-            bad("the path is not the eBook's posted HTML");
+            bad("the path is not the eBook's posted HTML or text");
         }
         let hex64 = self.sha256.len() == 64
             && self
@@ -293,7 +298,12 @@ impl PgBook {
         let homepage = format!("https://www.gutenberg.org/ebooks/{n}");
         OpenSource {
             id: self.entry_id(),
-            importer: "pg-html".into(),
+            importer: if self.path.ends_with(".txt") {
+                "pg-text"
+            } else {
+                "pg-html"
+            }
+            .into(),
             kind: "book".into(),
             url: format!("{PG_MIRROR}{}", self.path),
             sha256: Some(self.sha256.clone()),
@@ -726,7 +736,7 @@ impl OpenSource {
             ("usfm-zip", Some(t)) if t != ResourceType::Bible => {
                 bad(format!("the usfm-zip importer makes Bibles, not {t:?}"));
             }
-            ("tcp-tei" | "pg-html", Some(t)) if t != ResourceType::Book => {
+            ("tcp-tei" | "pg-html" | "pg-text", Some(t)) if t != ResourceType::Book => {
                 bad(format!(
                     "the {} importer makes Books, not {t:?}",
                     self.importer
@@ -826,7 +836,9 @@ impl OpenSource {
         let (mut resource, mut report) = match self.importer.as_str() {
             "usfm-zip" => self.import_usfm_zip(bytes, resource_id, tool_version, progress)?,
             "tcp-tei" => self.import_tcp_tei(bytes, resource_id, tool_version, progress)?,
-            "pg-html" => self.import_pg_html(bytes, resource_id, tool_version, progress)?,
+            "pg-html" | "pg-text" => {
+                self.import_pg_html(bytes, resource_id, tool_version, progress)?
+            }
             other => return Err(format!("unknown importer `{other}`")),
         };
         let m = &mut resource.manifest;
@@ -870,7 +882,7 @@ impl OpenSource {
         tool_version: &str,
         progress: impl FnMut(usize, usize) -> bool,
     ) -> Result<(Resource, obs_formats::ImportReport), String> {
-        let html = obs_formats::decode_html_bytes(bytes);
+        let text = obs_formats::decode_html_bytes(bytes);
         let file = self.url.rsplit('/').next().unwrap_or(&self.url).to_string();
         let options = obs_formats::HtmlBookOptions {
             resource_id: resource_id.into(),
@@ -880,7 +892,12 @@ impl OpenSource {
             source_file: file,
             tool_version: tool_version.into(),
         };
-        obs_formats::import_pg_html(&html, &options, progress).map_err(|e| e.to_string())
+        let result = if self.importer == "pg-text" {
+            obs_formats::import_pg_text(&text, &options, progress)
+        } else {
+            obs_formats::import_pg_html(&text, &options, progress)
+        };
+        result.map_err(|e| e.to_string())
     }
 
     fn import_usfm_zip(
@@ -1231,6 +1248,12 @@ mod tests {
         late.died = 1960;
         late.path = "3/0/4/4/30449/other.htm".into();
         assert_eq!(late.problems().len(), 2, "{:?}", late.problems());
+        // A book PG posts only as text is read as text.
+        let mut text = row.clone();
+        text.path = "3/0/4/4/30449/30449-0.txt".into();
+        assert!(text.problems().is_empty());
+        assert_eq!(text.source().importer, "pg-text");
+        assert_eq!(row.source().importer, "pg-html");
     }
 
     #[test]
