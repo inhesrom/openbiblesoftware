@@ -35,6 +35,9 @@ pub enum Changed {
     Downloads,
     /// An Import's report changed (`MobileApp::import_report`).
     Imports,
+    /// A Resource's Search index started or stopped being built, or failed
+    /// (`MobileApp::search_index_status`; Library → Storage shows it).
+    Indexes,
 }
 
 /// What the pump has reported so far.
@@ -48,6 +51,8 @@ pub(crate) struct EventState {
     pub(crate) seen_history: Option<i64>,
     /// The Starter library's check, error and row count last reported.
     pub(crate) seen_starter: (bool, Option<String>, usize),
+    /// Each Resource's Search index state last reported.
+    pub(crate) seen_indexes: Vec<(String, crate::SearchIndexState)>,
 }
 
 impl EventState {
@@ -74,6 +79,13 @@ impl MobileApp {
         if !self.session.jobs().is_threaded() {
             self.session.jobs().pump(64);
         }
+        self.advance();
+        std::mem::take(&mut self.events.pending)
+    }
+
+    /// The pump's work without taking its changes, which wait for the next [`Self::pump`]
+    /// (`MobileApp::step_background` moves the background work on with it).
+    pub(crate) fn advance(&mut self) {
         // The other events are the engine's own (imports, indexes, Guides); it routes them.
         let _ = self.session.poll_imports();
         self.apply_effects();
@@ -94,6 +106,15 @@ impl MobileApp {
         if order != self.events.seen_library {
             self.events.seen_library = order;
             self.events.push(Changed::Library);
+            // A Resource came or went mid-run: the People & places ↔ Dictionary alias caches
+            // of the pairs it makes are built (and those of pairs gone deleted) in the
+            // background, as at boot.
+            self.session.refresh_alias_caches();
+        }
+        let indexes = self.index_states();
+        if indexes != self.events.seen_indexes {
+            self.events.seen_indexes = indexes;
+            self.events.push(Changed::Indexes);
         }
         let revision = self.session.annotations_revision();
         for i in 0..self.readers.len() {
@@ -105,7 +126,6 @@ impl MobileApp {
                 self.events.push(Changed::Reader(ReaderId(i as u32)));
             }
         }
-        std::mem::take(&mut self.events.pending)
     }
 
     /// The Starter library's check, error and row count, to tell when they change.

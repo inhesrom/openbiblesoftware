@@ -8,6 +8,9 @@
 //! `obs_mobile::MobileApp::pump` on a timer and hands each [`Changed`] to the shell's
 //! [`Observer`]. Readers are `u32`s (0, then 1); Tab and Panel ids never cross.
 //!
+//! The background processing task's work (`step_background`) is stepped with the lock
+//! released between rounds, as the pump thread waits.
+//!
 //! Tile pixels cross as one bulk copy ([`TilePixels`]), the one `unsafe impl` of the crate.
 
 use std::path::{Path, PathBuf};
@@ -19,6 +22,8 @@ use obs_mobile::ReaderId;
 
 uniffi::setup_scaffolding!();
 
+mod background;
+pub use background::{BackgroundRequest, SearchIndexState, SearchIndexStatus};
 mod import;
 pub use import::{ImportReport, ImportState, ReportSection};
 mod library;
@@ -603,6 +608,8 @@ pub enum Changed {
     Downloads,
     /// An Import's report changed (`import_report`).
     Imports,
+    /// A Search index started or stopped being built, or failed (`search_index_status`).
+    Indexes,
 }
 
 impl From<obs_mobile::Changed> for Changed {
@@ -614,6 +621,7 @@ impl From<obs_mobile::Changed> for Changed {
             obs_mobile::Changed::Message(text) => Self::Message { text },
             obs_mobile::Changed::Downloads => Self::Downloads,
             obs_mobile::Changed::Imports => Self::Imports,
+            obs_mobile::Changed::Indexes => Self::Indexes,
         }
     }
 }
@@ -629,7 +637,7 @@ pub trait Observer: Send + Sync {
 
 /// How long the pump waits between polls while jobs are running, and otherwise (a call that
 /// changes something wakes it at once).
-const PUMP_BUSY: Duration = Duration::from_millis(50);
+pub(crate) const PUMP_BUSY: Duration = Duration::from_millis(50);
 const PUMP_IDLE: Duration = Duration::from_secs(1);
 
 struct Inner {

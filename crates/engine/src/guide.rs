@@ -1271,6 +1271,11 @@ impl Guides {
         !self.pending.is_empty() || self.alias_job.is_some()
     }
 
+    /// Whether the alias refresh ([`crate::Session::refresh_alias_caches`]) is queued or running.
+    pub fn is_refreshing_aliases(&self) -> bool {
+        self.alias_job.is_some()
+    }
+
     /// The People & places ↔ Dictionary alias caches.
     pub fn aliases(&self) -> &Arc<AliasCache> {
         &self.aliases

@@ -191,6 +191,7 @@ impl MobileApp {
         app.events.seen_library = app.session.library.preferred_order();
         app.events.seen_history = app.session.history().first().map(|v| v.id);
         app.events.seen_starter = app.starter_seen();
+        app.events.seen_indexes = app.index_states();
         Ok(app)
     }
 

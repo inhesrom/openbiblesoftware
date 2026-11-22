@@ -86,6 +86,13 @@ pub(crate) struct Picked {
     pub(crate) settled: bool,
 }
 
+impl Picked {
+    /// An Import job that is not over yet (or its Search index still being built).
+    pub(crate) fn is_running(&self) -> bool {
+        !self.settled && matches!(self.state, PickedState::Importing(_))
+    }
+}
+
 #[derive(Debug, Clone)]
 enum PickedState {
     /// Named, not handed in yet.
