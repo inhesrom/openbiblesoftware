@@ -794,7 +794,9 @@ fn required<'a>(
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "sync.choose_folder",
-        label: texts::CHOOSE_FOLDER,
+        // The command is given the folder; Settings' button, which asks for it, is
+        // `texts::CHOOSE_FOLDER` ("Choose Sync folder…").
+        label: "Choose Sync folder",
         shortcut: None,
         params: &[ParamSpec {
             name: "path",
