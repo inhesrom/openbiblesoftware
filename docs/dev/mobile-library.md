@@ -138,7 +138,8 @@ desktop's Starter library is unchanged ([starter-library](starter-library.md)).
   through `onOpenURL`. For each file Swift asks `import_destination(file name)`, copies the
   file there inside its security-scoped access and an `NSFileCoordinator` read (the original
   stays where it was; a file the system copied into `Documents/Inbox` for "Open in" is
-  deleted once copied), then calls `start_import(path)`, or `import_copy_failed(path,
+  deleted once the copy is done, worked or not, the paths compared with symlinks resolved),
+  then calls `start_import(path)`, or `import_copy_failed(path,
   error)` when the copy failed. It shows `import_report(n)` in a sheet and asks again on
   `Changed.imports`; Cancel is `cancel_import(n)`; Open shows the new Resource in reader 0.
   Swift tells no file kind apart beyond the picker's types.

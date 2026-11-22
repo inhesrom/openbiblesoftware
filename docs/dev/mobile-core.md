@@ -215,8 +215,9 @@ it is under the ignored `/target`.
     three `project.yml` declares (`ImportTypes`), and what a file holds is the core's to
     tell; Swift copies a picked or shared file to the path `import_destination` names,
     inside its security-scoped access and a coordinated read, and deletes a file the
-    system put in `Documents/Inbox` for "Open in" once copied (Apple's folder, the app's
-    copy); a file shared before the core booted waits for it; a copy that failed is handed
+    system put in `Documents/Inbox` for "Open in" once the copy is done, worked or not
+    (Apple's folder, the app's copy; both paths compared with symlinks resolved, `/var` and
+    `/private/var`); a file shared before the core booted waits for it; a copy that failed is handed
     to the core (`import_copy_failed`), whose report says so; the report sheet's `switch`
     over `ImportState` chooses the view (progress and Cancel, the status, or the failure
     and Details); sections fold where the core's `collapsed` says; a warning line is

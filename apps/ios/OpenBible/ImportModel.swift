@@ -97,8 +97,11 @@ final class ImportModel {
     /// Copy the picked or shared file into the app, inside its security-scoped access and a
     /// coordinated read (the file may be in iCloud Drive or another provider). A file the
     /// system put in the app's `Documents/Inbox` for "Open in" (it copies there when the app
-    /// does not open documents in place) is the app's own copy, deleted once copied.
+    /// does not open documents in place) is the app's own copy, deleted afterwards whether
+    /// or not the copy worked.
     nonisolated static func copy(_ url: URL, to destination: URL) throws {
+        // Runs last, after the access below has stopped.
+        defer { if isInInbox(url) { try? FileManager.default.removeItem(at: url) } }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         var coordinated: NSError?
@@ -107,13 +110,17 @@ final class ImportModel {
             do { try FileManager.default.copyItem(at: from, to: destination) } catch { copied = error }
         }
         if let error = coordinated ?? copied { throw error }
-        if let inbox = try? FileManager.default.url(
+    }
+
+    /// Whether `url` is in the app's `Documents/Inbox`. Both sides resolve symlinks, since a
+    /// shared URL on a device may come as `/private/var/…` where `FileManager` says `/var/…`.
+    nonisolated static func isInInbox(_ url: URL) -> Bool {
+        guard let inbox = try? FileManager.default.url(
             for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false
-        ).appendingPathComponent("Inbox", isDirectory: true),
-            url.standardizedFileURL.path.hasPrefix(inbox.standardizedFileURL.path + "/")
-        {
-            try? FileManager.default.removeItem(at: url)
-        }
+        ).appendingPathComponent("Inbox", isDirectory: true) else { return false }
+        let file = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let folder = inbox.resolvingSymlinksInPath().standardizedFileURL.path
+        return file.hasPrefix(folder + "/")
     }
 
     private func show(_ number: UInt64) {
