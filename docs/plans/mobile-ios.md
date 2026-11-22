@@ -72,7 +72,7 @@ to Claude Opus 5.5 later on".
 | S29 | Sync 3 (desktop): Settings → Sync, status, Needs attention Sync conflicts, restore prompt | AFK | n | S28c | egui UI (ui-review) | todo |
 | S30 | Sync 4 (iOS): folder picker, bookmarks, `NSFileCoordinator`, placeholders, scheduling, Settings → Sync | AFK | y | S28c, S19 | Swift `SyncFolder`, screens | todo |
 | S31 | Sync 5: iPhone ↔ Mac iCloud Drive end-to-end + provider picker check | HITL | y | S29, S30 | test report, folder list for onboarding | todo |
-| S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | done (branch mobile/s32-ios-ci, PR pending; first runner run pending, see Outcome) |
+| S32 | CI: iOS job on a macOS runner | AFK | y (runner) | S06 | `.github/workflows/ios.yml`, caching | done (PR #369; CI on Xcode 26.x until a macOS 27 image ships) |
 | S33 | Before anything permanent: #334, #336, #337, privacy policy URL, release cadence | HITL | n | S12 | decisions recorded, tickets closed, map lines, final bundle id applied | todo |
 | S34 | App Store readiness: `PrivacyInfo.xcprivacy`, icon, Credits, accessibility audit, size, archive + export + validate | AFK | y | S19–S26, S30, S32, S33 | validated archive, review notes, `docs/dev/mobile-release.md` | todo |
 | S35 | App Store Connect record, first upload, TestFlight, submission | HITL | y | S34 | TestFlight build; review submitted | todo |
@@ -1951,6 +1951,22 @@ this in addition to its own lines):
       has, with S05's Outcome and the owner's Mac, so the pin stays the one the app is built
       with. That is the entry's stop-and-ask. A missing `iPhone 17` only warns; change
       `SIMULATOR` to the name the log shows. No iOS 27.2 runtime fails with the runtimes listed.
+  - **Runner results (supervisor, 2026-11-21, PR #369):**
+    - Run 1: `macos-latest` is `macos-26-arm64` with Xcode 26.0–26.6 and no 27.x; no macOS 27
+      image exists yet, not even in beta (actions/runner-images README). Decision: CI uses
+      `XCODE_VERSION: "26"` (the newest 26.x, the previous SDK; the app targets iOS 17). Local work
+      and S34 archives stay on 27.2; move CI to 27 when a macOS 27 image ships.
+    - Runs 2 and 3: the run-script phase could not find cargo. The runner's Rust is Homebrew's
+      rustup (`/opt/homebrew/opt/rustup/bin/cargo`, `RUSTUP_HOME=~/.rustup`), not `~/.cargo/bin`.
+      Fixed: the `xcodebuild test` step exports `CARGO` and `RUSTUP_HOME` (and leaves `CARGO_HOME` at
+      its default, where the earlier steps' registry is), and the phase puts that cargo's folder
+      first on its PATH. Both failures uploaded `ios-test-results` (the failure path works).
+    - **Run 4 (44967184600): green in 35 min.** Xcode 26.6, iOS 26.5 simulator, iPhone 17. The
+      Starter library was built on the runner (master's artifact predates `mobile_set`), so the
+      Study set was present and all 6 tests ran, including the tagged-word test. Expect a shorter
+      job once S04 merges and master's artifact matches the lock.
+    - The deliberate-failure check is covered by runs 2 and 3; the `crates/**` trigger is in the
+      paths filter. Neither throwaway commit was pushed.
 
 #### S33 — Before anything permanent: identifiers, accounts, trademark, privacy URL, cadence (HITL)
 
