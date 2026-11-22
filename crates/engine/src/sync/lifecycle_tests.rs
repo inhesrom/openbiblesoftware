@@ -832,6 +832,55 @@ fn a_snapshots_delete_covering_this_devices_own_item_deletes_it() {
     }
 }
 
+/// The seed 3146456 rule end to end, through a former id's own snapshot: A's Collection
+/// "Greek" (n 1) is in a Backup; A deletes it and writes a snapshot, its op files up to it
+/// trimmed; A adds another "Greek" (n 9) and restores the Backup, catching up. A's old id is
+/// met through that snapshot (its files gone), whose tombstone (a delete with no `before`)
+/// covers exactly the Backup's own "Greek": it had seen it, so it deletes it, and the old
+/// id's later "Greek" (n 9) is in place on every device. Were the delete counted as unseen,
+/// A would record "Greek" (n 1) again at a new clock, beating the old id's "Greek" (n 9).
+#[test]
+fn a_former_ids_snapshot_delete_covering_the_backups_own_item_deletes_it_on_a_restore() {
+    let dir = Dir::new("restore-own-snapshot-delete-item");
+    let folder = MemSyncFolder::new();
+    let (mut a, c) = (open(&dir, "a"), open(&dir, "c"));
+    let key = "library.collections";
+    a.set_preference(key, r#"[{"name":"Greek","n":1}]"#)
+        .unwrap();
+    settle(&[&a, &c], &folder);
+    let x = a.device_id().unwrap();
+    let backup = back_up(&dir, &a, "a");
+    a.set_preference(key, "[]").unwrap();
+    settle(&[&a, &c], &folder);
+    let covered = write_snapshot(&a, &folder).unwrap();
+    for seq in super::merge_tests::files_of(&folder, &x) {
+        if seq <= covered {
+            folder.remove(&op_file_path(&x, seq)).unwrap();
+        }
+    }
+    a.set_preference(key, r#"[{"name":"Greek","n":9}]"#)
+        .unwrap();
+    sync(&a, &folder);
+    a.restore(&backup).unwrap();
+    let report = restore_choice(&a, &folder, RestoreChoice::CatchUp, &options()).unwrap();
+    let SyncState::Synced(report) = report else {
+        panic!("{report:?}");
+    };
+    assert!(
+        report.merge.snapshots.iter().any(|(id, _)| *id == x),
+        "the old id met through its snapshot: {report:?}"
+    );
+    assert_eq!(report.merge.recorded.items_kept, 0, "{report:?}");
+    settle(&[&a, &c], &folder);
+    converged(&[&a, &c]);
+    for user in [&a, &c] {
+        assert_eq!(
+            user.preference(key).unwrap().as_deref(),
+            Some(r#"[{"name":"Greek","n":9}]"#)
+        );
+    }
+}
+
 /// The merge property test's seed 5007792, shrunk: A writes T over a Note and is backed up
 /// (the Backup has never met E); D, never seeing T, writes V later; E joins and its snapshot
 /// holds V; A meets V, keeps T as a Sync conflict's copy, and edits the copy to T2; then A
