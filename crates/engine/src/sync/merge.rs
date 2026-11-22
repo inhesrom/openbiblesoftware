@@ -692,9 +692,11 @@ fn merge_write(
 /// delete covering it that is not this op's own version): the device that wrote it would have
 /// kept its Note text as a Sync conflict's copy (D2) or its list item as "Name (2)", or under
 /// its own name against a delete (D6), when that version replaced it. That device is this one
-/// now, so this one does, whatever order the ops come in. Nothing when the version here is
-/// this device's own (by any of its ids: it came after the op) or holds the op's text. Such a
-/// copy may be one no one needed (the other device had seen the op's text), which is safe.
+/// now, so this one does, whatever order the ops come in. Nothing when the version here came
+/// after the op in this device's own history (its id now, the op's id, or a former id given up
+/// after the op's: [`MergeTx::is_own_after`]; an older former id's can be a copied database's
+/// original's) or holds the op's text. Such a copy may be one no one needed (the other device
+/// had seen the op's text), which is safe.
 fn former_own_lost(
     tx: &mut MergeTx<'_>,
     op: &Op,
@@ -709,17 +711,20 @@ fn former_own_lost(
     if state
         .clock
         .as_ref()
-        .is_some_and(|c| tx.is_own(&c.device_id))
+        .is_some_and(|c| tx.is_own_after(&c.device_id, writer))
     {
         return Ok(());
     }
     if state.row.is_none()
         && state.tombstone.as_ref().is_some_and(|t| {
             t.covers.as_ref() == Some(&op.clock)
-                || t.covers.as_ref().is_some_and(|c| tx.is_own(&c.device_id))
+                || t.covers
+                    .as_ref()
+                    .is_some_and(|c| tx.is_own_after(&c.device_id, writer))
         })
     {
-        // The delete removed this version, or a later one of this device's: it had seen it.
+        // The delete removed this version, or a later one of this device's own history: it
+        // had seen it.
         return Ok(());
     }
     match (after, &state.row) {

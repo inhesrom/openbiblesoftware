@@ -149,6 +149,19 @@ impl MergeTx<'_> {
         self.own_ids.iter().any(|id| id == device)
     }
 
+    /// Whether a clock naming `later` is this device's own and came after `earlier`'s (one of
+    /// its ids too) in its own history: `later` is its id now, or `earlier` itself, or a
+    /// former id it gave up after `earlier` (`former_device.seq`). An older former id's clock
+    /// can be another device's: a copied database's original keeps the id it gave up here.
+    pub fn is_own_after(&self, later: &str, earlier: &str) -> bool {
+        let rank = |device: &str| self.own_ids.iter().position(|id| id == device);
+        match (rank(later), rank(earlier)) {
+            (Some(l), Some(e)) => l <= e,
+            (Some(l), None) => l == 0,
+            _ => false,
+        }
+    }
+
     /// The name the user gave this device (empty until then).
     pub fn device_name(&self) -> Result<String, StoreError> {
         self.tx
