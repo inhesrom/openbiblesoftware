@@ -192,6 +192,48 @@ fn a_snapshot_of_another_format_opens_the_default_reader() {
 }
 
 #[test]
+fn restore_tolerates_damaged_json() {
+    let root = root("damaged");
+    bundle(&root);
+    let default = boot(&root).readers();
+    let relaunch = |json: &str| {
+        let (store, _) = obs_store::UserStore::open(&paths(&root).user_db).unwrap();
+        obs_engine::UserData::save_last_session(&store, json).unwrap();
+        drop(store);
+        boot(&root).readers()
+    };
+    for json in [
+        "not JSON {",
+        r#"{"mobile":"1","readers":[]}"#,
+        r#"{"mobile":1,"readers":[{"resource":7}]}"#,
+        r#"{"mobile":1,"readers":[{"resource":"web","verse":"John 3:16"}]}"#,
+        r#"{"mobile":1,"readers":[{"resource":"web","key":{"scheme":"strongs_number","key":"Q1"}}]}"#,
+    ] {
+        assert_eq!(relaunch(json), default, "{json}");
+    }
+    // A Verse the Bible lacks: at its first Verse, before any frame.
+    let gone = relaunch(
+        r#"{"mobile":1,"readers":[{"resource":"web","verse":{"book":"REV","chapter":22,"verse":21}}]}"#,
+    );
+    assert_eq!(
+        (gone[0].resource_id.as_str(), gone[0].location.as_str()),
+        ("web", "Genesis 1:1")
+    );
+    // A Key the Lexicon lacks: at its first entry.
+    let first_entry = {
+        let mut app = boot(&root);
+        app.open(R1, "lexicon", None).unwrap().location
+    };
+    let gone = relaunch(
+        r#"{"mobile":1,"readers":[{"resource":"lexicon","key":{"scheme":"strongs_number","key":"G99999"}}]}"#,
+    );
+    assert_eq!(
+        (gone[0].resource_id.as_str(), gone[0].location.as_str()),
+        ("lexicon", first_entry.as_str())
+    );
+}
+
+#[test]
 fn jn_3_16_and_1_co_13_parse_in_the_readers_own_numbering() {
     let (_root, mut app) = app("parse");
     app.open(R0, "web", None).unwrap();

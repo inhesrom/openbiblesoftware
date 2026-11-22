@@ -227,9 +227,13 @@ impl MobileApp {
             }
         }
         // A switch to a parallel resource goes to the same place (#151); otherwise the Tab's
-        // own location (the Last session's), else the Resource's start.
+        // own location (the Last session's), else the Resource's start: a Bible that lacks
+        // the place (another revision, a damaged Last session) is at its first Verse.
         let arrived = ws.arrival(tab);
         let own = ws.tab(tab).and_then(|t| t.history.current());
+        let first_verse = (doc.verses.first())
+            .map(|f| f.verse)
+            .filter(|_| ty == ResourceType::Bible);
         if let Some(v) = arrived.or(own) {
             let local = if ty == ResourceType::Commentary {
                 (doc.navigation.section(v)).and_then(|e| match e.key {
@@ -243,11 +247,11 @@ impl MobileApp {
                 && view.jump_to(v)
             {
                 ws.scrolled(tab, v);
+            } else if let Some(first) = first_verse {
+                ws.scrolled(tab, first);
             }
-        } else if ty == ResourceType::Bible
-            && let Some(first) = doc.verses.first()
-        {
-            ws.scrolled(tab, first.verse);
+        } else if let Some(first) = first_verse {
+            ws.scrolled(tab, first);
         }
         if matches!(ty, ResourceType::Lexicon | ResourceType::Dictionary) {
             let key = (ws.tab(tab).and_then(|t| t.entry_history.current()))
