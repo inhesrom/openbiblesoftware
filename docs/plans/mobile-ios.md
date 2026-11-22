@@ -49,7 +49,7 @@ to Claude Opus 5.5 later on".
 | S10 | #335 screen anatomy clickable prototype (phone + iPad) | AFK | y | S09 (∥ S13) | prototype app, flows, screenshots | todo |
 | S11 | #335 owner review | HITL | y | S10 | decisions on navigation, sheet, split, reference entry | todo |
 | S12 | ADR 0024 (anatomy) + `docs/dev/mobile-anatomy.md` + #335 close + min iOS + mobile extras + i18n/string-location decision | AFK + HITL | n | S11 | ADR, contract, map line | todo |
-| S13 | `obs-mobile` core: boot, paths, Bundled set install, readers, navigation, History, FFI surface | AFK | n | S03, S04, S09 | `MobileApp` object, snapshots, events, tests | todo |
+| S13 | `obs-mobile` core: boot, paths, Bundled set install, readers, navigation, History, FFI surface | AFK | n | S03, S04, S09 | `MobileApp` object, snapshots, events, tests | done (branch mobile/s13-mobile-core, PR pending; ran before S09, see Outcome) |
 | S14a | iOS reader: real text view, grid + typed references + keys, Back/History, Last session | AFK | y | S12, S13 | reader screens, previews | todo |
 | S14b | iOS reader: footnotes, Settings, Dynamic Type, Reduce Motion / Increase Contrast, VoiceOver | AFK | y | S14a | Settings screen, a11y pass, previews | todo |
 | S15 | Parallel resources + Split view with Follow | AFK | y | S14b | Rust Follow via Link sets; stacked/side-by-side readers | todo |
@@ -172,6 +172,10 @@ first** (S02): UniFFI proc-macro scaffolding is generated code and rustc may not
 `unsafe_code` inside external macro expansions; if the crate compiles under `forbid`, keep it and
 record "no exception needed" in `docs/dev/mobile-core.md`. If not, the exception is scoped to
 `apps/obs-ffi` only. Either way, hand-written `unsafe` in `obs-ffi` is a stop-and-ask.
+**Exception taken in S13 for `TilePixels` only** (approved): the tiles' bulk byte path is one
+`unsafe impl FfiConverter` with no unsafe operation; `obs-ffi` declares its own table with
+`unsafe_code = "deny"`, `#[allow(unsafe_code)]` sits on that impl alone, and `cargo xtask
+layers` fails on any other `unsafe` in the crate (`docs/dev/mobile-core.md`).
 
 **Types across the FFI: mirror types.** `obs-ffi` defines `#[derive(uniffi::Record)]` /
 `#[derive(uniffi::Enum)]` DTOs and `From<obs_mobile::X>` conversions. UniFFI's remote-type
@@ -1259,6 +1263,75 @@ this in addition to its own lines):
   `cargo test -p obs-mobile -- --ignored` (after `cargo xtask ios bundled-set`).
 - **Stop-and-ask:** reusing `Workspace` needs a change to desktop-visible behaviour; `Effect`
   variants exist that have no mobile meaning and cannot be ignored safely.
+- **Outcome (2026-11-21, branch `mobile/s13-mobile-core`; S13 ran before S08/S09, so ADR
+  0023 does not exist yet: the cold-start target below comes from S07's 1.5 s and should be
+  checked against ADR 0023 when S09 writes it):**
+  - **Shipped (Rust).** `crates/mobile`: `paths.rs` (`Paths::under(root)` names `library`,
+    `user.db`, `search`, `aliases`, `logs`, `downloads`; `backup_excluded()`), `app.rs`
+    (`boot`/`boot_with(JobMode)`, `library()`, `problems()`), `readers.rs` (≤ 2 readers, each
+    a Workspace Tab in one Panel plus its `ReadingView`; `open` by `resource.open`, a
+    same-type switch by `tab.parallel`, another type afresh; Note-marker room from the User
+    database's Notes), `navigation.rs` (`navigate` by `tab.go`, `parse_reference`,
+    `back`/`forward`, `books`/`chapters`/`verses`/`go_to_verse`, `history`, `open_visit`),
+    `frame.rs` and `text_input.rs` (S07's prototype surface, renamed and designed: `frame`
+    with `Viewport` and `SystemAppearance`, `tile`, `hit` with a Footnote marker,
+    `footnote`, the text input and accessibility answers; tile cap 4096 px a side),
+    `session.rs` (the Mobile Last session as its own JSON through
+    `UserData::save_last_session`; `save_session`, `on_background`, `on_resume`),
+    `settings.rs` (Theme, Page tone, Reduce motion, Reading fonts through the View
+    commands; `set_text_size`; `dynamic_type`; `parallel_resources`), `events.rs` (`pump()
+    -> Vec<Changed>`, `busy()`), `tokens.rs` (the Dynamic Type table, the caret width; the
+    design-token lint now scans `crates/mobile/src`). `apps/obs-ffi`: the Object over one
+    `Mutex` with every method fallible (`MobileError.Reference | Stopped | Failed`), mirror
+    Records and Enums, the `Observer` foreign trait and the pump thread
+    (`set_observer`, `poll_changed`), and `TilePixels`. Engine: `JobQueue::is_busy`,
+    `Session::save_view_preferences` and `refresh_history_day` made `pub` (no behaviour
+    change). `obs-mobile` gained `serde`/`serde_json` (already in the graph; the iOS licence
+    listing is unchanged at 119 crates).
+  - **Effects.** None needed a desktop change or could not be ignored: the Mobile app runs
+    only `resource.open`, `tab.go`, `tab.back`, `tab.forward`, `tab.parallel`, `tab.close`
+    and the View commands, so it applies the moves of a reader's Tab, `Switched`,
+    `Replaced`, `Removed` and `Message`, and drops Panel placement and desktop windows,
+    which no Mobile command makes (`events.rs` lists them).
+  - **Cold start (S07's finding 1).** The `.obr` reader asked each Verse's (and Key's) unit
+    id with one query per row, and `ReadingDoc::build` searched the units linearly for each
+    Verse: now once per run of rows and through a map (the BSB's document opens in 60 ms
+    instead of 220 ms, release, for the desktop too, results identical). The Mobile app
+    measures the height estimates on up to four threads (`ReadingView::with_estimate_threads`,
+    70 ms instead of 200 ms; the desktop keeps one). Host: a second launch's boot and first
+    frame 0.15 s release, 0.22 s test profile (was `boot` 0.73 s), against the 0.4 s target
+    in the `#[ignore]`d test. Simulator (Release, iPhone 17): cold start to first text
+    594–605 ms (S07: 1.53–1.95 s). The "open at the chapter first" option was not needed.
+  - **Tiles across the FFI (S07's finding 2).** No bulk path exists in UniFFI 0.32 without
+    `unsafe` (every converter trait is `unsafe`; `custom_type!` reuses the per-item loop or
+    String's UTF-8 lift); the supervisor approved one `unsafe impl` (A1 above). A 3.6 MB
+    tile lowers in 76 µs instead of 5.7 ms (test profile; 1.3–1.5 ms per item in release),
+    byte-identical. Swift's side, split as the S07 review asked: the FFI call p50 1.3–2.0
+    ms (the core's drawing 0.47–0.70 ms of it, under load), the image 5–10 µs, its
+    preparation 0.26–0.38 ms; S07's one span was 3.6–5 ms.
+  - **Swift (presentation only; Shell audit in `docs/dev/mobile-core.md`).** `AppCore`
+    boots the one core of the process, shared by every scene, in `Application
+    Support/OpenBible` (`HelloModel` and its `paths(in:)` are gone; the About sheet reads
+    the shared core), sets `isExcludedFromBackup` on the folders the core lists, hears the
+    pump through an `Observer` and passes the scene phase on. The reader screen and text
+    view use the new names; the tile renderer times the call, the image and its
+    preparation apart. `LibraryItem` became `LibraryResource` (SwiftUI has a
+    `LibraryItem`). The screens look as S07's did (no new screenshots).
+  - **Checks.** `cargo xtask ci` green; `cargo xtask ios bindgen` (now also checks Swift
+    reads `Tile.rgba` as `Data`); `cargo xtask ios smoke` prints `tile 1170x768`; `cargo
+    test -p obs-mobile -- --ignored` and `cargo test -p obs-ffi --test mobile_app --
+    --ignored` over the real Bundled set (gen1.png reads as Genesis 1); `cargo xtask ios
+    build --sim-only`, `xcodegen generate`, `xcodebuild test` on an iPhone 17 simulator
+    with the Study set override: 3 unit tests and 4 UI tests pass; `cargo xtask gallery`
+    unchanged; `cargo xtask bench` on this Mac, base and branch back to back: the same
+    numbers within noise and the same known thresholds exceeded (the base exceeds six).
+  - **Deferred.** The Swift tokenizer and text direction gaps stay S14a's (the core now
+    reports `right_to_left` per reader); Footnote popovers, Settings screens and whether an
+    explicit Text size outlives Dynamic Type are S14b's; drawing Note markers and
+    Highlights is S17/S18's (their room is made); a second reader's screen and what two
+    iPad windows on one reader do are S15's (the core has two readers, the Swift shows
+    reader 0); the device re-measure of cold start stays S14a's. No later step's
+    assumption proved wrong.
 
 #### S14a — iOS reader: text view, navigation, History, Last session
 
