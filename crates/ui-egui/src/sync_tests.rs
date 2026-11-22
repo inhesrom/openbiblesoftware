@@ -43,6 +43,17 @@ fn until(h: &mut Harness, what: &str, done: impl Fn(&Harness) -> bool) {
     panic!("never: {what}; on screen: {:?}", h.texts());
 }
 
+/// Frames until the sync that is due (or a restore's choice) has started on its worker,
+/// ended and been taken (plan S29b: it runs off the UI thread, "Syncing…" meanwhile).
+fn sync_ends(h: &mut Harness) {
+    h.frames(1);
+    until(h, "the sync to end", |h| !syncing(h));
+}
+
+fn syncing(h: &Harness) -> bool {
+    h.shell.st.session.sync_panel(now()).syncing
+}
+
 fn shows(h: &Harness, text: &str) -> bool {
     h.find(text).is_some()
 }
@@ -94,8 +105,7 @@ fn choose_folder(h: &mut Harness) {
 fn sync_now(h: &mut Harness) {
     let tab = settings_on_sync(h);
     h.click_text(texts::SYNC_NOW);
-    h.frames(4);
-    assert!(!h.shell.st.session.sync_panel(now()).syncing);
+    sync_ends(h);
     h.shell.run("tab.close", &json!({ "tab": tab.0 }));
     h.frames(2);
 }
@@ -183,8 +193,8 @@ fn two_windows_converge_through_one_folder_and_the_restore_prompt_takes_both_ans
     preview(&a, "sync-restore-prompt-kittest");
     assert_eq!(note_texts(&a), ["In the beginning"]);
     a.click_text(texts::CATCH_UP);
-    until(&mut a, "the prompt to go", |h| {
-        !shows(h, texts::RESTORE_TITLE)
+    until(&mut a, "the prompt to go and its sync to end", |h| {
+        !shows(h, texts::RESTORE_TITLE) && !syncing(h)
     });
     assert_eq!(
         note_texts(&a),
@@ -199,8 +209,8 @@ fn two_windows_converge_through_one_folder_and_the_restore_prompt_takes_both_ans
         shows(h, texts::RESTORE_TITLE)
     });
     a.click_text(texts::REPLACE);
-    until(&mut a, "the prompt to go", |h| {
-        !shows(h, texts::RESTORE_TITLE)
+    until(&mut a, "the prompt to go and its sync to end", |h| {
+        !shows(h, texts::RESTORE_TITLE) && !syncing(h)
     });
     assert_eq!(note_texts(&a), ["In the beginning"]);
     sync_now(&mut b);
@@ -272,7 +282,7 @@ fn held_change(h: &mut Harness, folder: &Path) {
         ))
         .unwrap();
     h.shell.run("sync.now", &json!({}));
-    h.frames(4);
+    sync_ends(h);
 }
 
 fn needs_attention(h: &mut Harness) {
@@ -410,7 +420,7 @@ fn an_autosave_after_a_merge_changed_the_note_keeps_both_texts() {
     );
     sync_now(&mut b);
     a.shell.run("sync.now", &json!({}));
-    a.frames(4);
+    sync_ends(&mut a);
     let body = |h: &Harness, id: &str| {
         h.shell
             .st
@@ -492,7 +502,7 @@ fn gallery_syncing(h: &mut Harness, folder: &Path) {
         &json!({ "path": folder.to_string_lossy() }),
     )
     .unwrap();
-    h.frames(4);
+    sync_ends(h);
 }
 
 /// "Ian's iPhone" syncing through `folder` beside the harness's User database.
@@ -518,7 +528,10 @@ fn gallery_iphone(h: &Harness, folder: &Path) {
         .unwrap();
     phone.request_sync();
     phone.sync_tick(now());
-    phone.sync_tick(now());
+    while phone.sync_panel(now()).syncing {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        phone.sync_tick(now());
+    }
 }
 
 /// Settings → Sync before and after a folder is chosen (the Tabs section).
