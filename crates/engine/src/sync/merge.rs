@@ -34,7 +34,8 @@
 //!   live child here keeps it, with the rows its op file deleted with it; either way this
 //!   device records the restore, so every device takes it.
 //! - **Two list items of one name** (D6): the later stays under the name; the device whose own
-//!   item lost to another's add records it again as "Name (2)".
+//!   item lost to another's write that had not seen it (an add, or an edit of another version)
+//!   records it again as "Name (2)".
 //! - **A list's whole value** (D7) is its base: item ops at or before it are superseded, later
 //!   ones go on top of it, or are held while it is not in its list's shape.
 //! - **An op this build cannot apply** (a synced preference a later app added …) is held in
@@ -561,16 +562,25 @@ fn conflict_copy(
 }
 
 /// This device's own list item (a Collection, Copy preset or Saved search) that `op`, another
-/// device's add of an item of that name with other JSON, replaces (D6): it is recorded again
-/// under a free name.
+/// device's write of an item of that name with other JSON, replaces without having seen it
+/// (D6): an add, or a write whose `before` is another version (`before_clock` not this row's,
+/// its JSON another). It is recorded again under a free name. So two devices' concurrent
+/// edits of one item keep both, the earlier as "Name (2)", as D2 keeps both Note texts.
 fn own_item_lost(tx: &MergeTx<'_>, op: &Op, state: &RowState, winner: &Row) -> Option<Row> {
     let ours = state.row.as_ref()?;
     let own = state.clock.as_ref()?.device_id == tx.device_id();
+    let unseen = |o: &obs_store::SyncedListItem| match &op.before {
+        None => true,
+        Some(
+            Row::Collection(before) | Row::CopyPreset(before) | Row::SavedSearch(before),
+        ) => op.before_clock != state.clock && before.json != o.json,
+        Some(_) => false,
+    };
     match (ours, winner) {
         (Row::Collection(o), Row::Collection(w))
         | (Row::CopyPreset(o), Row::CopyPreset(w))
         | (Row::SavedSearch(o), Row::SavedSearch(w))
-            if own && op.before.is_none() && o.json != w.json =>
+            if own && o.json != w.json && unseen(o) =>
         {
             Some(ours.clone())
         }

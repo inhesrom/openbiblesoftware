@@ -1183,6 +1183,48 @@ fn two_collections_of_one_name_added_on_two_devices_both_stay_the_loser_renamed(
     converged(&[&a, &b]);
 }
 
+/// G adds "Greek" at g0, D adds its own "Greek" at d1 after g0, then G edits its "Greek" at g2
+/// after d1, neither having synced: G's edit replaces D's item having seen only G's own, so D
+/// records its item again as "Greek (2)" and nothing is lost (the S28b-2 review's P1-2).
+#[test]
+fn an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both() {
+    let dir = Dir::new("items-one-name-edit");
+    let cloud = MemSyncFolder::new();
+    let (d, g) = (device(&dir, "d"), device(&dir, "g"));
+    let key = "library.collections";
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(2));
+    g.user
+        .set_preference(key, r#"[{"name":"Greek","ids":["lxx"]}]"#)
+        .unwrap();
+    pause();
+    d.user
+        .set_preference(key, r#"[{"name":"Greek","ids":["sblgnt"]}]"#)
+        .unwrap();
+    pause();
+    g.user
+        .set_preference(key, r#"[{"name":"Greek","ids":["lxx","wlc"]}]"#)
+        .unwrap();
+    g.push(&cloud);
+    let report = d.sync(&cloud);
+    assert_eq!(report.recorded.items_renamed, 1, "{report:?}");
+    let report = g.sync(&cloud);
+    assert_eq!(report.recorded.items_renamed, 0, "{report:?}");
+    Device::settle(&[&d, &g], &cloud);
+    let both = r#"[{"name":"Greek","ids":["lxx","wlc"]},{"name":"Greek (2)","ids":["sblgnt"]}]"#;
+    for dev in [&d, &g] {
+        assert_eq!(dev.user.preference(key).unwrap().as_deref(), Some(both));
+    }
+    converged(&[&d, &g]);
+    // An edit that saw D's item (its `before` is D's version) replaces it: no third copy.
+    let seen = r#"[{"name":"Greek","ids":["lxx","wlc"]},{"name":"Greek (2)","ids":["sblgnt","na28"]}]"#;
+    g.user.set_preference(key, seen).unwrap();
+    Device::settle(&[&d, &g], &cloud);
+    for dev in [&d, &g] {
+        assert_eq!(dev.user.preference(key).unwrap().as_deref(), Some(seen));
+    }
+    converged(&[&d, &g]);
+}
+
 /// B tags a Resource; A, which has no tags and has not met B's, saves its Collections, which
 /// writes the Resource tags too (`Session::save_collections`), `"{}"`: that changes nothing,
 /// so it is no whole value (a base, D7) superseding B's tag, and every device keeps the tag.

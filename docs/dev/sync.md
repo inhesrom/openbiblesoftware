@@ -224,7 +224,7 @@ Per op, against the row's state here (`MergeTx::state`: the row, its clock, its 
 | Delete | This device's default Notebook | Waits for the older default Notebook that replaces it |
 | Write | A child (an Annotation, a Reading, a style, a Highlight's new style) whose parent is deleted here | The parent restored from its tombstone's row and recorded, then the child as above ([deleted parents](#deleted-parents)) |
 | Write or delete | This device's own Note (its clock is this device's), whose text the op had not seen (its `before` text is another, or it has none) and would lose | A [Sync conflict](#sync-conflicts)'s copy recorded first, then the op as above |
-| Write (an add) | This device's own Collection, Copy preset or Saved search of that name, other JSON, older | The op's as above; this device's recorded again as "`name` (2)" ([list items of one name](#two-list-items-of-one-name)) |
+| Write (an add, or an edit of another version) | This device's own Collection, Copy preset or Saved search of that name, other JSON, older, which the op had not seen | The op's as above; this device's recorded again as "`name` (2)" ([list items of one name](#two-list-items-of-one-name)) |
 | Write | A list item at or before its list's base (its newest whole-value write) | Nothing (`Superseded`) ([a list's whole value](#a-lists-whole-value)) |
 | Write | A list item of a list whose value here is not in its list's shape | Held (`Held`) ([held ops](#ops-held-back)) |
 | Any | An op this build refuses (a synced preference a later app added …) | Held (`Held`); the rest of its file merges |
@@ -352,10 +352,16 @@ S28b-2 D3):
 
 Collections, Copy presets and Saved searches are keyed by name. Two devices adding an item of
 one name with different JSON (plan S28b-2 D6): last writer wins keeps the later under the name,
-and the device whose own item lost (its item's clock is its own, and the op is an add: no
-`before`) records its item again under the first free name of "`name` (2)", "`name` (3)" …
-among the list's items here, at its old position, every other field of its JSON as it was
-(`preference_items::renamed_item`). The device whose item won does nothing.
+and the device whose own item lost (its item's clock is its own, and the op had not seen it:
+an add, with no `before`, or a write whose `before_clock` is not this row's clock and whose
+`before` JSON is not this device's) records its item again under the first free name of
+"`name` (2)", "`name` (3)" … among the list's items here, at its old position, every other
+field of its JSON as it was (`preference_items::renamed_item`). The device whose item won does
+nothing. The edit case: G adds "Greek", D adds its own "Greek" later, and G then edits its own
+before either syncs; G's edit replaces D's item having seen only G's, and D's would be lost on
+every device (`merge_tests::an_edit_of_an_item_that_never_saw_this_devices_item_of_its_name_keeps_both`).
+The cost, accepted (the list-item version of a [Sync conflict](#sync-conflicts)): two devices
+editing one shared item before either syncs keep both, the earlier edit as "`name` (2)".
 
 ### A list's whole value
 
