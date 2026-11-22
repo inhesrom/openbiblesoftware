@@ -1680,9 +1680,10 @@ this in addition to its own lines):
     desktop's words, while the Resource's mobile Starter download is active (it would be
     added back, no longer Removed). The released manifest and its pinned files base are kept
     on the device (`starter::RELEASED_PREF`, `starter-library.released`, in
-    `DEVICE_PREFERENCES`), read at launch with released leads only, so a transfer iOS hands
-    in after a relaunch installs; a Starter file of a Resource that kept manifest does not
-    list stays `Queued`, its file kept, until a released manifest check lands.
+    `DEVICE_PREFERENCES`; the trial restore compares it), read at launch with released leads
+    only, so a transfer iOS hands in after a relaunch installs; a Starter file of a Resource
+    that kept manifest does not list stays `Queued`, its file kept, until a released manifest
+    check lands.
     `install_downloaded` refuses, without deleting, any path but the file the core named in
     `downloads/`, and ignores a call for a download already verifying, installing, indexing
     or done. A Starter file installs on a job (`add_starter_from_files` returns its `JobId`;
