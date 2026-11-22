@@ -20,6 +20,13 @@
 //!   released manifest; a mismatch, a failure or a cancel removes every file the download
 //!   wrote, so nothing is ever half-added. Network access stays in the app: the bytes come
 //!   through the app's `Fetch` ([`Session::set_fetch`]).
+//! - **Released leads (the Mobile app, #333).** With [`StarterLibrary::set_released_leads`]
+//!   (off on the desktop) the rows and the wanted set come from the released manifest merged
+//!   with the bundle's ([`StarterLibrary::manifest`]); the bundle only installs the items it
+//!   holds at the same revision and sha256, and the rest go through the download path. The
+//!   released manifest is the newest release's whose format this app reads: on a format
+//!   mismatch the releases list is read ([`select_release`]) and that release's files are
+//!   pinned ([`StarterLibrary::files_base`]).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -31,6 +38,7 @@ use serde_json::{Value, json};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
 use crate::library::LibraryEntry;
 use crate::session::Session;
+use crate::sword_repo::Fetch;
 use crate::{JobEvent, JobEventKind, JobId};
 
 /// The manifest `cargo xtask starter` writes beside the `.obr` files and publishes with each
@@ -75,6 +83,42 @@ pub struct StarterItem {
     pub mobile_set: Option<String>,
 }
 
+/// The Mobile app's sets of the Starter library (#333, CONTEXT.md § Mobile), as
+/// [`StarterItem::mobile_set`] names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MobileSet {
+    /// Built into the app.
+    Bundled,
+    /// Offered as one download at first launch.
+    Study,
+    /// Downloaded one at a time.
+    More,
+}
+
+impl MobileSet {
+    /// As written in `starter-manifest.json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MobileSet::Bundled => "bundled",
+            MobileSet::Study => "study",
+            MobileSet::More => "more",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        [MobileSet::Bundled, MobileSet::Study, MobileSet::More]
+            .into_iter()
+            .find(|s| s.as_str() == text)
+    }
+}
+
+impl StarterItem {
+    /// The Mobile set the manifest puts it in, when it names a known one.
+    pub fn set(&self) -> Option<MobileSet> {
+        self.mobile_set.as_deref().and_then(MobileSet::parse)
+    }
+}
+
 /// `starter-manifest.json`: every Resource one Starter library build shipped.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct StarterManifest {
@@ -99,6 +143,117 @@ impl StarterManifest {
     pub fn get(&self, resource_id: &str) -> Option<&StarterItem> {
         self.resources.iter().find(|r| r.resource_id == resource_id)
     }
+}
+
+/// The `format` of a manifest, read before the rest so that one of another format is told
+/// apart from one that does not parse.
+pub fn manifest_format(json: &str) -> Result<u32, String> {
+    #[derive(Deserialize)]
+    struct Format {
+        format: u32,
+    }
+    serde_json::from_str::<Format>(json)
+        .map(|f| f.format)
+        .map_err(|e| format!("not a Starter library manifest: {e}"))
+}
+
+/// The released manifest the rows lead with, when [`StarterLibrary::released_leads`]: the
+/// released items in their order, then the bundle's items the release does not list. A
+/// released item replaces the bundle's of the same id (a newer revision shows as Update).
+fn merge(
+    released: Option<&StarterManifest>,
+    bundled: Option<&StarterManifest>,
+) -> Option<StarterManifest> {
+    match (released, bundled) {
+        (None, None) => None,
+        (Some(one), None) | (None, Some(one)) => Some(one.clone()),
+        (Some(released), Some(bundled)) => {
+            let mut resources = released.resources.clone();
+            resources.extend(
+                (bundled.resources.iter())
+                    .filter(|b| released.get(&b.resource_id).is_none())
+                    .cloned(),
+            );
+            Some(StarterManifest {
+                format: released.format,
+                resources,
+            })
+        }
+    }
+}
+
+/// How many releases the format selection reads at most (newest first).
+pub const RELEASES_SEARCHED: u32 = 20;
+
+/// What the released manifest check found ([`Session::check_starter_release`] with
+/// [`StarterLibrary::released_leads`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleasedManifest {
+    /// A manifest this app reads; `base`: its release's files, when it is not the latest.
+    Found {
+        manifest: StarterManifest,
+        base: Option<String>,
+    },
+    /// No release within [`RELEASES_SEARCHED`] has a manifest of [`MANIFEST_FORMAT`].
+    NoMatch { latest_format: u32 },
+}
+
+/// The manifest of the newest release whose format this app reads (#333, "the Starter
+/// manifest of the release its format version matches"). `latest` is the latest release's
+/// manifest, already fetched. When its format is not [`MANIFEST_FORMAT`], the releases list
+/// at `releases` (the GitHub releases API, [`crate::updates::RELEASES_API`]) is read: newest
+/// first, drafts and pre-releases skipped, at most [`RELEASES_SEARCHED`]; each release's
+/// [`MANIFEST_FILE`] is fetched until one has this format (its files are then pinned to that
+/// release: the asset's folder), stopping at the first older format. `keep_going` returns
+/// `false` to cancel.
+pub fn select_release(
+    fetch: &dyn Fetch,
+    latest: &[u8],
+    releases: &str,
+    keep_going: &mut dyn FnMut() -> bool,
+) -> Result<ReleasedManifest, String> {
+    let text = String::from_utf8_lossy(latest);
+    let latest_format = manifest_format(&text)?;
+    if latest_format == MANIFEST_FORMAT {
+        return Ok(ReleasedManifest::Found {
+            manifest: StarterManifest::parse(&text)?,
+            base: None,
+        });
+    }
+    let no_match = Ok(ReleasedManifest::NoMatch { latest_format });
+    if latest_format < MANIFEST_FORMAT {
+        return no_match;
+    }
+    let get = |url: &str, keep_going: &mut dyn FnMut() -> bool| {
+        fetch
+            .get(url, &mut |_, _| keep_going())
+            .map_err(|e| format!("{url}: {e}"))
+    };
+    let list = get(releases, keep_going)?;
+    let list = crate::updates::parse_releases(&String::from_utf8_lossy(&list))?;
+    let published = (list.iter())
+        .filter(|r| !(r.draft || r.prerelease || r.version.is_prerelease()))
+        .take(RELEASES_SEARCHED as usize);
+    for release in published {
+        let Some(asset) = release.asset(MANIFEST_FILE) else {
+            continue;
+        };
+        let Some(base) = asset.url.strip_suffix(MANIFEST_FILE) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&get(&asset.url, keep_going)?).into_owned();
+        match manifest_format(&text)? {
+            MANIFEST_FORMAT => {
+                return Ok(ReleasedManifest::Found {
+                    manifest: StarterManifest::parse(&text)?,
+                    base: Some(base.to_string()),
+                });
+            }
+            older if older < MANIFEST_FORMAT => return no_match,
+            _ => {}
+        }
+    }
+    no_match
 }
 
 /// What the User database remembers about the Starter library. Its absence means the
@@ -188,6 +343,18 @@ pub struct StarterLibrary {
     /// As loaded from (and saved to) the User database; `None`: never set up.
     state: Option<StarterState>,
     state_loaded: bool,
+    /// The released manifest leads the rows and the wanted set (the Mobile app); off on the
+    /// desktop, where the bundle's manifest, else the released one, is used as it is.
+    released_leads: bool,
+    /// The released and the bundled manifests merged, kept when [`Self::released_leads`].
+    merged: Option<StarterManifest>,
+    /// The releases API the format selection reads.
+    releases_api: String,
+    /// Where the released manifest's `.obr` files are, when it came from an earlier release
+    /// than the latest (the format selection pinned it).
+    released_base: Option<String>,
+    /// No release has a manifest this app reads: the app must be updated first.
+    needs_app_update: bool,
 }
 
 /// What Retry does again after a failure or a cancel.
@@ -213,6 +380,11 @@ impl Default for StarterLibrary {
             attempt: None,
             state: None,
             state_loaded: false,
+            released_leads: false,
+            merged: None,
+            releases_api: crate::updates::RELEASES_API.to_string(),
+            released_base: None,
+            needs_app_update: false,
         }
     }
 }
@@ -227,7 +399,63 @@ impl StarterLibrary {
             StarterManifest::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         self.bundle = Some(dir.to_path_buf());
         self.bundled = Some(manifest);
+        self.remerge();
         Ok(())
+    }
+
+    /// Let the released manifest lead (the Mobile app, #333): the rows and the wanted set come
+    /// from it, merged with the bundle's entries until it is fetched; the bundle only installs
+    /// what it holds; a release of another manifest format is looked past
+    /// ([`select_release`]). Off (the desktop): the bundle's manifest, else the released one.
+    pub fn set_released_leads(&mut self, on: bool) {
+        self.released_leads = on;
+        self.remerge();
+    }
+
+    pub fn released_leads(&self) -> bool {
+        self.released_leads
+    }
+
+    /// Where the format selection reads the releases list (a mirror or a `file://` list in
+    /// tests); [`crate::updates::RELEASES_API`] by default.
+    pub fn set_releases_api(&mut self, url: &str) {
+        self.releases_api = url.to_string();
+    }
+
+    /// Where the `.obr` files of the released manifest are: the release the format selection
+    /// pinned, else [`Self::download_base`].
+    pub fn files_base(&self) -> &str {
+        self.released_base.as_deref().unwrap_or(&self.download_base)
+    }
+
+    /// No release has a Starter manifest this app reads (the last check said so): the app
+    /// must be updated to get the Starter library.
+    pub fn needs_app_update(&self) -> bool {
+        self.needs_app_update
+    }
+
+    /// The bundle's manifest, when there is a bundle.
+    pub fn bundled(&self) -> Option<&StarterManifest> {
+        self.bundled.as_ref()
+    }
+
+    /// Whether the bundle holds `item` itself: the same revision and file.
+    pub fn bundle_holds(&self, item: &StarterItem) -> bool {
+        self.bundle.is_some()
+            && (self.bundled.as_ref())
+                .and_then(|b| b.get(&item.resource_id))
+                .is_some_and(|b| {
+                    b.revision == item.revision
+                        && b.file_sha256.eq_ignore_ascii_case(&item.file_sha256)
+                })
+    }
+
+    fn remerge(&mut self) {
+        self.merged = if self.released_leads {
+            merge(self.released.as_ref(), self.bundled.as_ref())
+        } else {
+            None
+        };
     }
 
     /// The bundled Starter library folder, when there is one.
@@ -249,8 +477,13 @@ impl StarterLibrary {
         &self.download_base
     }
 
-    /// The manifest the rows come from: the bundle's, else the released one once fetched.
+    /// The manifest the rows come from: the bundle's, else the released one once fetched; with
+    /// [`Self::released_leads`], the two merged (the released items first, then the bundle's
+    /// that the release does not list).
     pub fn manifest(&self) -> Option<&StarterManifest> {
+        if self.released_leads {
+            return self.merged.as_ref();
+        }
         self.bundled.as_ref().or(self.released.as_ref())
     }
 
@@ -897,7 +1130,7 @@ impl Session {
             return Ok((Vec::new(), None));
         }
         self.starter.error = None;
-        if self.starter.bundle.is_some() {
+        if self.starter.bundle.is_some() && !self.starter.released_leads {
             return match self.install_from_bundle(&items) {
                 Ok(ids) => Ok((ids, None)),
                 Err(e) => {
@@ -906,8 +1139,25 @@ impl Session {
                 }
             };
         }
+        // Released leads: the bundle installs what it holds itself, the rest is downloaded.
+        let (bundled, items): (Vec<StarterItem>, Vec<StarterItem>) = items
+            .into_iter()
+            .partition(|i| self.starter.bundle_holds(i));
+        let mut added = Vec::new();
+        if !bundled.is_empty() {
+            match self.install_from_bundle(&bundled) {
+                Ok(ids) => added = ids,
+                Err(e) => {
+                    self.starter.error = Some(e.clone());
+                    return Err(e);
+                }
+            }
+        }
+        if items.is_empty() {
+            return Ok((added, None));
+        }
         let lib = self.library_dir()?;
-        let base = self.starter.download_base.clone();
+        let base = self.starter.files_base().to_string();
         let fetch = self.fetch();
         let total: u64 = items.iter().map(|i| i.bytes).sum();
         let ids: Vec<String> = items.iter().map(|i| i.resource_id.clone()).collect();
@@ -937,7 +1187,41 @@ impl Session {
             done: 0,
             total,
         });
-        Ok((ids, Some(job)))
+        added.extend(ids);
+        Ok((added, Some(job)))
+    }
+
+    /// Add Starter Resources from files already downloaded (the Mobile app's background
+    /// transfers, #333): `files` names the file of each of `items` by Resource id. Each is
+    /// checked against its sha256 and put in place as [`Self::add_starter`]'s download is, all
+    /// or nothing, and joins the Library the same way (Removed ones are no longer removed).
+    /// A file is a download: it is deleted once read, whatever happens next, so a failure
+    /// (a sha256 mismatch among them) is retried by downloading it again. Returns the ids.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn add_starter_from_files(
+        &mut self,
+        items: &[StarterItem],
+        files: &[(String, PathBuf)],
+    ) -> Result<Vec<String>, String> {
+        let lib = self.library_dir()?;
+        let entries = install(&lib, items, &mut |item| {
+            let path = (files.iter())
+                .find(|(id, _)| *id == item.resource_id)
+                .map(|(_, p)| p)
+                .ok_or_else(|| format!("No downloaded file for {}", item.resource_id))?;
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
+            let _ = std::fs::remove_file(path);
+            bytes
+        })?;
+        Ok(self.starter_added(entries))
+    }
+
+    /// What one click adds of Mobile set `set`: [`Self::starter_wanted`] in that set (missing
+    /// or outdated, not removed).
+    pub fn starter_wanted_set(&self, set: MobileSet) -> Vec<StarterItem> {
+        let mut wanted = self.starter_wanted();
+        wanted.retain(|i| i.set() == Some(set));
+        wanted
     }
 
     /// Fetch the released manifest (no bundle). Returns the job, or `None` when one is
@@ -950,6 +1234,21 @@ impl Session {
         self.starter.attempt = Some(StarterAttempt::Check);
         let url = format!("{}{MANIFEST_FILE}", self.starter.download_base);
         let fetch = self.fetch();
+        if self.starter.released_leads {
+            let releases = format!("{}?per_page={RELEASES_SEARCHED}", self.starter.releases_api);
+            let job = self
+                .jobs()
+                .submit_fn("Starter library manifest", move |ctx| {
+                    let latest = fetch
+                        .get(&url, &mut |_, _| !ctx.is_cancelled())
+                        .map_err(|e| format!("{url}: {e}"))?;
+                    select_release(fetch.as_ref(), &latest, &releases, &mut || {
+                        !ctx.is_cancelled()
+                    })
+                });
+            self.starter.checking = Some(job);
+            return Some(job);
+        }
         let job = self
             .jobs()
             .submit_fn("Starter library manifest", move |ctx| {
@@ -1005,6 +1304,26 @@ impl Session {
         }
     }
 
+    /// Apply what the released manifest check found (released leads).
+    fn released_manifest(&mut self, found: ReleasedManifest) {
+        match found {
+            ReleasedManifest::Found { manifest, base } => {
+                self.starter.released = Some(manifest);
+                self.starter.released_base = base;
+                self.starter.needs_app_update = false;
+            }
+            ReleasedManifest::NoMatch { latest_format } => {
+                self.starter.needs_app_update = true;
+                self.starter.error = Some(format!(
+                    "No release of the Starter library can be read by this version of the app \
+                     (it reads manifest format {MANIFEST_FORMAT}; the latest release has format \
+                     {latest_format}). Update the app to get the Starter library."
+                ));
+            }
+        }
+        self.starter.remerge();
+    }
+
     /// Apply Starter library job events; return the rest.
     pub(crate) fn poll_starter(&mut self, events: Vec<JobEvent>) -> Vec<JobEvent> {
         let mut other = Vec::new();
@@ -1024,8 +1343,13 @@ impl Session {
                 JobEventKind::Finished(out) => {
                     if checking {
                         self.starter.checking = None;
-                        if let Ok(m) = out.downcast::<StarterManifest>() {
-                            self.starter.released = Some(*m);
+                        match out.downcast::<ReleasedManifest>() {
+                            Ok(found) => self.released_manifest(*found),
+                            Err(out) => {
+                                if let Ok(m) = out.downcast::<StarterManifest>() {
+                                    self.starter.released = Some(*m);
+                                }
+                            }
                         }
                     } else {
                         self.starter.download = None;

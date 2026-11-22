@@ -1082,3 +1082,462 @@ fn the_built_starter_library_fills_an_empty_library_on_first_run() {
     assert_eq!(from.first(), Some(&"tbesg"), "{from:?}");
     assert!(from.contains(&"abbott-smith") && from.contains(&"strongs-greek"));
 }
+
+// ---- Released leads: the Mobile app's Starter library (#333, S23 of docs/plans/mobile-ios.md)
+
+use crate::starter::MobileSet;
+
+/// The Mobile app's Bundled set out of `library`: the items of that set only.
+fn bundled_only(library: &[(Resource, MobileSet)]) -> Vec<(Resource, MobileSet)> {
+    library
+        .iter()
+        .filter(|(_, s)| *s == MobileSet::Bundled)
+        .cloned()
+        .collect()
+}
+
+/// [`LocalFetch`], reading a `file://` URL's file without its query (`releases.json?per_page=20`
+/// is `releases.json`), as a web server answers the releases API.
+#[derive(Debug)]
+struct FileServer;
+
+impl Fetch for FileServer {
+    fn get(&self, url: &str, progress: Progress<'_>) -> Result<Vec<u8>, FetchError> {
+        LocalFetch.get(url.split('?').next().unwrap_or(url), progress)
+    }
+}
+
+impl Lab {
+    /// Launch as the Mobile app does: the released manifest leads, downloads from
+    /// `release/` (`file://`), and the releases API is `releases.json`.
+    fn mobile_launch(&self) -> Session {
+        let mut s = Session::new(JobMode::Inline);
+        s.set_search_cache_dir(self.root.join("cache"));
+        let problems = s.library.scan(&self.lib());
+        assert!(problems.is_empty(), "{problems:?}");
+        let (store, _) = obs_store::UserStore::open(&self.root.join("user.db")).unwrap();
+        s.attach_user(Box::new(store));
+        s.set_fetch(Arc::new(FileServer));
+        s.starter.set_released_leads(true);
+        s.starter.set_download_base(&file_url(&self.release()));
+        s.starter
+            .set_releases_api(&file_url(&self.root.join("releases.json")));
+        let sync = s.sync_starter_library(Some(&self.bundle()));
+        assert!(sync.problems.is_empty(), "{:?}", sync.problems);
+        settle(&mut s);
+        s
+    }
+}
+
+fn row_ids(s: &Session) -> Vec<String> {
+    s.starter_rows()
+        .into_iter()
+        .map(|r| r.resource_id)
+        .collect()
+}
+
+fn status(s: &Session, id: &str) -> StarterStatus {
+    s.starter_rows()
+        .into_iter()
+        .find(|r| r.resource_id == id)
+        .unwrap()
+        .status
+}
+
+/// With the switch off (the desktop), a released manifest fetched by `starter.check` changes
+/// nothing: the rows, Add back and revisions are the bundle's, as before S23.
+#[test]
+fn with_released_leads_off_the_bundle_alone_still_makes_the_rows_add_back_and_revisions() {
+    let lab = Lab::new("leads-off");
+    testing::write_starter_bundle(&lab.bundle(), &starter_set());
+    // A newer release: the KJV at revision 2, and a Resource the bundle lacks.
+    let mut release = starter_set();
+    release[0] = starter_bible(
+        "kjv-strongs",
+        "KJV",
+        "In the beginning God created the heaven and the earth!",
+        2,
+    );
+    release.push(starter_bible(
+        "web",
+        "WEB",
+        "In the beginning, God created.",
+        1,
+    ));
+    testing::write_starter_bundle(&lab.release(), &release);
+    let (mut s, _) = lab.launch(Some(&lab.bundle()));
+    assert!(!s.starter.released_leads());
+    let rows_before = s.starter_rows();
+    s.starter.set_download_base(&file_url(&lab.release()));
+    s.run("starter.check", &json!({})).unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert_eq!(s.starter_rows(), rows_before);
+    assert_eq!(rows_before.len(), 5);
+    assert_eq!(status(&s, "kjv-strongs"), StarterStatus::InLibrary);
+    assert!(s.starter_wanted().is_empty());
+    // Remove and Add back come from the bundle, at once.
+    s.run("library.remove", &json!({ "id": "bdb", "confirm": true }))
+        .unwrap();
+    assert_eq!(status(&s, "bdb"), StarterStatus::Removed);
+    let out = s.run("starter.add", &json!({ "id": "bdb" })).unwrap();
+    assert!(out["job"].is_null(), "from the bundle");
+    assert_eq!(s.library.get("kjv-strongs").unwrap().manifest.revision, 1);
+    // An id only the release lists is still not part of this Starter library.
+    let err = s
+        .run("starter.add", &json!({ "id": "web" }))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("web is not part of the Starter library"),
+        "{err}"
+    );
+    assert_eq!(s.starter.files_base(), s.starter.download_base());
+}
+
+/// S23's Done when: a Bundled set installed, then a Study set item added through the release
+/// path from a `file://` base; once the released manifest is in, Library → Starter library
+/// lists every Starter Resource throughout.
+#[test]
+fn a_bundled_set_then_a_study_set_item_from_the_release_lists_every_row_throughout() {
+    let lab = Lab::new("leads-study-item");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    testing::write_mobile_starter_bundle(&lab.release(), &library);
+    let mut s = lab.mobile_launch();
+    let mut installed: Vec<String> = s
+        .library
+        .entries()
+        .iter()
+        .map(|e| e.manifest.resource_id.clone())
+        .collect();
+    installed.sort();
+    assert_eq!(installed, ["bsb", "strongs-hebrew"]);
+    // Offline: the bundle's entries.
+    assert_eq!(row_ids(&s), ["bsb", "strongs-hebrew"]);
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    let every: Vec<String> = library
+        .iter()
+        .map(|(r, _)| r.manifest.resource_id.clone())
+        .collect();
+    assert_eq!(row_ids(&s), every);
+    assert_eq!(status(&s, "bsb"), StarterStatus::InLibrary);
+    assert_eq!(status(&s, "tbesg"), StarterStatus::Missing);
+    let out = s.run("starter.add", &json!({ "id": "tbesg" })).unwrap();
+    assert!(
+        out["job"].is_u64(),
+        "downloaded, not from the bundle: {out}"
+    );
+    assert_eq!(row_ids(&s), every);
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert_eq!(row_ids(&s), every);
+    assert_eq!(status(&s, "tbesg"), StarterStatus::InLibrary);
+    assert_eq!(s.library.entries().len(), 3);
+    assert!(s.search.is_ready("tbesg"), "{:?}", s.search.status("tbesg"));
+    // Add back of a bundled Resource still comes from the bundle.
+    s.run(
+        "library.remove",
+        &json!({ "id": "strongs-hebrew", "confirm": true }),
+    )
+    .unwrap();
+    assert_eq!(status(&s, "strongs-hebrew"), StarterStatus::Removed);
+    let out = s
+        .run("starter.add", &json!({ "id": "strongs-hebrew" }))
+        .unwrap();
+    assert!(out["job"].is_null(), "from the bundle: {out}");
+    assert_eq!(status(&s, "strongs-hebrew"), StarterStatus::InLibrary);
+}
+
+/// The Study set is what one click adds of that set; removed ones stay out of it.
+#[test]
+fn the_study_set_is_the_wanted_items_of_that_set_and_removed_ones_stay_out() {
+    let lab = Lab::new("leads-study-set");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    testing::write_mobile_starter_bundle(&lab.release(), &library);
+    let mut s = lab.mobile_launch();
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    let study = |s: &Session| -> Vec<String> {
+        s.starter_wanted_set(MobileSet::Study)
+            .into_iter()
+            .map(|i| i.resource_id)
+            .collect()
+    };
+    assert_eq!(study(&s), ["kjv-strongs", "tbesh", "tbesg", "bdb"]);
+    assert!(s.starter_wanted_set(MobileSet::Bundled).is_empty());
+    let more: Vec<String> = (s.starter_wanted_set(MobileSet::More).into_iter())
+        .map(|i| i.resource_id)
+        .collect();
+    assert_eq!(more, ["web"]);
+    s.run("starter.add", &json!({ "id": "bdb" })).unwrap();
+    settle(&mut s);
+    s.run("library.remove", &json!({ "id": "bdb", "confirm": true }))
+        .unwrap();
+    assert_eq!(study(&s), ["kjv-strongs", "tbesh", "tbesg"]);
+}
+
+/// A newer released revision of a bundled Resource is downloaded: the bundle holds only the
+/// older file.
+#[test]
+fn a_newer_released_revision_of_a_bundled_resource_is_downloaded_not_taken_from_the_bundle() {
+    let lab = Lab::new("leads-bundled-revision");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    let mut release = library.clone();
+    let hebrew = release
+        .iter_mut()
+        .find(|(r, _)| r.manifest.resource_id == "strongs-hebrew")
+        .unwrap();
+    hebrew.0.manifest.revision = 2;
+    hebrew.0.manifest.content_hash = "sha256:revised".into();
+    testing::write_mobile_starter_bundle(&lab.release(), &release);
+    let mut s = lab.mobile_launch();
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert_eq!(
+        status(&s, "strongs-hebrew"),
+        StarterStatus::Outdated {
+            installed: 1,
+            offered: 2
+        }
+    );
+    let out = s
+        .run("starter.add", &json!({ "id": "strongs-hebrew" }))
+        .unwrap();
+    assert!(out["job"].is_u64(), "{out}");
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert_eq!(
+        s.library.get("strongs-hebrew").unwrap().manifest.revision,
+        2
+    );
+}
+
+/// Files the app downloaded itself are checked and installed as a download is, and deleted
+/// once read; a sha256 mismatch adds nothing.
+#[test]
+fn starter_files_downloaded_by_the_app_are_verified_installed_and_deleted() {
+    let lab = Lab::new("leads-files");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    testing::write_mobile_starter_bundle(&lab.release(), &library);
+    let mut s = lab.mobile_launch();
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    let downloads = lab.root.join("downloads");
+    std::fs::create_dir_all(&downloads).unwrap();
+    let item = |id: &str| s.starter.manifest().unwrap().get(id).unwrap().clone();
+    let (tbesh, bdb) = (item("tbesh"), item("bdb"));
+    // A mismatch: the BDB's file is not the one the manifest names.
+    let bad = downloads.join("bdb.obr");
+    std::fs::write(&bad, b"not an obr").unwrap();
+    let err = s
+        .add_starter_from_files(std::slice::from_ref(&bdb), &[("bdb".into(), bad.clone())])
+        .unwrap_err();
+    assert!(err.contains("bdb.obr failed verification"), "{err}");
+    assert!(!bad.exists(), "the mismatched download is deleted");
+    assert!(s.library.get("bdb").is_none());
+    assert!(
+        !lab.files().iter().any(|f| f.starts_with("bdb")),
+        "{:?}",
+        lab.files()
+    );
+    // Retry: the right files.
+    let mut files = Vec::new();
+    for id in ["tbesh", "bdb"] {
+        let to = downloads.join(format!("{id}.obr"));
+        std::fs::copy(lab.release().join(format!("{id}.obr")), &to).unwrap();
+        files.push((id.to_string(), to));
+    }
+    let ids = s.add_starter_from_files(&[tbesh, bdb], &files).unwrap();
+    assert_eq!(ids, ["tbesh", "bdb"]);
+    for (_, f) in &files {
+        assert!(!f.exists(), "{} deleted once read", f.display());
+    }
+    settle(&mut s);
+    assert_eq!(status(&s, "tbesh"), StarterStatus::InLibrary);
+    assert!(s.search.is_ready("bdb"), "{:?}", s.search.status("bdb"));
+}
+
+/// A releases list as GitHub's releases API answers it, newest first: `(tag, manifest folder,
+/// draft, pre-release)`.
+fn write_releases(path: &Path, releases: &[(&str, &Path, bool, bool)]) {
+    let list: Vec<serde_json::Value> = releases
+        .iter()
+        .map(|(tag, dir, draft, prerelease)| {
+            json!({
+                "tag_name": tag, "name": tag, "body": "", "html_url": "",
+                "draft": draft, "prerelease": prerelease,
+                "assets": [{
+                    "name": starter::MANIFEST_FILE,
+                    "browser_download_url": file_url(&dir.join(starter::MANIFEST_FILE)),
+                    "size": 1,
+                }],
+            })
+        })
+        .collect();
+    std::fs::write(path, serde_json::to_string(&list).unwrap()).unwrap();
+}
+
+/// A Starter library folder whose manifest says `format`.
+fn with_format(dir: &Path, resources: &[(Resource, MobileSet)], format: u32) {
+    testing::write_mobile_starter_bundle(dir, resources);
+    let path = dir.join(starter::MANIFEST_FILE);
+    let mut m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    m["format"] = json!(format);
+    std::fs::write(&path, m.to_string()).unwrap();
+}
+
+/// #333: "the app reads the Starter manifest of the release its format version matches".
+/// The latest release is of a newer format: the releases list is read, newest first, past
+/// drafts and pre-releases, and the files come from the release found.
+#[test]
+fn a_newer_manifest_format_is_looked_past_to_the_release_this_app_reads_and_its_files() {
+    let lab = Lab::new("leads-format");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    with_format(&lab.release(), &library, starter::MANIFEST_FORMAT + 1);
+    let (draft, pre, older) = (
+        lab.root.join("draft"),
+        lab.root.join("pre"),
+        lab.root.join("v0.2.0"),
+    );
+    for dir in [&draft, &pre, &older] {
+        testing::write_mobile_starter_bundle(dir, &library);
+    }
+    write_releases(
+        &lab.root.join("releases.json"),
+        &[
+            ("v0.4.0", &draft, true, false),
+            ("v0.3.1-beta.1", &pre, false, true),
+            ("v0.3.0", &lab.release(), false, false),
+            ("v0.2.0", &older, false, false),
+        ],
+    );
+    let mut s = lab.mobile_launch();
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert!(!s.starter.needs_app_update());
+    assert_eq!(s.starter_rows().len(), library.len());
+    assert_eq!(s.starter.files_base(), format!("{}/", file_url(&older)));
+    // Its files, not the latest release's: those are gone.
+    for (r, _) in &library {
+        let _ = std::fs::remove_file(
+            lab.release()
+                .join(format!("{}.obr", r.manifest.resource_id)),
+        );
+    }
+    s.run("starter.add", &json!({ "id": "tbesg" })).unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert!(s.library.get("tbesg").is_some());
+}
+
+/// No release this app reads, within the list or before an older format: a clear "update
+/// the app" state, and the rows stay the bundle's.
+#[test]
+fn with_no_release_of_this_format_the_app_must_be_updated() {
+    let lab = Lab::new("leads-no-format");
+    let library = testing::mobile_starter_library();
+    testing::write_mobile_starter_bundle(&lab.bundle(), &bundled_only(&library));
+    with_format(&lab.release(), &library, starter::MANIFEST_FORMAT + 1);
+    // An older format stops the search: the release of this format after it is not read.
+    let (old, ours) = (lab.root.join("old"), lab.root.join("ours"));
+    with_format(&old, &library, starter::MANIFEST_FORMAT - 1);
+    testing::write_mobile_starter_bundle(&ours, &library);
+    write_releases(
+        &lab.root.join("releases.json"),
+        &[
+            ("v0.3.0", &lab.release(), false, false),
+            ("v0.2.0", &old, false, false),
+            ("v0.1.0", &ours, false, false),
+        ],
+    );
+    let mut s = lab.mobile_launch();
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert!(s.starter.needs_app_update());
+    let error = s.starter.error().unwrap();
+    assert!(error.contains("Update the app"), "{error}");
+    assert_eq!(row_ids(&s), ["bsb", "strongs-hebrew"]);
+    assert_eq!(s.starter.files_base(), s.starter.download_base());
+    // The desktop keeps today's refusal.
+    let (mut d, _) = lab.launch(None);
+    d.starter.set_download_base(&file_url(&lab.release()));
+    d.check_starter_release().unwrap();
+    settle(&mut d);
+    assert!(!d.starter.needs_app_update());
+    let error = d.starter.error().unwrap();
+    assert!(error.contains("format 2 (this app reads 1)"), "{error}");
+}
+
+/// Library → Storage: each Resource's `.obr`, Search index and alias bytes; whether a
+/// download fits.
+#[test]
+fn storage_counts_each_resources_files_and_a_download_that_wont_fit_is_told() {
+    let lab = Lab::new("storage");
+    testing::write_starter_bundle(&lab.bundle(), &starter_set());
+    let (s, _) = lab.launch(Some(&lab.bundle()));
+    let storage = s.library_storage();
+    assert_eq!(storage.resources.len(), 5);
+    for row in &storage.resources {
+        let obr = std::fs::metadata(lab.lib().join(format!("{}.obr", row.resource_id)))
+            .unwrap()
+            .len();
+        assert_eq!(row.obr, obr, "{}", row.resource_id);
+        assert!(row.search_index > 0, "{}: prebuilt index", row.resource_id);
+        assert_eq!(row.aliases, 0);
+    }
+    let sum: u64 = storage.resources.iter().map(|r| r.total()).sum();
+    assert_eq!(storage.total, sum);
+    assert_eq!(library_storage::space_needed(100), 250);
+    assert!(library_storage::fits(100, 250));
+    assert!(!library_storage::fits(100, 249));
+}
+
+/// S23's Done when over the real Starter library (after `cargo xtask starter`): its Bundled
+/// set installed, then a Study set Resource added through the release path from a `file://`
+/// base (`dist/starter` as the release); Library → Starter library lists 22 rows once the
+/// released manifest is in, before and after. Run by hand:
+/// `cargo test -p obs-engine --release -- --ignored --nocapture built_starter_release`.
+#[test]
+#[ignore = "needs dist/starter from `cargo xtask starter`"]
+fn the_built_starter_release_adds_a_study_set_item_after_the_bundled_set() {
+    let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dist/starter");
+    if !dist.join(starter::MANIFEST_FILE).is_file() {
+        eprintln!("no dist/starter; skipped");
+        return;
+    }
+    let lab = Lab::new("built-release");
+    testing::copy_bundled_set(&dist, &lab.bundle());
+    let mut s = lab.mobile_launch();
+    s.starter.set_download_base(&file_url(&dist));
+    assert_eq!(s.library.entries().len(), 4);
+    assert_eq!(s.starter_rows().len(), 4, "offline: the Bundled set's rows");
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert_eq!(s.starter_rows().len(), 22);
+    assert_eq!(s.starter_wanted_set(MobileSet::Study).len(), 15);
+    let started = std::time::Instant::now();
+    let out = s.run("starter.add", &json!({ "id": "tbesg" })).unwrap();
+    assert!(out["job"].is_u64(), "{out}");
+    assert_eq!(s.starter_rows().len(), 22);
+    settle(&mut s);
+    eprintln!("tbesg added in {:?}", started.elapsed());
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert_eq!(s.starter_rows().len(), 22);
+    assert_eq!(s.library.entries().len(), 5);
+    assert_eq!(status(&s, "tbesg"), StarterStatus::InLibrary);
+    let entries = lexicon_entries(&mut s, "G26");
+    assert!(
+        entries.iter().any(|e| e.resource_id == "tbesg"),
+        "{entries:?}"
+    );
+}

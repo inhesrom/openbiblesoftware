@@ -99,6 +99,7 @@ mod library_commands;
 pub mod library_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod library_search_tests;
+pub mod library_storage;
 pub mod licence;
 pub mod link;
 mod lookups;

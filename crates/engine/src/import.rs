@@ -479,6 +479,13 @@ pub enum ImportSource {
     },
     /// An Open catalogue entry, downloaded from its publisher and checked first (#134).
     Open(Box<crate::open_catalogue::OpenSource>),
+    /// An Open catalogue entry the app already downloaded to `file` (the Mobile app's
+    /// background transfers, #333), checked as [`Self::Open`] is. The file is deleted once
+    /// read.
+    OpenDownloaded {
+        source: Box<crate::open_catalogue::OpenSource>,
+        file: std::path::PathBuf,
+    },
 }
 
 // Desktop Import uses these; the browser build has no local Import.
@@ -502,7 +509,7 @@ impl ImportSource {
             Self::Usfm(p) | Self::Sword { path: p, .. } | Self::Repository { sword_dir: p, .. } => {
                 p
             }
-            Self::Open(source) => Path::new(&source.url),
+            Self::Open(source) | Self::OpenDownloaded { source, .. } => Path::new(&source.url),
         }
     }
 
@@ -513,7 +520,7 @@ impl ImportSource {
                 module: Some(m), ..
             }
             | Self::Repository { module: m, .. } => m.clone(),
-            Self::Open(source) => source.id.clone(),
+            Self::Open(source) | Self::OpenDownloaded { source, .. } => source.id.clone(),
             Self::Sword { path, .. } if path.is_dir() => path
                 .file_name()
                 .unwrap_or_default()
@@ -536,7 +543,9 @@ impl ImportSource {
                 module: Some(m),
             } => format!("{} ({m})", path.display()),
             Self::Repository { repo, module, .. } => format!("{module} from {}", repo.name),
-            Self::Open(source) => format!("{} from {}", source.url, source.publisher),
+            Self::Open(source) | Self::OpenDownloaded { source, .. } => {
+                format!("{} from {}", source.url, source.publisher)
+            }
             _ => self.path().display().to_string(),
         }
     }
@@ -573,6 +582,23 @@ impl Session {
     /// Tab id and the job.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn start_import(&mut self, source: ImportSource) -> Result<(String, u64, JobId), String> {
+        let name = source.stem();
+        let (id, job) = self.start_import_job(source)?;
+        let tab = self.workspace.open(
+            TabKind::ImportReport(id.clone()),
+            report_title(&name),
+            OpenRequest::default(),
+        );
+        Ok((id, tab.0, job))
+    }
+
+    /// [`Self::start_import`] without its report Tab (the Mobile app shows progress itself;
+    /// the report is kept). Returns the new Resource id and the job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_import_job(
+        &mut self,
+        source: ImportSource,
+    ) -> Result<(String, JobId), String> {
         let dir = self
             .library
             .directory()
@@ -590,14 +616,8 @@ impl Session {
             }
             n += 1;
         };
-        let name = source.stem();
         let job = self.submit_import(source, &dir, &id, None);
-        let tab = self.workspace.open(
-            TabKind::ImportReport(id.clone()),
-            report_title(&name),
-            OpenRequest::default(),
-        );
-        Ok((id, tab.0, job))
+        Ok((id, job))
     }
 
     /// Download a newer version of the module a Resource was downloaded from and import it
@@ -670,6 +690,15 @@ impl Session {
             ),
             ImportSource::Open(source) => (
                 ImportPhase::Download,
+                None,
+                Some(OpenOrigin {
+                    id: source.id.clone(),
+                    url: source.url.clone(),
+                    sha256: None,
+                }),
+            ),
+            ImportSource::OpenDownloaded { source, .. } => (
+                ImportPhase::Parse,
                 None,
                 Some(OpenOrigin {
                     id: source.id.clone(),
@@ -944,6 +973,17 @@ fn import_source(
                 }
                 sha256 = Some(open.check_download(&bytes)?);
                 ctx.phase("Parse");
+                open.import(&bytes, id, &tool_version(), |done, total| {
+                    ctx.progress(done as u64, total as u64);
+                    !ctx.is_cancelled()
+                })?
+            }
+            ImportSource::OpenDownloaded { source: open, file } => {
+                ctx.phase("Parse");
+                let bytes = std::fs::read(file);
+                let _ = std::fs::remove_file(file);
+                let bytes = bytes.map_err(|e| format!("{}: {e}", file.display()))?;
+                sha256 = Some(open.check_download(&bytes)?);
                 open.import(&bytes, id, &tool_version(), |done, total| {
                     ctx.progress(done as u64, total as u64);
                     !ctx.is_cancelled()

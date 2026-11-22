@@ -1359,6 +1359,40 @@ impl Session {
         self.start_import(crate::ImportSource::Open(Box::new(source)))
     }
 
+    /// Import Open catalogue entry `id` from `file`, which the app downloaded from the entry's
+    /// URL itself (the Mobile app's background transfers, #333): checked as
+    /// [`Self::download_open`] checks a download (pinned sha256 or licence notice), then
+    /// imported, with no report Tab. The file is deleted once read; a refused one is
+    /// downloaded again for Retry. Returns the Resource id and the job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn install_open_file(
+        &mut self,
+        id: &str,
+        file: &std::path::Path,
+    ) -> Result<(String, JobId), String> {
+        let source = self
+            .get_bibles
+            .open_source(id)
+            .cloned()
+            .ok_or_else(|| format!("The Open catalogue has no entry {id:?}"))?;
+        let listing = source.listing();
+        match self.listing_status(&listing) {
+            ListingStatus::Installed { .. } | ListingStatus::UpdateAvailable { .. } => {
+                let _ = std::fs::remove_file(file);
+                return Err(format!("{} is already in your Library", listing.title));
+            }
+            ListingStatus::InProgress { .. } => {
+                return Err(format!("{} is already being added", listing.title));
+            }
+            ListingStatus::Failed { .. } | ListingStatus::Available => {}
+        }
+        self.drop_failed_downloads(&listing);
+        self.start_import_job(crate::ImportSource::OpenDownloaded {
+            source: Box::new(source),
+            file: file.to_path_buf(),
+        })
+    }
+
     /// The downloaded Resources in the Library: (Resource id, origin of the revision in the
     /// Library). A Resource being updated counts with the revision it is replacing.
     fn downloaded(&self) -> Vec<(String, crate::import::RepoOrigin)> {
