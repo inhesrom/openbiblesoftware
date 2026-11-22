@@ -258,10 +258,14 @@ edit in between two of them: it waits for one batch, not the file.
   deleted or recorded, and whether it touched a Notebook, Highlight style or palette or the
   active palette. After a sync, the Session's reload says which Annotations changed
   (`Session::annotations_changed_since`) when those are all it changed and they are few
-  (at most `PATCH_LIMIT`); the text's Annotations (`MarkCache`) and the Notes Tool's cards then
-  read only those and patch what they hold (the cards read in full while one is edited, to
-  keep their order); Needs attention's count is one SQL count. Any other change of
-  `annotations_revision` reads everything, as before.
+  (at most `ANNOTATIONS_PATCH_LIMIT`, `crate::annotations`); the text's Annotations
+  (`MarkCache`) and the Notes Tool's cards then read only those and patch what they hold (the
+  cards read in full while one is edited, to keep their order); Needs attention's count is one
+  SQL count. Any other change of `annotations_revision` reads everything, as before. A sync
+  that fails or is abandoned may have committed batches or whole files first, and its
+  `touched` is lost with it: it marks the views stale (`SessionSync::views_stale`), and the
+  next sync that succeeds reloads everything, whether it merged anything or not (Stop syncing
+  that abandons a sync reloads at once, as no sync follows).
 - **Measured** (owner's Mac, `measure_syncs_off_the_ui_thread` and
   `measure_merge_batches_against_one_transaction`, local folder, frames of 16 ms, an edit at
   every frame; dev profile, then release): a new device joining 10,000 Notes, **the longest
@@ -1256,9 +1260,6 @@ Mobile app has no period (`at_launch(false)`).
   - After a merge that changed many Annotations (a join), the views still read every one, about
     10–12 ms at 10,000 Notes; the marks of each open Resource are made again from all of them
     as after any edit.
-  - A sync that fails after committing some batches (a folder error, a stop) leaves rows merged
-    that the Session does not reload until a later sync merges something (it finishes that file
-    first). Before S29c a failure after some whole files did the same.
   - Other single transactions a large library makes: the join's stamping (`join_sync`),
     Replace's `restamp_for_replace`, and the outbox's reserve and noting written are each one
     statement per table, not measured at 10,000 rows on an iPhone.

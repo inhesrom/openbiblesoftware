@@ -126,6 +126,10 @@ pub struct SessionSync {
     last_batches: Option<(usize, usize)>,
     /// Settings → Sync's action waiting for the sync running.
     deferred: Option<Deferred>,
+    /// A sync failed or was abandoned, maybe after committing some of its merge's batches or
+    /// files: what it merged is not in the views, so the next reload reads everything again
+    /// rather than only what that sync's merge touched (S29c).
+    views_stale: bool,
     /// How long a restore waits for the sync before it ([`RESTORE_SYNC_WAIT`]; tests wait
     /// less).
     #[cfg(not(target_arch = "wasm32"))]
@@ -171,6 +175,7 @@ impl Default for SessionSync {
             last_duration_ms: None,
             last_batches: None,
             deferred: None,
+            views_stale: false,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: RESTORE_SYNC_WAIT,
             #[cfg(not(target_arch = "wasm32"))]
@@ -324,14 +329,18 @@ impl Session {
             .filter(|p| !p.trim().is_empty())
             .map(PathBuf::from);
         let old = std::mem::take(&mut self.sync);
+        #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+        let mut views_stale = old.views_stale;
         // A sync still running was on the User database this replaces.
         #[cfg(not(target_arch = "wasm32"))]
         if let Phase::Running(worker) = old.phase {
             worker.abandon();
+            views_stale = true;
         }
         self.sync = SessionSync {
             platform: old.platform,
             folder,
+            views_stale,
             #[cfg(not(target_arch = "wasm32"))]
             restore_wait: old.restore_wait,
             #[cfg(not(target_arch = "wasm32"))]
@@ -458,10 +467,15 @@ impl Session {
                 if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
                     log::warn!("the sync running did not end in time: Stop syncing stopped it");
                     worker.abandon();
+                    self.sync.views_stale = true;
                 }
                 self.sync.deferred = None;
                 if let Err(e) = self.stop_syncing() {
                     self.sync.last = Some(LastSync::Failed(e));
+                }
+                // It commits nothing more, and no sync follows to reload what it merged.
+                if self.sync.views_stale {
+                    self.reload_synced_data(None);
                 }
                 return true;
             }
@@ -547,7 +561,10 @@ impl Session {
                             || report.merge.recorded.unheld > 0
                             || report.merge.resumed > 0;
                         self.sync.last_batches = Some((report.merge.batches, report.merge.whole));
-                        if merged {
+                        if self.sync.views_stale {
+                            // A sync before failed or was abandoned: read everything again.
+                            self.reload_synced_data(None);
+                        } else if merged {
                             // What the merge changed, when it is only a few Annotations.
                             let touched = &report.merge.touched;
                             let only = (!touched.annotation_views
@@ -570,6 +587,8 @@ impl Session {
                 log::warn!("sync failed: {e}");
                 self.sync.schedule.sync_failed(finished);
                 self.sync.last = Some(LastSync::Failed(e.to_string()));
+                // It may have committed some of its merge before it failed.
+                self.sync.views_stale = true;
             }
         }
     }
@@ -602,9 +621,11 @@ impl Session {
     /// launch, and have views and Notes searches read it again. Preferences that stay on the
     /// device are not touched. `only`: the Annotations the merge changed, when it changed
     /// nothing else the views read (no Notebook, Highlight style or palette): the views read
-    /// only those ([`Session::annotations_changed_since`]).
+    /// only those ([`Session::annotations_changed_since`]). Views a failed or abandoned sync
+    /// left stale are read whole now (`only` is `None` then), and no longer stale.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) fn reload_synced_data(&mut self, only: Option<std::collections::BTreeSet<String>>) {
+        self.sync.views_stale = false;
         if let Some(order) = (self.user.as_ref()).and_then(|u| u.preferred_order().ok()) {
             self.library.set_preferred_order(order);
         }
@@ -737,6 +758,7 @@ impl Session {
             }
             if let Phase::Running(worker) = std::mem::take(&mut self.sync.phase) {
                 worker.abandon();
+                self.sync.views_stale = true;
                 log::warn!("the sync before the restore did not finish in time");
                 unfinished = true;
                 deferred = self.sync.deferred.take();

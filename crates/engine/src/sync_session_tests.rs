@@ -1070,8 +1070,8 @@ fn measure_syncs_off_the_ui_thread() {
 type HoldWhen = Box<dyn Fn(&str, &str) -> bool + Send>;
 
 /// The Sync folder on disk as the worker sees it, watched: which threads call it, and it
-/// can hold the next call of a kind (the read of an op file) until the test lets it go, or
-/// panic at a list.
+/// can hold the next call of a kind (the read of an op file) until the test lets it go,
+/// panic at a list, or refuse to write a `device.json`.
 struct WatchedFolder {
     fs: crate::sync::FsSyncFolder,
     threads: std::sync::Mutex<Vec<std::thread::ThreadId>>,
@@ -1085,6 +1085,8 @@ struct WatchedFolder {
         )>,
     >,
     panics: std::sync::atomic::AtomicBool,
+    /// Writing a `device.json` fails (the last step of a sync, after its merge).
+    fails_device_json: std::sync::atomic::AtomicBool,
 }
 
 impl WatchedFolder {
@@ -1094,6 +1096,7 @@ impl WatchedFolder {
             threads: Default::default(),
             hold: Default::default(),
             panics: Default::default(),
+            fails_device_json: Default::default(),
         })
     }
 
@@ -1161,6 +1164,11 @@ impl crate::sync::SyncFolder for WatchedFolder {
 
     fn write_new(&self, path: &str, bytes: &[u8]) -> Result<(), crate::sync::FolderError> {
         self.note("write_new", path);
+        if path.ends_with("/device.json")
+            && self.fails_device_json.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(crate::sync::FolderError::Io("the provider failed".into()));
+        }
         self.fs.write_new(path, bytes)
     }
 
@@ -1754,4 +1762,84 @@ fn an_edit_during_a_10k_note_join_waits_for_one_batch_of_the_merge_not_the_file(
         longest < std::time::Duration::from_millis(100),
         "an edit waited {longest:?}"
     );
+}
+
+/// The views as the UI keeps them, read whole at revision `before` (`held`), brought up to now
+/// as it does: patched when only some Annotations changed since, read whole otherwise.
+fn views_brought_up_to_date(
+    s: &Session,
+    before: u64,
+    held: (Vec<Annotation>, Vec<crate::notes::Card>),
+) -> (Vec<Annotation>, Vec<crate::notes::Card>) {
+    let (mut in_text, mut cards) = held;
+    match s.annotations_changed_since(Some(before)) {
+        Some(ids) => {
+            let ids = ids.clone();
+            s.patch_annotations_in_text(&mut in_text, &ids).unwrap();
+            s.patch_note_cards(&mut cards, &ids, "").unwrap();
+            (in_text, cards)
+        }
+        None => views_read_whole(s),
+    }
+}
+
+/// From S29c's review (P1-1): a sync whose merge is committed but which then fails (its
+/// `device.json` not written) leaves the views stale, so the next sync, which merges one Note,
+/// has them read everything again: patched with only that Note they would miss the first's.
+#[test]
+fn after_a_sync_that_failed_having_merged_the_next_sync_has_the_views_read_everything() {
+    let dir = Dir::new("views-after-failure");
+    let mut a = dir.syncing("a");
+    let (mut b, folder) = watched(&dir, "b");
+    sync(&mut a);
+    sync(&mut b);
+    let notes: Vec<Annotation> = (0..10)
+        .map(|i| add_note(&mut a, &format!("Note {i}")))
+        .collect();
+    sync(&mut a);
+    sync(&mut b);
+    let before = b.annotations_revision();
+    let held = views_read_whole(&b);
+    // A's edits merge on B, then B's sync fails at its very end.
+    edit_note(&mut a, &notes[2], "edited on A");
+    a.commit(
+        "Delete",
+        vec![Change::delete(Row::Annotation(notes[5].clone()))],
+    )
+    .unwrap();
+    add_note(&mut a, "new on A");
+    sync(&mut a);
+    folder
+        .fails_device_json
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    sync(&mut b);
+    assert!(
+        b.sync_panel(now()).details.is_some(),
+        "the sync failed: {:?}",
+        b.sync_panel(now()).status
+    );
+    assert_eq!(b.annotations_revision(), before, "a failed sync reloads nothing");
+    assert!(
+        b.annotation(&notes[5].id).is_err(),
+        "the merge was committed"
+    );
+    // A small sync next: one Note edited on A.
+    folder
+        .fails_device_json
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    edit_note(&mut a, &notes[7], "edited again on A");
+    sync(&mut a);
+    sync(&mut b);
+    assert!(b.annotations_revision() > before);
+    let views = views_brought_up_to_date(&b, before, held);
+    let whole = views_read_whole(&b);
+    assert_eq!(views.0, whole.0);
+    assert_eq!(card_ids(&views.1), card_ids(&whole.1));
+    assert_eq!(views.1, whole.1);
+    assert!((whole.1.iter()).any(|c| c.annotation.id == notes[2].id));
+    assert!(!(whole.1.iter()).any(|c| c.annotation.id == notes[5].id));
+    // Read whole once: the sync after patches again.
+    edit_note(&mut a, &notes[8], "and again on A");
+    sync(&mut a);
+    sync_patching_the_views(&mut b);
 }
