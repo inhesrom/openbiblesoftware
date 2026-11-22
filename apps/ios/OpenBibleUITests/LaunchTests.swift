@@ -6,6 +6,8 @@ final class LaunchTests: XCTestCase {
     @MainActor
     func testLaunchShowsTheEngineAndTheBundledSet() throws {
         let app = XCUIApplication()
+        // The first-launch Study set offer is LibraryTests'.
+        app.launchEnvironment["OBS_TEST_NO_STUDY_SET_OFFER"] = "1"
         app.launch()
 
         XCTAssertTrue(app.staticTexts["reader.location"].waitForExistence(timeout: 30), "no reader")
