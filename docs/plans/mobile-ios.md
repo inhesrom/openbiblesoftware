@@ -1996,6 +1996,22 @@ under the half they belong to.
   `cargo test -p obs-engine sync` 102 passed, 2 ignored; clippy and the wasm check clean;
   `cargo xtask sync-e2e` green (2 m 43 s); `cargo xtask ci` green (11 m 41 s; 2,476 tests
   passed, 44 ignored).
+  **Review fixes (same branch):** the review blocked on one P0: the 891 fix lost a copy's
+  edited Sync conflict's copy when the copy restored a Backup from before it took its new id
+  (that id met only through its snapshot, which merged after the original's files). A former
+  id's snapshot now merges with its op files, the last given up first, before older former
+  ids and other snapshots (a snapshot that waits is retried as before). `MergeTx::hold` keeps
+  an older own held write beside a newer one only when the newer is not of its id or a later
+  one of this device's (`held_beside`), so a copy's original adds no "(2)" no one needed and
+  no pile of held writes. New: `lifecycle_tests` +3 (the P0, a restore chain x → y → z, the
+  3146456 rule end to end through a former id's own snapshot), `merge_tests` +2;
+  `merge_props` gained `copy_backup_step` (about 183 per 1k) and its reach checks count only
+  sequences reached. Undoing the snapshot order fails the 1k run. The case left (a former
+  id's snapshot or file that waits for a row another snapshot brings) is documented in
+  `sync.md`. 10k runs green at 20 seeds (20266453, 123456, 3141592, 5000000, 7744, 891, 1,
+  42 and 12 new); `cargo test -p obs-store --all-features` 172 passed, 3 ignored; `cargo test
+  -p obs-engine sync` 112 passed, 2 ignored; `cargo xtask sync-e2e` green (89 s); `cargo
+  xtask ci` green (9 m 8 s; 2,486 tests passed, 44 ignored).
 
 #### S29 — Sync 3 (desktop): Settings → Sync, Needs attention conflicts, restore prompt
 
