@@ -51,13 +51,16 @@ final class LibraryTests: XCTestCase {
 
     /// The accessibility audit of what is on screen. The system toolbar's glass buttons
     /// (Done) are drawn at a fixed size with the Large Content Viewer (as S26 found), and on
-    /// an iPad a sheet floats over the dimmed reader, whose drawn text has no element.
+    /// an iPad a sheet floats over the dimmed reader, whose drawn text the audit reports with
+    /// no element (contrast, detection, and text the sheet covers as clipped); the iPhone
+    /// runs audit the same screens with nothing behind them.
     private func audit(_ app: XCUIApplication) throws {
         let pad = UIDevice.current.userInterfaceIdiom == .pad
         try app.performAccessibilityAudit { issue in
             let id = issue.element?.identifier ?? "-"
             let toolbar = id == "library.done" && [.contrast, .dynamicType].contains(issue.auditType)
-            let behind = pad && issue.element == nil && [.contrast, .elementDetection].contains(issue.auditType)
+            let behind = pad && issue.element == nil
+                && [.contrast, .elementDetection, .textClipped].contains(issue.auditType)
             let system = toolbar || behind
             if !system {
                 print("AUDIT \(issue.auditType) \(issue.compactDescription): \(id) \(issue.element?.label ?? "-")")
@@ -247,7 +250,8 @@ final class LibraryTests: XCTestCase {
         let moving = NSPredicate(format: "label BEGINSWITH 'Downloading · '")
         expectation(for: moving, evaluatedWith: state)
         waitForExpectations(timeout: 30)
-        XCTAssertTrue(app.staticTexts["library.banner"].exists || element(app, "library.banner").exists)
+        // The banner: in the list above (scrolled away in a short iPad sheet) and the reader's.
+        XCTAssertTrue(element(app, "library.banner").exists || app.buttons["reader.banner"].exists)
         shot(app, "s24-downloading", dark: true)
         try audit(app)
         cancel.tap()
