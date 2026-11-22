@@ -29,7 +29,7 @@ to Claude Opus 5.5 later on".
   #336 (accounts), #337 (trademark) and the privacy policy URL are scheduled (S33) *before* the
   first App Store Connect upload (S35, HITL), because a bundle id is permanent; dev builds use a
   distinct `.dev` bundle id until then.
-- **Size:** 8 milestones, 39 steps + 1 fallback step. 6 are HITL, 2 mixed (S09, S12). 25 need
+- **Size:** 8 milestones, 41 steps + 1 fallback step. 6 are HITL, 2 mixed (S09, S12). 25 need
   Xcode.
 
 ## Step table
@@ -2050,8 +2050,28 @@ under the half they belong to.
   first run's only failures were the known `find_bar` flake, green alone, and the menu audit's
   ellipsis rule, fixed: `sync.choose_folder`'s label is "Choose Sync folder", its button
   "Choose Sync folder…"); `cargo xtask gallery` green with only the 24 new goldens blessed;
-  `cargo xtask sync-e2e` green (run four times). **For S30:** reuse `sync::texts` and the Session's APIs through `obs-mobile`, on
-  S29b's off-thread path.
+  `cargo xtask sync-e2e` green (run four times). **Review fixes** (supervisor decisions on
+  the S29 review): a Note card saves with its base text (`annotation.edit {base}`,
+  `Session::save_note_edit`, checked in the engine): when a merge changed the Note while its
+  card was open, the typed text goes into a Sync conflict's copy (the merge's copy of the base
+  text, else a new one on the Note's Anchor and Notebook), never over the merged text, and the
+  editor goes on in that copy (the report's "the autosave is refused" was wrong: it wrote
+  over); the conflict actions save the open editor first and do not run while it stays open;
+  a copy whose Note another device deleted says so and offers Keep this text and Let it go
+  (`conflict_actions(false)`, words in `texts`); Stop syncing takes the new id before it
+  forgets the folder; Needs attention's hover mentions Sync conflicts only with a folder
+  chosen; a failed sync is said once, by its notice; sync-e2e's steps after frame-numbered
+  commands wait on a file (A's Backup; a file the xtask writes once B's Word forms op is in
+  the folder) and B must stop with nothing waiting. New tests: engine 4 (an editor's save
+  after a merge, into a new copy and into the merge's copy; a copy whose Note was deleted
+  elsewhere; the restore prompt across a restart while pending) and Keep this version and
+  Keep both checked on the other device; harness 2 (an autosave after a merge keeps both texts
+  and typing goes on in the copy; Combine clicked while typing in the copy), both failing
+  before the fix. The Summary's step count is 41. Gates after the fixes: `cargo xtask ci`
+  green (7 m 21 s; 2,457 passed, 44 ignored), `cargo xtask gallery` green with no golden
+  changed, `cargo xtask sync-e2e` green twice. **For S30:** reuse `sync::texts` and the
+  Session's APIs through `obs-mobile`, on S29b's off-thread path, and save a Note editor's text
+  with its base (`annotation.edit {base}`) as the desktop does.
 
 #### S29b — Sync 3b: sync off the UI thread
 
