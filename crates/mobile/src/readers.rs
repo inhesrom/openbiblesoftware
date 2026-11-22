@@ -171,6 +171,7 @@ impl MobileApp {
                 let tab = self.open_tab(resource_id)?;
                 let view = self.load_view(tab)?;
                 self.readers[i] = Reader::new(tab, view);
+                self.new_epoch();
                 (self.session.run("tab.close", &json!({ "tab": old.0 }))).map_err(failed)?;
             }
         }
@@ -273,6 +274,8 @@ impl MobileApp {
                 self.readers[i].view = view;
                 self.readers[i].frame.moved = true;
                 self.readers[i].notes_revision = None;
+                // Its blocks are another document's: no tile key of before may be reused.
+                self.new_epoch();
             }
             Err(e) => self.events.message(e.to_string()),
         }

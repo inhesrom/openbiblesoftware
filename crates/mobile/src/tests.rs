@@ -273,10 +273,16 @@ fn another_bible_in_a_reader_switches_at_the_same_place_and_back_returns() {
     assert_eq!(web.resource_id, "web");
     // The WEB excerpt has no John 1: it opens where it can.
     assert!(web.can_go_back, "the switch is a step in its history");
+    let before = frame(&mut app, R0, 0.0);
     let back = app.back(R0).unwrap();
     assert_eq!(
         (back.resource_id.as_str(), back.location.as_str()),
         ("bsb", "John 1:1")
+    );
+    let after = frame(&mut app, R0, 0.0);
+    assert_ne!(
+        after.tiles[0].key.epoch, before.tiles[0].key.epoch,
+        "another document's tiles"
     );
     // Another Resource type starts afresh.
     let lex = app.open(R0, "lexicon", None).unwrap();
