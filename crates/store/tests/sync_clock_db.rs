@@ -504,6 +504,41 @@ fn a_v15_backup_restores_with_no_conflicts_no_kept_rows_and_nothing_held() {
 }
 
 #[test]
+fn a_v16_backup_restores_into_17_with_its_id_a_former_one_and_no_choice_waiting() {
+    let dir = Dir::new("v16-own-backup");
+    let (v16, _) = UserStore::open_to(&dir.db(), 16).unwrap();
+    assert_eq!(v16.schema_version().unwrap(), 16);
+    add_notebook(&v16, "Study");
+    list_and_delete(&v16);
+    let backup = dir.0.join("v16.obsbackup");
+    v16.back_up(&backup).unwrap();
+    let id = v16.device_id().unwrap();
+    drop(v16);
+    assert_eq!(UserStore::backup_contents(&backup).unwrap().version, 16);
+    let held = everything(&Connection::open(&backup).unwrap());
+
+    // The same database, now at 17, restores its own v16 Backup.
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(db.device_id().unwrap(), id);
+    db.restore(&backup).unwrap();
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    let restored = everything(&Connection::open(db.path()).unwrap());
+    for (table, rows) in &held {
+        if !["device", "op_outbox"].contains(&table.as_str()) {
+            assert_eq!(&restored[table], rows, "{table}");
+        }
+    }
+    assert!(db.device_id().unwrap() != id, "a new id");
+    assert_eq!(former_ids(&db), [id], "the Backup's id, this device's own");
+    let c = Connection::open(db.path()).unwrap();
+    assert_eq!(
+        strings(&c, "SELECT CAST(restore_choice AS TEXT) FROM device"),
+        ["0"]
+    );
+    assert!(!db.restore_choice_pending().unwrap());
+}
+
+#[test]
 fn every_database_has_a_device_id_from_open_and_from_open_backup() {
     let dir = Dir::new("device");
     // A v13 database and a Backup of it without the device row (only migration 12 → 13
