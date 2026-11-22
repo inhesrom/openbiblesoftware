@@ -1204,13 +1204,32 @@ impl ObrReader {
 
     fn to_verse(
         &self,
+        row: (String, i64, i64, i64, i64, i64, i64),
+    ) -> Result<BibleVerse, StoreError> {
+        self.to_verse_in(row, &mut None)
+    }
+
+    /// [`Self::to_verse`], reusing `last`, the unit id of the row before, when this row is in
+    /// the same unit: a whole Bible's Verses come in unit order, so reading every Verse asks
+    /// for each unit's id once, not once per Verse.
+    fn to_verse_in(
+        &self,
         (book, chapter, verse, last, unit, start, end): (String, i64, i64, i64, i64, i64, i64),
+        last_unit: &mut Option<(i64, UnitId)>,
     ) -> Result<BibleVerse, StoreError> {
         let book = Book::from_usfm(&book).ok_or_else(|| corrupt(format!("bad book `{book}`")))?;
+        let unit_id = match last_unit {
+            Some((ord, id)) if *ord == unit => id.clone(),
+            _ => {
+                let id = self.unit_id_of(unit)?;
+                *last_unit = Some((unit, id.clone()));
+                id
+            }
+        };
         Ok(BibleVerse {
             verse: Verse::new(book, to_u16(chapter, "chapter")?, to_u16(verse, "verse")?),
             last: to_u16(last, "verse")?,
-            unit: self.unit_id_of(unit)?,
+            unit: unit_id,
             start: to_u32(start, "verse start")?,
             end: to_u32(end, "verse end")?,
         })
@@ -1235,15 +1254,25 @@ impl ObrReader {
             })
             .map_err(sql)?;
         let mut out = Vec::new();
+        // Keys of one unit come together often (a Commentary's sections): ask its id once.
+        let mut last_unit: Option<(i64, UnitId)> = None;
         for row in rows {
             let (scheme, key, unit, start, end, alias) = row.map_err(sql)?;
             let range = match (start, end) {
                 (Some(s), Some(e)) => Some((to_u32(s, "key start")?, to_u32(e, "key end")?)),
                 _ => None,
             };
+            let unit = match &last_unit {
+                Some((ord, id)) if *ord == unit => id.clone(),
+                _ => {
+                    let id = self.unit_id_of(unit)?;
+                    last_unit = Some((unit, id.clone()));
+                    id
+                }
+            };
             out.push(KeyEntry {
                 key: key_from(&scheme, &key)?,
-                unit: self.unit_id_of(unit)?,
+                unit,
                 range,
                 alias,
             });
@@ -1480,7 +1509,10 @@ impl ResourceStore for ObrReader {
             .map_err(sql)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(sql)?;
-        rows.into_iter().map(|r| self.to_verse(r)).collect()
+        let mut last_unit = None;
+        (rows.into_iter())
+            .map(|r| self.to_verse_in(r, &mut last_unit))
+            .collect()
     }
 
     fn lookup_key(&self, key: &Key) -> Result<Vec<KeyEntry>, StoreError> {
