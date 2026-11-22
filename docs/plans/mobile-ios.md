@@ -2321,7 +2321,11 @@ under the half they belong to.
   syncs after 1–6 batches, with reach checks (stops, stops in a snapshot, files finished first,
   files merged whole) and no file waiting after a batch. Mutation checks: `may_wait` always false
   fails the 1k props and the whole-file test; cards not re-reading a changed Note's copy fail the
-  views test. **Verified:** VERIFIED_PLACEHOLDER
+  views test. **Verified:** the 1k merge props (24 s) and the 10k runs at seeds 20266453, 891,
+  7744, 1 and 42 green (220–260 s each); `cargo test -p obs-store --all-features`; `cargo xtask
+  sync-e2e` green (3 m 28 s); `cargo xtask gallery` green, no golden changed; `cargo xtask ci`
+  green (9 m 11 s; 2,494 tests passed, 45 ignored; fmt, layers, assets, licenses, clippy, a11y,
+  test, wasm). Not a UI change (the views read less, show the same).
 
 #### S30 — Sync 4 (iOS): folder picker, bookmarks, coordination, scheduling, Settings → Sync
 
