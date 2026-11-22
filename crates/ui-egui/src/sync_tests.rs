@@ -118,7 +118,9 @@ fn without_a_sync_folder_only_choose_sync_folder_shows() {
     let mut h = Harness::launch(Some(&dir.join("a/user.db")));
     h.frames(3);
     assert!(!indicator_shown(&h), "no status indicator: {:?}", h.texts());
+    preview(&h, "sync-no-folder-kittest");
     settings_on_sync(&mut h);
+    preview(&h, "sync-settings-no-folder-kittest");
     assert!(shows(&h, texts::CHOOSE_FOLDER));
     assert!(shows(&h, texts::ONBOARDING));
     assert!(!shows(&h, texts::SYNC_NOW) && !shows(&h, texts::DEVICES_LABEL));
