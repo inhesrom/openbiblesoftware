@@ -115,6 +115,10 @@ _Avoid_: Topical Bible (as the kind), Concordance, Topic list
 A Resource of prose that is read from its start rather than looked up: a sermon, treatise, confession, catechism, hymnal, journal or church record, such as Owen's *Mortification of Sin* or a denomination's Book of Church Order. It is organized by its own Divisions and printed pages and has no Key scheme, so no Guide or Link set opens it by a Key; its Bible references are links, and Library search finds its words. A Book is imported from Markdown (ADR 0023), such as the Christian Open Library's books, or downloaded from the Open catalogue, as the Text Creation Partnership's TEI texts of early printed books and Project Gutenberg's books are (#345).
 _Avoid_: Monograph, General book, Work, Title
 
+**Book pack**:
+A named group of related Books in the Open catalogue, such as "The Puritans" or "Confessions & Catechisms", downloaded from Get Resources as one job. A pack is a rule over the Books (their subjects, authors, collections and years), so it grows as the catalogue grows; "All Books" is every Book. Each Book of a pack is still downloaded from its publisher and checked like any other.
+_Avoid_: Bundle, Bundle pack, Set
+
 **Division**:
 One chapter or section of a Book, from its headings: the shallowest heading level the Book uses more than once. The Contents pane lists them. Text before the first one is the Division "Front matter".
 _Avoid_: Chapter (a Bible chapter), Section (a Commentary section), Part (a file of a split Markdown book)

@@ -14,6 +14,9 @@
 //! - `cargo xtask tcp-books --refresh`: re-pin every row at its repository's current commit;
 //! - `cargo xtask tcp-books`: check every row again from the cache (or a fresh download).
 //!
+//! Each row's subjects are TCP's catalogue's (`TCP.csv`, `Terms`; `--catalog` names a copy,
+//! else it is downloaded into the cache), for Book packs (#415).
+//!
 //! Downloads are cached under `<cache>/<id>-<commit>.xml` (`--cache`, default
 //! `target/tcp-books`). Repositories are read with `git ls-remote`, files with `curl`. The
 //! output is sorted by id, so the same inputs give the same bytes.
@@ -33,6 +36,8 @@ struct Args {
     add: Option<PathBuf>,
     refresh: bool,
     cache: PathBuf,
+    /// TCP's catalogue, `TCP.csv` (default: downloaded into the cache).
+    catalog: Option<PathBuf>,
     jobs: usize,
 }
 
@@ -41,6 +46,7 @@ fn parse_args(root: &Path, rest: &[String]) -> Result<Args> {
         add: None,
         refresh: false,
         cache: root.join("target/tcp-books"),
+        catalog: None,
         jobs: 8,
     };
     let mut it = rest.iter();
@@ -50,6 +56,9 @@ fn parse_args(root: &Path, rest: &[String]) -> Result<Args> {
             "--refresh" => args.refresh = true,
             "--cache" => {
                 args.cache = PathBuf::from(it.next().context("--cache needs a folder")?);
+            }
+            "--catalog" => {
+                args.catalog = Some(PathBuf::from(it.next().context("--catalog needs a file")?));
             }
             "--jobs" => {
                 args.jobs = it.next().context("--jobs needs a number")?.parse()?;
@@ -127,7 +136,7 @@ fn text_at(id: &str, commit: &str, cache: &Path) -> Result<Vec<u8>> {
 }
 
 /// Check one text and make its row.
-fn check(id: &str, commit: &str, bytes: &[u8]) -> Result<TcpBook> {
+fn check(id: &str, commit: &str, bytes: &[u8], subjects: &str) -> Result<TcpBook> {
     let xml = std::str::from_utf8(bytes).with_context(|| format!("{id}: not UTF-8"))?;
     let header = obs_formats::read_tei_header(xml).map_err(|e| anyhow::anyhow!("{id}: {e}"))?;
     let statement = tcp_statement(&header.availability).with_context(|| {
@@ -160,11 +169,70 @@ fn check(id: &str, commit: &str, bytes: &[u8]) -> Result<TcpBook> {
         author: header.author,
         title: obs_formats::short_title(&header.title),
         statement: statement.to_string(),
+        subjects: subjects.to_string(),
     })
+}
+
+/// Where TCP publishes its catalogue.
+const TCP_CATALOG: &str =
+    "https://raw.githubusercontent.com/textcreationpartnership/Texts/master/TCP.csv";
+
+/// Each TCP id's subject headings (`TCP.csv`'s `Terms`, `; `-separated).
+fn read_subjects(path: &Path) -> Result<BTreeMap<String, String>> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let rows = crate::pg_books::parse_csv(&text);
+    let header = rows.first().context("empty TCP.csv")?;
+    let col = |name: &str| {
+        header
+            .iter()
+            .position(|h| h == name)
+            .with_context(|| format!("TCP.csv has no {name} column"))
+    };
+    let (id, terms) = (col("TCP")?, col("Terms")?);
+    Ok(rows[1..]
+        .iter()
+        .filter_map(|r| {
+            let subjects = r
+                .get(terms)?
+                .split(';')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("; ");
+            Some((r.get(id)?.clone(), subjects))
+        })
+        .collect())
 }
 
 pub fn run(root: &Path, rest: &[String]) -> Result<()> {
     let args = parse_args(root, rest)?;
+    let catalog = match &args.catalog {
+        Some(p) => p.clone(),
+        None => {
+            std::fs::create_dir_all(&args.cache)?;
+            let p = args.cache.join("TCP.csv");
+            if !p.exists() {
+                let status = Command::new("curl")
+                    .args([
+                        "--fail",
+                        "--location",
+                        "--silent",
+                        "--show-error",
+                        "--output",
+                    ])
+                    .arg(&p)
+                    .arg(TCP_CATALOG)
+                    .status()
+                    .context("could not run `curl`")?;
+                if !status.success() {
+                    bail!("download of {TCP_CATALOG} failed ({status})");
+                }
+            }
+            p
+        }
+    };
+    let subjects = read_subjects(&catalog)?;
     let out_path = root.join(OUT);
     let existing = match std::fs::read_to_string(&out_path) {
         Ok(text) => parse_tcp_books(&text).map_err(|e| anyhow::anyhow!(e))?,
@@ -212,7 +280,8 @@ pub fn run(root: &Path, rest: &[String]) -> Result<()> {
                             None => head_commit(id)?,
                         };
                         let bytes = text_at(id, &commit, &args.cache)?;
-                        check(id, &commit, &bytes)
+                        let subjects = subjects.get(id).map_or("", String::as_str);
+                        check(id, &commit, &bytes, subjects)
                     })();
                     if (i + 1).is_multiple_of(250) {
                         eprintln!("tcp-books: {} of {total}", i + 1);
