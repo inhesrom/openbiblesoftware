@@ -8,8 +8,17 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# The UI the app opens (ADR 0025, rule 2). egui ships until the cutover (#401). `--features gpui`
+# opens the GPUI UI being built instead (#371); `--no-default-features --features gpui` builds
+# it without egui. The benchmarks (`--bench`) need egui.
+default = ["egui"]
+egui = ["dep:obs-ui-egui", "dep:eframe", "dep:fontdb", "dep:arboard"]
+gpui = ["dep:obs-ui-gpui"]
+
 [dependencies]
-obs-ui-egui.workspace = true
+obs-ui-egui = { workspace = true, optional = true }
+obs-ui-gpui = { workspace = true, optional = true }
 # Log files and Crash reports (#219): the logger and panic hook are installed in `main`.
 obs-engine.workspace = true
 # The debug build's forced panic logs as a windowing library would (#219's end-to-end test).
@@ -21,16 +30,16 @@ ureq = "3"
 serde_json.workspace = true
 # View → Fonts (#138): installed fonts are enumerated and read here, in the app, so the
 # libraries stay WASM-clean. No memory maps: chosen files are read once into memory.
-fontdb = { version = "0.24", default-features = false, features = ["std", "fs", "fontconfig"] }
+fontdb = { version = "0.24", default-features = false, features = ["std", "fs", "fontconfig"], optional = true }
 # Copy verses (#154) puts HTML on the clipboard as rich text; eframe's own clipboard copies
 # plain text only. The same arboard eframe's `clipboard` feature links.
-arboard = { version = "3.6", default-features = false }
+arboard = { version = "3.6", default-features = false, optional = true }
 # Get Resources (#244): the OS language heads the language filter. Reads the OS setting
 # (CoreFoundation, Win32, or LANG/LC_* on Linux) with no further dependencies on desktop.
 sys-locale = "0.3"
 # `links` opens hyperlinks (Credits, About's change record) in the system browser.
 # `clipboard` copies to the system clipboard; without it egui keeps copies inside the app.
-eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links", "clipboard"] }
+eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links", "clipboard"], optional = true }
 
 [dev-dependencies]
 obs-engine.workspace = true

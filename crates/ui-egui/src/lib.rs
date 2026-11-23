@@ -78,86 +78,19 @@ impl App {
     /// added to it and opened. Like any Resource, that file takes its place in the Preferred
     /// order: at the bottom of its type unless the order already ranks it.
     pub fn with_file(path: Option<PathBuf>) -> Self {
-        #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
-        let mut session = obs_engine::Session::new(obs_engine::JobMode::default_for_host());
-        let mut problems = Vec::new();
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some(p) = &path
-                && let Err(e) = session.library.add_file(p)
-            {
-                problems.push(format!("{}: {e}", p.display()));
-            }
-            if let Some(dir) = obs_engine::default_library_dir() {
-                for (f, e) in session.library.scan(&dir) {
-                    problems.push(format!("{}: {e}", f.display()));
-                }
-            }
-            // Get Bibles opens on the last fetched catalog, even offline (#91).
-            if let Some(cache) = obs_engine::get_bibles::default_catalog_cache() {
-                session.get_bibles.set_cache_path(cache);
-            }
-            // Search indexes (#58): Imports build theirs into the cache folder (this installs
-            // the Import indexer); missing or stale ones rebuild in the background.
-            if let Some(dir) = obs_engine::default_search_cache_dir() {
-                session.set_search_cache_dir(dir);
-            }
-            session.refresh_search_indexes();
-            // People & places ↔ Dictionary aliases (#54): a derived cache per pair, rebuilt in
-            // the background when either Resource changed (or used prebuilt for the Starter).
-            if let Some(dir) = obs_engine::aliases::default_alias_cache_dir() {
-                session.set_alias_cache_dir(dir);
-            }
-            session.refresh_alias_caches();
-            // Help → Open log folder and Report a problem (#219).
-            if let Some(dir) = obs_engine::diagnostics::default_log_dir() {
-                session.set_log_dir(dir);
-            }
-        }
-        #[cfg(target_arch = "wasm32")]
-        if let Some(p) = &path {
-            problems.push(format!(
-                "{}: opening files is not supported here",
-                p.display()
-            ));
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(db) = obs_engine::default_user_db() {
-            match obs_store::UserStore::open(&db) {
-                Ok((store, _)) => session.attach_user(Box::new(store)),
-                Err(e) => problems.push(format!("User database {}: {e}", db.display())),
-            }
-        }
-        // The Starter library (#131): added from the bundle on the first run (newer revisions
-        // and new Starter Resources later); without a bundle, offered for download once.
-        #[cfg(not(target_arch = "wasm32"))]
-        let offer_starter = {
-            session
-                .starter
-                .set_download_base(&obs_engine::starter::default_download_base());
-            let sync =
-                session.sync_starter_library(obs_engine::starter::find_starter_bundle().as_deref());
-            problems.extend(sync.problems);
-            sync.offer_download
-        };
-        #[cfg(target_arch = "wasm32")]
-        let offer_starter = false;
+        let obs_engine::launch::Launch {
+            session,
+            problems,
+            offer_starter,
+            startup_resource,
+        } = obs_engine::launch::open_session(path.as_deref());
         let mut shell = Shell::new(session);
         shell.restore_at_launch();
         // A Crash report from the last run is offered, on top of the restored Workspace.
         shell.offer_crash_report();
         // A file given on the command line shows on top of the restored Workspace and Home.
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(p) = &path
-            && let Some(id) = shell
-                .session()
-                .library
-                .entries()
-                .iter()
-                .find(|e| e.path == *p)
-                .map(|e| e.manifest.resource_id.clone())
-        {
-            shell.show_startup_resource(&id);
+        if let Some(id) = &startup_resource {
+            shell.show_startup_resource(id);
         }
         if let Some(p) = problems.first() {
             shell
@@ -199,18 +132,7 @@ impl App {
     /// come through the transport [`Self::with_fetch`] sets.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_update_checks(mut self) -> Self {
-        use obs_engine::updates::{
-            CLEAN_UP_PATIENCE, Install, UpdateSource, clean_up_update_folder_at_launch,
-        };
-        let session = self.shell.session_mut();
-        session.set_update_source(UpdateSource::from_env());
-        if let Some(install) = Install::current() {
-            let dir = install.dir.clone();
-            let _ = std::thread::Builder::new()
-                .name("update clean-up".into())
-                .spawn(move || clean_up_update_folder_at_launch(&dir, CLEAN_UP_PATIENCE));
-            session.set_install(install);
-        }
+        obs_engine::launch::start_update_checks(self.shell.session_mut());
         self.shell.arm_launch_update_check();
         self
     }

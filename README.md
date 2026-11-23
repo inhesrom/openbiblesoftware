@@ -278,6 +278,10 @@ OBS_STARTER_DIR=dist/starter target/release/openbible  # a release build needs t
 See [`docs/dev/starter-library.md`](docs/dev/starter-library.md). Pushing a `v*` tag publishes
 the Release archives; see [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
+The desktop UI is moving from egui to GPUI ([ADR 0025](docs/adr/0025-the-desktop-ui-moves-to-gpui-beside-egui-and-egui-takes-no-new-features-until-the-cutover.md)).
+`cargo run -p openbible --features gpui` opens the GPUI UI built so far; see
+[`docs/dev/ui-gpui.md`](docs/dev/ui-gpui.md).
+
 ## Contributing
 
 Domain language lives in [`CONTEXT.md`](CONTEXT.md), decisions in [`docs/adr/`](docs/adr/),
@@ -294,7 +298,7 @@ images on this page included.
 | L2 | `obs-formats`, `obs-layout`, `obs-search`, `obs-store` (the only SQLite user) |
 | L3 | `obs-render` |
 | L4 | `obs-engine` |
-| L6 | `obs-ui-egui` (the only egui/eframe user) |
+| L6 | `obs-ui-egui` (the only egui/eframe user), `obs-ui-gpui` (the only GPUI user) |
 | apps | `openbible` (desktop), `obs-cli` |
 
 A crate may depend only on its own or lower layers. Everything below L6 compiles for

@@ -26,6 +26,13 @@ jobs:
       - name: Install toolchain
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      # The GPUI UI (ADR 0025) links these on Linux; clippy and the tests build it.
+      - name: GPUI's build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev
       - uses: taiki-e/install-action@nextest
       # The `licenses` gate regenerates the third-party licence listing (Help → Credits).
       - uses: taiki-e/install-action@v2
@@ -142,6 +149,45 @@ jobs:
             target/update-e2e/shots/
             target/update-e2e/data/logs/
           if-no-files-found: warn
+
+  # The GPUI UI being built beside egui (ADR 0025, #377): the app built with `--features gpui`
+  # opens its window, draws a frame and quits (`--smoke`), with its data in a scratch folder.
+  gpui-smoke:
+    name: GPUI smoke run (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # Build dependencies, a display, and Vulkan for GPUI's wgpu renderer (Mesa's lavapipe).
+      - name: GPUI's build dependencies and a display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libvulkan1 mesa-vulkan-drivers xvfb
+      - name: cargo build -p openbible --features gpui
+        run: cargo build --locked -p openbible --features gpui
+      - name: openbible --smoke
+        shell: bash
+        run: |
+          scratch="$RUNNER_TEMP/gpui-smoke"
+          mkdir -p "$scratch"
+          export XDG_DATA_HOME="$scratch/data" XDG_CONFIG_HOME="$scratch/config" \
+            XDG_CACHE_HOME="$scratch/cache" HOME="$scratch/home" \
+            APPDATA="$scratch/appdata" LOCALAPPDATA="$scratch/localappdata"
+          mkdir -p "$HOME" "$APPDATA" "$LOCALAPPDATA"
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a -s "-screen 0 1280x800x24" target/debug/openbible --smoke
+          else
+            target/debug/openbible --smoke
+          fi
 
   bench:
     name: xtask bench

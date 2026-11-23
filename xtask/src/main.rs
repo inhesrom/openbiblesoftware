@@ -23,11 +23,11 @@ const USAGE: &str = "usage: cargo xtask <task>
 tasks:
   ci       run every gate below, in order
   fmt      cargo fmt --check
-  clippy   cargo clippy -D warnings on all targets
+  clippy   cargo clippy -D warnings on all targets, and on the app with the GPUI UI
   a11y     the accessibility audit (#182): names, keyboard and contrast of every surface
   test     cargo nextest (falls back to cargo test locally) plus doctests
   layers   enforce the crate layering rules (ADR 0005, #12)
-  wasm     cargo check every non-app crate for wasm32-unknown-unknown
+  wasm     cargo check every non-app crate for wasm32-unknown-unknown (not obs-ui-gpui)
   assets   every file under an assets/ directory has an ATTRIBUTION.toml entry
   licenses the committed third-party licence listing matches cargo-about's (`--check`);
            without `--check`, regenerate it (`cargo xtask licenses --help`)
@@ -184,7 +184,18 @@ fn clippy(root: &Path) -> Result<()> {
             "-D",
             "warnings",
         ],
-    )
+    )?;
+    // The app with the GPUI UI (ADR 0025, rule 2): beside egui, then on its own.
+    for features in [
+        &["--features", "gpui"][..],
+        &["--no-default-features", "--features", "gpui"],
+    ] {
+        let mut args = vec!["clippy", "-p", "openbible", "--all-targets", "--locked"];
+        args.extend_from_slice(features);
+        args.extend_from_slice(&["--", "-D", "warnings"]);
+        cargo(root, &args)?;
+    }
+    Ok(())
 }
 
 /// The accessibility audit (#182, `docs/dev/accessibility.md`): every Tab kind, toolbar pane,

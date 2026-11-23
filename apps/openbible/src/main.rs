@@ -5,22 +5,39 @@
 //! scroll/fling/jump benchmark and its feature scenarios (`cargo xtask bench`).
 //! `openbible --bench --scale [--dir DIR] [--resources N] [--quick] [--json OUT]` runs the
 //! scale scenario over a generated library (`cargo xtask bench --scale`, #227).
+//!
+//! The UI is chosen when the app is built (ADR 0025, rule 2): egui by default, the GPUI UI
+//! being built (#371) with `--features gpui`, which then wins if both are compiled in. The GPUI
+//! app's `openbible --smoke` opens the window, waits for a frame to be drawn and quits (CI).
+
+#[cfg(not(any(feature = "egui", feature = "gpui")))]
+compile_error!("build openbible with the `egui` feature (the default) or the `gpui` feature");
 
 use std::process::ExitCode;
 use std::sync::Arc;
 
+#[cfg(feature = "egui")]
 use obs_ui_egui::bench::{BenchConfig, run, scale, synthetic_bible};
 
+// The egui app's glue: what its Shell is handed at launch.
+#[cfg(feature = "egui")]
+#[cfg_attr(feature = "gpui", allow(dead_code))]
 mod clipboard;
 mod fetch;
+#[cfg(feature = "egui")]
+#[cfg_attr(feature = "gpui", allow(dead_code))]
 mod fonts;
 #[cfg(test)]
 mod live_tests;
+#[cfg(feature = "egui")]
+#[cfg_attr(feature = "gpui", allow(dead_code))]
 mod system_motion;
 // macOS: the menu bar is the window's title bar (#297); elsewhere only `main_viewport` is used.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(feature = "egui")]
+#[cfg_attr(any(not(target_os = "macos"), feature = "gpui"), allow(dead_code))]
 mod title_bar;
 
+#[cfg(feature = "egui")]
 fn bench(args: &[String]) -> ExitCode {
     let mut cfg = BenchConfig::default();
     let mut json: Option<String> = None;
@@ -110,6 +127,7 @@ fn bench(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[cfg(feature = "egui")]
 /// The scale scenario (#227): the library generated (or kept from an earlier run), the app
 /// launched over it to reset the Last session, then the measured run, each in a process of
 /// its own whose folders are all inside the scale folder.
@@ -177,6 +195,7 @@ fn bench_scale(
     ExitCode::SUCCESS
 }
 
+#[cfg(feature = "egui")]
 /// One process of the scale scenario ([`bench_scale`]), started with its folders' environment.
 fn bench_scale_child(
     started: std::time::Instant,
@@ -261,18 +280,31 @@ fn main() -> ExitCode {
         println!("openbible {}", obs_engine::updates::APP_VERSION);
         return ExitCode::SUCCESS;
     }
-    if args.first().is_some_and(|a| a == "--bench") {
-        return bench(&args[1..]);
-    }
-    if let Some(mode) = args
-        .first()
-        .filter(|a| *a == "--bench-scale-prepare" || *a == "--bench-scale-run")
+    #[cfg(feature = "egui")]
     {
-        // The folders come from the environment; the folder argument checks it.
-        let root = args.get(1).map(String::as_str).unwrap_or_default();
-        return bench_scale_child(started, mode, root, args.get(2..).unwrap_or_default());
+        if args.first().is_some_and(|a| a == "--bench") {
+            return bench(&args[1..]);
+        }
+        if let Some(mode) = args
+            .first()
+            .filter(|a| *a == "--bench-scale-prepare" || *a == "--bench-scale-run")
+        {
+            // The folders come from the environment; the folder argument checks it.
+            let root = args.get(1).map(String::as_str).unwrap_or_default();
+            return bench_scale_child(started, mode, root, args.get(2..).unwrap_or_default());
+        }
     }
     start_diagnostics();
+    #[cfg(feature = "gpui")]
+    return run_gpui(started, &args);
+    #[cfg(not(feature = "gpui"))]
+    run_egui(&args)
+}
+
+/// The egui app: the UI that ships until the cutover (ADR 0025).
+#[cfg(feature = "egui")]
+#[cfg_attr(feature = "gpui", allow(dead_code))]
+fn run_egui(args: &[String]) -> ExitCode {
     let options = eframe::NativeOptions {
         viewport: title_bar::main_viewport(),
         ..Default::default()
@@ -299,6 +331,39 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("openbible: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// The GPUI app being built (ADR 0025, #371): the same Session as the egui app's, in a window
+/// that draws an empty Workspace for now. `--smoke` quits once a frame has been drawn.
+#[cfg(feature = "gpui")]
+fn run_gpui(started: std::time::Instant, args: &[String]) -> ExitCode {
+    use obs_ui_gpui::{Options, Outcome};
+    let smoke = args.iter().any(|a| a == "--smoke");
+    let file = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .map(std::path::PathBuf::from);
+    let mut launch = obs_engine::launch::open_session(file.as_deref());
+    launch.session.set_fetch(Arc::new(fetch::HttpFetch::new()));
+    launch
+        .session
+        .get_bibles
+        .set_system_language(sys_locale::get_locale());
+    obs_engine::launch::start_update_checks(&mut launch.session);
+    match obs_ui_gpui::run(launch, Options { smoke }, started) {
+        Outcome::Closed => ExitCode::SUCCESS,
+        Outcome::SmokePassed { first_frame } => {
+            println!(
+                "openbible --smoke: a frame was drawn {} ms after start",
+                first_frame.as_millis()
+            );
+            ExitCode::SUCCESS
+        }
+        Outcome::SmokeFailed(e) => {
+            eprintln!("openbible --smoke: {e}");
             ExitCode::FAILURE
         }
     }

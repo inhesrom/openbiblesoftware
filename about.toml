@@ -23,6 +23,9 @@ accepted = [
     "bzip2-1.0.6",
     "OFL-1.1",
     "Ubuntu-font-1.0",
+    # Unmodified dependencies only (ADR 0025, rule 8): the GPUI UI brings `option-ext`, and
+    # `dwrote` on Windows. A patch to an MPL-2.0 file is published.
+    "MPL-2.0",
 ]
 
 # The desktop targets the app ships for, so the listing is the same whichever host runs it.

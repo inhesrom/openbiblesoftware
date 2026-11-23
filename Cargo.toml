@@ -22,6 +22,7 @@ obs-store = { path = "crates/store" }
 obs-render = { path = "crates/render" }
 obs-engine = { path = "crates/engine" }
 obs-ui-egui = { path = "crates/ui-egui" }
+obs-ui-gpui = { path = "crates/ui-gpui" }
 
 # Shared third-party crates.
 serde = { version = "1", features = ["derive"] }
@@ -46,6 +47,10 @@ hypher = { version = "0.1", default-features = false, features = ["alloc", "engl
 egui = "0.37"
 eframe = { version = "0.37", default-features = false }
 egui_tiles = "0.18"
+# The GPUI UI (ADR 0025; #373, docs/research/gpui-stack.md): GPUI and `gpui-base` (the dock,
+# text inputs, AccessKit roles) without the styled component layer. Pinned exactly: every
+# weekly release may break the API, so it is bumped on purpose in its own pull request.
+gpui-kit = { version = "=0.10.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

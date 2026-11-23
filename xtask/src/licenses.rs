@@ -7,7 +7,11 @@
 //! text and the crates under it), sorts it, and writes [`OUTPUT`], which the engine embeds.
 //!
 //! The `licenses` gate regenerates the listing and fails when the committed file differs, so it
-//! cannot go stale when a dependency changes. cargo-about runs with `--frozen` after
+//! cannot go stale when a dependency changes. The listing is the default build's, the app that
+//! ships. While the GPUI UI is built beside egui (ADR 0025), the gate also runs cargo-about over
+//! the GPUI build ([`GPUI_BUILD`]), so a crate under a licence `about.toml` does not accept
+//! fails the gate before that build ships; at the cutover (#401) it becomes the default build
+//! and so the listing's. cargo-about runs with `--frozen` after
 //! `cargo fetch`: it reads only the licence files packaged in each crate and never the network,
 //! so every host produces the same bytes.
 
@@ -23,6 +27,9 @@ pub const OUTPUT: &str = "crates/engine/data/third-party-licenses.json";
 const CONFIG: &str = "about.toml";
 /// The app whose dependency graph is listed (`obs-cli`'s is a subset of it).
 const APP_MANIFEST: &str = "apps/openbible/Cargo.toml";
+/// The app built with the GPUI UI and without egui (ADR 0025, rule 2): its licences must be
+/// accepted too.
+const GPUI_BUILD: &[&str] = &["--no-default-features", "--features", "gpui"];
 /// Output can change between cargo-about releases, so the gate insists on this one.
 pub const CARGO_ABOUT_VERSION: &str = "0.9.3";
 
@@ -152,6 +159,11 @@ fn check(root: &Path, required: bool) -> Result<()> {
         listing.crates.len(),
         listing.licenses.len()
     );
+    let gpui = listing_of(root, GPUI_BUILD, "cargo-about-gpui.json")?;
+    eprintln!(
+        "licenses: the GPUI build's {} crate(s) are all under accepted licences",
+        gpui.crates.len()
+    );
     Ok(())
 }
 
@@ -171,6 +183,16 @@ fn cargo_bin() -> String {
 
 /// Run cargo-about and return the listing as committed (pretty JSON, LF, trailing newline).
 fn generate(root: &Path) -> Result<String> {
+    let listing = listing_of(root, &[], "cargo-about.json")?;
+    let mut json = serde_json::to_string_pretty(&listing)?;
+    json.push('\n');
+    Ok(json)
+}
+
+/// Run cargo-about over the app built with `features` (none: the default build), writing its
+/// output to `target/xtask-licenses/<file>`. cargo-about fails when a crate's licence is not
+/// accepted by `about.toml`.
+fn listing_of(root: &Path, features: &[&str], file: &str) -> Result<Listing> {
     let version =
         installed_version().with_context(|| format!("cargo-about is not installed\n\n{USAGE}"))?;
     if version != format!("cargo-about {CARGO_ABOUT_VERSION}") {
@@ -182,7 +204,7 @@ fn generate(root: &Path) -> Result<String> {
     crate::cargo(root, &["fetch", "--locked"])?;
     // To a file, not stdout: cargo-about refuses to have its output redirected under
     // PowerShell (the Windows CI shell), for fear of re-encoding.
-    let json_path = root.join("target/xtask-licenses/cargo-about.json");
+    let json_path = root.join("target/xtask-licenses").join(file);
     if let Some(dir) = json_path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     }
@@ -199,8 +221,9 @@ fn generate(root: &Path) -> Result<String> {
             CONFIG,
             "-m",
             APP_MANIFEST,
-            "-o",
         ])
+        .args(features)
+        .arg("-o")
         .arg(&json_path)
         .current_dir(root)
         .output()
@@ -216,10 +239,7 @@ fn generate(root: &Path) -> Result<String> {
         .with_context(|| format!("cargo-about wrote no {}", json_path.display()))?;
     let about: About =
         serde_json::from_slice(&bytes).context("cargo-about wrote unexpected JSON")?;
-    let listing = listing(about);
-    let mut json = serde_json::to_string_pretty(&listing)?;
-    json.push('\n');
-    Ok(json)
+    Ok(listing(about))
 }
 
 fn listing(about: About) -> Listing {

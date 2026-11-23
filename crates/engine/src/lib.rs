@@ -94,6 +94,7 @@ mod keyboard_navigation_tests;
 pub mod language_names;
 #[cfg(test)]
 mod language_names_tests;
+pub mod launch;
 mod library;
 mod library_commands;
 pub mod library_search;
