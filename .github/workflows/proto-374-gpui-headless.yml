@@ -44,6 +44,7 @@ jobs:
         if: runner.os != 'Linux'
         run: |
           cargo build --release --bin capture
+          mkdir -p out
           for n in 1 2 3; do ./target/release/capture "out/capture-light-$n.png" light; done
           ./target/release/capture out/capture-dark-1.png dark
           ./target/release/capture compare out/capture-light-1.png out/capture-light-2.png
