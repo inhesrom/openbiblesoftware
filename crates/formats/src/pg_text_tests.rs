@@ -181,6 +181,85 @@ fn an_old_gutenberg_text_is_read_between_its_small_print_and_its_end() {
     assert_eq!(import(no_end).0.units[0].text, "The text.");
 }
 
+/// What the first books checked in the app showed (#345): a start line wrapped by a long
+/// title, notes and a sentence of front matter after a gap, a contents list set apart entry by
+/// entry, and a contents list's entries in capitals.
+#[test]
+fn notes_sentences_and_contents_lists_are_not_chapters() {
+    let text = "*** START OF THE PROJECT GUTENBERG EBOOK PAROCHIAL AND PLAIN SERMONS,\n\
+                VOL. VII (OF 8)***\n\n\n\n\nTHE BOOK\n\nCONTENTS.\n\nCHAPTER I. INTRODUCTORY\n\n\
+                CHAPTER II. I TRY\n\n\n\n\nThe Book was originally published in 1872 by Tinsley Brothers, London.\n\n\
+                \n\n\nCHAPTER I\n\n\n\n\nCHAPTER II\n\n\n\n\nCHAPTER I.\n\nIt began.\n\n\n\n\n[1] Ps. xlix. 2-10.\n\n\
+                \n\n\nCHAPTER II.\n\nIt went on.\n\n*** END OF THE PROJECT GUTENBERG EBOOK X ***\n";
+    let (r, _) = import(text);
+    let titles: Vec<&str> = r
+        .units
+        .iter()
+        .map(|u| u.title.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(titles, ["THE BOOK", "CHAPTER I.", "CHAPTER II."]);
+    let front = &r.units[0];
+    assert!(
+        !front.text.contains("***") && !front.text.contains("VII (OF 8)"),
+        "{}",
+        front.text
+    );
+    assert!(
+        front
+            .text
+            .contains("The Book was originally published in 1872")
+    );
+    let list: Vec<&str> = front
+        .spans
+        .iter()
+        .filter(|s| {
+            s.kind
+                == SpanKind::Para {
+                    style: ParaStyle::List,
+                }
+        })
+        .map(|s| &front.text[s.range()])
+        .collect();
+    assert_eq!(list, ["CHAPTER I. INTRODUCTORY", "CHAPTER II. I TRY"]);
+    // The entries set apart joined the front matter; the note stays in its chapter.
+    assert!(
+        front.text.ends_with("CHAPTER I\nCHAPTER II"),
+        "{}",
+        front.text
+    );
+    assert!(
+        r.units[1].text.ends_with("[1] Ps. xlix. 2-10."),
+        "{}",
+        r.units[1].text
+    );
+}
+
+/// In a book divided by chapter words (no gaps), a contents list's "CHAPTER I" is an entry,
+/// not a chapter.
+#[test]
+fn chapter_words_in_a_contents_list_are_entries() {
+    let text = "*** START OF THE PROJECT GUTENBERG EBOOK X ***\n\nPREFACE.\n\nWords.\n\nCONTENTS.\n\n\
+                CHAPTER I\n\nRISE OF THE THEORY  1-16\n\nCHAPTER II\n\nTHE SECOND  17\n\n\n\n\n\
+                CHAPTER I.\n\nOne.\n\nCHAPTER II.\n\nTwo.\n\n*** END OF THE PROJECT GUTENBERG EBOOK X ***\n";
+    let (r, _) = import(text);
+    let titles: Vec<&str> = r
+        .units
+        .iter()
+        .map(|u| u.title.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(titles, ["PREFACE.", "CHAPTER I.", "CHAPTER II."]);
+    // With no gap before the chapters, the contents list ends where its first entry comes
+    // again.
+    let tight = text.replace("\n\n\n\n\nCHAPTER I.", "\n\nCHAPTER I.");
+    let (r, _) = import(&tight);
+    let titles: Vec<&str> = r
+        .units
+        .iter()
+        .map(|u| u.title.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(titles, ["PREFACE.", "CHAPTER I.", "CHAPTER II."]);
+}
+
 #[test]
 fn what_is_not_a_gutenberg_text_is_refused() {
     assert!(import_pg_text("Just text.", &options("pg-text-bad"), |_, _| true).is_err());

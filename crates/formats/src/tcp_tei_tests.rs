@@ -318,6 +318,44 @@ fn works_printed_together_read_in_turn() {
     assert_eq!(report.entries, 5);
 }
 
+/// TCP's marks the reading font has no glyph for are written as their equivalents; an
+/// ornament is dropped, so a word broken at the line's end around it is still joined.
+#[test]
+fn tcp_marks_are_written_in_glyphs_the_reading_font_has() {
+    let xml = "<TEI><text><body><div><head><g ref=\"char:leaf\">\u{2767}</g> THE CON<g ref=\"char:EOLhyphen\"/>\n\
+               <g ref=\"char:leaf\">\u{2767}</g><lb/>tentes</head>\
+               <p>A <gap reason=\"illegible\"><desc>\u{3008}\u{25ca}\u{3009}</desc></gap> word<g ref=\"char:punc\">\u{25aa}</g> \
+               o\u{254c}pen \u{271a} \u{261e} see<gap reason=\"missing\"/>.</p></div></body></text></TEI>";
+    let (r, report) = import(xml);
+    let u = &r.units[0];
+    assert_eq!(u.title.as_deref(), Some("THE CONtentes"));
+    assert_eq!(
+        u.text,
+        "THE CONtentes\nA \u{27e8}\u{25ca}\u{27e9} word\u{b7} o-pen + \u{2192} see\u{27e8}\u{2026}\u{27e9}."
+    );
+    assert_eq!(report.dropped_markup.get("ornament"), Some(&2));
+}
+
+/// A sermon's long head is not a prefix for its parts: the first part takes it as its title,
+/// the rest their own.
+#[test]
+fn a_long_part_title_titles_its_first_part_and_prefixes_none() {
+    let xml = "<TEI><text><body><div type=\"text\"><head>THE BLACK DEVILL OR The APOSTATE.</head>\
+               <div type=\"part\"><head>The Person</head><p>One.</p></div>\
+               <div type=\"part\"><head>1. By Nature</head><p>Two.</p></div>\
+               </div></body></text></TEI>";
+    let (r, _) = import(xml);
+    let titles: Vec<&str> = r
+        .units
+        .iter()
+        .map(|u| u.title.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        titles,
+        ["THE BLACK DEVILL OR The APOSTATE.", "1. By Nature"]
+    );
+}
+
 #[test]
 fn what_is_not_a_tcp_text_is_refused_plainly() {
     for bad in [

@@ -41,6 +41,8 @@ const MAX_HEADING_CHARS: usize = 80;
 const MAX_HEADING_LINES: usize = 3;
 /// Blank lines before a paragraph that make it a chapter's heading.
 const CHAPTER_GAP: usize = 3;
+/// A chapter's heading in mixed case is at most this many words.
+const MAX_TITLE_WORDS: usize = 8;
 
 /// Words that start a chapter's heading.
 const CHAPTER_WORDS: &[&str] = &[
@@ -68,6 +70,8 @@ fn is_credit(text: &str) -> bool {
     [
         "produced by",
         "this ebook was produced",
+        "this etext",
+        "this e-text",
         "e-text prepared",
         "etext prepared",
         "transcribed by",
@@ -155,6 +159,31 @@ impl Paragraph<'_> {
     }
 }
 
+/// Whether a Division's title names a contents list.
+fn is_contents(title: &str) -> bool {
+    let t = title.trim().trim_end_matches(['.', ':']).to_lowercase();
+    matches!(
+        t.as_str(),
+        "contents" | "table of contents" | "the contents"
+    )
+}
+
+/// `b` after `a`, on a line of its own, its spans moved with it.
+fn joined(mut a: TextBuf, b: TextBuf) -> TextBuf {
+    if a.text.is_empty() {
+        return b;
+    }
+    let shift = a.text.len() + 1;
+    a.text.push('\n');
+    a.text.push_str(&b.text);
+    a.spans.extend(
+        b.spans
+            .into_iter()
+            .map(|(r, k)| (r.start + shift..r.end + shift, k)),
+    );
+    a
+}
+
 /// Push `text`: `_italic_` runs as spans and, when `pages`, `{23}` as printed pages.
 fn push_text(buf: &mut TextBuf, text: &str, pages: bool) {
     if !pages || !text.contains('{') {
@@ -226,10 +255,19 @@ fn body(text: &str) -> Option<&str> {
         }
         None
     };
-    if let Some((_, start)) = line_with(0, "START OF")
-        && let Some((end, _)) = line_with(start, "END OF")
-    {
-        return Some(&text[start..end]);
+    if let Some((line_start, mut start)) = line_with(0, "START OF") {
+        // A long title wraps the start line: it ends at the line with its closing "***".
+        if text[line_start..start].matches("***").count() < 2 {
+            for line in text[start..].split_inclusive('\n').take(3) {
+                start += line.len();
+                if line.contains("***") {
+                    break;
+                }
+            }
+        }
+        if let Some((end, _)) = line_with(start, "END OF") {
+            return Some(&text[start..end]);
+        }
     }
     // PG's texts of before 2002: the header ends "*END*THE SMALL PRINT! … *END*", the text
     // ends at "End of Project Gutenberg's …" or "End of the Project Gutenberg Etext …", or
@@ -303,13 +341,20 @@ pub fn import_pg_text(
     let only_page = |p: &Paragraph<'_>| brace_pages && brace_page(p.text().trim()).is_some();
     // A date ("1900"), a page number or a transcriber's credit after the gap is not a
     // chapter.
+    // A note ("[1] Ps. xlix. 2") or a sentence of front matter ("The Vicar's Daughter was
+    // originally published in 1872 by …") is not a chapter: a chapter's heading is a chapter
+    // word, capitals, or a few words.
     let chapter = |p: &Paragraph<'_>| {
         let text = p.text();
         p.gap >= CHAPTER_GAP
             && p.is_short()
             && text.chars().any(char::is_alphabetic)
+            && !text.starts_with('[')
             && !is_credit(&text)
             && !only_page(p)
+            && (p.starts_chapter_word()
+                || p.in_capitals()
+                || text.split_whitespace().count() <= MAX_TITLE_WORDS)
     };
     let by_gap = paras.iter().filter(|p| chapter(p)).count() >= 3;
     let starts_division = |p: &Paragraph<'_>| {
@@ -353,6 +398,17 @@ pub fn import_pg_text(
     // (title, text) of each Division.
     let mut divisions: Vec<(String, TextBuf)> = Vec::new();
     let mut current: (String, TextBuf) = (String::new(), TextBuf::new());
+    // In a contents list (after a "CONTENTS" heading, to a section's gap or to the first
+    // entry that comes again: the chapter itself), and the entries seen in it.
+    let mut contents = false;
+    let mut entries: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let entry_key = |text: &str| {
+        text.trim_end_matches(['.', ':', ' '])
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_uppercase()
+    };
     let total = paras.len();
     for (i, p) in paras.iter().enumerate() {
         if i % 5_000 == 0 && !progress(i, total) {
@@ -374,7 +430,18 @@ pub fn import_pg_text(
                 .or_default() += 1;
             continue;
         }
-        if starts_division(p) {
+        // A contents list ends at a section's gap, or where an entry comes again (the
+        // chapter it lists); inside one, "CHAPTER I" is an entry.
+        if p.gap >= CHAPTER_GAP {
+            contents = false;
+        }
+        if contents && p.is_short() && p.starts_chapter_word() {
+            let key = entry_key(p.lines[0]);
+            if !entries.insert(key) {
+                contents = false;
+            }
+        }
+        if starts_division(p) && !contents {
             if !current.1.text.trim().is_empty() {
                 divisions.push(std::mem::replace(
                     &mut current,
@@ -382,6 +449,8 @@ pub fn import_pg_text(
                 ));
             }
             current.0 = text.clone();
+            contents = is_contents(&text);
+            entries.clear();
             let buf = &mut current.1;
             let start = buf.start_block();
             buf.push_text(&text);
@@ -390,7 +459,25 @@ pub fn import_pg_text(
             continue;
         }
         let buf = &mut current.1;
-        if p.is_short() && p.in_capitals() {
+        if is_contents(&text) {
+            contents = true;
+            entries.clear();
+            let start = buf.start_block();
+            buf.push_text(&text);
+            let end = buf.pos();
+            buf.add_span(start..end, SpanKind::Heading { level: 2 });
+        } else if contents {
+            // A contents list: its entries are a list, not headings.
+            let start = buf.start_block();
+            push_with_italics(buf, &text);
+            let end = buf.pos();
+            buf.add_span(
+                start..end,
+                SpanKind::Para {
+                    style: ParaStyle::List,
+                },
+            );
+        } else if p.is_short() && p.in_capitals() {
             let start = buf.start_block();
             buf.push_text(&text);
             let end = buf.pos();
@@ -422,6 +509,23 @@ pub fn import_pg_text(
     if !current.1.text.trim().is_empty() {
         divisions.push(current);
     }
+    // A Division of headings only after the first (an entry of a contents list set apart, a
+    // part's title) joins the one before it.
+    let mut merged: Vec<(String, TextBuf)> = Vec::new();
+    for (title, buf) in divisions {
+        let headings_only = !buf
+            .spans
+            .iter()
+            .any(|(_, k)| matches!(k, SpanKind::Para { .. }));
+        match merged.last_mut() {
+            Some((_, last)) if headings_only => {
+                let last_buf = std::mem::take(last);
+                *last = joined(last_buf, buf);
+            }
+            _ => merged.push((title, buf)),
+        }
+    }
+    let divisions = merged;
     let mut written = 0u32;
     for (i, (title, mut buf)) in divisions.into_iter().enumerate() {
         buf.normalize_nfc();
