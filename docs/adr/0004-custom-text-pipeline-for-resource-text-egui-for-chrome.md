@@ -1,5 +1,7 @@
 # Resource text is laid out and drawn by our own pipeline; egui renders chrome only
 
+Amended by ADR 0025: the desktop UI moves to GPUI, which draws the chrome once it ships; Resource text keeps this pipeline, and #372 decides how its laid-out text is painted through GPUI.
+
 All text that comes from a Resource goes through our own pipeline, wherever it appears: reading panes, Text Comparison cells, Guide sections, Word Info, search results, hover popups. The pipeline uses harfrust and skrifa for shaping, unicode-bidi for direction, unicode-linebreak for line breaking, our own hit-testing and selection, and a shared glyph atlas (glyphs rastered once, then drawn as egui meshes) for painting (amended below; originally vello_cpu block textures). This follows WordCraft's architecture (MIT OR Apache-2.0), whose code we adapt with attribution rather than depend on. egui's own text handles only UI chrome: menus, labels, buttons and text inputs. Stock egui and the storytold fork as of rev 6d518fc have no bidi, so they cannot show the full Hebrew OT that v0.1 requires, and egui's label selection does not survive virtualization.
 
 ## Considered Options

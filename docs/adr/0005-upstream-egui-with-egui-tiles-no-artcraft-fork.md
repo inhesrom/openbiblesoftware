@@ -1,5 +1,7 @@
 # Upstream egui from crates.io with egui_tiles; no ArtCraft egui fork or craft-libs dependency
 
+Superseded by ADR 0025 at the cutover (#401): the desktop UI moves to GPUI. Until then this still describes the shipping UI.
+
 We build on upstream `egui`/`eframe` 0.37 from crates.io and use `egui_tiles` (MIT/Apache, already on egui 0.37) for docked Panels and Tabs. We do not depend on storytold's egui/winit forks or on craft-libs. The main reason to take the fork was bidi/RTL for Hebrew. Since ADR 0004 moved all Resource text to our own pipeline, egui now draws only chrome, and that reason is gone. What remains is a fork pinned by rev that is still changing (its PATCHES.md lists uncommitted local repairs) and is not on crates.io. Every egui-based craft-libs crate requires it, including the `craft-ui` docking we would otherwise want. We copy useful WordCraft and craft-libs code with attribution (MIT OR Apache-2.0) instead of depending on it.
 
 ## Considered Options

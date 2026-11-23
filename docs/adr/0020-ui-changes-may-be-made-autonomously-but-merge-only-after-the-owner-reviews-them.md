@@ -1,5 +1,7 @@
 # UI changes may be made autonomously, but merge only after the owner reviews them
 
+Amended by ADR 0025: `crates/ui-gpui/` is a UI path, and a GPUI port pull request shows egui and GPUI side by side for each surface it ports.
+
 Much of the work on the app is done by coding agents working on their own: they pick up an
 issue, change the code, run the checks and open a pull request. For most of the code the checks
 say whether a change is right. For the interface they cannot: the Screenshot gallery (ADR 0019)
