@@ -127,6 +127,15 @@ fn get_resources_books_by_author(h: &mut Harness) {
     h.frames(4);
 }
 
+/// Get Resources' Books, Download pack on All Books (#415): it asks first, with its size.
+fn get_resources_all_books_confirm(h: &mut Harness) {
+    run_split(h, "library.get_resources", json!({ "type": "books" }));
+    h.frames(2);
+    h.shell
+        .run("getbibles.download_pack", &json!({ "id": "all-books" }));
+    h.frames(4);
+}
+
 /// Get Resources' Books by a later author (#345): the Project Gutenberg collection's rows.
 fn get_resources_books_by_moody(h: &mut Harness) {
     run_split(h, "library.get_resources", json!({ "type": "books" }));
@@ -182,14 +191,17 @@ pub(super) fn library_wording() -> Vec<Overlay> {
             |h| h.texts().iter().any(|t| t.starts_with("ALL LEXICONS")),
         ),
         ("Get Resources: Books", get_resources_books, |h| {
-            h.texts()
-                .iter()
-                .any(|t| t.starts_with("OPEN CATALOGUE · 10"))
+            h.texts().iter().any(|t| t.starts_with("BOOK PACKS · 9"))
         }),
         (
             "Get Resources: Books by an author",
             get_resources_books_by_author,
             |h| h.texts().iter().any(|t| t.starts_with("ALL BOOKS ·")),
+        ),
+        (
+            "Get Resources: Download All Books?",
+            get_resources_all_books_confirm,
+            |h| h.find("Download All Books?").is_some(),
         ),
         (
             "Get Resources: Books of the 1800s",

@@ -15,6 +15,7 @@ use obs_engine::get_bibles::{
     LanguageChoice, ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY, TAG_STRONGS,
     UpdateCheck, UpdatesSummary,
 };
+use obs_engine::packs::{PackSummary, count_words, size_words};
 use obs_engine::{ImportPhase, LanguageName, LicenceClass, LicenceFilter, language, licence_class};
 use serde_json::json;
 
@@ -149,6 +150,8 @@ fn language_filter(
 enum Item<'a> {
     Header(String, usize),
     Listing(&'a ResourceListing),
+    /// A Book pack (#415).
+    Pack(PackSummary),
 }
 
 enum Action {
@@ -454,6 +457,14 @@ impl State {
             // Open catalogue. While a search is typed they step aside, so what it finds is
             // first (#345: thousands of Books are found only by the search).
             let mut items: Vec<Item> = Vec::new();
+            // Books: the Book packs first, each downloaded as one job (#415).
+            if filter.query.trim().is_empty()
+                && shown_filter == ResourceFilter::Type(obs_model::ResourceType::Book)
+            {
+                let packs = self.session.pack_summaries();
+                items.push(Item::Header("Book packs".to_string(), packs.len()));
+                items.extend(packs.into_iter().map(Item::Pack));
+            }
             if filter.query.trim().is_empty() {
                 for (title, rows) in gb.sections(shown_filter, shown_licence) {
                     items.push(Item::Header(title, rows.len()));
@@ -497,7 +508,7 @@ impl State {
                 + gap;
             let height = |item: &Item| match item {
                 Item::Header(..) => header_h,
-                Item::Listing(_) => ROW_HEIGHT + gap,
+                Item::Listing(_) | Item::Pack(_) => ROW_HEIGHT + gap,
             };
             let total: f32 = items.iter().map(height).sum();
             crate::components::keep_clear_of_scroll_bar(ui);
@@ -535,6 +546,12 @@ impl State {
                                     action = Some(a);
                                 }
                             }
+                            Item::Pack(p) => {
+                                ui.set_min_height(ROW_HEIGHT);
+                                if let Some(a) = pack_row(ui, p) {
+                                    action = Some(a);
+                                }
+                            }
                         });
                     }
                 });
@@ -557,6 +574,72 @@ impl State {
     }
 }
 
+/// One Book pack (#415): its title, what it holds, how much of it is in the Library and what is
+/// left to download, and its Download pack / progress and Cancel / "In your Library" control.
+fn pack_row(ui: &mut Ui, p: &PackSummary) -> Option<Action> {
+    let mut action = None;
+    let left = p.books - p.installed;
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if let Some(run) = &p.running {
+            if ui
+                .small_button("Cancel")
+                .accessible_name(format!("Cancel {}", p.title))
+                .on_hover_text("Stop after the Book downloading now; those already in stay")
+                .clicked()
+            {
+                action = Some(Action::Run("import.cancel", json!({"id": run.report})));
+            }
+            #[allow(clippy::cast_precision_loss)]
+            let fraction = if run.total > 0 {
+                run.done as f32 / run.total as f32
+            } else {
+                0.0
+            };
+            ui.add(
+                egui::ProgressBar::new(fraction)
+                    .desired_width(size::FIELD_NARROW)
+                    .text(format!("{} of {}", run.done, run.total)),
+            );
+        } else if left == 0 {
+            ui.label(crate::components::hint_text("In your Library"));
+        } else if ui
+            .button("Download pack")
+            .accessible_name(format!("Download {}", p.title))
+            .on_hover_text(format!(
+                "Download {} Book{}, about {}, each from its publisher",
+                count_words(left),
+                if left == 1 { "" } else { "s" },
+                size_words(p.remaining_bytes)
+            ))
+            .clicked()
+        {
+            action = Some(Action::Run("getbibles.download_pack", json!({"id": p.id})));
+        }
+        ui.add_space(space::M);
+        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+            ui.add(
+                egui::Label::new(RichText::new(&p.title).strong().color(theme::c().ink)).truncate(),
+            );
+            ui.add(egui::Label::new(crate::components::hint_text(&p.description)).truncate());
+            let mut facts = vec![format!(
+                "{} Book{}",
+                count_words(p.books),
+                if p.books == 1 { "" } else { "s" }
+            )];
+            if p.installed > 0 {
+                facts.push(format!("{} in your Library", count_words(p.installed)));
+            }
+            if left > 0 {
+                facts.push(format!("{} to download", size_words(p.remaining_bytes)));
+            }
+            ui.add(egui::Label::new(crate::components::hint_text(facts.join(" · "))).truncate());
+        });
+    });
+    action
+}
+
 /// Download a row: a SWORD module from its repository, or an Open catalogue entry from its
 /// publisher (#134).
 fn download(b: &ResourceListing) -> Action {
@@ -564,6 +647,46 @@ fn download(b: &ResourceListing) -> Action {
         Action::Run("getbibles.download_open", json!({"id": b.module}))
     } else {
         Action::Run("getbibles.download", json!({"module": b.module}))
+    }
+}
+
+impl State {
+    /// A large Book pack's confirmation (#415): how many Books and how large, Download or
+    /// Cancel.
+    pub(super) fn pack_prompt(&mut self, ctx: &egui::Context) {
+        let Some((pack, title, message)) = self.confirm_pack.take() else {
+            return;
+        };
+        let mut done: Option<bool> = None;
+        egui::Window::new(title.as_str())
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_max_width(size::PROSE);
+                ui.label(message.as_str());
+                ui.add_space(space::M);
+                ui.horizontal(|ui| {
+                    if ui.button("Download").clicked() {
+                        done = Some(true);
+                    }
+                    if ui.button("Cancel").clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        done = Some(false);
+                    }
+                });
+            });
+        match done {
+            None => self.confirm_pack = Some((pack, title, message)),
+            Some(false) => {}
+            Some(true) => {
+                self.run(
+                    "getbibles.download_pack",
+                    &json!({ "id": pack, "confirm": true }),
+                );
+            }
+        }
     }
 }
 

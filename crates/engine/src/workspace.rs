@@ -843,6 +843,13 @@ pub enum Effect {
         title: String,
         message: String,
     },
+    /// Ask the user to confirm downloading a large Book pack (#415); `message` gives how many
+    /// Books and how large. Confirming runs `getbibles.download_pack` with `confirm`.
+    ConfirmPack {
+        pack: String,
+        title: String,
+        message: String,
+    },
     /// A Resource left the library: drop anything loaded from it.
     Removed(String),
     /// A Resource's file was replaced under the same id (a Resource revision, a re-Import):

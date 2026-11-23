@@ -10,11 +10,41 @@ use obs_model::ResourceType;
 use serde::Deserialize;
 
 use crate::open_catalogue::OpenSource;
+use crate::session::Session;
 
 const PACKS_TOML: &str = include_str!("../data/packs.toml");
 
 /// The pack of every Book.
 pub const ALL_BOOKS: &str = "all-books";
+
+/// A pack with at least this much left to download (or All Books) asks before it starts.
+pub const CONFIRM_BYTES: u64 = 250_000_000;
+
+/// A count with thousands separated: "2,818".
+pub fn count_words(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A size in words: "24 MB", "1.9 GB".
+pub fn size_words(bytes: u64) -> String {
+    #[allow(clippy::cast_precision_loss)]
+    let mb = bytes as f64 / 1e6;
+    if mb >= 1000.0 {
+        format!("{:.1} GB", mb / 1000.0)
+    } else if mb >= 10.0 {
+        format!("{mb:.0} MB")
+    } else {
+        format!("{mb:.1} MB")
+    }
+}
 
 /// The collections a pack may be restricted to ([`OpenSource::collection_name`]).
 pub const COLLECTIONS: &[&str] = &["EEBO-TCP", "Evans-TCP", "ECCO-TCP", "Gutenberg"];
@@ -148,6 +178,170 @@ impl Pack {
             }
         }
         out
+    }
+}
+
+// ------------------------------------------------------------------------------- session
+
+/// A pack as Get Resources shows it: how many of its Books are in the Library, what is left to
+/// download, and its download while one runs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PackSummary {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    /// Its Books in the Open catalogue.
+    pub books: usize,
+    /// How many of them are in the Library.
+    pub installed: usize,
+    /// The download size of those not in the Library (bytes; Books of unknown size count 0).
+    pub remaining_bytes: u64,
+    /// Its download, while it runs: the batch's Import report id, and Books done and in all.
+    pub running: Option<PackProgress>,
+}
+
+/// A pack's running download.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PackProgress {
+    /// The batch's Import report id, for Cancel (`import.cancel`) and its report Tab.
+    pub report: String,
+    pub done: u64,
+    pub total: u64,
+}
+
+impl Session {
+    /// The Open catalogue entries downloaded and in the Library, by entry id.
+    fn open_installed(&self) -> std::collections::HashSet<&str> {
+        self.imports
+            .records()
+            .filter(|r| {
+                r.phase == crate::ImportPhase::Complete
+                    && self.library.get(&r.resource_id).is_some()
+            })
+            .filter_map(|r| r.open_origin.as_ref().map(|o| o.id.as_str()))
+            .collect()
+    }
+
+    /// Every pack, in `packs.toml`'s order, as Get Resources shows it.
+    pub fn pack_summaries(&self) -> Vec<PackSummary> {
+        let installed = self.open_installed();
+        let sources = self.get_bibles.open_sources();
+        let members = self.get_bibles.pack_members();
+        packs()
+            .iter()
+            .zip(members.iter())
+            .map(|(p, indexes)| {
+                let books: Vec<&OpenSource> =
+                    indexes.iter().filter_map(|&i| sources.get(i)).collect();
+                let have = books
+                    .iter()
+                    .filter(|s| installed.contains(s.id.as_str()))
+                    .count();
+                let remaining_bytes = books
+                    .iter()
+                    .filter(|s| !installed.contains(s.id.as_str()))
+                    .filter_map(|s| s.size)
+                    .sum();
+                let running = self.imports.packs.get(&p.id).and_then(|report| {
+                    self.imports.job_of(report)?;
+                    let r = self.imports.report(report)?;
+                    Some(PackProgress {
+                        report: report.clone(),
+                        done: r.done,
+                        total: r.total,
+                    })
+                });
+                PackSummary {
+                    id: p.id.clone(),
+                    title: p.title.clone(),
+                    description: p.description.clone(),
+                    books: books.len(),
+                    installed: have,
+                    remaining_bytes,
+                    running,
+                }
+            })
+            .collect()
+    }
+
+    /// Download every Book of pack `id` not in the Library yet, as one batch with one Import
+    /// report; each Book joins the Library, and the pack's Collection, as it comes in.
+    /// Returns the batch's report id, its Tab and the job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn download_pack(&mut self, id: &str) -> Result<(String, u64, crate::JobId), String> {
+        let pack = pack(id).ok_or_else(|| format!("There is no Book pack {id:?}"))?;
+        if let Some(report) = self.imports.packs.get(id)
+            && self.imports.job_of(report).is_some()
+        {
+            return Err(format!("{} is already downloading", pack.title));
+        }
+        let installed = self.open_installed();
+        let busy: std::collections::HashSet<String> = self
+            .imports
+            .records()
+            .filter(|r| self.imports.job_of(&r.resource_id).is_some())
+            .filter_map(|r| r.open_origin.as_ref().map(|o| o.id.clone()))
+            .collect();
+        let sources: Vec<OpenSource> = pack
+            .books(self.get_bibles.open_sources())
+            .into_iter()
+            .filter(|s| !installed.contains(s.id.as_str()) && !busy.contains(&s.id))
+            .cloned()
+            .collect();
+        if sources.is_empty() {
+            return Err(format!(
+                "Every Book of {} is in your Library already",
+                pack.title
+            ));
+        }
+        let stream = crate::books::PackStream::new(sources, self.fetch(), self.pack_pause);
+        let (report, tab, job) = self.start_book_batch(
+            Box::new(stream),
+            format!(
+                "Book pack \u{201c}{}\u{201d} from the Open catalogue",
+                pack.title
+            ),
+            &pack.title,
+        )?;
+        self.imports.packs.insert(pack.id.clone(), report.clone());
+        Ok((report, tab, job))
+    }
+
+    /// Whether downloading pack `id` asks first: All Books, or [`CONFIRM_BYTES`] or more left
+    /// to download. When it does, the question is pushed as [`crate::Effect::ConfirmPack`].
+    pub fn ask_before_pack(&mut self, id: &str) -> bool {
+        let Some(p) = self.pack_summaries().into_iter().find(|p| p.id == id) else {
+            return false;
+        };
+        let left = p.books - p.installed;
+        if left == 0 || (id != ALL_BOOKS && p.remaining_bytes < CONFIRM_BYTES) {
+            return false;
+        }
+        let books = if left == 1 { "Book" } else { "Books" };
+        self.workspace.push_effect(crate::Effect::ConfirmPack {
+            pack: p.id.clone(),
+            title: format!("Download {}?", p.title),
+            message: format!(
+                "{} {books}, about {}, each from its publisher and checked before it is \
+                 added. They come in one at a time while you keep working, and go in your \
+                 Library and in a Collection named \u{201c}{}\u{201d}. Cancel stops between \
+                 Books; those already in stay.",
+                count_words(left),
+                size_words(p.remaining_bytes),
+                p.title
+            ),
+        });
+        true
+    }
+
+    /// The pack whose download batch is `report`.
+    pub(crate) fn pack_of_batch(&self, report: &str) -> Option<&'static Pack> {
+        let id = self
+            .imports
+            .packs
+            .iter()
+            .find_map(|(pack, r)| (r == report).then_some(pack))?;
+        pack(id)
     }
 }
 
