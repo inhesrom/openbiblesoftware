@@ -1,0 +1,91 @@
+# Book packs (#415): named groups of related Books in the Open catalogue, each downloaded as
+# one job from Get Resources → Books. A pack is a rule over the catalogue's Books, never a
+# hand-kept list, so it grows with the collections (ADR 0024). Checked by the `packs` tests.
+#
+# A Book is in a pack when it matches ANY of
+#   all = true      every Book
+#   subjects = []   a subject heading contains one (case aside): "Sermons" matches
+#                   "Sermons, English -- 17th century" and "Funeral sermons"
+#   authors = []    its author, as shown ("John Owen"), is one
+#   titles = []     its title contains one (case aside)
+#   ids = []        its Open catalogue entry id is one
+# and ALL of the restrictions given
+#   collections = []   its collection is one: "EEBO-TCP", "Evans-TCP", "ECCO-TCP", "Gutenberg"
+#   languages = []     its language is one (BCP 47)
+#   printed = [a, b]   its edition was printed in those years (TCP's Books carry a date)
+#   died = [a, b]      its last author, translator or editor died in those years
+#
+# `id` is fixed once listed; `title` and `description` are shown on the pack's row.
+
+[[pack]]
+id = "confessions-catechisms"
+title = "Confessions & Catechisms"
+description = "The Westminster Standards, the Reformed and Baptist confessions, catechisms and the Books of Common Prayer"
+subjects = ["Creeds", "Catechisms", "Confessions of faith", "Liturgies"]
+titles = ["confession of faith", "catechism", "common prayer", "directory for the publique worship", "directory for the public worship"]
+authors = ["Westminster Assembly"]
+
+[[pack]]
+id = "puritans"
+title = "The Puritans"
+description = "Owen, Baxter, Sibbes, Brooks, Flavel, Watson, Goodwin, Bunyan and their brethren, in their first printings"
+subjects = ["Puritans"]
+authors = [
+  "Richard Baxter", "John Owen", "Thomas Goodwin", "Richard Sibbes", "Thomas Brooks",
+  "John Flavel", "Thomas Watson", "Thomas Manton", "Jeremiah Burroughs", "William Perkins",
+  "John Preston", "William Bridge", "Joseph Caryl", "Christopher Love", "Samuel Rutherford",
+  "Thomas Shepard", "Thomas Hooker", "John Cotton", "John Bunyan", "John Howe",
+  "William Bates", "Edmund Calamy", "Robert Bolton", "John Dod", "Nicholas Byfield",
+  "Oliver Heywood", "Thomas Vincent", "Nathanael Vincent", "James Durham", "Joseph Alleine",
+  "Richard Alleine", "Isaac Ambrose", "Thomas Case", "George Swinnock", "Ralph Venning",
+  "Obadiah Sedgwick", "Stephen Charnock", "William Gurnall", "Thomas Doolittle", "John Collinges",
+]
+printed = [1560, 1720]
+
+[[pack]]
+id = "sermons"
+title = "Sermons"
+description = "Sermons preached from the 1500s to the 1900s: funeral, fast-day and assize sermons, and whole series"
+subjects = ["Sermons"]
+titles = ["sermon"]
+
+[[pack]]
+id = "devotion-prayer"
+title = "Devotion & Prayer"
+description = "Meditations, prayers and books of the Christian life"
+subjects = ["Devotional literature", "Devotional exercises", "Meditations", "Prayer", "Spiritual life", "Christian life"]
+
+[[pack]]
+id = "reformation"
+title = "The Reformation"
+description = "Books printed between Luther's theses and the end of Elizabeth's reign"
+all = true
+printed = [1517, 1603]
+
+[[pack]]
+id = "early-america"
+title = "Early America"
+description = "Sermons and treatises printed in America before 1800: Edwards, the Mathers, Whitefield and others"
+all = true
+collections = ["Evans-TCP"]
+
+[[pack]]
+id = "nineteenth-century"
+title = "The 1800s"
+description = "Spurgeon, Moody, Murray, Ryle, MacLaren, Newman, Müller and others"
+subjects = ["Religion", "Christian", "Theology", "Sermons", "Bible", "Prayer", "Church", "Reformation", "Presbyterian", "Methodist", "Baptist", "Evangelistic", "Devotional", "Hymns", "Missions"]
+collections = ["Gutenberg"]
+died = [1800, 1955]
+
+[[pack]]
+id = "philosophy-classics"
+title = "Philosophy & Classics"
+description = "Plato, Aristotle, Kant and others: the philosophy and classics the theologians read and answered"
+subjects = ["Philosophy", "Classical literature", "Ethics", "Metaphysics"]
+collections = ["Gutenberg"]
+
+[[pack]]
+id = "all-books"
+title = "All Books"
+description = "Every historic Book in the Open catalogue"
+all = true

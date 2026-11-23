@@ -112,7 +112,7 @@ fn get_text(url: &str) -> Result<String> {
 
 /// RFC 4180 CSV: fields separated by commas, quoted with `"` (doubled inside), quoted
 /// fields may hold commas and line breaks.
-fn parse_csv(text: &str) -> Vec<Vec<String>> {
+pub(crate) fn parse_csv(text: &str) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut row = Vec::new();
     let mut field = String::new();
@@ -149,6 +149,8 @@ struct CatalogRow {
     title: String,
     language: String,
     authors: String,
+    /// Its subjects and bookshelves, `; `-separated.
+    subjects: String,
 }
 
 fn read_catalog(path: &Path) -> Result<BTreeMap<u32, CatalogRow>> {
@@ -162,12 +164,14 @@ fn read_catalog(path: &Path) -> Result<BTreeMap<u32, CatalogRow>> {
             .position(|h| h == name)
             .with_context(|| format!("the catalogue has no {name} column"))
     };
-    let (num, kind, title, lang, authors) = (
+    let (num, kind, title, lang, authors, subjects, shelves) = (
         col("Text#")?,
         col("Type")?,
         col("Title")?,
         col("Language")?,
         col("Authors")?,
+        col("Subjects")?,
+        col("Bookshelves")?,
     );
     let mut out = BTreeMap::new();
     for r in &rows[1..] {
@@ -180,6 +184,13 @@ fn read_catalog(path: &Path) -> Result<BTreeMap<u32, CatalogRow>> {
                     title: get(title),
                     language: get(lang),
                     authors: get(authors),
+                    subjects: [get(subjects), get(shelves)]
+                        .iter()
+                        .flat_map(|s| s.split(';'))
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("; "),
                 },
             );
         }
@@ -319,6 +330,7 @@ fn check(number: u32, path: &str, bytes: &[u8], cat: &CatalogRow) -> Result<PgBo
         authors: cat.authors.clone(),
         died,
         title,
+        subjects: cat.subjects.clone(),
     })
 }
 

@@ -9,9 +9,12 @@ books as a source collection (ADR 0024): `crates/engine/data/collections/pg-book
 ## The collection
 
 ```text
-# number	path	sha256	bytes	language	authors	died	title
-30449	3/0/4/4/30449/30449-h/30449-h.htm	<64 hex>	230931	en	Moody, Dwight Lyman, 1837-1899	1899	The Way to God and How to Find It
+# number	path	sha256	bytes	language	authors	died	title	subjects
+30449	3/0/4/4/30449/30449-h/30449-h.htm	<64 hex>	230931	en	Moody, Dwight Lyman, 1837-1899	1899	The Way to God and How to Find It	Christian life; Category: Religion/Spirituality
 ```
+
+The subjects are PG's catalogue's `Subjects` and `Bookshelves`, for Book packs
+([book-packs.md](book-packs.md)).
 
 `cargo xtask pg-books` writes it (`xtask/src/pg_books.rs`):
 

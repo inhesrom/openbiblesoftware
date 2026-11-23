@@ -123,6 +123,7 @@ mod notes_tests;
 pub mod open_catalogue;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod open_catalogue_tests;
+pub mod packs;
 pub mod parallel_passages;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod parallel_passages_tests;

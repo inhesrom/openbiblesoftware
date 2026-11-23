@@ -98,6 +98,16 @@ pub struct OpenSource {
     /// Made from a source collection's row (ADR 0024), not written in the catalogue file.
     #[serde(skip)]
     pub collection: bool,
+    /// A Book's subjects, as its publisher's catalogue gives them (Library of Congress
+    /// subject headings: "Sermons, English -- 17th century"), for Book packs (#415).
+    #[serde(default)]
+    pub subjects: Vec<String>,
+    /// The latest year any of a Book's authors, translators or editors died in, when known.
+    #[serde(default)]
+    pub died: Option<u16>,
+    /// The download's size in bytes, when known (a source collection's rows record it).
+    #[serde(default)]
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,7 +173,8 @@ pub const PG_CHANGES: &str = "Converted from the HTML edition on download: Proje
     references as links; images left out. The text is otherwise unchanged.";
 
 /// The header line of `data/collections/pg-books.tsv`.
-pub const PG_BOOKS_HEADER: &str = "# number\tpath\tsha256\tbytes\tlanguage\tauthors\tdied\ttitle\n";
+pub const PG_BOOKS_HEADER: &str =
+    "# number\tpath\tsha256\tbytes\tlanguage\tauthors\tdied\ttitle\tsubjects\n";
 
 /// One row of `data/collections/pg-books.tsv`: a Project Gutenberg eBook's posted HTML on
 /// PG's mirror, pinned by its sha256 (ADR 0024).
@@ -186,10 +197,13 @@ pub struct PgBook {
     pub died: u16,
     /// The title, cut at its first colon or semicolon.
     pub title: String,
+    /// PG's catalogue subjects and bookshelves, `; `-separated ("Christian life; Category:
+    /// Religion/Spirituality").
+    pub subjects: String,
 }
 
 /// Fields of a `pg-books.tsv` row.
-const PG_FIELDS: usize = 8;
+const PG_FIELDS: usize = 9;
 
 impl PgBook {
     /// The folder PG keeps eBook `number` in on its mirror: its digits but the last, one per
@@ -234,6 +248,7 @@ impl PgBook {
             clean(&self.authors),
             self.died.to_string(),
             clean(&self.title),
+            clean(&self.subjects),
         ]
         .join("\t")
     }
@@ -253,6 +268,7 @@ impl PgBook {
             authors: f[5].into(),
             died: f[6].parse().map_err(|_| format!("died {:?}", f[6]))?,
             title: f[7].into(),
+            subjects: f[8].into(),
         })
     }
 
@@ -330,8 +346,32 @@ impl PgBook {
             author,
             date: String::new(),
             collection: true,
+            subjects: split_subjects(&self.subjects),
+            died: Some(self.died),
+            size: Some(self.bytes),
         }
     }
+}
+
+/// A `; `-separated list of subjects as a list.
+fn split_subjects(subjects: &str) -> Vec<String> {
+    subjects
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The year a catalogue author heading says its person died: the last year after a hyphen
+/// ("Owen, John, 1616-1683." → 1683, "Hooper, John, d. 1555." → 1555); `None` without one.
+pub fn death_year(heading: &str) -> Option<u16> {
+    let after_d = heading.rsplit_once("d. ").map(|(_, r)| r);
+    let after_hyphen = heading.rsplit_once('-').map(|(_, r)| r);
+    [after_hyphen, after_d].into_iter().flatten().find_map(|r| {
+        let y: String = r.chars().take_while(char::is_ascii_digit).collect();
+        (3..=4).contains(&y.len()).then(|| y.parse().ok()).flatten()
+    })
 }
 
 /// Parse `pg-books.tsv`: lines starting `#` are comments.
@@ -351,7 +391,7 @@ pub fn pg_books() -> &'static [PgBook] {
 
 /// The header line of `data/collections/tcp-books.tsv`.
 pub const TCP_BOOKS_HEADER: &str =
-    "# id\tcommit\tsha256\tbytes\tlanguage\tdate\tauthor\ttitle\tstatement\n";
+    "# id\tcommit\tsha256\tbytes\tlanguage\tdate\tauthor\ttitle\tstatement\tsubjects\n";
 
 /// The two statements TCP puts in a text's `<availability>`, whitespace collapsed as
 /// `obs_formats::read_tei_header` reads it: (code in `tcp-books.tsv`, statement). EEBO-TCP
@@ -420,10 +460,12 @@ pub struct TcpBook {
     pub title: String,
     /// The code of its CC0 statement ([`TCP_CC0_STATEMENTS`]).
     pub statement: String,
+    /// TCP's catalogue subject headings (`TCP.csv`'s `Terms`), `; `-separated.
+    pub subjects: String,
 }
 
 /// Every source collection row's TSV fields, in order.
-const TCP_FIELDS: usize = 9;
+const TCP_FIELDS: usize = 10;
 
 impl TcpBook {
     /// The file at `commit` of TCP's repository for `id`.
@@ -467,6 +509,7 @@ impl TcpBook {
             clean(&self.author),
             clean(&self.title),
             clean(&self.statement),
+            clean(&self.subjects),
         ]
         .join("\t")
     }
@@ -487,6 +530,7 @@ impl TcpBook {
             author: f[6].into(),
             title: f[7].into(),
             statement: f[8].into(),
+            subjects: f[9].into(),
         })
     }
 
@@ -576,6 +620,9 @@ impl TcpBook {
             author,
             date,
             collection: true,
+            subjects: split_subjects(&self.subjects),
+            died: death_year(&self.author),
+            size: Some(self.bytes),
         }
     }
 }
@@ -630,14 +677,29 @@ pub fn display_date(raw: &str) -> String {
 pub fn display_author(heading: &str) -> String {
     let heading = heading.trim().trim_end_matches('.').trim();
     let mut s = String::new();
+    let mut inside = String::new();
     let mut depth = 0usize;
     for c in heading.chars() {
         match c {
             '(' => depth += 1,
             ')' if depth > 0 => depth -= 1,
             c if depth == 0 => s.push(c),
-            _ => {}
+            c => inside.push(c),
         }
+    }
+    // Initials alone, the name in parentheses: "R. A. (Richard Alleine), 1611-1681.".
+    let initials_only = s
+        .split(',')
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .all(|w| w.chars().count() <= 2 && w.ends_with('.'));
+    let name_inside = inside.trim();
+    if initials_only
+        && name_inside.contains(' ')
+        && !name_inside.chars().any(|c| c.is_ascii_digit())
+    {
+        return name_inside.split_whitespace().collect::<Vec<_>>().join(" ");
     }
     let parts: Vec<&str> = s
         .split(',')
@@ -697,6 +759,32 @@ impl OpenSource {
         }
     }
 
+    /// The collection a Book comes from, as Book packs name it (`packs::COLLECTIONS`):
+    /// a TCP text's by its id's letter, "Gutenberg" for Project Gutenberg's; "" for others.
+    pub fn collection_name(&self) -> &'static str {
+        match self.importer.as_str() {
+            "tcp-tei" => match TcpBook::id_of_url(&self.url).and_then(|id| id.bytes().next()) {
+                Some(b'K') => "ECCO-TCP",
+                Some(b'N' | b'W') => "Evans-TCP",
+                Some(_) => "EEBO-TCP",
+                None => "",
+            },
+            "pg-html" | "pg-text" => "Gutenberg",
+            _ => "",
+        }
+    }
+
+    /// The year its edition was printed, from its date ("1668", "1650?").
+    pub fn printed_year(&self) -> Option<u16> {
+        let digits: String = self
+            .date
+            .trim()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        (digits.len() == 4).then(|| digits.parse().ok()).flatten()
+    }
+
     /// Its Get Resources row.
     pub fn listing(&self) -> ResourceListing {
         ResourceListing {
@@ -706,7 +794,7 @@ impl OpenSource {
             title: self.title.clone(),
             abbreviation: self.abbreviation.clone(),
             language: self.language.clone(),
-            size: None,
+            size: self.size,
             licence: Some(self.licence.clone()),
             version: None,
             strongs: false,
@@ -1159,6 +1247,7 @@ mod tests {
             author: "Owen, John, 1616-1683.".into(),
             title: "Of the mortification of sin in believers".into(),
             statement: "cc0-phase1".into(),
+            subjects: "Sin -- Early works to 1800.; Christian life".into(),
         };
         assert!(row.problems().is_empty(), "{:?}", row.problems());
         let s = row.source();
@@ -1166,6 +1255,11 @@ mod tests {
         assert_eq!(s.author, "John Owen");
         assert_eq!(s.date, "1668");
         assert_eq!(s.edition, "John Owen, 1668 (EEBO-TCP A53715)");
+        assert_eq!(
+            s.subjects,
+            ["Sin -- Early works to 1800.", "Christian life"]
+        );
+        assert_eq!(s.died, Some(1683));
         assert_eq!(s.resource_type(), Some(ResourceType::Book));
         assert!(s.attribution.starts_with(
             "Of the mortification of sin in believers, by John Owen. Keyboarded and encoded"
@@ -1226,11 +1320,14 @@ mod tests {
             authors: "Moody, Dwight Lyman, 1837-1899".into(),
             died: 1899,
             title: "The Way to God and How to Find It".into(),
+            subjects: "Christian life; Category: Religion/Spirituality".into(),
         };
         assert!(row.problems().is_empty(), "{:?}", row.problems());
         let s = row.source();
         assert_eq!(s.id, "pg-30449");
         assert_eq!(s.author, "Dwight Lyman Moody");
+        assert_eq!(s.died, Some(1899));
+        assert_eq!(s.subjects.len(), 2);
         assert_eq!(
             s.url,
             "https://gutenberg.pglaf.org/3/0/4/4/30449/30449-h/30449-h.htm"
@@ -1254,6 +1351,16 @@ mod tests {
         assert!(text.problems().is_empty());
         assert_eq!(text.source().importer, "pg-text");
         assert_eq!(row.source().importer, "pg-html");
+    }
+
+    #[test]
+    fn death_years_are_read_from_author_headings() {
+        assert_eq!(death_year("Owen, John, 1616-1683."), Some(1683));
+        assert_eq!(death_year("Flavel, John, 1630?-1691."), Some(1691));
+        assert_eq!(death_year("Hooper, John, d. 1555."), Some(1555));
+        assert_eq!(death_year("Westminster Assembly (1643-1652)"), Some(1652));
+        assert_eq!(death_year("Church of England."), None);
+        assert_eq!(death_year("Smith, John, 1880-"), None);
     }
 
     #[test]
@@ -1287,6 +1394,7 @@ mod tests {
                 "Spurgeon, C. H. (Charles Haddon), 1834-1892.",
                 "C. H. Spurgeon",
             ),
+            ("R. A. (Richard Alleine), 1611-1681.", "Richard Alleine"),
             ("", ""),
         ] {
             assert_eq!(display_author(heading), name, "{heading:?}");

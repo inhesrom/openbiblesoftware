@@ -43,8 +43,8 @@ Every other TCP text the app offers is a row of `crates/engine/data/collections/
 a source collection ([ADR 0024](../adr/0024-a-source-collection-is-a-generated-pinned-list-checked-when-a-text-is-added.md)):
 
 ```text
-# id	commit	sha256	bytes	language	date	author	title	statement
-A00001	<40 hex>	<64 hex>	123456	en	1641.	Owen, John, 1616-1683.	A short title	cc0-phase1
+# id	commit	sha256	bytes	language	date	author	title	statement	subjects
+A00001	<40 hex>	<64 hex>	123456	en	1641.	Owen, John, 1616-1683.	A short title	cc0-phase1	Sin -- Early works to 1800.; Christian life
 ```
 
 `cargo xtask tcp-books` writes it (`xtask/src/tcp_books.rs`):
@@ -67,6 +67,9 @@ id as abbreviation, "Text Creation Partnership" as publisher, CC0 1.0, `open-evi
 as evidence and TCP's archived FAQ as `evidence_url`. Its rows are marked `collection`: Get
 Resources lists them in All Books, not in the Open catalogue section, and its search matches
 the author as well as the title.
+
+Each row's last column holds its subject headings, from TCP's catalogue (`--catalog TCP.csv`,
+otherwise downloaded into the cache), for Book packs ([book-packs.md](book-packs.md)).
 
 To find texts by subject, TCP's catalogue (`TCP.csv` in
 <https://github.com/textcreationpartnership/Texts>) has Library of Congress subject headings
