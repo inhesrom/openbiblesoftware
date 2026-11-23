@@ -1,0 +1,6 @@
+# PROTOTYPE: lets GPUI build on a Linux box with only runtime libraries (no -dev packages).
+[env]
+RUST_FONTCONFIG_DLOPEN = "1"
+
+[build]
+jobs = 5

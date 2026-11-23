@@ -1,0 +1,81 @@
+# PROTOTYPE (#374), throwaway: runs prototype/gpui-headless on the three CI systems when the
+# branch prototype/374-gpui-headless is pushed. Never merged to master.
+name: proto-374 gpui headless
+
+on:
+  push:
+    branches: [prototype/374-gpui-headless]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+    working-directory: prototype/gpui-headless
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-workspaces: prototype/gpui-headless
+      - name: Linux packages (GPUI build dependencies, Mesa lavapipe)
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev
+          libvulkan1 mesa-vulkan-drivers
+      - name: Interaction tests (TestPlatform, no display)
+        run: env -u DISPLAY -u WAYLAND_DISPLAY OBS_PROTO_NO_DISPLAY=1 cargo test --release --test interaction -- --test-threads=1 --nocapture
+      - name: Headless rendering at 2x (Linux wgpu, macOS Metal; Windows prints a skip)
+        # On macOS and Windows there are no committed goldens: the first run writes them, so
+        # this checks determinism (3 fresh captures) and the seeded change.
+        run: cargo test --release --test rendering
+      - name: Headless rendering at 1x and 2x (patched gpui-pre)
+        if: runner.os != 'Windows'
+        run: ./scale.sh
+      - name: Real-window capture, 3 times (Windows Direct3D, macOS Metal)
+        if: runner.os != 'Linux'
+        run: |
+          cargo build --release --bin capture
+          for n in 1 2 3; do ./target/release/capture "out/capture-light-$n.png" light; done
+          ./target/release/capture out/capture-dark-1.png dark
+          ./target/release/capture compare out/capture-light-1.png out/capture-light-2.png
+          ./target/release/capture compare out/capture-light-1.png out/capture-light-3.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frames-${{ matrix.os }}
+          path: |
+            prototype/gpui-headless/out/*.png
+            prototype/gpui-headless/goldens/**/*.png
+
+  cross-os:
+    name: How far each system's frames are from the Linux golden
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: frames
+      - name: Compare with ADR 0019's tolerance (channel 2 = 0.8 %)
+        working-directory: .
+        run: |
+          golden=prototype/gpui-headless/goldens/linux/surface-light-2x.png
+          for f in frames/frames-macos-latest/out/surface-light-2x.png \
+                   frames/frames-macos-latest/out/capture-light-1.png \
+                   frames/frames-windows-latest/out/capture-light-1.png \
+                   frames/frames-ubuntu-latest/out/surface-light-2x.png; do
+            [ -f "$f" ] || { echo "$f: missing"; continue; }
+            printf '%s: %s, ' "$f" "$(identify -format '%wx%h' "$f")"
+            compare -metric AE -fuzz 0.8% "$golden" "$f" /dev/null 2>&1 || true
+            echo " pixels off"
+          done

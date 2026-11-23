@@ -1,0 +1,27 @@
+--- a/src/app/headless_app_context.rs
++++ b/src/app/headless_app_context.rs
+@@ -171,6 +171,24 @@
+         app.update_window(window, |_, window, _| window.render_to_image())?
+     }
+ 
++    /// PROTOTYPE patch (#374): change a headless window's display scale, as
++    /// `TestAppContext::simulate_window_scale_factor_change` does for its windows.
++    /// Without it, every headless window draws at the test window's fixed 2x.
++    pub fn simulate_window_scale_factor_change(&mut self, window: AnyWindowHandle, scale_factor: f32) {
++        let mut test_window = {
++            let mut app = self.app.borrow_mut();
++            app.windows
++                .get_mut(window.id)
++                .and_then(|window| window.as_deref_mut())
++                .expect("headless window")
++                .platform_window
++                .as_test()
++                .expect("a test platform window")
++                .clone()
++        };
++        test_window.simulate_scale_factor_change(scale_factor);
++    }
++
+     /// Returns the text system.
+     pub fn text_system(&self) -> &Arc<TextSystem> {
+         &self.text_system

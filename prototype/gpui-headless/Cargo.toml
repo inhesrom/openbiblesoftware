@@ -1,0 +1,40 @@
+# PROTOTYPE — throwaway (#374): can GPUI surfaces be driven and drawn headlessly, so the
+# egui UI's tests and the Screenshot gallery (ADR 0019) carry over? Not a workspace member.
+[package]
+name = "obs-prototype-gpui-headless"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Empty table: keep this crate out of the repository's Cargo workspace (own Cargo.lock).
+[workspace]
+
+[dependencies]
+# The GPUI build #373 chose: GPUI (gpui-pre =0.3.12) plus gpui-base, without the styled layer.
+# `test-support` brings the TestAppContext, the headless app context and the kit's test API.
+gpui-kit = { version = "=0.10.0", default-features = false, features = ["test-support"] }
+# The app's bundled fonts (Gentium Plus, Ezra SIL).
+obs-fonts = { path = "../../crates/fonts" }
+# PNG output of the captured frames; the same `image` GPUI returns them in.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# `RUST_LOG=info` shows the GPU adapter the headless renderer picked.
+env_logger = { version = "0.11", default-features = false }
+
+[features]
+# Build against a patched gpui-pre that lets a headless window change its scale (1x); see
+# `patches/`. Without it, gpui-pre 0.3.12's headless windows are fixed at 2x.
+scale = []
+
+[[test]]
+name = "rendering"
+path = "tests/rendering.rs"
+harness = false
+
+[profile.release]
+debug = 0
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
