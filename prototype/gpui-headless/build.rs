@@ -48,6 +48,8 @@ fn main() {
         let _ = std::fs::remove_file(&link);
         #[cfg(unix)]
         let _ = std::os::unix::fs::symlink(target, &link);
+        #[cfg(not(unix))]
+        let _ = target; // Only Linux needs the symlinks; Windows CI builds with -D warnings.
     }
     println!("cargo:rustc-link-search=native={}", out.display());
 }
