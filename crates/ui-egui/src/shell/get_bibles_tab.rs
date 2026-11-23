@@ -402,10 +402,9 @@ impl State {
                         )
                     } else if f == ResourceFilter::Type(obs_model::ResourceType::Book) {
                         chip.on_hover_text(
-                            "Sermons, treatises and confessions of the 1500s to 1700s, as \
-                                 the Text Creation Partnership keyed them from the first \
-                                 printings, in their own spelling. Search by title or author. \
-                                 Free to share.",
+                            "Sermons, treatises and confessions of the 1500s to the 1900s, \
+                                 downloaded from the publishers of their transcriptions. \
+                                 Search by title or author. Free to share.",
                         )
                     } else {
                         chip

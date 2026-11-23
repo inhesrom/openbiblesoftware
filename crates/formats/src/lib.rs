@@ -9,11 +9,13 @@ mod dataset;
 mod error;
 #[cfg(test)]
 mod hostile_input;
+mod html_book;
 mod lexicon;
 mod markdown_book;
 mod openbible;
 mod openbible_geo;
 mod parallels;
+mod pg_text;
 mod report;
 mod stepbible;
 mod sword;
@@ -32,6 +34,9 @@ pub use commentary::{
 };
 pub use dataset::{DatasetError, DatasetOptions};
 pub use error::ImportError;
+pub use html_book::{
+    HtmlBookOptions, MAX_HTML_BYTES, PG_HTML_FORMAT, decode_html_bytes, import_pg_html,
+};
 pub use lexicon::{
     LexiconError, LexiconOptions, import_abbott_smith, import_bdb, import_strongs_greek,
     import_strongs_hebrew, import_tbes,
@@ -47,6 +52,7 @@ pub use parallels::{
     DROPPED_PARALLEL_NOT_STANDARD, DROPPED_PARALLEL_SELF, DROPPED_PARALLEL_SPANS_BOOKS,
     USFM_PARALLELS_FORMAT, import_usfm_parallel_passages,
 };
+pub use pg_text::{MAX_TEXT_BYTES, PG_TEXT_FORMAT, import_pg_text};
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use stepbible::{StepbibleImport, StepbibleOptions, StepbibleText};
 pub use sword::repo as sword_repo;

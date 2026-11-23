@@ -772,8 +772,10 @@ struct AllCache {
 #[derive(Debug)]
 struct IndexedRow {
     row: AllRow,
-    /// Title, abbreviation, module and a Book's author, lowercased, for the search.
-    lower: [String; 4],
+    /// Title, abbreviation, module and a Book's author, lowercased and joined by `\n` (which
+    /// no query holds), for the search: one `contains` a row, as a key is typed over thousands
+    /// of rows (#345).
+    lower: String,
     licence: LicenceClass,
     /// The row's [`LanguageName::key`], for the language filter.
     language: String,
@@ -941,12 +943,14 @@ impl GetBibles {
         }
         let rows = cache.rows.as_ref().map_or(&[][..], |(_, rows)| rows);
         let language = language.map(language_key);
+        // The cheap tests first; the text search last.
+        let query = query.trim();
         rows.iter()
             .filter(|r| {
                 licence.accepts(r.licence)
-                    && (query.is_empty() || r.lower.iter().any(|f| f.contains(query)))
                     && language.as_ref().is_none_or(|l| r.language == *l)
                     && self.all_row(r.row).is_some_and(|b| filter.accepts(b))
+                    && (query.is_empty() || (!query.contains('\n') && r.lower.contains(query)))
             })
             .map(|r| r.row)
             .collect()
@@ -975,7 +979,8 @@ impl GetBibles {
                     &b.module,
                     b.author.as_deref().unwrap_or_default(),
                 ]
-                .map(str::to_lowercase),
+                .map(str::to_lowercase)
+                .join("\n"),
                 licence: b.licence_class(),
                 language: language_key(&b.language),
             })

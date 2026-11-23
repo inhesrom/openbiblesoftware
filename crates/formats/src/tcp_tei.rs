@@ -13,7 +13,9 @@
 //! | `<pb n="23">` | zero-width `page` "23" (a `<pb>` with no `n` is an unnumbered leaf: no page) |
 //! | `<note>` | a note unit and a zero-width `note_ref` footnote |
 //! | `<g ref="char:EOLhyphen">` | nothing: the word broken at the line's end is joined |
-//! | `<gap>` | "〈…〉", or its `<desc>` |
+//! | `<gap>` | "⟨…⟩", or its `<desc>` |
+//! | TCP's marks the reading font lacks: `〈 〉` around a gap, `▪` (punctuation of unclear form), `╌` (a syllable break in a sung text), `✚`, `☞`, `☜`, `☝`, `⁎`, `♫` (music not transcribed) | `⟨ ⟩`, `·`, `-`, `+`, `→`, `←`, `↑`, `*`, "⟨music⟩" ([`tcp_glyph`]) |
+//! | ornaments: `❧`, `❀` | dropped, counted in the report |
 //! | Bible references in the text and notes (`Rom. 8. 13`, `Rom. viii. 13`) | `scripture_ref` |
 //! | `<figure>`, `<table>`, `<graphic>` | dropped, counted in the report |
 //!
@@ -44,8 +46,9 @@ const MAX_META_CHARS: usize = 2_000;
 /// A Division's title is cut, at a word, to about this many characters.
 const MAX_TITLE_CHARS: usize = 120;
 /// A part's title prefixes its chapters' only when it is at most this long ("Part I.",
-/// "CHAP. I."), not when it is a dedication's whole head.
-const MAX_PREFIX_CHARS: usize = 40;
+/// "BOOK II.", "THE SECOND PART."), not when it is a sermon's or a dedication's whole head:
+/// the Contents pane cuts a long title, and the parts would all read alike.
+const MAX_PREFIX_CHARS: usize = 20;
 
 /// Identity of the Resource a TCP import creates.
 #[derive(Debug, Clone, Default)]
@@ -116,11 +119,74 @@ fn is_element(node: &Node<'_, '_>, name: &str) -> bool {
     node.is_element() && node.tag_name().name() == name
 }
 
+/// What TCP's text marks are written as: the reading font (Gentium) has no glyph for these,
+/// so each is its typographic equivalent, an ornament nothing. Everything else is itself.
+fn tcp_glyph(c: char) -> Option<&'static str> {
+    Some(match c {
+        // Around a gap ("〈◊〉", "〈 in non-Latin alphabet 〉").
+        '\u{3008}' => "\u{27e8}",
+        '\u{3009}' => "\u{27e9}",
+        // A punctuation mark of unclear form.
+        '\u{25aa}' => "\u{b7}",
+        // A word divided into syllables, in a sung text ("o╌pen").
+        '\u{254c}' => "-",
+        '\u{271a}' => "+",
+        '\u{261e}' => "\u{2192}",
+        '\u{261c}' => "\u{2190}",
+        '\u{261d}' => "\u{2191}",
+        '\u{204e}' => "*",
+        // Music the encoders did not transcribe.
+        '\u{266b}' => "\u{27e8}music\u{27e9}",
+        // Ornaments.
+        '\u{2767}' | '\u{2740}' => "",
+        _ => return None,
+    })
+}
+
+/// `text` with [`tcp_glyph`]'s marks written as their equivalents; `ornaments` counts those
+/// dropped.
+fn tcp_text<'t>(text: &'t str, ornaments: &mut u64) -> std::borrow::Cow<'t, str> {
+    if !text.chars().any(|c| tcp_glyph(c).is_some()) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match tcp_glyph(c) {
+            Some("") => *ornaments += 1,
+            Some(s) => out.push_str(s),
+            None => out.push(c),
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// A node's text, whitespace collapsed, at most [`MAX_META_CHARS`] characters.
 fn plain(node: Node<'_, '_>) -> String {
     let mut s = String::new();
-    for d in node.descendants().filter(Node::is_text) {
-        s.push_str(d.text().unwrap_or_default());
+    let mut ornaments = 0u64;
+    // A word broken at the line's end goes on with the next text that is not blank.
+    let mut join = false;
+    for d in node.descendants() {
+        if is_element(&d, "g") && d.attribute("ref") == Some("char:EOLhyphen") {
+            join = true;
+            continue;
+        }
+        if !d.is_text() {
+            continue;
+        }
+        let text = tcp_text(d.text().unwrap_or_default(), &mut ornaments);
+        if join {
+            if text.trim().is_empty() {
+                continue;
+            }
+            join = false;
+            if s.ends_with(' ') {
+                s.pop();
+            }
+            s.push_str(text.trim_start());
+        } else {
+            s.push_str(&text);
+        }
         s.push(' ');
         if s.len() > MAX_META_CHARS * 4 {
             break;
@@ -436,10 +502,18 @@ fn split_div<'a, 'i>(div: Node<'a, 'i>, out: &mut Vec<DivisionSource<'a, 'i>>) {
                 nodes.extend(before.iter().copied());
             }
             nodes.push(*n);
-            current = Some(DivisionSource {
-                title: div_title(*n, Some(&parent)),
-                nodes,
-            });
+            // A long part title (a sermon's) is not a prefix: the first of its parts, which
+            // opens with its head, is titled by it instead.
+            let title = if i == 0
+                && !before.is_empty()
+                && before.iter().all(|b| is_element(b, "head"))
+                && parent.chars().count() > MAX_PREFIX_CHARS
+            {
+                parent.clone()
+            } else {
+                div_title(*n, Some(&parent))
+            };
+            current = Some(DivisionSource { title, nodes });
         } else if let Some(d) = current.as_mut() {
             d.nodes.push(*n);
         }
@@ -529,6 +603,16 @@ impl Writer<'_> {
     }
 
     fn text(&mut self, t: &str) {
+        let mut ornaments = 0u64;
+        let t = tcp_text(t, &mut ornaments);
+        if ornaments > 0 {
+            *self
+                .report
+                .dropped_markup
+                .entry("ornament".to_string())
+                .or_default() += ornaments;
+        }
+        let t: &str = &t;
         let t = if self.join && !t.trim().is_empty() {
             self.join = false;
             t.trim_start()
@@ -662,7 +746,7 @@ impl Writer<'_> {
             "lb" => self.text(" "),
             "gap" => {
                 let desc = child(node, "desc").map(plain).filter(|d| !d.is_empty());
-                self.text(&desc.unwrap_or_else(|| "〈…〉".into()));
+                self.text(&desc.unwrap_or_else(|| "\u{27e8}\u{2026}\u{27e9}".into()));
             }
             "hi" if matches!(node.attribute("rend"), Some("sup" | "sub")) => {
                 self.inline_children(node, depth);

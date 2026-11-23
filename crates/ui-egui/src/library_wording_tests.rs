@@ -127,6 +127,13 @@ fn get_resources_books_by_author(h: &mut Harness) {
     h.frames(4);
 }
 
+/// Get Resources' Books by a later author (#345): the Project Gutenberg collection's rows.
+fn get_resources_books_by_moody(h: &mut Harness) {
+    run_split(h, "library.get_resources", json!({ "type": "books" }));
+    h.shell.st.get_bibles_ui.query = "Moody".into();
+    h.frames(4);
+}
+
 /// Get Resources with every Resource listed, longer than its Panel, the pointer over the list
 /// so its scroll bar shows.
 fn get_resources_all(h: &mut Harness) {
@@ -182,6 +189,11 @@ pub(super) fn library_wording() -> Vec<Overlay> {
         (
             "Get Resources: Books by an author",
             get_resources_books_by_author,
+            |h| h.texts().iter().any(|t| t.starts_with("ALL BOOKS ·")),
+        ),
+        (
+            "Get Resources: Books of the 1800s",
+            get_resources_books_by_moody,
             |h| h.texts().iter().any(|t| t.starts_with("ALL BOOKS ·")),
         ),
         (
