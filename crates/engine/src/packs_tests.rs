@@ -339,7 +339,7 @@ fn a_pack_downloads_in_one_job_each_book_checked_and_collected() {
     assert_eq!(out["asked"], true);
     let asked = s2.workspace.take_effects();
     assert!(
-        asked.iter().any(|e| matches!(e, crate::Effect::ConfirmPack { pack, title, message }
+        asked.iter().any(|e| matches!(e, crate::Effect::ConfirmPack { pack, title, message, remove: false }
             if pack == ALL_BOOKS && title == "Download All Books?" && message.starts_with("3 Books"))),
         "{asked:?}"
     );
@@ -368,6 +368,173 @@ fn a_pack_downloads_in_one_job_each_book_checked_and_collected() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("no Book pack"), "{err}");
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// #415 (owner's decision): Remove pack asks first, then removes the pack's Books from the
+/// Library, but keeps a Book with Notes or Highlights and a Book in another pack's Collection;
+/// the pack's Collection goes once it holds nothing.
+#[test]
+fn remove_pack_keeps_annotated_books_and_books_of_another_pack() {
+    let (mut s, root) = session("remove");
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    // Early America first (Edwards), then All Books (and Westminster).
+    for pack in ["early-america", ALL_BOOKS] {
+        s.run(
+            "getbibles.download_pack",
+            &json!({"id": pack, "confirm": true}),
+        )
+        .unwrap();
+        settle(&mut s);
+    }
+    let rid = |s: &Session, id: &str| match s
+        .listing_status(&s.get_bibles.open_source(id).unwrap().listing())
+    {
+        ListingStatus::Installed { resource_id } => resource_id,
+        other => panic!("{id}: {other:?}"),
+    };
+    let edwards = rid(&s, "tcp-edwards-sinners-1741");
+    let westminster = rid(&s, "tcp-westminster-confession-1646");
+    assert!(s.library.in_collection("Early America", &edwards));
+    assert!(s.library.in_collection("All Books", &edwards));
+    assert!(s.library.in_collection("All Books", &westminster));
+
+    // Westminster alone: removed. Edwards is also in Early America's Collection: kept.
+    let removal = s.pack_removal(ALL_BOOKS);
+    assert_eq!(removal.remove, std::slice::from_ref(&westminster));
+    assert_eq!(removal.in_other_pack, std::slice::from_ref(&edwards));
+    let out = s
+        .run("getbibles.remove_pack", &json!({"id": ALL_BOOKS}))
+        .unwrap();
+    let message = out["confirm"].as_str().unwrap();
+    assert!(
+        message.starts_with("Remove 1 Book of All Books from your Library?")
+            && message.contains("1 in another pack's Collection is kept"),
+        "{message}"
+    );
+    assert!(
+        s.library.get(&westminster).is_some(),
+        "nothing before the answer"
+    );
+    s.run(
+        "getbibles.remove_pack",
+        &json!({"id": ALL_BOOKS, "confirm": true}),
+    )
+    .unwrap();
+    assert!(s.library.get(&westminster).is_none());
+    assert!(s.library.get(&edwards).is_some());
+    assert!(!s.library.in_collection("All Books", &westminster));
+
+    // Highlighted, Edwards is kept by Early America's removal too; with nothing to remove,
+    // it says why.
+    let made = s
+        .run(
+            "annotation.highlight",
+            &json!({"resource": edwards, "start_unit": "div.2", "start": 0,
+                    "end_unit": "div.2", "end": 6}),
+        )
+        .unwrap();
+    assert!(made["ids"][0].is_string(), "{made}");
+    assert_eq!(
+        s.pack_removal("early-america").annotated,
+        std::slice::from_ref(&edwards)
+    );
+    let err = s
+        .run(
+            "getbibles.remove_pack",
+            &json!({"id": "early-america", "confirm": true}),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("is kept"), "{err}");
+    assert!(s.library.get(&edwards).is_some());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// #415 (owner's decision): when a new version of the app pins a corrected file for an Open
+/// catalogue Book already downloaded, it is offered as an update, Update all included; the
+/// update is the next Resource revision of the same Resource, its Highlights kept.
+#[test]
+fn a_repinned_book_is_offered_as_an_update_and_updated_in_place() {
+    let (mut s, root) = session("update");
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    s.run(
+        "getbibles.download_pack",
+        &json!({"id": "early-america", "confirm": true}),
+    )
+    .unwrap();
+    settle(&mut s);
+    let id = "tcp-edwards-sinners-1741";
+    let ListingStatus::Installed { resource_id } =
+        s.listing_status(&s.get_bibles.open_source(id).unwrap().listing())
+    else {
+        panic!("not installed");
+    };
+    let made = s
+        .run(
+            "annotation.highlight",
+            &json!({"resource": resource_id, "start_unit": "div.2", "start": 0,
+                    "end_unit": "div.2", "end": 6}),
+        )
+        .unwrap();
+    let highlight = made["ids"][0].as_str().unwrap().to_string();
+    assert!(s.resource_updates().updates.is_empty());
+
+    // The publisher corrected the file; this version of the app pins the correction.
+    let corrected = root.join("open/N03833-corrected.xml");
+    let xml = std::fs::read_to_string(root.join("open/N03833.xml")).unwrap();
+    let xml = xml.replace("</TEI>", "<!-- corrected --></TEI>");
+    std::fs::write(&corrected, &xml).unwrap();
+    let mut sources = s.get_bibles.open_sources().to_vec();
+    let edwards = sources.iter_mut().find(|e| e.id == id).unwrap();
+    edwards.url = crate::credits::file_url(&corrected);
+    edwards.sha256 = Some(crate::starter::sha256_hex(xml.as_bytes()));
+    s.get_bibles.set_open_catalogue(sources);
+
+    let listing = s.get_bibles.open_source(id).unwrap().listing();
+    assert!(
+        matches!(
+            s.listing_status(&listing),
+            ListingStatus::UpdateAvailable { .. }
+        ),
+        "{:?}",
+        s.listing_status(&listing)
+    );
+    let updates = s.resource_updates().updates;
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].resource_id, resource_id);
+    assert_eq!(updates[0].source, crate::get_bibles::ListingSource::Open);
+
+    let out = s.run("getbibles.update_all", &json!({})).unwrap();
+    assert_eq!(out["started"][0], resource_id.as_str());
+    settle(&mut s);
+    for _ in 0..20 {
+        s.jobs().pump(16);
+        let _ = s.poll_imports();
+    }
+    let entry = s.library.get(&resource_id).unwrap();
+    assert_eq!(
+        entry.manifest.revision, 2,
+        "the next revision of the same Resource"
+    );
+    assert!(matches!(
+        s.listing_status(&listing),
+        ListingStatus::Installed { .. }
+    ));
+    assert!(s.resource_updates().updates.is_empty());
+    let r = s.imports.report(&resource_id).unwrap();
+    assert_eq!(
+        r.open_origin.as_ref().unwrap().sha256.as_deref(),
+        Some(crate::starter::sha256_hex(xml.as_bytes()).as_str())
+    );
+    let a = s.annotation(&highlight).unwrap();
+    let range = a.anchor.as_ref().unwrap().text_range().unwrap();
+    assert!(!range.orphaned, "the Highlight follows its text");
+    assert_eq!(range.content_hash, entry.manifest.content_hash);
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

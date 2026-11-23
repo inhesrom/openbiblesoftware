@@ -299,25 +299,61 @@ impl Session {
         }
     }
 
-    /// Add Resource `id` to the Collection `name`, chosen by hand, making the Collection if
-    /// there is none of that name (a Book pack's Books, #415).
-    pub(crate) fn add_to_collection(&mut self, name: &str, id: &str) {
+    /// Add Resources `ids` to the Collection `name`, chosen by hand, making the Collection if
+    /// there is none of that name (a Book pack's Books, #415). Saved once.
+    pub(crate) fn add_to_collection(&mut self, name: &str, ids: &[String]) {
+        if ids.is_empty() {
+            return;
+        }
         let mut set = self.library.collection_set().clone();
-        match set
+        let i = match set
             .collections
-            .iter_mut()
-            .find(|c| c.name.eq_ignore_ascii_case(name.trim()))
+            .iter()
+            .position(|c| c.name.eq_ignore_ascii_case(name.trim()))
         {
-            Some(c) if c.resources.iter().any(|r| r == id) => return,
-            Some(c) => c.resources.push(id.to_string()),
-            None => set.collections.push(Collection {
-                name: name.trim().to_string(),
-                rules: Vec::new(),
-                resources: vec![id.to_string()],
-            }),
+            Some(i) => i,
+            None => {
+                set.collections.push(Collection {
+                    name: name.trim().to_string(),
+                    rules: Vec::new(),
+                    resources: Vec::new(),
+                });
+                set.collections.len() - 1
+            }
+        };
+        let resources = &mut set.collections[i].resources;
+        let before = resources.len();
+        for id in ids {
+            if !resources.contains(id) {
+                resources.push(id.clone());
+            }
+        }
+        if resources.len() == before && before > 0 {
+            return;
         }
         self.library.set_collection_set(set);
         self.save_collections();
+    }
+
+    /// Take Resources `ids` out of the Collection `name` (chosen by hand); a Collection left
+    /// with no Resources and no rules is deleted (a removed Book pack's, #415).
+    pub(crate) fn remove_from_collection(&mut self, name: &str, ids: &[String]) {
+        let mut set = self.library.collection_set().clone();
+        let Some(i) = set
+            .collections
+            .iter()
+            .position(|c| c.name.eq_ignore_ascii_case(name.trim()))
+        else {
+            return;
+        };
+        set.collections[i].resources.retain(|r| !ids.contains(r));
+        let empty = set.collections[i].resources.is_empty() && set.collections[i].rules.is_empty();
+        let gone = empty.then(|| set.collections.remove(i).name);
+        self.library.set_collection_set(set);
+        self.save_collections();
+        if let Some(gone) = gone {
+            self.collection_renamed(&gone, None);
+        }
     }
 
     /// A Collection was renamed (`to: Some`) or deleted: follow it in Search Tabs' scopes and

@@ -12,8 +12,8 @@
 
 use egui::{Color32, RichText, Ui};
 use obs_engine::get_bibles::{
-    LanguageChoice, ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY, TAG_STRONGS,
-    UpdateCheck, UpdatesSummary,
+    LanguageChoice, ListingSource, ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY,
+    TAG_STRONGS, UpdateCheck, UpdatesSummary,
 };
 use obs_engine::packs::{PackSummary, count_words, size_words};
 use obs_engine::{ImportPhase, LanguageName, LicenceClass, LicenceFilter, language, licence_class};
@@ -271,7 +271,15 @@ fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> S
                     let list: Vec<String> = summary
                         .updates
                         .iter()
-                        .map(|u| format!("{} {}", names(&u.resource_id), u.available))
+                        .map(|u| match u.source {
+                            // An Open catalogue Book: its publisher corrected the text (#415).
+                            ListingSource::Open => {
+                                format!("{} (corrected text)", names(&u.resource_id))
+                            }
+                            ListingSource::Sword => {
+                                format!("{} {}", names(&u.resource_id), u.available)
+                            }
+                        })
                         .collect();
                     ui.colored_label(
                         theme::c().verdigris,
@@ -600,44 +608,67 @@ fn pack_row(ui: &mut Ui, p: &PackSummary) -> Option<Action> {
                     .desired_width(size::FIELD_NARROW)
                     .text(format!("{} of {}", run.done, run.total)),
             );
-        } else if left == 0 {
-            ui.label(crate::components::hint_text("In your Library"));
-        } else if ui
-            .button("Download pack")
-            .accessible_name(format!("Download {}", p.title))
-            .on_hover_text(format!(
-                "Download {} Book{}, about {}, each from its publisher",
-                count_words(left),
-                if left == 1 { "" } else { "s" },
-                size_words(p.remaining_bytes)
-            ))
-            .clicked()
-        {
-            action = Some(Action::Run("getbibles.download_pack", json!({"id": p.id})));
+        } else {
+            // Right to left: Download pack (or "In your Library") outermost, Remove… inside.
+            pack_download_control(ui, p, left, &mut action);
+            if p.installed > 0
+                && ui
+                    .small_button("Remove…")
+                    .accessible_name(format!("Remove {}", p.title))
+                    .on_hover_text(
+                        "Remove this pack's Books from your Library, but those with your Notes \
+                         or Highlights and those in another pack",
+                    )
+                    .clicked()
+            {
+                action = Some(Action::Run("getbibles.remove_pack", json!({"id": p.id})));
+            }
         }
         ui.add_space(space::M);
-        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
-            ui.add(
-                egui::Label::new(RichText::new(&p.title).strong().color(theme::c().ink)).truncate(),
-            );
-            ui.add(egui::Label::new(crate::components::hint_text(&p.description)).truncate());
-            let mut facts = vec![format!(
-                "{} Book{}",
-                count_words(p.books),
-                if p.books == 1 { "" } else { "s" }
-            )];
-            if p.installed > 0 {
-                facts.push(format!("{} in your Library", count_words(p.installed)));
-            }
-            if left > 0 {
-                facts.push(format!("{} to download", size_words(p.remaining_bytes)));
-            }
-            ui.add(egui::Label::new(crate::components::hint_text(facts.join(" · "))).truncate());
-        });
+        pack_text(ui, p, left);
     });
     action
+}
+
+/// A pack's Download pack button, or "In your Library" once it is all there.
+fn pack_download_control(ui: &mut Ui, p: &PackSummary, left: usize, action: &mut Option<Action>) {
+    if left == 0 {
+        ui.label(crate::components::hint_text("In your Library"));
+    } else if ui
+        .button("Download pack")
+        .accessible_name(format!("Download {}", p.title))
+        .on_hover_text(format!(
+            "Download {} Book{}, about {}, each from its publisher",
+            count_words(left),
+            if left == 1 { "" } else { "s" },
+            size_words(p.remaining_bytes)
+        ))
+        .clicked()
+    {
+        *action = Some(Action::Run("getbibles.download_pack", json!({"id": p.id})));
+    }
+}
+
+/// A pack's title, description and counts.
+fn pack_text(ui: &mut Ui, p: &PackSummary, left: usize) {
+    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+        ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+        ui.add(egui::Label::new(RichText::new(&p.title).strong().color(theme::c().ink)).truncate());
+        ui.add(egui::Label::new(crate::components::hint_text(&p.description)).truncate());
+        let mut facts = vec![format!(
+            "{} Book{}",
+            count_words(p.books),
+            if p.books == 1 { "" } else { "s" }
+        )];
+        if p.installed > 0 {
+            facts.push(format!("{} in your Library", count_words(p.installed)));
+        }
+        if left > 0 {
+            facts.push(format!("{} to download", size_words(p.remaining_bytes)));
+        }
+        ui.add(egui::Label::new(crate::components::hint_text(facts.join(" · "))).truncate());
+    });
 }
 
 /// Download a row: a SWORD module from its repository, or an Open catalogue entry from its
@@ -651,10 +682,10 @@ fn download(b: &ResourceListing) -> Action {
 }
 
 impl State {
-    /// A large Book pack's confirmation (#415): how many Books and how large, Download or
-    /// Cancel.
+    /// A Book pack's confirmation (#415): a large download (how many Books and how large,
+    /// Download or Cancel) or a removal (how many go and which stay, Remove or Cancel).
     pub(super) fn pack_prompt(&mut self, ctx: &egui::Context) {
-        let Some((pack, title, message)) = self.confirm_pack.take() else {
+        let Some((pack, title, message, remove)) = self.confirm_pack.take() else {
             return;
         };
         let mut done: Option<bool> = None;
@@ -667,7 +698,10 @@ impl State {
                 ui.label(message.as_str());
                 ui.add_space(space::M);
                 ui.horizontal(|ui| {
-                    if ui.button("Download").clicked() {
+                    if ui
+                        .button(if remove { "Remove" } else { "Download" })
+                        .clicked()
+                    {
                         done = Some(true);
                     }
                     if ui.button("Cancel").clicked()
@@ -678,13 +712,15 @@ impl State {
                 });
             });
         match done {
-            None => self.confirm_pack = Some((pack, title, message)),
+            None => self.confirm_pack = Some((pack, title, message, remove)),
             Some(false) => {}
             Some(true) => {
-                self.run(
-                    "getbibles.download_pack",
-                    &json!({ "id": pack, "confirm": true }),
-                );
+                let command = if remove {
+                    "getbibles.remove_pack"
+                } else {
+                    "getbibles.download_pack"
+                };
+                self.run(command, &json!({ "id": pack, "confirm": true }));
             }
         }
     }
@@ -782,11 +818,19 @@ fn listing_row(
                 if ui
                     .button("Update")
                     .accessible_name(format!("Update {}", b.title))
-                    .on_hover_text(format!(
-                        "Download version {available} {} and replace the Resource with it; \
-                         Notes and Highlights move with their text",
-                        b.source_label()
-                    ))
+                    .on_hover_text(if b.is_open() {
+                        format!(
+                            "Download the corrected text {} and replace the Resource with it; \
+                             Notes and Highlights move with their text",
+                            b.source_label()
+                        )
+                    } else {
+                        format!(
+                            "Download version {available} {} and replace the Resource with \
+                             it; Notes and Highlights move with their text",
+                            b.source_label()
+                        )
+                    })
                     .clicked()
                 {
                     action = Some(Action::Run("getbibles.update", json!({"module": b.module})));
@@ -804,7 +848,12 @@ fn listing_row(
                         .strong()
                         .color(theme::c().verdigris),
                 )
-                .on_hover_text(update_versions(installed, available));
+                .on_hover_text(if b.is_open() {
+                    // An Open catalogue Book whose publisher corrected its file (#415).
+                    "Its publisher corrected this text since you downloaded it".to_string()
+                } else {
+                    update_versions(installed, available)
+                });
             }
             ListingStatus::Failed { error, .. } => {
                 if ui

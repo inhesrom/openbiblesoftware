@@ -1217,11 +1217,16 @@ pub enum ListingStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResourceUpdate {
     pub resource_id: String,
+    /// The SWORD module, or the Open catalogue entry's id.
     pub module: String,
     pub repo: String,
-    /// The version imported (empty when its conf had none).
+    /// The version imported (empty when its conf had none); an Open catalogue Book's
+    /// downloaded sha256.
     pub installed: String,
+    /// The version offered; an Open catalogue Book's newly pinned sha256.
     pub available: String,
+    /// A SWORD module, or an Open catalogue entry whose pinned file changed (#415).
+    pub source: ListingSource,
 }
 
 /// How far Get Resources could check the downloaded Resources for updates (#136). Only
@@ -1310,6 +1315,26 @@ impl Session {
                     phase: r.phase.clone(),
                     done: r.done,
                     total: r.total,
+                }
+            } else if r.phase == crate::ImportPhase::Complete
+                && self.library.get(&id).is_some()
+                && listing.source == ListingSource::Open
+            {
+                // An Open catalogue Book whose entry now pins another file (#415).
+                let pinned = self
+                    .get_bibles
+                    .open_source(&listing.module)
+                    .and_then(|s| s.sha256.clone());
+                let installed = r.open_origin.as_ref().and_then(|o| o.sha256.clone());
+                match (installed, pinned) {
+                    (Some(installed), Some(pinned)) if !installed.eq_ignore_ascii_case(&pinned) => {
+                        ListingStatus::UpdateAvailable {
+                            resource_id: id,
+                            installed,
+                            available: pinned,
+                        }
+                    }
+                    _ => ListingStatus::Installed { resource_id: id },
                 }
             } else if r.phase == crate::ImportPhase::Complete && self.library.get(&id).is_some() {
                 match origin.and_then(|o| o.version.as_deref()) {
@@ -1507,10 +1532,30 @@ impl Session {
                             repo: l.repo.clone(),
                             installed: installed.to_string(),
                             available: l.version.clone().unwrap_or_default(),
+                            source: ListingSource::Sword,
                         });
                     }
                 }
                 _ => unchecked.push(id.clone()),
+            }
+        }
+        // Open catalogue downloads (#415): checked against the pins compiled into this
+        // version of the app, so always checked, offline too.
+        let open = self.open_downloads();
+        for (id, entry, installed) in &open {
+            if self.imports.is_update(id) {
+                updating.push(id.clone());
+            } else if let Some(pinned) = &entry.sha256
+                && !pinned.eq_ignore_ascii_case(installed)
+            {
+                updates.push(ResourceUpdate {
+                    resource_id: id.clone(),
+                    module: entry.id.clone(),
+                    repo: entry.publisher.clone(),
+                    installed: installed.clone(),
+                    available: pinned.clone(),
+                    source: ListingSource::Open,
+                });
             }
         }
         UpdatesSummary {
@@ -1518,8 +1563,46 @@ impl Session {
             updates,
             unchecked,
             updating,
-            downloaded: downloaded.len(),
+            downloaded: downloaded.len() + open.len(),
         }
+    }
+
+    /// The Open catalogue downloads in the Library whose entry pins its file: (Resource id,
+    /// entry, the downloaded sha256).
+    fn open_downloads(&self) -> Vec<(String, &OpenSource, String)> {
+        self.imports
+            .records()
+            .map(|r| self.imports.replaced(&r.resource_id).unwrap_or(r))
+            .filter(|r| {
+                r.phase == crate::ImportPhase::Complete
+                    && self.library.get(&r.resource_id).is_some()
+            })
+            .filter_map(|r| {
+                let origin = r.open_origin.as_ref()?;
+                let entry = self.get_bibles.open_source(&origin.id)?;
+                entry.sha256.as_ref()?;
+                Some((r.resource_id.clone(), entry, origin.sha256.clone()?))
+            })
+            .collect()
+    }
+
+    /// Download the newly pinned file of Open catalogue entry `id` and import it as the next
+    /// Resource revision of the Resource downloaded from it (#415), as a SWORD update does:
+    /// its Annotations are re-anchored once it is in.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn update_open(&mut self, id: &str) -> Result<(String, JobId), String> {
+        let entry = self
+            .get_bibles
+            .open_source(id)
+            .cloned()
+            .ok_or_else(|| format!("The Open catalogue has no entry {id:?}"))?;
+        let ListingStatus::UpdateAvailable { resource_id, .. } =
+            self.listing_status(&entry.listing())
+        else {
+            return Err(format!("{} has no update", entry.title));
+        };
+        let job = self.start_open_update(&resource_id, entry)?;
+        Ok((resource_id, job))
     }
 
     /// Download the newer version of `module` and import it as the next Resource revision
@@ -1683,6 +1766,12 @@ const PACK_ID: ParamSpec = ParamSpec {
     required: true,
     help: "Book pack id (packs.toml)",
 };
+const CONFIRM_REMOVE: ParamSpec = ParamSpec {
+    name: "confirm",
+    kind: ParamKind::Boolean,
+    required: false,
+    help: "Remove without asking first",
+};
 const CONFIRM: ParamSpec = ParamSpec {
     name: "confirm",
     kind: ParamKind::Boolean,
@@ -1734,6 +1823,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: download_pack,
     },
     CommandSpec {
+        id: "getbibles.remove_pack",
+        label: "Remove a Book pack",
+        shortcut: None,
+        params: &[PACK_ID, CONFIRM_REMOVE],
+        enabled: crate::command::always,
+        run: remove_pack,
+    },
+    CommandSpec {
         id: "getbibles.packs",
         label: "List Book packs",
         shortcut: None,
@@ -1769,6 +1866,72 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
 
 fn desktop(_: &Session) -> bool {
     cfg!(not(target_arch = "wasm32"))
+}
+
+/// Remove pack (#415): asks first, saying how many Books go and which stay and why.
+fn remove_pack(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const CMD: &str = "getbibles.remove_pack";
+    let id = p.str("id").unwrap_or_default();
+    let fail = |message: String| CommandError::Failed {
+        command: CMD,
+        message,
+    };
+    let pack =
+        crate::packs::pack(id).ok_or_else(|| fail(format!("There is no Book pack {id:?}")))?;
+    let removal = s.pack_removal(id);
+    let kept = removal.annotated.len() + removal.in_other_pack.len();
+    if removal.remove.is_empty() {
+        return Err(fail(if kept == 0 {
+            format!("No Book of {} is in your Library", pack.title)
+        } else {
+            format!(
+                "Every Book of {} in your Library is kept: it has your Notes or Highlights, or \
+                 is in another pack's Collection",
+                pack.title
+            )
+        }));
+    }
+    if !p.bool("confirm").unwrap_or(false) {
+        let n = removal.remove.len();
+        let mut message = format!(
+            "Remove {} Book{} of {} from your Library? Their files are deleted.",
+            crate::packs::count_words(n),
+            if n == 1 { "" } else { "s" },
+            pack.title
+        );
+        let a = removal.annotated.len();
+        if a > 0 {
+            message.push_str(&format!(
+                " {} with your Notes or Highlights {} kept.",
+                crate::packs::count_words(a),
+                if a == 1 { "is" } else { "are" }
+            ));
+        }
+        let o = removal.in_other_pack.len();
+        if o > 0 {
+            message.push_str(&format!(
+                " {} in another pack's Collection {} kept.",
+                crate::packs::count_words(o),
+                if o == 1 { "is" } else { "are" }
+            ));
+        }
+        message.push_str(" Download pack brings them back.");
+        s.workspace.push_effect(crate::Effect::ConfirmPack {
+            pack: pack.id.clone(),
+            title: format!("Remove {}?", pack.title),
+            message: message.clone(),
+            remove: true,
+        });
+        return Ok(json!({ "confirm": message }));
+    }
+    let removed = s.remove_pack(id).map_err(fail)?;
+    s.workspace.push_effect(crate::Effect::Message(format!(
+        "Removed {} Book{} of {}",
+        crate::packs::count_words(removed),
+        if removed == 1 { "" } else { "s" },
+        pack.title
+    )));
+    Ok(json!({ "removed": removed }))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1845,12 +2008,16 @@ fn update(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 #[cfg(not(target_arch = "wasm32"))]
 fn update(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let module = p.str("module").unwrap_or_default();
-    let (id, job) = s
-        .update_resource(module)
-        .map_err(|message| CommandError::Failed {
-            command: "getbibles.update",
-            message,
-        })?;
+    let open = s.get_bibles.open_source(module).is_some();
+    let started = if open {
+        s.update_open(module)
+    } else {
+        s.update_resource(module)
+    };
+    let (id, job) = started.map_err(|message| CommandError::Failed {
+        command: "getbibles.update",
+        message,
+    })?;
     Ok(json!({"id": id, "job": job.0}))
 }
 
@@ -1872,7 +2039,11 @@ fn update_all(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
         if s.imports.job_of(&u.resource_id).is_some() {
             continue;
         }
-        match s.update_resource(&u.module) {
+        let result = match u.source {
+            ListingSource::Open => s.update_open(&u.module),
+            ListingSource::Sword => s.update_resource(&u.module),
+        };
+        match result {
             Ok((id, _)) => started.push(id),
             Err(e) => failed.push(json!({"id": u.resource_id, "error": e})),
         }

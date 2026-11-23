@@ -117,6 +117,7 @@ pub struct Session {
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
     /// The pause between two downloads of a Book pack (#415); none in tests.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) pack_pause: std::time::Duration,
 }
 

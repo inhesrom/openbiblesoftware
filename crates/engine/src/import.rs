@@ -681,6 +681,44 @@ impl Session {
         Ok(self.submit_import(source, &dir, resource_id, Some(revision)))
     }
 
+    /// Start an update of Resource `resource_id`, downloaded from the Open catalogue, from its
+    /// entry's newly pinned file (#415): the next Resource revision, as [`Self::start_update`]
+    /// writes a SWORD module's.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_open_update(
+        &mut self,
+        resource_id: &str,
+        entry: crate::open_catalogue::OpenSource,
+    ) -> Result<JobId, String> {
+        let library_entry = self
+            .library
+            .get(resource_id)
+            .ok_or_else(|| format!("{resource_id} is not in the library"))?;
+        let path = library_entry.path.clone();
+        let dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or("No library directory")?;
+        let revision = Revision {
+            number: library_entry.manifest.revision.saturating_add(1),
+            path,
+        };
+        let record = self
+            .imports
+            .report(resource_id)
+            .cloned()
+            .ok_or_else(|| format!("{resource_id} was not downloaded"))?;
+        self.imports
+            .replacing
+            .insert(resource_id.to_string(), record);
+        Ok(self.submit_import(
+            ImportSource::Open(Box::new(entry)),
+            &dir,
+            resource_id,
+            Some(revision),
+        ))
+    }
+
     /// Record a running Import of `source` as Resource `id` and queue its job. `revision`:
     /// write it as that Resource revision of `id`, replacing its `.obr` in the library.
     #[cfg(not(target_arch = "wasm32"))]

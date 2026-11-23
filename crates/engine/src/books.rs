@@ -636,7 +636,7 @@ impl Session {
                     {
                         // A Book pack's Books go in the Library Collection named for it.
                         if let Some(pack) = self.pack_of_batch(&id) {
-                            self.add_to_collection(&pack.title, &book_id);
+                            self.add_to_collection(&pack.title, std::slice::from_ref(&book_id));
                         }
                         added.push(book_id);
                     }
