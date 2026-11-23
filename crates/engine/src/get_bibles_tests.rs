@@ -978,6 +978,7 @@ fn bumping_a_module_version_shows_update_available_and_updating_keeps_its_notes_
             repo: "CrossWire".into(),
             installed: "1.0".into(),
             available: "1.1".into(),
+            source: ListingSource::Sword,
         }]
     );
     assert!(!summary.up_to_date());

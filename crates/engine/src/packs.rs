@@ -200,6 +200,17 @@ pub struct PackSummary {
     pub running: Option<PackProgress>,
 }
 
+/// What Remove pack would do ([`Session::pack_removal`]): Resource ids.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PackRemoval {
+    /// Taken out of the Library.
+    pub remove: Vec<String>,
+    /// Kept: they have Notes or Highlights.
+    pub annotated: Vec<String>,
+    /// Kept: they are in another pack's Collection too.
+    pub in_other_pack: Vec<String>,
+}
+
 /// A pack's running download.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PackProgress {
@@ -265,7 +276,8 @@ impl Session {
     }
 
     /// Download every Book of pack `id` not in the Library yet, as one batch with one Import
-    /// report; each Book joins the Library, and the pack's Collection, as it comes in.
+    /// report; each Book joins the Library, and the pack's Collection, as it comes in. Those
+    /// of its Books already in the Library join the Collection at once.
     /// Returns the batch's report id, its Tab and the job.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn download_pack(&mut self, id: &str) -> Result<(String, u64, crate::JobId), String> {
@@ -275,6 +287,26 @@ impl Session {
         {
             return Err(format!("{} is already downloading", pack.title));
         }
+        // The pack's Books already in the Library go in its Collection now; the rest as they
+        // come in.
+        let members: std::collections::HashSet<&str> = pack
+            .books(self.get_bibles.open_sources())
+            .into_iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        let already: Vec<String> = self
+            .imports
+            .records()
+            .filter(|r| {
+                r.phase == crate::ImportPhase::Complete
+                    && self.library.get(&r.resource_id).is_some()
+                    && r.open_origin
+                        .as_ref()
+                        .is_some_and(|o| members.contains(o.id.as_str()))
+            })
+            .map(|r| r.resource_id.clone())
+            .collect();
+        self.add_to_collection(&pack.title, &already);
         let installed = self.open_installed();
         let busy: std::collections::HashSet<String> = self
             .imports
@@ -330,8 +362,80 @@ impl Session {
                 size_words(p.remaining_bytes),
                 p.title
             ),
+            remove: false,
         });
         true
+    }
+
+    /// Pack `id`'s Books in the Library (Resource ids), split into those Remove pack takes out
+    /// and those it keeps: a Book with Notes or Highlights, or in another pack's Collection.
+    pub fn pack_removal(&self, id: &str) -> PackRemoval {
+        let mut out = PackRemoval::default();
+        let Some(this) = pack(id) else {
+            return out;
+        };
+        let members: std::collections::HashSet<&str> = this
+            .books(self.get_bibles.open_sources())
+            .into_iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        let others: Vec<&Pack> = packs()
+            .iter()
+            .filter(|p| p.id != this.id && self.library.collection(&p.title).is_some())
+            .collect();
+        for r in self.imports.records() {
+            let Some(origin) = &r.open_origin else {
+                continue;
+            };
+            if r.phase != crate::ImportPhase::Complete
+                || self.library.get(&r.resource_id).is_none()
+                || !members.contains(origin.id.as_str())
+            {
+                continue;
+            }
+            let rid = r.resource_id.clone();
+            if self.annotations_referring(&rid) > 0 {
+                out.annotated.push(rid);
+            } else if others
+                .iter()
+                .any(|p| self.library.in_collection(&p.title, &rid))
+            {
+                out.in_other_pack.push(rid);
+            } else {
+                out.remove.push(rid);
+            }
+        }
+        out
+    }
+
+    /// Remove pack `id`'s Books from the Library, but those [`Self::pack_removal`] keeps, and
+    /// take them out of the pack's Collection (deleted once it holds nothing). Returns how
+    /// many were removed.
+    pub(crate) fn remove_pack(&mut self, id: &str) -> Result<usize, String> {
+        let this = pack(id).ok_or_else(|| format!("There is no Book pack {id:?}"))?;
+        if let Some(report) = self.imports.packs.get(id)
+            && self.imports.job_of(report).is_some()
+        {
+            return Err(format!(
+                "{} is downloading. Cancel it first, then remove it.",
+                this.title
+            ));
+        }
+        let removal = self.pack_removal(id);
+        let mut removed = Vec::new();
+        for rid in &removal.remove {
+            match self.run(
+                "library.remove",
+                &serde_json::json!({"id": rid, "confirm": true}),
+            ) {
+                Ok(_) => removed.push(rid.clone()),
+                Err(e) => self
+                    .workspace
+                    .push_effect(crate::Effect::Message(e.to_string())),
+            }
+        }
+        self.remove_from_collection(&this.title, &removed);
+        Ok(removed.len())
     }
 
     /// The pack whose download batch is `report`.

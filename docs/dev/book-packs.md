@@ -79,11 +79,31 @@ Each row shows:
   in stay.
 - **Resuming:** running the pack again fetches only what is missing.
 
-Not yet:
-- Remove pack;
-- Update all for Open catalogue Books;
-- a free-space check before a large pack. No crate in the tree reads free space without
-  `unsafe`; the confirmation gives the size.
+## Remove pack
+
+**Remove…** on a pack with Books in the Library runs `getbibles.remove_pack`. Without
+`confirm`, it asks first (`Effect::ConfirmPack` with `remove`), saying how many Books go and
+which stay and why. `Session::pack_removal` keeps:
+- a Book with Notes or Highlights (`annotations_referring`);
+- a Book in another pack's Collection.
+
+The rest are removed through `library.remove` (files, Search index caches and records). They
+leave the pack's Collection, which is deleted once it holds nothing. Downloading a pack puts
+all of its Books already in the Library in its Collection too, so "in another pack's
+Collection" means the user downloaded that pack. Remove is refused while the pack is
+downloading.
+
+## Updates
+
+A downloaded Book keeps its file's sha256. When a later version of the app pins another file
+for the Book's entry, Get Resources offers **Update**, and **Update all** includes it. The
+update is the next Resource revision of the same Resource, with its Annotations re-anchored
+([get-bibles.md](get-bibles.md), Updates and removal).
+
+## Not yet
+
+A free-space check before a large pack: no crate in the tree reads free space without
+`unsafe`, so it needs a new dependency (`fs4`). For now the confirmation gives the size.
 
 ## Tests
 
@@ -98,6 +118,9 @@ Not yet:
   changed file refused while the rest go on, each Book installed as a single download leaves
   it and added to the pack's Collection, a second run fetching only what is missing, and All
   Books asking first.
+
+`remove_pack_keeps_annotated_books_and_books_of_another_pack` and
+`a_repinned_book_is_offered_as_an_update_and_updated_in_place` cover removal and updates.
 
 Live, by hand: `cargo test -p openbible --release -- --ignored --nocapture
 live_a_book_pack_downloads_in_one_job` downloads Confessions & Catechisms (68 Books, 24 MB).

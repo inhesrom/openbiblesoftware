@@ -226,9 +226,9 @@ pub(crate) struct State {
     prompt: Option<(Option<String>, String)>,
     /// The Remove… confirmation: resource id, window title and message.
     confirm: Option<(String, String, String)>,
-    /// A large Book pack's download waiting for the user's Download (#415): pack, title,
-    /// message.
-    confirm_pack: Option<(String, String, String)>,
+    /// A Book pack's large download, or its removal, waiting for the user's answer (#415):
+    /// pack, title, message, and whether it removes.
+    confirm_pack: Option<(String, String, String, bool)>,
     pick_import: bool,
     /// The Get Bibles Tab's search and language filter.
     get_bibles_ui: get_bibles_tab::GetBiblesUi,
@@ -718,7 +718,8 @@ impl Shell {
                     pack,
                     title,
                     message,
-                } => self.st.confirm_pack = Some((pack, title, message)),
+                    remove,
+                } => self.st.confirm_pack = Some((pack, title, message, remove)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
