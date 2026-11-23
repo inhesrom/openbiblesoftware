@@ -1,0 +1,9 @@
+date: 2026-11-23T06:11:08+00:00
+host: Linux 7.0.0-38-generic x86_64
+cpu: AMD Ryzen 7 7840HS w/ Radeon 780M Graphics
+gpu: VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Phoenix1 (rev c2)
+session: ? DISPLAY=:97 WAYLAND_DISPLAY=
+display_hz: 60
+gpui binary: 53M
+egui binary: 63M
+scenario: prototype/gpui-text-paint/scenario.json

@@ -1,0 +1,74 @@
+{
+  "_comment": "PROTOTYPE — the one scripted scenario both apps run (GPUI prototype and egui openbible). One action per frame, in order. dy is points per frame (positive = down the text) on the leader (first) Panel; the other Panels follow through Link set A. `shot` steps jump, settle (settle_secs of wall time, then `settle` frames: the egui app's jump flash lasts 1.2 s), then hold still while bench.sh captures the window; they and `setup` are left out of the `all` statistics.",
+  "window": [
+    1400,
+    900
+  ],
+  "bibles": [
+    "kjv-strongs",
+    "web",
+    "tahot",
+    "tagnt"
+  ],
+  "steps": [
+    {
+      "phase": "setup",
+      "jump": "Genesis 1:1",
+      "settle": 90
+    },
+    {
+      "phase": "shot",
+      "shot": "genesis-1",
+      "hold": 30,
+      "settle_secs": 1.5,
+      "settle": 10
+    },
+    {
+      "phase": "idle",
+      "frames": 60
+    },
+    {
+      "phase": "scroll",
+      "frames": 600,
+      "dy": 12
+    },
+    {
+      "phase": "fling",
+      "v0": 150,
+      "decay": 0.94,
+      "repeat": 3,
+      "rest": 20
+    },
+    {
+      "phase": "jump",
+      "to": [
+        "Psalm 119:1",
+        "John 3:16",
+        "Isaiah 53:1",
+        "Romans 8:28",
+        "Genesis 50:1",
+        "Revelation 22:1",
+        "Exodus 20:1",
+        "Matthew 5:1"
+      ],
+      "settle": 30
+    },
+    {
+      "phase": "shot",
+      "shot": "john-1",
+      "jump": "John 1:1",
+      "hold": 30,
+      "settle_secs": 1.5,
+      "settle": 10
+    },
+    {
+      "phase": "scroll",
+      "frames": 300,
+      "dy": -12
+    },
+    {
+      "phase": "idle",
+      "frames": 30
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# PROTOTYPE — throwaway (#372). Resource text laid out by the app's own pipeline (obs-layout,
+# obs-fonts) and painted through GPUI. Not a workspace member; lives only on the branch
+# `prototype/372-gpui-text-paint`. Wipe me.
+[package]
+name = "obs-prototype-gpui-text-paint"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Empty table: keep this crate out of the repository's Cargo workspace (own Cargo.lock).
+[workspace]
+
+[dependencies]
+# GPUI as #373 recommends: the gpui-pre snapshot gpui-kit pins, plus gpui-base, no styled layer.
+gpui-kit = { version = "=0.10.0", default-features = false }
+env_logger = "0.11"
+# The app's own crates (egui-free), read-only access to the library.
+obs-store = { path = "../../crates/store" }
+obs-model = { path = "../../crates/model" }
+obs-scripture = { path = "../../crates/scripture" }
+obs-layout = { path = "../../crates/layout" }
+obs-fonts = { path = "../../crates/fonts" }
+obs-render = { path = "../../crates/render" }
+# egui's default interface font (Ubuntu Light), so the chrome looks like the egui app's.
+epaint_default_fonts = "0.37"
+serde_json = "1"
+# Xvfb wake-up (see `x11_poke`).
+x11rb = "0.13"
+
+[profile.release]
+debug = 0
