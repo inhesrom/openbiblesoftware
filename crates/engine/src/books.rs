@@ -3,7 +3,8 @@
 //! could not be, with why.
 //!
 //! A batch reads its books from a [`BookStream`]: a folder on this computer (Import… →
-//! Markdown folder…) or, for #347, the Christian Open Library. The job takes one book per
+//! Markdown folder…) or a Book pack of the Open catalogue (#415, [`PackStream`]), each Book
+//! downloaded from its publisher and checked by its pin. The job takes one book per
 //! step, so Cancel stops between books and the books already in stay in the Library. Each
 //! book that comes in is sent back at once ([`JobContext::emit`]) and joins the Library then,
 //! with its own Import record, as a single Import would.
@@ -17,8 +18,9 @@ use std::sync::Arc;
 use obs_formats::{BookFile, BookFiles, MarkdownBookOptions, group_book_files};
 use serde::{Deserialize, Serialize};
 
-use crate::import::{ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord};
+use crate::import::{ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, OpenOrigin};
 use crate::jobs::{Job, JobContext, Step};
+use crate::open_catalogue::OpenSource;
 use crate::{Effect, JobEvent, JobEventKind, LibraryEntry, OpenRequest, Session, TabKind};
 
 /// One book of a batch, read and ready to import.
@@ -31,6 +33,18 @@ pub struct LoadedBook {
     /// The Resource id to write it as: a book already in the Library is written as its next
     /// Resource revision. `None`: a new id made from the book's name.
     pub resource_id: Option<String>,
+    /// A Book downloaded from the Open catalogue (#415): read with its entry's importer, not
+    /// as Markdown (`main` and `parts` are then empty).
+    pub open: Option<Box<OpenLoaded>>,
+}
+
+/// An Open catalogue Book downloaded and checked, ready to import.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenLoaded {
+    pub source: OpenSource,
+    pub bytes: Vec<u8>,
+    /// The download's sha256, as its check found it.
+    pub sha256: String,
 }
 
 /// A book a batch could not bring in, and why (the plain error, never a stack).
@@ -185,9 +199,115 @@ impl BookStream for FolderStream {
                 main,
                 parts,
                 resource_id: None,
+                open: None,
             })
         };
         Ok(Some(read().map_err(|error| BookFailure { name, error })))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// The Books of a Book pack (#415), downloaded one at a time from their publishers, each
+/// checked by its pin before it is imported. A pause between downloads keeps the batch
+/// gentle on the publishers (Project Gutenberg's mirror asks it of programs); a failed
+/// download is tried again a few times, then listed as a Book that could not be brought in.
+pub struct PackStream {
+    sources: std::collections::VecDeque<OpenSource>,
+    total: usize,
+    fetch: Arc<dyn obs_formats::sword_repo::Fetch>,
+    pause: std::time::Duration,
+    started: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PackStream {
+    /// How long to wait between two downloads.
+    pub const PAUSE: std::time::Duration = std::time::Duration::from_millis(500);
+    /// How many times a download is tried.
+    const TRIES: u32 = 3;
+
+    pub fn new(
+        sources: Vec<OpenSource>,
+        fetch: Arc<dyn obs_formats::sword_repo::Fetch>,
+        pause: std::time::Duration,
+    ) -> Self {
+        Self {
+            total: sources.len(),
+            sources: sources.into(),
+            fetch,
+            pause,
+            started: false,
+        }
+    }
+
+    fn download(&self, source: &OpenSource, ctx: &JobContext) -> Result<Vec<u8>, String> {
+        use obs_formats::sword_repo::FetchError;
+        let mut last = String::new();
+        for attempt in 0..Self::TRIES {
+            if attempt > 0 {
+                // 2 s, then 6 s; longer when the server says it is busy.
+                let wait = std::time::Duration::from_secs(2 * 3u64.pow(attempt - 1));
+                std::thread::sleep(wait);
+            }
+            if ctx.is_cancelled() {
+                return Err(String::new());
+            }
+            match self.fetch.get(&source.url, &mut |_, _| !ctx.is_cancelled()) {
+                Ok(bytes) => return Ok(bytes),
+                Err(FetchError::Cancelled) => return Err(String::new()),
+                // Not there: trying again will not help.
+                Err(FetchError::NotFound) => {
+                    return Err(format!(
+                        "download from {}: {}",
+                        source.publisher,
+                        FetchError::NotFound
+                    ));
+                }
+                Err(e) => last = format!("download from {}: {e}", source.publisher),
+            }
+        }
+        Err(last)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl BookStream for PackStream {
+    fn total(&self) -> Option<usize> {
+        Some(self.total)
+    }
+
+    fn next_book(
+        &mut self,
+        ctx: &JobContext,
+    ) -> Result<Option<Result<LoadedBook, BookFailure>>, String> {
+        let Some(source) = self.sources.pop_front() else {
+            return Ok(None);
+        };
+        if self.started {
+            std::thread::sleep(self.pause);
+        }
+        self.started = true;
+        let name = source.title.clone();
+        let bytes = match self.download(&source, ctx) {
+            Ok(bytes) => bytes,
+            Err(_) if ctx.is_cancelled() => return Err("Import cancelled".into()),
+            Err(error) => return Ok(Some(Err(BookFailure { name, error }))),
+        };
+        let sha256 = match source.check_download(&bytes) {
+            Ok(sha) => sha,
+            Err(error) => return Ok(Some(Err(BookFailure { name, error }))),
+        };
+        Ok(Some(Ok(LoadedBook {
+            name,
+            main: None,
+            parts: Vec::new(),
+            resource_id: None,
+            open: Some(Box::new(OpenLoaded {
+                source,
+                bytes,
+                sha256,
+            })),
+        })))
     }
 }
 
@@ -212,6 +332,8 @@ pub(crate) struct ImportedBook {
     report: obs_formats::ImportReport,
     index: ImportIndexStatus,
     updated: bool,
+    /// An Open catalogue Book's entry, URL and sha256, and where it came from in words.
+    open: Option<(OpenOrigin, String)>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -248,6 +370,9 @@ impl BatchJob {
     }
 
     fn import(&mut self, book: LoadedBook, ctx: &JobContext) -> Result<BookEvent, String> {
+        if let Some(open) = book.open {
+            return self.import_open(book.name, *open, ctx);
+        }
         let (id, revision) = match &book.resource_id {
             Some(id) => (
                 id.clone(),
@@ -296,6 +421,60 @@ impl BatchJob {
             report,
             index,
             updated,
+            open: None,
+        })))
+    }
+
+    /// An Open catalogue Book: its entry's importer, licence and Attribution, as a single
+    /// download of it would import it, under a new id made from the entry's id.
+    fn import_open(
+        &mut self,
+        name: String,
+        open: OpenLoaded,
+        ctx: &JobContext,
+    ) -> Result<BookEvent, String> {
+        let OpenLoaded {
+            source,
+            bytes,
+            sha256,
+        } = open;
+        let id = self.new_id(&source.id);
+        let (resource, report) =
+            source.import(&bytes, &id, &crate::import::tool_version(), |_, _| {
+                !ctx.is_cancelled()
+            })?;
+        let target = crate::import::Target {
+            dir: &self.dir,
+            id: &id,
+            revision: None,
+        };
+        let mut written = None;
+        let (entry, index) = crate::import::write_resource(
+            resource,
+            &target,
+            self.indexer.as_ref(),
+            ctx,
+            &mut written,
+        )
+        .map_err(|e| {
+            if let Some(file) = written.take() {
+                let _ = std::fs::remove_file(file);
+            }
+            e.to_string()
+        })?;
+        let origin = OpenOrigin {
+            id: source.id.clone(),
+            url: source.url.clone(),
+            sha256: Some(sha256),
+        };
+        let from = format!("{} from {}", source.url, source.publisher);
+        Ok(BookEvent::Imported(Box::new(ImportedBook {
+            name,
+            entry,
+            report,
+            index,
+            updated: false,
+            open: Some((origin, from)),
         })))
     }
 }
@@ -455,6 +634,10 @@ impl Session {
                     if let Ok(book) = out.downcast::<BookEvent>()
                         && let Some(book_id) = self.book_arrived(&id, *book)
                     {
+                        // A Book pack's Books go in the Library Collection named for it.
+                        if let Some(pack) = self.pack_of_batch(&id) {
+                            self.add_to_collection(&pack.title, &book_id);
+                        }
                         added.push(book_id);
                     }
                 }
@@ -502,7 +685,12 @@ impl Session {
                     report,
                     index,
                     updated,
+                    open,
                 } = *book;
+                let (open_origin, described) = match open {
+                    Some((origin, from)) => (Some(origin), from),
+                    None => (None, format!("{name} in {source}")),
+                };
                 let id = entry.manifest.resource_id.clone();
                 let title = entry.manifest.title.clone();
                 let replaced = self.library.get(&id).is_some();
@@ -515,7 +703,7 @@ impl Session {
                     id.clone(),
                     ImportRecord {
                         resource_id: id.clone(),
-                        source: format!("{name} in {source}"),
+                        source: described,
                         phase: ImportPhase::Complete,
                         done: 0,
                         total: 0,
@@ -523,7 +711,7 @@ impl Session {
                         index,
                         error: None,
                         origin: None,
-                        open_origin: None,
+                        open_origin,
                         books: None,
                     },
                 );

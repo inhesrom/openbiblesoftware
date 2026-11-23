@@ -299,6 +299,27 @@ impl Session {
         }
     }
 
+    /// Add Resource `id` to the Collection `name`, chosen by hand, making the Collection if
+    /// there is none of that name (a Book pack's Books, #415).
+    pub(crate) fn add_to_collection(&mut self, name: &str, id: &str) {
+        let mut set = self.library.collection_set().clone();
+        match set
+            .collections
+            .iter_mut()
+            .find(|c| c.name.eq_ignore_ascii_case(name.trim()))
+        {
+            Some(c) if c.resources.iter().any(|r| r == id) => return,
+            Some(c) => c.resources.push(id.to_string()),
+            None => set.collections.push(Collection {
+                name: name.trim().to_string(),
+                rules: Vec::new(),
+                resources: vec![id.to_string()],
+            }),
+        }
+        self.library.set_collection_set(set);
+        self.save_collections();
+    }
+
     /// A Collection was renamed (`to: Some`) or deleted: follow it in Search Tabs' scopes and
     /// the Guide filters.
     fn collection_renamed(&mut self, from: &str, to: Option<&str>) {

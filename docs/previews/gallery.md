@@ -237,6 +237,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Get Resources: Books by an author, Light](gallery/get-resources-books-by-an-author-light-1x.png) | ![Get Resources: Books by an author, Dark](gallery/get-resources-books-by-an-author-dark-1x.png) | ![Get Resources: Books by an author, Sepia](gallery/get-resources-books-by-an-author-sepia-1x.png) |
 | [2×](gallery/get-resources-books-by-an-author-light-2x.png) | [2×](gallery/get-resources-books-by-an-author-dark-2x.png) | [2×](gallery/get-resources-books-by-an-author-sepia-2x.png) |
 
+### Get Resources: Download All Books?
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Get Resources: Download All Books?, Light](gallery/get-resources-download-all-books-light-1x.png) | ![Get Resources: Download All Books?, Dark](gallery/get-resources-download-all-books-dark-1x.png) | ![Get Resources: Download All Books?, Sepia](gallery/get-resources-download-all-books-sepia-1x.png) |
+| [2×](gallery/get-resources-download-all-books-light-2x.png) | [2×](gallery/get-resources-download-all-books-dark-2x.png) | [2×](gallery/get-resources-download-all-books-sepia-2x.png) |
+
 ### Get Resources: Books of the 1800s
 
 | Light | Dark | Sepia |

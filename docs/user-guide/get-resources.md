@@ -12,7 +12,9 @@ Your library starts with the Starter library. **File → Get Resources…** adds
 
 Featured Resources come first; **Hebrew & Greek** lists the original-language Bibles, and says which carry Strong's numbers and Morphology for [Word Study](word-study.md).
 
-**Books** lists over two thousand historic Christian books, such as Owen's *Of the Mortification of Sin in Believers* (1668), the Westminster Confession (1646) and *The Pilgrim's Progress* (1678). Type an author ("Sibbes") or words of a title in the search box to find one. The Text Creation Partnership typed the older ones from their first printings, kept their spelling and page numbers, and gave its texts to the public domain; later ones, such as Spurgeon's and Moody's, come from Project Gutenberg's volunteers. A downloaded Book reads like an imported one: by its chapters, with its printed pages shown as [p. 23] and its Bible references as links.
+**Books** lists over two thousand historic Christian books, such as Owen's *Of the Mortification of Sin in Believers* (1668), the Westminster Confession (1646) and *The Pilgrim's Progress* (1678). Type an author ("Sibbes") or words of a title in the search box to find one.
+
+**Book packs**, at the top of Books, download a whole group at once: The Puritans, Confessions & Catechisms, Sermons, Devotion & Prayer, The Reformation, Early America, The 1800s, Philosophy & Classics, or All Books. **Download pack** brings in every Book of the pack you do not have yet, one at a time while you keep working, and puts them in a Collection with the pack's name. A large pack says how many Books and how large before it starts. **Cancel** stops after the Book downloading now; the Books already in stay, and **Download pack** later fetches the rest. The Text Creation Partnership typed the older ones from their first printings, kept their spelling and page numbers, and gave its texts to the public domain; later ones, such as Spurgeon's and Moody's, come from Project Gutenberg's volunteers. A downloaded Book reads like an imported one: by its chapters, with its printed pages shown as [p. 23] and its Bible references as links.
 
 ## Updates
 

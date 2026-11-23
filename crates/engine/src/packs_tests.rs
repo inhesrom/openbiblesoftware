@@ -118,6 +118,16 @@ fn packs_hold_what_their_names_promise() {
 }
 
 #[test]
+fn counts_and_sizes_read_as_words() {
+    assert_eq!(count_words(7), "7");
+    assert_eq!(count_words(2818), "2,818");
+    assert_eq!(count_words(1_234_567), "1,234,567");
+    assert_eq!(size_words(24_000_000), "24 MB");
+    assert_eq!(size_words(1_933_000_000), "1.9 GB");
+    assert_eq!(size_words(400_000), "0.4 MB");
+}
+
+#[test]
 fn rules_combine_inclusions_with_any_and_restrictions_with_all() {
     let mut s = open_sources()
         .iter()
@@ -175,4 +185,189 @@ fn print_pack_sizes() {
             bytes as f64 / 1e6
         );
     }
+}
+
+// ------------------------------------------------------------------------- download (#415)
+
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+
+use crate::JobMode;
+use crate::get_bibles::ListingStatus;
+use crate::workspace::TabKind;
+
+fn temp(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("obs-packs-{name}-{}", std::process::id()))
+}
+
+/// The two TCP Books the formats fixtures hold, served from `file://` copies of the published
+/// files (their real pins), and a third whose file was changed: its pin refuses it.
+fn session(name: &str) -> (Session, PathBuf) {
+    let root = temp(name);
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("open")).unwrap();
+    std::fs::create_dir_all(root.join("library")).unwrap();
+    let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/tcp");
+    let entry = |id: &str| open_sources().iter().find(|s| s.id == id).unwrap().clone();
+    let mut sources = Vec::new();
+    for (id, file) in [
+        ("tcp-edwards-sinners-1741", "N03833.xml"),
+        ("tcp-westminster-confession-1646", "A96226.xml"),
+    ] {
+        let copy = root.join("open").join(file);
+        std::fs::copy(assets.join(file), &copy).unwrap();
+        let mut s = entry(id);
+        s.url = crate::credits::file_url(&copy);
+        sources.push(s);
+    }
+    let changed = root.join("open/changed.xml");
+    let xml = std::fs::read_to_string(assets.join("N03833.xml")).unwrap();
+    std::fs::write(&changed, xml.replace("Angry GOD", "Angry King")).unwrap();
+    let mut tampered = entry("tcp-edwards-sinners-1741");
+    tampered.id = "tcp-tampered".into();
+    tampered.title = "A changed file".into();
+    tampered.url = crate::credits::file_url(&changed);
+    sources.push(tampered);
+    let mut s = Session::new(JobMode::Inline);
+    s.pack_pause = std::time::Duration::ZERO;
+    s.get_bibles.set_open_catalogue(sources);
+    s.library.scan(&root.join("library"));
+    (s, root)
+}
+
+fn settle(s: &mut Session) {
+    for _ in 0..50 {
+        s.jobs().pump(16);
+        let _ = s.poll_imports();
+        if !s.imports.is_running() {
+            break;
+        }
+    }
+}
+
+fn summary(s: &Session, id: &str) -> PackSummary {
+    s.pack_summaries().into_iter().find(|p| p.id == id).unwrap()
+}
+
+/// #415 acceptance: Download pack brings every Book of the pack not in the Library yet in one
+/// job, under one Import report; each Book is checked by its pin (a changed file is refused
+/// and listed with why, and the rest go on), joins the Library as a single download would,
+/// and goes in a Library Collection named for the pack. Downloading the pack again fetches
+/// only what is missing.
+#[test]
+fn a_pack_downloads_in_one_job_each_book_checked_and_collected() {
+    let (mut s, root) = session("download");
+    let all = summary(&s, ALL_BOOKS);
+    assert_eq!((all.books, all.installed), (3, 0));
+    assert!(all.running.is_none());
+    let early = summary(&s, "early-america");
+    assert_eq!(early.books, 2, "Edwards and the changed copy are Evans-TCP");
+
+    let out = s
+        .run(
+            "getbibles.download_pack",
+            &json!({"id": ALL_BOOKS, "confirm": true}),
+        )
+        .unwrap();
+    let report = out["report"].as_str().unwrap().to_string();
+    assert!(report.starts_with(crate::books::BATCH_PREFIX), "{report}");
+    settle(&mut s);
+
+    // One report Tab for the whole pack, listing two Books in and one refused.
+    let report_tabs = s
+        .workspace
+        .tabs()
+        .filter(|t| matches!(t.kind, TabKind::ImportReport(_)))
+        .count();
+    assert_eq!(report_tabs, 1);
+    let record = s.imports.report(&report).unwrap();
+    assert_eq!(
+        record.phase,
+        crate::ImportPhase::Complete,
+        "{:?}",
+        record.error
+    );
+    let books = record.books.as_ref().unwrap();
+    assert_eq!(books.imported.len(), 2, "{books:?}");
+    assert_eq!(books.failed.len(), 1);
+    assert_eq!(books.failed[0].name, "A changed file");
+    assert!(
+        books.failed[0].error.contains("has changed"),
+        "{:?}",
+        books.failed
+    );
+
+    // Each Book is in the Library as a single download leaves it.
+    for id in [
+        "tcp-edwards-sinners-1741",
+        "tcp-westminster-confession-1646",
+    ] {
+        let listing = s.get_bibles.open_source(id).unwrap().listing();
+        let ListingStatus::Installed { resource_id } = s.listing_status(&listing) else {
+            panic!("{id} is not installed: {:?}", s.listing_status(&listing));
+        };
+        let entry = s.library.get(&resource_id).unwrap();
+        assert_eq!(entry.manifest.resource_type, obs_model::ResourceType::Book);
+        assert_eq!(entry.manifest.license, "CC0-1.0");
+        let r = s.imports.report(&resource_id).unwrap();
+        assert_eq!(r.open_origin.as_ref().unwrap().id, id);
+        assert!(r.open_origin.as_ref().unwrap().sha256.is_some());
+        // In the pack's Collection.
+        assert!(s.library.in_collection("All Books", &resource_id));
+    }
+    let all = summary(&s, ALL_BOOKS);
+    assert_eq!((all.books, all.installed), (3, 2));
+
+    // Again: only the Book still missing is fetched (and refused again).
+    let out = s
+        .run(
+            "getbibles.download_pack",
+            &json!({"id": ALL_BOOKS, "confirm": true}),
+        )
+        .unwrap();
+    settle(&mut s);
+    let again = s.imports.report(out["report"].as_str().unwrap()).unwrap();
+    let books = again.books.as_ref().unwrap();
+    assert_eq!((books.imported.len(), books.failed.len()), (0, 1));
+
+    // All Books asks first, with its size; a small pack does not.
+    let (mut s2, root2) = session("confirm");
+    let out = s2
+        .run("getbibles.download_pack", &json!({"id": ALL_BOOKS}))
+        .unwrap();
+    assert_eq!(out["asked"], true);
+    let asked = s2.workspace.take_effects();
+    assert!(
+        asked.iter().any(|e| matches!(e, crate::Effect::ConfirmPack { pack, title, message }
+            if pack == ALL_BOOKS && title == "Download All Books?" && message.starts_with("3 Books"))),
+        "{asked:?}"
+    );
+    assert!(
+        s2.imports.packs.is_empty(),
+        "nothing started before the answer"
+    );
+    let out = s2
+        .run("getbibles.download_pack", &json!({"id": "early-america"}))
+        .unwrap();
+    assert!(out["report"].is_string(), "{out}");
+    drop(s2);
+    std::fs::remove_dir_all(root2).unwrap();
+
+    // A pack with nothing left to download says so.
+    let err = s
+        .run(
+            "getbibles.download_pack",
+            &json!({"id": "confessions-catechisms"}),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("in your Library already"), "{err}");
+    let err = s
+        .run("getbibles.download_pack", &json!({"id": "nope"}))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no Book pack"), "{err}");
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
 }

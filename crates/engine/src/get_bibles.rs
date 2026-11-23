@@ -697,6 +697,9 @@ pub fn fetch_repos(
     Ok(catalog)
 }
 
+/// Each Book pack's Books, as indexes into the Open catalogue ([`GetBibles::pack_members`]).
+pub type PackMembers = std::sync::Arc<Vec<Vec<usize>>>;
+
 /// Get Resources state on the Session.
 #[derive(Debug, Default)]
 pub struct GetBibles {
@@ -724,6 +727,9 @@ pub struct GetBibles {
     system_language: Option<String>,
     /// The last language filter list ([`Self::languages`]) and what it was made for.
     languages_cache: std::sync::Mutex<Option<(LanguagesKey, std::sync::Arc<[LanguageChoice]>)>>,
+    /// Each Book pack's Books (#415), as indexes into [`Self::open_sources`], and the
+    /// [`Self::generation`] they were found for: made again only when the catalogue changes.
+    pack_cache: std::sync::Mutex<Option<(u64, PackMembers)>>,
 }
 
 /// What a language filter list was made for: the type and licence filters, the OS language
@@ -825,6 +831,35 @@ impl GetBibles {
             Some((sources, _)) => sources,
             None => crate::open_catalogue::open_sources(),
         }
+    }
+
+    /// Each pack of `crate::packs::packs()`, in order: its Books, as indexes into
+    /// [`Self::open_sources`].
+    pub fn pack_members(&self) -> PackMembers {
+        let mut cache = self
+            .pack_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((generation, members)) = cache.as_ref()
+            && *generation == self.generation
+        {
+            return std::sync::Arc::clone(members);
+        }
+        let sources = self.open_sources();
+        let members: Vec<Vec<usize>> = crate::packs::packs()
+            .iter()
+            .map(|p| {
+                sources
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| p.contains(s))
+                    .map(|(i, _)| i)
+                    .collect()
+            })
+            .collect();
+        let members = std::sync::Arc::new(members);
+        *cache = Some((self.generation, std::sync::Arc::clone(&members)));
+        members
     }
 
     pub fn open_source(&self, id: &str) -> Option<&OpenSource> {
@@ -1642,6 +1677,18 @@ const OPEN_ID: ParamSpec = ParamSpec {
     required: true,
     help: "Open catalogue entry id",
 };
+const PACK_ID: ParamSpec = ParamSpec {
+    name: "id",
+    kind: ParamKind::String,
+    required: true,
+    help: "Book pack id (packs.toml)",
+};
+const CONFIRM: ParamSpec = ParamSpec {
+    name: "confirm",
+    kind: ParamKind::Boolean,
+    required: false,
+    help: "Start a large pack without asking first",
+};
 /// The type filter, for `getbibles.list` and `library.get_resources`.
 pub(crate) const TYPE: ParamSpec = ParamSpec {
     name: "type",
@@ -1679,6 +1726,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: download_open,
     },
     CommandSpec {
+        id: "getbibles.download_pack",
+        label: "Download a Book pack",
+        shortcut: None,
+        params: &[PACK_ID, CONFIRM],
+        enabled: desktop,
+        run: download_pack,
+    },
+    CommandSpec {
+        id: "getbibles.packs",
+        label: "List Book packs",
+        shortcut: None,
+        params: &[],
+        enabled: crate::command::always,
+        run: |s, _| Ok(json!(s.pack_summaries())),
+    },
+    CommandSpec {
         id: "getbibles.update",
         label: "Update Resource",
         shortcut: None,
@@ -1706,6 +1769,29 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
 
 fn desktop(_: &Session) -> bool {
     cfg!(not(target_arch = "wasm32"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn download_pack(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    Err(CommandError::Failed {
+        command: "getbibles.download_pack",
+        message: "Downloads require desktop".into(),
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn download_pack(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let id = p.str("id").unwrap_or_default();
+    if !p.bool("confirm").unwrap_or(false) && s.ask_before_pack(id) {
+        return Ok(json!({"asked": true}));
+    }
+    let (report, tab, job) = s
+        .download_pack(id)
+        .map_err(|message| CommandError::Failed {
+            command: "getbibles.download_pack",
+            message,
+        })?;
+    Ok(json!({"report": report, "tab": tab, "job": job.0}))
 }
 
 #[cfg(target_arch = "wasm32")]

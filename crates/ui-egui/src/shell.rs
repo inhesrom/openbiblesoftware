@@ -226,6 +226,9 @@ pub(crate) struct State {
     prompt: Option<(Option<String>, String)>,
     /// The Remove… confirmation: resource id, window title and message.
     confirm: Option<(String, String, String)>,
+    /// A large Book pack's download waiting for the user's Download (#415): pack, title,
+    /// message.
+    confirm_pack: Option<(String, String, String)>,
     pick_import: bool,
     /// The Get Bibles Tab's search and language filter.
     get_bibles_ui: get_bibles_tab::GetBiblesUi,
@@ -386,6 +389,7 @@ impl Shell {
                 window: None,
                 prompt: None,
                 confirm: None,
+                confirm_pack: None,
                 pick_import: false,
                 get_bibles_ui: get_bibles_tab::GetBiblesUi::default(),
                 picker: None,
@@ -710,6 +714,11 @@ impl Shell {
                     title,
                     message,
                 } => self.st.confirm = Some((resource_id, title, message)),
+                Effect::ConfirmPack {
+                    pack,
+                    title,
+                    message,
+                } => self.st.confirm_pack = Some((pack, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
@@ -3864,6 +3873,7 @@ impl State {
         }
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
+        self.pack_prompt(&ctx);
         if reanchor_here {
             self.reanchor_prompt(&ctx);
         }

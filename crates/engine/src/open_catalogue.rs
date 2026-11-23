@@ -763,7 +763,14 @@ impl OpenSource {
     /// a TCP text's by its id's letter, "Gutenberg" for Project Gutenberg's; "" for others.
     pub fn collection_name(&self) -> &'static str {
         match self.importer.as_str() {
-            "tcp-tei" => match TcpBook::id_of_url(&self.url).and_then(|id| id.bytes().next()) {
+            "tcp-tei" => match TcpBook::id_of_url(&self.url)
+                .or_else(|| {
+                    self.homepage
+                        .strip_prefix("https://github.com/textcreationpartnership/")
+                        .map(str::to_string)
+                })
+                .and_then(|id| id.bytes().next())
+            {
                 Some(b'K') => "ECCO-TCP",
                 Some(b'N' | b'W') => "Evans-TCP",
                 Some(_) => "EEBO-TCP",

@@ -516,3 +516,58 @@ fn live_searching_bengali_bangla_or_ben_finds_the_live_catalogs_bengali_bibles()
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// #415: the smallest Book pack, Confessions & Catechisms, downloads from its publishers
+/// through the app's transport as one job: every Book checked by its pin and in the Library and
+/// the pack's Collection.
+#[test]
+#[ignore = "network; downloads a Book pack (about 24 MB) to a temp folder"]
+fn live_a_book_pack_downloads_in_one_job() {
+    let root = temp("book-pack");
+    let mut s = session(&root);
+    let pack = "confessions-catechisms";
+    let books = s
+        .pack_summaries()
+        .into_iter()
+        .find(|p| p.id == pack)
+        .unwrap()
+        .books;
+    let out = s
+        .run(
+            "getbibles.download_pack",
+            &json!({"id": pack, "confirm": true}),
+        )
+        .unwrap();
+    let report = out["report"].as_str().unwrap().to_string();
+    for _ in 0..1000 {
+        s.jobs().pump(16);
+        s.poll_imports();
+        if !s.imports.is_running() {
+            break;
+        }
+    }
+    let record = s.imports.report(&report).unwrap();
+    let summary = record.books.as_ref().unwrap();
+    println!(
+        "{pack}: {} in, {} failed of {books}: {:?}",
+        summary.imported.len(),
+        summary.failed.len(),
+        summary.failed
+    );
+    assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+    assert_eq!(summary.imported.len(), books);
+    let p = s
+        .pack_summaries()
+        .into_iter()
+        .find(|p| p.id == pack)
+        .unwrap();
+    assert_eq!(p.installed, books);
+    assert_eq!(
+        s.library
+            .collection_members("Confessions & Catechisms")
+            .len(),
+        books
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -116,6 +116,8 @@ pub struct Session {
     /// How SWORD repositories are reached (#91). The app installs its network transport;
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
+    /// The pause between two downloads of a Book pack (#415); none in tests.
+    pub(crate) pack_pause: std::time::Duration,
 }
 
 impl Session {
@@ -171,6 +173,7 @@ impl Session {
             user_guide: crate::user_guide::UserGuide::default(),
             tour: crate::tour::Tour::default(),
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
+            pack_pause: std::time::Duration::from_millis(500),
         }
     }
 

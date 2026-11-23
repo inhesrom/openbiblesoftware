@@ -117,6 +117,8 @@ pub struct Imports {
     replacing: BTreeMap<String, ImportRecord>,
     /// Running book batches (ADR 0023), by job: their report ids.
     pub(crate) batches: BTreeMap<JobId, String>,
+    /// Book packs downloaded this session (#415), by pack id: their batch's report id.
+    pub(crate) packs: BTreeMap<String, String>,
     pub(crate) indexer: Arc<dyn ImportIndexer>,
 }
 
@@ -127,6 +129,7 @@ impl Default for Imports {
             active: BTreeMap::new(),
             replacing: BTreeMap::new(),
             batches: BTreeMap::new(),
+            packs: BTreeMap::new(),
             indexer: Arc::new(DeferredIndexer),
         }
     }

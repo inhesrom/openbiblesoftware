@@ -2018,6 +2018,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         &["language-chooser"],
     ),
     (
+        "shell/get_bibles_tab.rs",
+        "egui::Window::new(",
+        &["get-resources-download-all-books"],
+    ),
+    (
         "shell/guide_tab.rs",
         "egui::ComboBox::from_id_salt(",
         &["guide-collection-chooser"],
