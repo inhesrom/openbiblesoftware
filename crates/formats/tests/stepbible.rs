@@ -614,7 +614,7 @@ fn check_golden(name: &str, actual: &Value) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/golden")
         .join(format!("stepbible-{name}.json"));
-    let text = serde_json::to_string_pretty(actual).unwrap() + "\n";
+    let text = serde_json::to_string_pretty(&obs_model::canonical_json(actual)).unwrap() + "\n";
     if std::env::var_os("UPDATE_GOLDEN").is_some() || !path.exists() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &text).unwrap();
