@@ -23,9 +23,37 @@ with 1 if no frame is drawn within a minute; CI runs it on Linux, macOS and Wind
 Both apps open the same Session: `obs_engine::launch::open_session` adds the library, the
 User database, the Starter library, the Search index and alias caches and the Log folder, and
 `obs_engine::launch::start_update_checks` sets up the update checks. The app adds the Fetch
-transport and the OS language. For now the GPUI app draws a title bar and an empty Workspace
-(#377); it does not restore or save the Workspace, so it leaves the egui app's Last session
-alone. The system fonts, system motion and rich clipboard are handed to the egui Shell only:
+transport and the OS language.
+
+## The Workspace (#385)
+
+`crates/ui-gpui/src/workspace.rs` draws the engine's Panels and Tabs in `gpui-base`'s
+`DockArea` (docs/research/gpui-stack.md), kept in step as the egui Shell keeps `egui_tiles`:
+
+- **Engine → dock:** each frame applies the engine's Effects: `Opened` puts the Tab where its
+  `Placement` says (into a Panel, or a new Panel on a side of another, `levels` out), `Focus`
+  and `Activate` show it, `Closed` removes it, `Rebuild` builds the dock from
+  `Workspace::arrangement` (a Layout or the Last session), `ResetLayout` makes the default
+  arrangement, `PromptLayoutName` asks for a Layout's name, `Message` shows a toast. Moving
+  views, Tools' windows and Floating windows come with their tickets.
+- **Dock → engine:** after every change of the dock (a drag, a split, a ×) the Shell tells the
+  engine each Panel's Tabs (`sync_panels`: a Tab no Panel shows is closed and goes to
+  Recently closed, #214) and records the arrangement for Layouts and the Last session. A dock
+  tab group is an engine Panel (`DockMap::groups`); a dock panel is a `TabView`, one per Tab.
+- **A Tab:** its header strip (link chip, ‹ ›, the reference or Key box running `tab.go`,
+  title, Aa, ⋯ with Close Tab and Reopen closed Tab) over `workspace::tab_content`: the hook the
+  reading pane (#380) and the Tools plug into, one `match` arm per Tab kind. A placeholder
+  until then.
+- **The Panel's +** opens a Resource or the Library in that Panel.
+- **Layouts** are engine data: save (the name dialog), restore, rename and delete run the
+  `layout.*` commands; a Layout saved by the egui app restores in GPUI.
+- **The Last session:** the GPUI app restores it at launch, but writes it only with
+  `OBS_GPUI_SAVE_SESSION=1` (`Shell::set_save_session`). While egui ships, trying the GPUI app
+  must not overwrite the egui app's Last session with a Workspace whose Tools are
+  placeholders.
+
+The system fonts, system motion and rich clipboard are handed to the egui Shell only: their
+traits live in `obs-ui-egui` and move down when a GPUI surface needs them. The system fonts, system motion and rich clipboard are handed to the egui Shell only:
 their traits live in `obs-ui-egui` and move down when a GPUI surface needs them.
 
 ### Linux build dependencies
@@ -111,8 +139,11 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
   - **The seeded change:** a test-only override (`Shell::override_chrome`, under the crate's
     `test-support` feature) changes the surface colour by 4 levels. The comparison must then
     fail, which checks that the gallery catches a token change.
-- **Surfaces with goldens so far:** the scaffold's window (title bar and empty Workspace), in
-  Light and Dark.
+- **Surfaces with goldens so far:** the window with an empty Workspace, in Light and Dark,
+  and a two-Panel Workspace (KJV and BSB split) in Light (#385). The headless context has no
+  asset source, so icon buttons draw without their icons in these frames.
+- **Workspace tests** (`tests/workspace.rs`, #385): on the TestPlatform, ported from the egui
+  tests' behaviour.
 - **Fonts:** the Shell draws its chrome in the default Interface font (egui's Ubuntu Light,
   asked for by its Light weight, so an installed Ubuntu Regular is not drawn instead) and its
   wordmark in Gentium Plus. Both are bundled, so frames are the same on every computer.
