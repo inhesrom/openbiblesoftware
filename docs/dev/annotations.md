@@ -109,7 +109,7 @@ or deleted).
 ## In the origin Bible (#62)
 
 `crates/ui-egui/src/shell/annotate.rs` is the UI around a reading pane's selection;
-`crates/ui-egui/src/marks.rs` and the reading pane (`pane.rs`) draw what is stored.
+`crates/reading/src/marks.rs` and the reading pane (`pane.rs`) draw what is stored.
 
 - **Making them.** Releasing a selection (drag, double- or triple-click) shows a floating
   toolbar above it: the active Highlight palette's swatches, `…` (Highlight styles), ✏ Note,
@@ -263,9 +263,9 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
 
 ## Highlight styles and palettes (#181, ADR 0012)
 
-`crates/engine/src/highlight_styles.rs` keeps them; `crates/ui-egui/src/palette.rs` turns a
-style into colours per Page tone; `crates/ui-egui/src/shell/highlight_styles_window.rs` is
-View → Highlight styles.
+`crates/engine/src/highlight_styles.rs` keeps them; `crates/reading/src/palette.rs`
+(`TonePalette`) turns a style into colours per Page tone; `crates/ui-egui/src/shell/highlight_styles_window.rs`
+is View → Highlight styles.
 
 - **Rows.** `highlight_palettes` and `highlight_styles` (User database schema 10) are rows of
   the annotation tables: every edit is row `Change`s through `UserStore::apply_changes`, one

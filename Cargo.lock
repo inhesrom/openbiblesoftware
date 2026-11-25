@@ -4859,6 +4859,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "obs-reading"
+version = "0.2.0"
+dependencies = [
+ "obs-engine",
+ "obs-fonts",
+ "obs-layout",
+ "obs-model",
+ "obs-scripture",
+ "obs-store",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "obs-render"
 version = "0.2.0"
 dependencies = [
@@ -4911,6 +4924,7 @@ dependencies = [
  "obs-formats",
  "obs-layout",
  "obs-model",
+ "obs-reading",
  "obs-render",
  "obs-scripture",
  "obs-search",

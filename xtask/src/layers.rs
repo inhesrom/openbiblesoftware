@@ -25,6 +25,7 @@ pub const LAYERS: &[(&str, u8)] = &[
     ("obs-store", 2),
     ("obs-render", 3),
     ("obs-engine", 4),
+    ("obs-reading", 5),
     ("obs-ui-egui", 6),
     ("obs-ui-gpui", 6),
 ];
