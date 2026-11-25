@@ -40,7 +40,6 @@ pub fn look_named(name: &str, zoom: f32) -> Option<Look> {
         &obs_engine::CustomTheme::default(),
         &obs_engine::FontChoices::default(),
         false,
-        false,
     );
     l.zoom = zoom;
     Some(l)
@@ -286,6 +285,7 @@ impl Render for Catalogue {
             .flex()
             .bg(rgba(ch.shell))
             .font_family(look.interface_family.clone())
+            .font_weight(look.interface_weight)
             .text_size(px(look.pt(tokens::text::BODY)))
             .child(
                 div().id("catalogue").flex_1().overflow_y_scroll().child(

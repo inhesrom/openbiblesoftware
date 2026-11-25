@@ -5,7 +5,7 @@
 //! The Look is a GPUI global. [`set_look`] replaces it and refreshes every window, so a change
 //! of theme shows in the next frame drawn, the same frame the change is made in.
 
-use gpui_kit::{App, Global, WindowAppearance};
+use gpui_kit::{App, FontWeight, Global, WindowAppearance};
 use obs_engine::{Appearance, CustomTheme, FontChoices, FontSlot, PageTone, Rgb, Theme, ThemeRole};
 
 use crate::tokens::{self, Chrome, DARK, HIGH_CONTRAST_DARK, HIGH_CONTRAST_LIGHT, LIGHT, Page};
@@ -13,6 +13,9 @@ use crate::tokens::{self, Chrome, DARK, HIGH_CONTRAST_DARK, HIGH_CONTRAST_LIGHT,
 /// The bundled interface font when none is chosen: egui's default proportional face, so both
 /// UIs draw the chrome alike.
 pub const DEFAULT_INTERFACE_FAMILY: &str = "Ubuntu";
+/// The weight of the bundled interface face, Ubuntu Light, asked for by name so a computer
+/// with the Ubuntu family installed draws the bundled face, not its own Regular.
+pub const DEFAULT_INTERFACE_WEIGHT: FontWeight = FontWeight::LIGHT;
 /// The display face of headings and the wordmark (the egui app's `DISPLAY` family).
 pub const DISPLAY_FAMILY: &str = "Gentium Plus";
 
@@ -23,9 +26,14 @@ pub struct Look {
     pub page: Page,
     /// The interface font's family name (#138).
     pub interface_family: String,
+    /// The interface font's weight: [`DEFAULT_INTERFACE_WEIGHT`] for the bundled face, normal
+    /// for a font the user chose.
+    pub interface_weight: FontWeight,
     /// Interface size: every chrome measurement is multiplied by this.
     pub zoom: f32,
-    /// Reduce motion: the app's setting or the operating system's.
+    /// The app's own Reduce motion setting. Whether a frame reduces motion is
+    /// `cx.reduce_motion()`: this, or else the operating system's setting, as gpui-base keeps
+    /// it current ([`set_look`]).
     pub reduce_motion: bool,
 }
 
@@ -37,6 +45,7 @@ impl Default for Look {
             chrome: LIGHT,
             page: tokens::PAPER,
             interface_family: DEFAULT_INTERFACE_FAMILY.into(),
+            interface_weight: DEFAULT_INTERFACE_WEIGHT,
             zoom: 1.0,
             reduce_motion: false,
         }
@@ -45,13 +54,12 @@ impl Default for Look {
 
 impl Look {
     /// The Look of `appearance`. `system_dark`: the operating system's appearance, for Follow
-    /// system; `system_reduce_motion`: its reduce motion setting.
+    /// system.
     pub fn resolve(
         appearance: &Appearance,
         custom: &CustomTheme,
         fonts: &FontChoices,
         system_dark: bool,
-        system_reduce_motion: bool,
     ) -> Self {
         let chrome = chrome_of(appearance.theme, custom, system_dark);
         let tone = match appearance.page_tone {
@@ -59,15 +67,20 @@ impl Look {
             PageTone::Auto => PageTone::Paper,
             t => t,
         };
+        let (interface_family, interface_weight) = match fonts.get(FontSlot::Interface) {
+            Some(f) => (f.family.clone(), FontWeight::NORMAL),
+            None => (
+                DEFAULT_INTERFACE_FAMILY.to_string(),
+                DEFAULT_INTERFACE_WEIGHT,
+            ),
+        };
         Self {
             chrome,
             page: tokens::page_for(tone, chrome.high_contrast),
-            interface_family: fonts.get(FontSlot::Interface).map_or_else(
-                || DEFAULT_INTERFACE_FAMILY.to_string(),
-                |f| f.family.clone(),
-            ),
+            interface_family,
+            interface_weight,
             zoom: appearance.interface_size.zoom(),
-            reduce_motion: appearance.reduce_motion || system_reduce_motion,
+            reduce_motion: appearance.reduce_motion,
         }
     }
 
@@ -156,43 +169,31 @@ pub fn look(cx: &App) -> Look {
     cx.try_global::<Look>().cloned().unwrap_or_default()
 }
 
-/// Make `look` current: GPUI's own reduce-motion flag follows it, and every window is drawn
-/// again, so the change shows in the next frame.
+/// Make `look` current, and draw every window again so the change shows in the next frame.
+/// gpui-base's reduce motion preference is the app's own: Reduce when the Look asks for it,
+/// else the operating system's setting (System), which gpui-base keeps current. Read
+/// `cx.reduce_motion()` where motion is drawn.
 pub fn set_look(look: Look, cx: &mut App) {
     use gpui_kit::base::{ReduceMotionPreference, set_reduce_motion_preference};
-    set_reduce_motion_preference(
-        if look.reduce_motion {
-            ReduceMotionPreference::Reduce
-        } else {
-            ReduceMotionPreference::System
-        },
-        cx,
-    );
+    if look.reduce_motion {
+        set_reduce_motion_preference(ReduceMotionPreference::Reduce, cx);
+    } else {
+        // From GPUI's default (motion), so the app's earlier Reduce does not stay where the
+        // system's setting is not known; System then applies the system's, when it is.
+        cx.set_reduce_motion(false);
+        set_reduce_motion_preference(ReduceMotionPreference::System, cx);
+    }
     cx.set_global(look);
     cx.refresh_windows();
 }
 
 /// The Look the Session's appearance asks for, in a window that appears dark or not
-/// (`system_dark`, for Follow system). The operating system's reduce motion is not in it:
-/// [`set_session_look`] adds it.
+/// (`system_dark`, for Follow system).
 pub fn session_look(session: &obs_engine::Session, system_dark: bool) -> Look {
     Look::resolve(
         &session.appearance,
         &session.custom_theme,
         &session.fonts,
         system_dark,
-        false,
     )
-}
-
-/// Make `asked` (a [`session_look`]) current with [`set_look`], with the operating system's
-/// reduce motion added when the app does not reduce motion itself. GPUI's flag is read after
-/// it is handed back to the system: while the app reduces motion, it reads the app's choice.
-pub fn set_session_look(mut asked: Look, cx: &mut App) {
-    use gpui_kit::base::{ReduceMotionPreference, set_reduce_motion_preference};
-    if !asked.reduce_motion {
-        set_reduce_motion_preference(ReduceMotionPreference::System, cx);
-        asked.reduce_motion = cx.reduce_motion();
-    }
-    set_look(asked, cx);
 }

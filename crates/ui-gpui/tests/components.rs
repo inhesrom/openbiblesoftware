@@ -231,9 +231,40 @@ fn reduce_motion_reaches_gpui(cx: &mut TestAppContext) {
     cx.update(|cx| {
         let mut l = look_named("Light", 1.0).unwrap();
         l.reduce_motion = true;
+        theme::set_look(l.clone(), cx);
+        assert!(cx.reduce_motion(), "the app asks to reduce motion");
+        // Not asked: the operating system's setting again (the test platform's: off).
+        l.reduce_motion = false;
         theme::set_look(l, cx);
-        assert!(cx.reduce_motion());
+        assert!(!cx.reduce_motion(), "the system's setting");
+        assert!(!theme::look(cx).reduce_motion);
     });
+}
+
+#[gpui_kit::test]
+fn an_icon_button_shows_its_name_in_a_tooltip(cx: &mut TestAppContext) {
+    let (handle, _) = open(cx, |window, cx| cx.new(|cx| Catalogue::new(window, cx)));
+    cx.update_window(handle, |_, window, cx| {
+        window.frame(cx);
+        let more = window.find_by_label("More");
+        assert_eq!(more.role(), Some(Role::Button));
+        window.pointer_move(more.bounds().center(), cx);
+    })
+    .unwrap();
+    // The tooltip shows after the pointer has rested a moment.
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(2));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.frame(cx);
+        let tips: Vec<_> = window
+            .find_all_by_role(Role::Tooltip)
+            .into_iter()
+            .filter(|e| e.label() == Some("More"))
+            .collect();
+        assert_eq!(tips.len(), 1, "{:?}", window.elements());
+    })
+    .unwrap();
 }
 
 #[test]

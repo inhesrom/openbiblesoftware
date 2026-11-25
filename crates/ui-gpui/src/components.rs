@@ -8,11 +8,11 @@
 //! accessible name and a visible keyboard focus ring.
 
 use gpui_kit::base::input::{InputAccessibility, InputEditorStyle, InputState};
-use gpui_kit::base::{Button, InputBase, Radio, Switch};
+use gpui_kit::base::{Button, InputBase, Radio, Switch, TestSupportExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Div, ElementId, Entity, Focusable, FontWeight, Hsla, Role,
-    SharedString, Stateful, Window, div, px,
+    AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, Entity, Focusable, FontWeight,
+    Hsla, Render, Role, SharedString, Stateful, Window, div, point, px,
 };
 
 use crate::icons::Icon;
@@ -60,17 +60,49 @@ pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, look: &L
     control_frame(b, look).child(label)
 }
 
-/// A primary button: the lapis fill, for the one action a dialog or page is for.
+/// The colour drawn on the lapis fill: a primary button's label and its inner focus ring.
+pub fn on_lapis(look: &Look) -> obs_engine::Rgb {
+    let ch = look.chrome;
+    if ch.dark { ch.shell } else { ch.field }
+}
+
+/// A primary button: the lapis fill, for the one action a dialog or page is for. Its keyboard
+/// focus ring is two rings, as a lapis ring on the lapis fill would not show: the label's
+/// colour inside the edge and lapis around it.
 pub fn primary_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     look: &Look,
 ) -> Button {
     let ch = look.chrome;
+    let inner = hsla(on_lapis(look));
+    let outer = hsla(ch.lapis);
+    let ring_width = look.focus_width();
     button(id, label, look)
         .bg(hsla(ch.lapis))
         .border_color(hsla(ch.lapis))
-        .text_color(hsla(if ch.dark { ch.shell } else { ch.field }))
+        .text_color(inner)
+        .focus_visible(move |s| {
+            s.border(px(ring_width))
+                .border_color(inner)
+                .shadow(vec![BoxShadow {
+                    color: outer,
+                    offset: point(px(0.0), px(0.0)),
+                    blur_radius: px(0.0),
+                    spread_radius: px(ring_width),
+                    inset: false,
+                }])
+        })
+}
+
+/// A tooltip shown while the pointer rests on a control: [`tooltip`] in the current Look.
+struct TooltipView(SharedString);
+
+impl Render for TooltipView {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Observed, so headless tests find it by its name as they find the controls.
+        tooltip(self.0.clone(), &crate::theme::look(cx)).test_support()
+    }
 }
 
 /// A button showing an icon only; `name` is what a screen reader says and the tooltip shows.
@@ -81,12 +113,14 @@ pub fn icon_button(
     look: &Look,
 ) -> Button {
     let ch = look.chrome;
-    let b = Button::new(id).accessibility_label(name.into());
+    let name: SharedString = name.into();
+    let b = Button::new(id).accessibility_label(name.clone());
     control_frame(b, look)
         .w(px(look.pt(size::CONTROL)))
         .px(px(0.0))
         .bg(hsla(ch.surface))
         .border_color(hsla(ch.surface))
+        .tooltip(move |_, cx| cx.new(|_| TooltipView(name.clone())).into())
         .child(icon.element(look.pt(size::ICON), hsla(ch.ink)))
 }
 
@@ -189,7 +223,10 @@ pub fn toggle(
         .rounded(px(look.pt(radius::S)))
         .text_color(hsla(ch.ink))
         .text_size(px(look.pt(text::BODY)))
-        .focus_visible(move |s| s.border(px(ring_width)).border_color(ring))
+        // The ring's room is kept when unfocused, so focus does not move the control.
+        .border(px(ring_width))
+        .border_color(gpui_kit::transparent_black())
+        .focus_visible(move |s| s.border_color(ring))
         .child(
             div()
                 .w(px(track * 1.8))
@@ -235,7 +272,10 @@ pub fn radio(
         .gap(px(look.pt(space::S)))
         .text_color(hsla(ch.ink))
         .text_size(px(look.pt(text::BODY)))
-        .focus_visible(move |s| s.border(px(ring_width)).border_color(ring))
+        // The ring's room is kept when unfocused, so focus does not move the control.
+        .border(px(ring_width))
+        .border_color(gpui_kit::transparent_black())
+        .focus_visible(move |s| s.border_color(ring))
         .child(
             div()
                 .size(px(dot))
@@ -264,12 +304,18 @@ pub fn chip(
     let ch = look.chrome;
     let label: SharedString = label.into();
     let id: ElementId = id.into();
+    let ring = hsla(ch.lapis);
+    let ring_width = look.focus_width();
     let close = on_close.map(|handler| {
         Button::new(ElementId::Name(format!("close-{label}").into()))
             .accessibility_label(format!("Remove {label}"))
             .size(px(look.pt(size::ICON)))
             .rounded_full()
+            // The ring's room is kept when unfocused, so focus does not move the icon.
+            .border(px(ring_width))
+            .border_color(gpui_kit::transparent_black())
             .hover(move |s| s.bg(hsla(ch.hover)))
+            .focus_visible(move |s| s.border_color(ring))
             .on_click(move |e, w, cx| handler(e, w, cx))
             .child(Icon::Close.element(look.pt(size::ICON_SMALL), hsla(ch.muted)))
     });
@@ -410,6 +456,7 @@ pub fn menu_item(
     let ch = look.chrome;
     let label = label.into();
     let ring = hsla(ch.lapis);
+    let ring_width = look.focus_width();
     Button::new(id)
         .role(Role::MenuItem)
         .accessibility_label(label.clone())
@@ -420,6 +467,9 @@ pub fn menu_item(
         .rounded(px(look.pt(radius::S)))
         .text_size(px(look.pt(text::BODY)))
         .text_color(hsla(ch.ink))
+        // The ring's room is kept when unfocused, so focus does not move the label.
+        .border(px(ring_width))
+        .border_color(gpui_kit::transparent_black())
         .hover(move |s| s.bg(hsla(ch.hover)))
         .focus_visible(move |s| s.bg(hsla(ch.selection)).border_color(ring))
         .child(label)

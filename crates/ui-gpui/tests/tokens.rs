@@ -244,7 +244,7 @@ fn the_look_follows_the_appearance() {
     let custom = CustomTheme::default();
     a.theme = Theme::Dark;
     a.page_tone = PageTone::Auto;
-    let l = Look::resolve(&a, &custom, &fonts, false, false);
+    let l = Look::resolve(&a, &custom, &fonts, false);
     assert_eq!(
         l.page,
         g::PAGE_DARK,
@@ -252,25 +252,22 @@ fn the_look_follows_the_appearance() {
     );
     a.page_tone = PageTone::Sepia;
     a.interface_size = obs_engine::InterfaceSize::Larger;
-    let l = Look::resolve(&a, &custom, &fonts, false, false);
+    let l = Look::resolve(&a, &custom, &fonts, false);
     assert_eq!(l.page, g::SEPIA);
     assert_eq!(l.zoom, 1.25);
     assert_eq!(l.pt(g::size::CONTROL), 35.0);
-    assert!(!l.reduce_motion);
-    assert!(
-        Look::resolve(&a, &custom, &fonts, false, true).reduce_motion,
-        "the system's"
-    );
+    assert!(!l.reduce_motion, "the app's setting only");
     a.reduce_motion = true;
     assert!(
-        Look::resolve(&a, &custom, &fonts, false, false).reduce_motion,
+        Look::resolve(&a, &custom, &fonts, false).reduce_motion,
         "the app's"
     );
     a.theme = Theme::HighContrastLight;
-    let l = Look::resolve(&a, &custom, &fonts, false, false);
+    let l = Look::resolve(&a, &custom, &fonts, false);
     assert_eq!(l.focus_width(), g::stroke::HEAVY);
     assert_eq!(l.page, g::SEPIA_HIGH_CONTRAST);
     assert_eq!(l.interface_family, theme::DEFAULT_INTERFACE_FAMILY);
+    assert_eq!(l.interface_weight, theme::DEFAULT_INTERFACE_WEIGHT);
 }
 
 #[test]

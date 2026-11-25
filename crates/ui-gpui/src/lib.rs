@@ -162,7 +162,7 @@ impl Shell {
             return;
         }
         self.look_asked = Some(asked.clone());
-        theme::set_session_look(asked, cx);
+        theme::set_look(asked, cx);
     }
 
     fn title_bar(&self, look: &theme::Look, cx: &mut Context<Self>) -> impl IntoElement {
@@ -210,6 +210,7 @@ impl Render for Shell {
             .flex_col()
             .bg(tokens::rgba(ch.shell))
             .font_family(look.interface_family.clone())
+            .font_weight(look.interface_weight)
             .text_size(px(look.pt(tokens::text::BODY)))
             .text_color(tokens::rgba(ch.ink))
             .child(self.title_bar(&look, cx))
