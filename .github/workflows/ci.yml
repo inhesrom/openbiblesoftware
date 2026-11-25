@@ -32,7 +32,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev
+            libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libvulkan1 mesa-vulkan-drivers
+      # The GPUI UI's rendering tests (#379) draw headless frames: with Mesa's lavapipe on
+      # Linux and Metal on macOS they must run, not skip; Windows has no headless renderer.
+      - name: Require GPUI's headless renderer (Linux, macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: echo "OBS_GPUI_REQUIRE_RENDERER=1" >> "$GITHUB_ENV"
       - uses: taiki-e/install-action@nextest
       # The `licenses` gate regenerates the third-party licence listing (Help → Credits).
       - uses: taiki-e/install-action@v2
