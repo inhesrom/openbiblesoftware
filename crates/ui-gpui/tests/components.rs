@@ -2,6 +2,8 @@
 //! role, activates by click, takes keyboard focus, and the text field types, composes with an
 //! IME, undoes, copies and pastes. Driven headlessly with gpui-kit's test API.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use gpui_kit::base::input::InputState;
 use gpui_kit::test::{TestInput, TestQueryExt, TestWindowExt};
 use gpui_kit::{
@@ -76,6 +78,8 @@ fn every_catalogue_control_is_found_by_its_name_and_role(cx: &mut TestAppContext
             ("Buttons", Role::Heading),
             ("An update is ready.", Role::Status),
             ("Layout saved", Role::Status),
+            ("Go back (Alt+Left)", Role::Tooltip),
+            ("You are offline.", Role::Status),
             ("Building the Search index…", Role::ProgressIndicator),
             ("KJV could not be opened.", Role::Alert),
         ] {

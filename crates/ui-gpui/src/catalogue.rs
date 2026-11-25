@@ -2,6 +2,7 @@
 //! that switch the Look, so the components can be checked in each theme and by screenshot.
 //! Open it with `OBS_GPUI_CATALOGUE=1 cargo run -p openbible --features gpui`.
 
+use gpui_kit::base::TestSupportExt;
 use gpui_kit::base::input::InputState;
 use gpui_kit::prelude::*;
 use gpui_kit::{AppContext, Context, Entity, IntoElement, Render, SharedString, Window, div, px};
@@ -74,7 +75,7 @@ impl Catalogue {
     }
 
     fn section(title: &str, look: &Look) -> gpui_kit::Div {
-        c::card(look).child(c::section_header(title.to_string(), look))
+        c::card(look).child(c::section_header(title.to_string(), look).test_support())
     }
 }
 
@@ -202,20 +203,22 @@ impl Render for Catalogue {
                 .child(
                     c::menu("Tab menu", &look)
                         .child(c::menu_item("m-float", "Float", None, &look))
-                        .child(c::menu_item("m-close", "Close Tab", Some("Ctrl+W"), &look)),
+                        .child(c::menu_item("m-close", "Close Tab", Some("Ctrl+W"), &look))
+                        .test_support(),
                 )
                 .child(
                     c::popover_frame("Word Info", &look)
                         .child(c::section_header("בָּרָא bara", &look))
-                        .child(c::hint("to create, shape, form", &look)),
+                        .child(c::hint("to create, shape, form", &look))
+                        .test_support(),
                 )
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap(px(look.pt(space::M)))
-                        .child(c::tooltip("Add to Favorites", &look))
-                        .child(c::toast("Layout saved", &look)),
+                        .child(c::tooltip("Go back (Alt+Left)", &look).test_support())
+                        .child(c::toast("Layout saved", &look).test_support()),
                 ),
         );
         let pages = Self::section("Dialog, notices and states", &look)
@@ -232,25 +235,25 @@ impl Render for Catalogue {
                             .gap(px(look.pt(space::M)))
                             .child(c::button("cancel", "Cancel", &look))
                             .child(c::primary_button("remove", "Remove", &look)),
-                    ),
+                    )
+                    .test_support(),
             )
-            .child(c::notice("An update is ready.", ch.lapis, &look))
-            .child(c::notice("You are offline.", ch.warn, &look))
+            .child(c::notice("An update is ready.", ch.lapis, &look).test_support())
+            .child(c::notice("You are offline.", ch.warn, &look).test_support())
             .child(c::empty_state(
                 "No Notes yet.",
                 c::button("new-note", "New Note", &look),
                 &look,
             ))
-            .child(c::loading_state(
-                "Building the Search index…",
-                Some(0.4),
-                &look,
-            ))
-            .child(c::error_state(
-                "KJV could not be opened.",
-                "kjv.obr: the file is damaged.",
-                &look,
-            ));
+            .child(c::loading_state("Building the Search index…", Some(0.4), &look).test_support())
+            .child(
+                c::error_state(
+                    "KJV could not be opened.",
+                    "kjv.obr: the file is damaged.",
+                    &look,
+                )
+                .test_support(),
+            );
         let page = Self::section("Page tone", &look).child(
             div()
                 .p(px(look.pt(space::L)))

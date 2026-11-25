@@ -8,7 +8,7 @@
 //! accessible name and a visible keyboard focus ring.
 
 use gpui_kit::base::input::{InputAccessibility, InputEditorStyle, InputState};
-use gpui_kit::base::{Button, InputBase, Radio, Toggle};
+use gpui_kit::base::{Button, InputBase, Radio, Switch};
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, App, ClickEvent, Div, ElementId, Entity, Focusable, FontWeight, Hsla, Role,
@@ -27,6 +27,8 @@ fn hsla(c: obs_engine::Rgb) -> Hsla {
 
 /// A plain element with an accessible role and name. AccessKit nodes need an element id: it is
 /// taken from the role and the name, so give elements of one role distinct names in a scope.
+/// Call `.test_support()` (gpui-base's `TestSupportExt`) on the finished element so headless
+/// tests can find it by its name; the controls built on gpui-base primitives are found without.
 fn semantic(d: Div, role: Role, name: &SharedString) -> Stateful<Div> {
     d.id(ElementId::Name(format!("{role:?}:{name}").into()))
         .role(role)
@@ -163,21 +165,21 @@ pub fn search_field(
         .into_any_element()
 }
 
-/// A switch with its label after it.
+/// A switch with its label after it (the egui app's toggle).
 pub fn toggle(
     id: impl Into<ElementId>,
     on: bool,
     label: impl Into<SharedString>,
     look: &Look,
     on_change: impl Fn(bool, &ClickEvent, &mut Window, &mut App) + 'static,
-) -> Toggle {
+) -> Switch {
     let ch = look.chrome;
     let label = label.into();
     let ring = hsla(ch.lapis);
     let ring_width = look.focus_width();
     let track = look.pt(size::CHIP);
-    Toggle::new(id)
-        .pressed(on)
+    Switch::new(id)
+        .checked(on)
         .accessibility_label(label.clone())
         .on_change(on_change)
         .flex()

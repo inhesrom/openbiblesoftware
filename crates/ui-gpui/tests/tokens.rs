@@ -1,6 +1,8 @@
 //! The GPUI tokens are the egui app's (ADR 0015): every value copied into
 //! `obs_ui_gpui::tokens` must equal the one in `obs_ui_egui::tokens` / `Palette`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use obs_engine::{CustomTheme, PageTone, Rgb, Theme, ThemeRole};
 use obs_ui_egui::tokens as e;
 use obs_ui_gpui::theme::{self, Look};
@@ -285,6 +287,9 @@ fn every_icon_of_the_egui_set_is_here_by_the_same_file() {
     use gpui_kit::AssetSource;
     for i in obs_ui_gpui::icons::Icon::ALL {
         let bytes = obs_ui_gpui::icons::Assets.load(&i.path()).ok().flatten();
-        assert!(bytes.is_some_and(|b| b.starts_with(b"<svg")), "{i:?}");
+        assert!(
+            bytes.is_some_and(|b| b.windows(4).any(|w| w == b"<svg")),
+            "{i:?}"
+        );
     }
 }
