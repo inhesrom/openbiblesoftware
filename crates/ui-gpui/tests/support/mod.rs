@@ -1,0 +1,355 @@
+//! The headless test driver for GPUI surfaces (#379): fixtures, a Session over them, and the
+//! golden comparison of ADR 0019 (amended by #374). Shared by `tests/interaction.rs` and
+//! `tests/rendering.rs`.
+//!
+//! The fixtures are the egui tests': the accessibility audit's Starter subset (the released
+//! Starter library's Resources) plus the BSB's Genesis 1, a User database in a scratch folder,
+//! and the clock fixed at [`NOW_MS`] (`obs_store::clock`, per thread).
+
+#![allow(dead_code)] // Each test binary uses part of it.
+
+use std::path::{Path, PathBuf};
+
+use obs_engine::{JobMode, Library, Session};
+use obs_scripture::{Book, Passage, Verse};
+
+/// The gallery's fixed time (the egui gallery's `NOW_MS`).
+pub const NOW_MS: i64 = 1_794_220_200_000;
+
+/// ADR 0019: a pixel matches when no channel is more than 2 levels off, and an image matches
+/// when no more than 0.01 % of its pixels differ beyond that.
+pub const CHANNEL_TOLERANCE: u8 = 2;
+pub const PIXEL_SHARE: f64 = 0.0001;
+
+/// A scratch folder for one test's Library and User database, removed when dropped.
+pub struct Lab {
+    pub root: PathBuf,
+}
+
+impl Drop for Lab {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// The BSB's Genesis 1 (the egui gallery's `bsb_genesis_1`).
+pub fn bsb_genesis_1() -> obs_model::Resource {
+    let usfm = "\\id GEN\n\\c 1\n\\s1 The Creation\n\\p\n\\v 1 In the beginning God created \
+                the heavens and the earth.\\x - \\xo 1:1 \\xt Genesis 1:3\\x*\n\\v 2 Now the \
+                earth was formless and void, and darkness was over the surface of the deep. \
+                And the Spirit of God was hovering over the surface of the waters.\n\\v 3 And \
+                God said, “Let there be light,”\\f + \\fr 1:3 \\ft Cited in 2 Corinthians \
+                4:6\\f* and there was light.\n";
+    let mut import = obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+        resource_id: "bsb".into(),
+        title: "Berean Standard Bible (test)".into(),
+        abbreviation: "BSB".into(),
+        language: "en".into(),
+        source_file: "GEN.usfm".into(),
+        tool_version: "test".into(),
+        ..Default::default()
+    });
+    import.add_book("GEN.usfm", usfm.into()).unwrap();
+    let mut bsb = import.finish().unwrap().0;
+    bsb.manifest.license = "LicenseRef-PublicDomain".into();
+    bsb
+}
+
+fn cross_references() -> obs_model::Resource {
+    let options = obs_formats::DatasetOptions {
+        resource_id: "openbible-xrefs".into(),
+        title: "OpenBible.info Cross-references".into(),
+        ..Default::default()
+    };
+    obs_formats::import_openbible_cross_references(
+        include_str!("../../../formats/tests/assets/openbible/cross-references-excerpt.txt"),
+        &options,
+    )
+    .unwrap()
+    .0
+}
+
+/// The accessibility audit's Starter subset (the egui tests' `release_set`): the KJV with
+/// Strong's and the Lexicons, a Commentary, the Cross-reference set, TIPNR and Greek Bibles.
+pub fn starter_subset() -> Vec<obs_model::Resource> {
+    let john = Passage::verse(Verse::new(Book::John, 3, 16));
+    let mut set = obs_engine::testing::starter_set();
+    set.extend([
+        obs_engine::testing::commentary(
+            "mhc",
+            "Matthew Henry (test)",
+            "MHC",
+            &[(john, None, "God so loved the world.")],
+        ),
+        cross_references(),
+        obs_engine::testing::bsb_parallels(),
+        obs_engine::testing::tipnr(),
+        obs_engine::testing::tagnt_grace(),
+        obs_engine::testing::tagnt_love(),
+    ]);
+    for r in &mut set {
+        r.manifest.origin = obs_model::Origin::Starter;
+        if r.manifest.license.is_empty() {
+            r.manifest.license = "LicenseRef-PublicDomain".into();
+        }
+    }
+    set
+}
+
+/// A Session over the fixtures, as the egui tests launch one: the Starter subset and the BSB's
+/// Genesis 1 in a Library in a scratch folder, a User database there, jobs run inline, and
+/// this thread's clock fixed at [`NOW_MS`].
+pub fn session(name: &str) -> (Session, Lab) {
+    obs_store::clock::fix(Some(NOW_MS));
+    let root = std::env::temp_dir().join(format!(
+        "obs-ui-gpui-{name}-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("library")).unwrap();
+    let mut session = Session::new(JobMode::Inline);
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    session.attach_user(Box::new(store));
+    session.set_search_cache_dir(root.join("cache"));
+    session.library = Library::new();
+    session.library.set_directory(root.join("library"));
+    let mut set = starter_subset();
+    set.push(bsb_genesis_1());
+    for r in &set {
+        let path = root
+            .join("library")
+            .join(format!("{}.obr", r.manifest.resource_id));
+        obs_store::write_obr(r, &path).unwrap();
+        session.library.add_file(&path).unwrap();
+    }
+    (session, Lab { root })
+}
+
+/// How a frame compares with another under ADR 0019's tolerance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Comparison {
+    /// Pixels with a channel more than [`CHANNEL_TOLERANCE`] levels off.
+    pub off: usize,
+    pub total: usize,
+    /// The largest channel difference.
+    pub max: u8,
+    /// Whether the sizes are the same and `off` is within [`PIXEL_SHARE`] of `total`.
+    pub matches: bool,
+}
+
+pub fn compare(a: &image::RgbaImage, b: &image::RgbaImage) -> Comparison {
+    let total = (a.width() as usize) * (a.height() as usize);
+    if a.dimensions() != b.dimensions() {
+        return Comparison {
+            off: total,
+            total,
+            max: u8::MAX,
+            matches: false,
+        };
+    }
+    let mut off = 0;
+    let mut max = 0u8;
+    for (p, q) in a.pixels().zip(b.pixels()) {
+        let d = (0..4).map(|i| p[i].abs_diff(q[i])).max().unwrap_or(0);
+        max = max.max(d);
+        if d > CHANNEL_TOLERANCE {
+            off += 1;
+        }
+    }
+    Comparison {
+        off,
+        total,
+        max,
+        matches: (off as f64) <= PIXEL_SHARE * total as f64,
+    }
+}
+
+/// `goldens/<os>/` in this crate.
+pub fn golden_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("goldens")
+        .join(std::env::consts::OS)
+}
+
+/// Where frames are written for review: `target/ui-gpui-frames/` in the workspace.
+pub fn frame_dir() -> PathBuf {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-gpui-frames");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// `UPDATE_GOLDEN=1` rewrites goldens that are missing or off (as the egui goldens' switch).
+pub fn bless() -> bool {
+    std::env::var_os("UPDATE_GOLDEN").is_some()
+}
+
+/// Whether a frame is drawn at all: more than one colour in it.
+pub fn not_blank(image: &image::RgbaImage) -> bool {
+    let mut pixels = image.pixels();
+    match pixels.next() {
+        Some(first) => pixels.any(|p| p != first),
+        None => false,
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Driving a window: what the egui harness and `OBS_STEPS` do, on GPUI. Elements are found by
+// the accessibility snapshots `gpui-base` records under its `test-support` feature (role,
+// label, value, focus, bounds: what GPUI writes into each AccessKit node). GPUI Kit wraps the
+// same snapshots in its own test API, but its `test-support` feature names its optional
+// styled and GPUI Fast layers, which would bring an HTTP client into Cargo.lock and fail the
+// layering check; so the driver uses `gpui-base` and GPUI directly.
+
+use gpui_base::test_support::{self as observation, ElementSnapshot};
+use gpui_kit::{
+    App, InputEvent as _, KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, Role, Window,
+};
+
+/// What a test does with a window: draw a frame, find elements by accessible label or role,
+/// and send pointer and keyboard input. Each input step completes a frame after it.
+pub trait Driver {
+    /// Lay out and paint a frame, so the snapshots are current.
+    fn frame(&mut self, cx: &mut App);
+    /// Every element the last frame exposed, top to bottom, then left to right.
+    fn elements(&self) -> Vec<ElementSnapshot>;
+    /// The one element whose accessible name is `label`; panics if there is none or more.
+    fn find_by_label(&self, label: &str) -> ElementSnapshot;
+    fn find_all_by_role(&self, role: Role) -> Vec<ElementSnapshot>;
+    fn pointer_move(&mut self, at: Point<Pixels>, cx: &mut App);
+    fn pointer_down(&mut self, at: Point<Pixels>, cx: &mut App);
+    fn pointer_up(&mut self, at: Point<Pixels>, cx: &mut App);
+    /// Move to the centre of the element labelled `label` and click it there.
+    fn click_label(&mut self, label: &str, cx: &mut App);
+    /// A key down and up, as `"enter"`, `"tab"` or `"ctrl-f"`.
+    fn press(&mut self, key: &str, cx: &mut App);
+    /// Type `text`, one character at a time, into whatever has the keyboard.
+    fn type_text(&mut self, text: &str, cx: &mut App);
+}
+
+impl Driver for Window {
+    fn frame(&mut self, cx: &mut App) {
+        self.refresh();
+        self.draw(cx).clear(cx);
+    }
+
+    fn elements(&self) -> Vec<ElementSnapshot> {
+        let mut elements = observation::snapshots(self);
+        elements.sort_by_cached_key(|e| {
+            (
+                e.bounds().origin.y,
+                e.bounds().origin.x,
+                format!("{:?}", e.path()),
+            )
+        });
+        elements
+    }
+
+    fn find_by_label(&self, label: &str) -> ElementSnapshot {
+        let mut found: Vec<ElementSnapshot> = self
+            .elements()
+            .into_iter()
+            .filter(|e| e.label() == Some(label))
+            .collect();
+        assert!(
+            found.len() == 1,
+            "{} elements labelled {label:?}; the frame exposes: {:?}",
+            found.len(),
+            self.elements()
+        );
+        found.remove(0)
+    }
+
+    fn find_all_by_role(&self, role: Role) -> Vec<ElementSnapshot> {
+        self.elements()
+            .into_iter()
+            .filter(|e| e.role() == Some(role))
+            .collect()
+    }
+
+    fn pointer_move(&mut self, at: Point<Pixels>, cx: &mut App) {
+        let modifiers = self.modifiers();
+        self.dispatch_event(
+            MouseMoveEvent {
+                position: at,
+                pressed_button: None,
+                modifiers,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        self.frame(cx);
+    }
+
+    fn pointer_down(&mut self, at: Point<Pixels>, cx: &mut App) {
+        let modifiers = self.modifiers();
+        self.dispatch_event(
+            MouseDownEvent {
+                button: MouseButton::Left,
+                position: at,
+                modifiers,
+                click_count: 1,
+                first_mouse: false,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        self.frame(cx);
+    }
+
+    fn pointer_up(&mut self, at: Point<Pixels>, cx: &mut App) {
+        let modifiers = self.modifiers();
+        self.dispatch_event(
+            MouseUpEvent {
+                button: MouseButton::Left,
+                position: at,
+                modifiers,
+                click_count: 1,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        self.frame(cx);
+    }
+
+    fn click_label(&mut self, label: &str, cx: &mut App) {
+        self.frame(cx);
+        let target = self.find_by_label(label);
+        assert!(target.visible(), "{label:?} is not visible");
+        let at = target.bounds().center();
+        self.pointer_move(at, cx);
+        self.pointer_down(at, cx);
+        self.pointer_up(at, cx);
+    }
+
+    fn press(&mut self, key: &str, cx: &mut App) {
+        let keystroke = Keystroke::parse_with_os(key, cx.platform_info().os)
+            .unwrap_or_else(|e| panic!("{key:?}: {e}"));
+        self.frame(cx);
+        self.dispatch_event(
+            KeyDownEvent {
+                keystroke: keystroke.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        // Buttons act on key up, so the pair is always completed.
+        self.dispatch_event(KeyUpEvent { keystroke }.to_platform_input(), cx);
+        self.frame(cx);
+    }
+
+    fn type_text(&mut self, text: &str, cx: &mut App) {
+        self.frame(cx);
+        for c in text.chars() {
+            let s = c.to_string();
+            let mut keystroke = Keystroke::parse_with_os(&s, cx.platform_info().os)
+                .unwrap_or_else(|e| panic!("{s:?}: {e}"));
+            keystroke.key_char = Some(s);
+            self.dispatch_keystroke(keystroke, cx);
+            self.frame(cx);
+        }
+    }
+}

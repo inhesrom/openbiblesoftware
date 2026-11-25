@@ -35,6 +35,52 @@ pub fn hover() -> Rgba {
     rgb(0xe2ebf7)
 }
 
+/// The chrome's colour roles in one theme: the egui app's `Chrome` (`obs_ui_egui::tokens`),
+/// the roles the scaffold draws with. PLACEHOLDER until #378, which brings every role, the
+/// High contrast pair and Custom themes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Chrome {
+    pub dark: bool,
+    /// The ground behind the Panels.
+    pub shell: Rgba,
+    /// Bars and Tab pages.
+    pub surface: Rgba,
+    /// Dividers and outlines.
+    pub rule: Rgba,
+    /// Text.
+    pub ink: Rgba,
+    /// Secondary text.
+    pub muted: Rgba,
+    /// A control under the pointer.
+    pub hover: Rgba,
+}
+
+/// `tokens::LIGHT`: cool linen surfaces and iron ink.
+pub fn light() -> Chrome {
+    Chrome {
+        dark: false,
+        shell: shell(),
+        surface: surface(),
+        rule: rule(),
+        ink: ink(),
+        muted: muted(),
+        hover: hover(),
+    }
+}
+
+/// `tokens::DARK`: slate surfaces and light ink.
+pub fn dark() -> Chrome {
+    Chrome {
+        dark: true,
+        shell: rgb(0x181b1e),
+        surface: rgb(0x212529),
+        rule: rgb(0x3a4046),
+        ink: rgb(0xdee2e4),
+        muted: rgb(0xa0aab0),
+        hover: rgb(0x303842),
+    }
+}
+
 /// `space::S`, `space::M`, `space::L`, `space::XL` (points).
 pub const SPACE_S: f32 = 6.0;
 pub const SPACE_M: f32 = 8.0;
