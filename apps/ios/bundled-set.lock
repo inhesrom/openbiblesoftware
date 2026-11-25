@@ -1,0 +1,79 @@
+# The Mobile app's Bundled set (#333): every file `cargo xtask ios bundled-set` copies from
+# dist/starter/ into apps/ios/Bundled/starter/, with its sha256 and size. The command fails
+# when a fresh copy differs; `cargo xtask ios bundled-set --update-lock` rewrites this file.
+
+bytes = 43116439
+
+[[resource]]
+resource_id = "bsb"
+revision = 1
+file_sha256 = "03735e00cda5f65817ae56df86c09d2015af1bd97aa04652d942456eea452b32"
+bytes = 10555392
+
+[[resource]]
+resource_id = "openbible-xrefs"
+revision = 1
+file_sha256 = "efefdfdc765188619def370c1c5d151595b9c4a8bb73901869ccc92597937221"
+bytes = 14385152
+
+[[resource]]
+resource_id = "strongs-hebrew"
+revision = 1
+file_sha256 = "fc8d821821e168f6b825c307c7c7522d84a2111960adeb29a0ddbf30bbba241b"
+bytes = 5484544
+
+[[resource]]
+resource_id = "strongs-greek"
+revision = 1
+file_sha256 = "18cae8adb3c0072cf63049450d2ac0070c7e9f03fcdf3b95246a20ebdf46d5d7"
+bytes = 4038656
+
+[[file]]
+path = "CHANGES-openbible-xrefs.md"
+sha256 = "79ad26ae9a586d6d580f244a0c1653158a5bc5ca9219ea0f2363589391388b2c"
+bytes = 1135
+
+[[file]]
+path = "bsb.obr"
+sha256 = "03735e00cda5f65817ae56df86c09d2015af1bd97aa04652d942456eea452b32"
+bytes = 10555392
+
+[[file]]
+path = "openbible-xrefs.obr"
+sha256 = "efefdfdc765188619def370c1c5d151595b9c4a8bb73901869ccc92597937221"
+bytes = 14385152
+
+[[file]]
+path = "search/bsb.faf2af5da5d7d2a7.v4.obsidx"
+sha256 = "b6d79bebb136cde9a163e41f157fc538f6af830ce62d1d147456130ed838226f"
+bytes = 3969024
+
+[[file]]
+path = "search/openbible-xrefs.5c9d392728a18400.v4.obsidx"
+sha256 = "4153dc5206c4d21b2744b404fe4508456896549b1d98b3f8ddd9fa3f34107698"
+bytes = 36864
+
+[[file]]
+path = "search/strongs-greek.f0416084f021e8e1.v4.obsidx"
+sha256 = "0230fb764ca97f209a6f5aa9f8b51b0ff1f8c74fa25fd3cb996a6b095a62ca96"
+bytes = 1929216
+
+[[file]]
+path = "search/strongs-hebrew.847803ccd1085b3f.v4.obsidx"
+sha256 = "3365c73f4f78a93c4509a0cf62438a14b598774a09261ea19a47e7834adc8eab"
+bytes = 2371584
+
+[[file]]
+path = "starter-manifest.json"
+sha256 = "99b368713192a7ddb12669ab81f159a63ae9d55e6cc5242433d4b6e5150520ac"
+bytes = 344872
+
+[[file]]
+path = "strongs-greek.obr"
+sha256 = "18cae8adb3c0072cf63049450d2ac0070c7e9f03fcdf3b95246a20ebdf46d5d7"
+bytes = 4038656
+
+[[file]]
+path = "strongs-hebrew.obr"
+sha256 = "fc8d821821e168f6b825c307c7c7522d84a2111960adeb29a0ddbf30bbba241b"
+bytes = 5484544

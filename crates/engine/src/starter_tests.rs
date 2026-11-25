@@ -857,6 +857,7 @@ fn an_unsafe_id_never_touches_a_file_outside_the_library() {
         resource_type: None,
         language: String::new(),
         license: String::new(),
+        mobile_set: None,
     };
     let mut reads = 0;
     for items in [
@@ -906,12 +907,127 @@ fn the_manifest_xtask_writes_parses_and_old_ones_still_do() {
         "unit_aliases":{}}]}"#;
     let m = StarterManifest::parse(old).unwrap();
     assert_eq!(m.resources[0].resource_type, None);
+    assert_eq!(m.resources[0].mobile_set, None);
     assert_eq!(m.get("web").unwrap().bytes, 10);
+    // The Mobile app's set (#333), written since S04 of docs/plans/mobile-ios.md.
+    let new = old.replace(r#""bytes":10,"#, r#""bytes":10,"mobile_set":"more","#);
+    let m = StarterManifest::parse(&new).unwrap();
+    assert_eq!(m.resources[0].mobile_set.as_deref(), Some("more"));
     assert!(
         StarterManifest::parse(r#"{"format":2,"resources":[]}"#)
             .unwrap_err()
             .contains("format 2")
     );
+}
+
+/// The Bundled set's manifest says which Mobile set each Resource is in (#333).
+fn mark_mobile_set(bundle: &Path, set: &str) {
+    let path = bundle.join(starter::MANIFEST_FILE);
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for r in manifest["resources"].as_array_mut().unwrap() {
+        r["mobile_set"] = json!(set);
+    }
+    std::fs::write(&path, manifest.to_string()).unwrap();
+}
+
+/// A Bundled set as `cargo xtask ios bundled-set` writes it (#333): a Starter bundle whose
+/// manifest lists only its Resources, each with `mobile_set`. The Mobile app adds it on the
+/// first run as the desktop app adds its bundle, prebuilt Search index caches included.
+#[test]
+fn a_mobile_bundled_set_is_accepted_as_a_starter_bundle() {
+    let lab = Lab::new("bundled-set");
+    let mut bsb = testing::bibles::bsb_john_1();
+    bsb.manifest.origin = Origin::Starter;
+    bsb.manifest.license = "LicenseRef-PublicDomain".into();
+    let strongs = starter_set()
+        .into_iter()
+        .find(|r| r.manifest.resource_id == "strongs-hebrew")
+        .unwrap();
+    testing::write_starter_bundle(&lab.bundle(), &[bsb, strongs]);
+    mark_mobile_set(&lab.bundle(), "bundled");
+    let (s, sync) = lab.launch(Some(&lab.bundle()));
+    assert!(sync.problems.is_empty(), "{:?}", sync.problems);
+    assert_eq!(sync.added.len(), 2, "{sync:?}");
+    let manifest = s.starter.manifest().unwrap();
+    assert!(
+        manifest
+            .resources
+            .iter()
+            .all(|r| r.mobile_set.as_deref() == Some("bundled")),
+        "{manifest:?}"
+    );
+    assert_eq!(
+        s.library
+            .preferred(ResourceType::Bible)
+            .unwrap()
+            .manifest
+            .resource_id,
+        "bsb"
+    );
+    assert_eq!(ids(&s, ResourceType::Lexicon), ["strongs-hebrew"]);
+    for id in ["bsb", "strongs-hebrew"] {
+        assert!(s.search.is_ready(id), "{id}: {:?}", s.search.status(id));
+    }
+}
+
+/// The real Bundled set (after `cargo xtask starter` and `cargo xtask ios bundled-set`) into
+/// an empty data folder, as the Mobile app's first launch adds it. Run by hand:
+/// `cargo test -p obs-engine --release -- --ignored --nocapture built_bundled_set`.
+#[test]
+#[ignore = "needs apps/ios/Bundled/starter from `cargo xtask ios bundled-set`"]
+fn the_built_bundled_set_fills_an_empty_library_on_first_run() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/ios/Bundled/starter");
+    let Ok(text) = std::fs::read_to_string(bundle.join(starter::MANIFEST_FILE)) else {
+        eprintln!("no apps/ios/Bundled/starter; skipped");
+        return;
+    };
+    let manifest = StarterManifest::parse(&text).unwrap();
+    let mut listed: Vec<&str> = manifest
+        .resources
+        .iter()
+        .map(|r| r.resource_id.as_str())
+        .collect();
+    listed.sort_unstable();
+    assert_eq!(
+        listed,
+        ["bsb", "openbible-xrefs", "strongs-greek", "strongs-hebrew"]
+    );
+    let lab = Lab::new("built-bundled-set");
+    let started = std::time::Instant::now();
+    let (mut s, sync) = lab.launch(Some(&bundle));
+    eprintln!(
+        "first run: {} Resources added in {:?}",
+        sync.added.len(),
+        started.elapsed()
+    );
+    assert!(sync.problems.is_empty(), "{:?}", sync.problems);
+    assert_eq!(sync.added.len(), manifest.resources.len());
+    for item in &manifest.resources {
+        assert_eq!(item.mobile_set.as_deref(), Some("bundled"));
+        let e = s.library.get(&item.resource_id).unwrap();
+        assert_eq!(e.manifest.origin, Origin::Starter);
+        assert!(
+            s.search.is_ready(&item.resource_id),
+            "{}: prebuilt cache used",
+            item.resource_id
+        );
+    }
+    assert_eq!(
+        s.library
+            .preferred(ResourceType::Bible)
+            .unwrap()
+            .manifest
+            .resource_id,
+        "bsb"
+    );
+    assert_eq!(
+        ids(&s, ResourceType::CrossReferenceSet),
+        ["openbible-xrefs"]
+    );
+    let entries = lexicon_entries(&mut s, "G26");
+    let from: Vec<&str> = entries.iter().map(|e| e.resource_id.as_str()).collect();
+    assert_eq!(from, ["strongs-greek"], "{from:?}");
 }
 
 /// The real `dist/starter/` (after `cargo xtask starter`) into an empty data folder, as
