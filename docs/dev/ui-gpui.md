@@ -143,11 +143,26 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
   - **The seeded change:** a test-only override (`Shell::override_chrome`, under the crate's
     `test-support` feature) changes the surface colour by 4 levels. The comparison must then
     fail, which checks that the gallery catches a token change.
-- **Surfaces with goldens so far:** the window with an empty Workspace, in Light and Dark,
-  and a two-Panel Workspace (KJV and BSB split) in Light (#385). The headless context has no
-  asset source, so icon buttons draw without their icons in these frames.
+- **Surfaces with goldens so far:**
+  - the window with an empty Workspace, in Light and Dark;
+  - a two-Panel Workspace (KJV and BSB split) in Light (#385);
+  - the reading pane (#380) in Light: `reading-kjv-gen-1` (the Starter KJV), `reading-hebrew-gen-1`
+    (Gen 1:1-5 with points and cantillation, one right-to-left paragraph) and
+    `reading-greek-john-1` (John 1:1-5). Each is drawn three times from a fresh context and must
+    be identical. The egui app's counterparts are the gallery's reading surfaces in
+    `docs/previews/gallery/`.
+
+  The headless context has no asset source, so icon buttons draw without their icons in these
+  frames.
 - **Workspace tests** (`tests/workspace.rs`, #385): on the TestPlatform, ported from the egui
   tests' behaviour.
+- **Reading pane tests** (`tests/reading.rs`, #380), on the TestPlatform. Each names the egui
+  test it ports: Scroll speed for wheel lines and trackpad points, Ctrl+wheel, the arrow and page
+  keys, motion against Reduce motion, the Text size and Resource text size keeping the Current
+  location, and Hebrew right to left and never hyphenated. Also: Greek breaks between words, a
+  jump into a long paragraph is drawn in its first frame, and the paragraph nodes.
+  - GPUI's test windows never turn accessibility on, so each block records the node it writes
+    (`reading::observed`, under `test-support`), and the tests read that.
 - **Fonts:** the Shell draws its chrome in the default Interface font (egui's Ubuntu Light,
   asked for by its Light weight, so an installed Ubuntu Regular is not drawn instead) and its
   wordmark in Gentium Plus. Both are bundled, so frames are the same on every computer.
@@ -219,3 +234,44 @@ Look with GPUI's headless renderer, at 2×, into `crates/ui-gpui/previews/`. The
 checks the pixels of the focus rings a colour could hide (the primary button's, a chip's Close
 button's, a menu item's). Without a headless renderer these tests are skipped, unless
 `OBS_GPUI_REQUIRE_RENDERER=1`.
+
+## The reading pane (#380)
+
+`reading.rs`: a `ReadingPane` reads one Resource through `obs-reading`'s `ReadingView`, the same
+reading core the egui app and the mobile app use. ADR 0004's #372 amendment decides how it paints:
+- **Fonts:** the bundled reading fonts (Gentium Plus, Ezra SIL) are registered with GPUI's text
+  system by `install`. `ReadingFonts` maps each `obs_fonts::FaceId` to its GPUI `FontId` once.
+- **Painting:** every glyph our pipeline laid out (harfrust shaping, unicode-bidi, our line
+  breaking) is painted with `Window::paint_glyph`, at our position, in the Page tone's colour for
+  its role. GPUI's own text system never lays out Resource text.
+- **Layout:** in the pane element's prepaint, where its size is known: the Reading column (#209)
+  centred as in the egui pane, then `ReadingView::frame` within `SYNC_BUDGET`. Other blocks go to
+  the layout workers and show as faint bars until they arrive. The block a jump lands in is laid
+  out at once. While a glide or a worker layout is pending, the pane asks for another frame.
+- **Input:**
+  - Wheel lines (40 points each) and trackpad points scroll at the Scroll speed (#293). Ctrl or
+    Cmd with the wheel never scrolls.
+  - Page Down, Space and Page Up move 0.9 of the pane; the arrows move 40 points at the Scroll
+    speed. Keys and jumps glide unless motion is reduced (#225).
+  - The scroll bar's thumb follows the position and can be dragged.
+  - Unlike egui, the wheel is not smoothed over frames.
+- **Settings:** each frame the Shell hands the pane the Resource's Text settings (the Text size,
+  or the Resource's own text size, and the Reading layout), the Page tone and the Scroll speed. A
+  change lays the text out again and keeps the Current location.
+- **Accessibility:** each laid block in view is one element with `Role::Paragraph`, its text and
+  its direction. Its Tagged words and references are synthetic `Role::Link` children, with bounds
+  relative to the window in device pixels.
+- **Not yet:** marks and highlights (#382), selection, Find and Word Info hover (#381),
+  footnotes, the Note margin and the jump flash (#383). Also faces loaded from the computer
+  (#138): `obs-fonts` does not expose a loaded face's file yet, so their glyphs are not drawn.
+
+Until the Workspace hosts panes (#385), one pane can be shown in place of the empty Workspace:
+
+```sh
+OBS_GPUI_READ=kjv-strongs cargo run -p openbible --features gpui              # at its start
+OBS_GPUI_READ='tahot@Gen 1:1' cargo run -p openbible --features gpui          # at a reference
+```
+
+The reference is read in the Resource's own numbering. Click the pane, or use the keys at once:
+it opens with the keyboard.
+
