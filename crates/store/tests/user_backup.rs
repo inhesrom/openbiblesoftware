@@ -176,7 +176,11 @@ fn restoring_an_older_backup_runs_the_migrations() {
     {
         let (v3, _) = UserStore::open_to(&old, 3).unwrap();
         v3.set_preference("theme", "dark").unwrap();
-        v3.save_layout("Old layout", "{}").unwrap();
+        // A Layout as schema 3 kept it (`save_layout` writes today's columns).
+        v3.execute_unchecked(
+            "INSERT INTO layout (name, snapshot, saved_at) VALUES ('Old layout', '{}', 0)",
+        )
+        .unwrap();
         v3.back_up(&dir.0.join("v3.obsbackup")).unwrap();
     }
     let c = UserStore::backup_contents(&dir.0.join("v3.obsbackup")).unwrap();
