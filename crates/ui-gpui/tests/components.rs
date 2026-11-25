@@ -1,20 +1,22 @@
 //! The shared components work through the UI (#378): each is found by its accessible name and
 //! role, activates by click, takes keyboard focus, and the text field types, composes with an
-//! IME, undoes, copies and pastes. Driven headlessly with gpui-kit's test API.
+//! IME, undoes, copies and pastes. Driven headlessly by the test driver (`tests/support`, #379).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use gpui_kit::base::input::InputState;
-use gpui_kit::test::{TestInput, TestQueryExt, TestWindowExt};
 use gpui_kit::{
-    AppContext, Bounds, ClipboardItem, Context, ElementInputHandler, Entity, IntoElement,
-    ParentElement, Point, Render, Role, SharedString, Styled, TestAppContext, Window, WindowBounds,
-    WindowOptions, div, px, size,
+    AppContext, Bounds, ClipboardItem, Context, ElementInputHandler, Entity, InputHandler as _,
+    IntoElement, ParentElement, Point, Render, Role, SharedString, Styled, TestAppContext, Window,
+    WindowBounds, WindowOptions, div, px, size,
 };
 use obs_ui_gpui::catalogue::{Catalogue, look_named};
 use obs_ui_gpui::components as c;
 use obs_ui_gpui::icons::Icon;
 use obs_ui_gpui::theme;
+use support::Driver;
 
 fn open<V: Render>(
     cx: &mut TestAppContext,
@@ -58,7 +60,7 @@ fn key(k: &str) -> String {
 fn every_catalogue_control_is_found_by_its_name_and_role(cx: &mut TestAppContext) {
     let (handle, _) = open(cx, |window, cx| cx.new(|cx| Catalogue::new(window, cx)));
     cx.update_window(handle, |_, window, cx| {
-        window.render_frame(cx);
+        window.frame(cx);
         for (label, role) in [
             ("Save", Role::Button),
             ("Open", Role::Button),
@@ -94,20 +96,20 @@ fn every_catalogue_control_is_found_by_its_name_and_role(cx: &mut TestAppContext
 fn buttons_toggles_radios_and_chips_act_on_a_click(cx: &mut TestAppContext) {
     let (handle, view) = open(cx, |window, cx| cx.new(|cx| Catalogue::new(window, cx)));
     cx.update_window(handle, |_, window, cx| {
-        window.render_frame(cx);
-        window.click("save", cx);
-        window.click("save", cx);
+        window.frame(cx);
+        window.click_label("Save", cx);
+        window.click_label("Save", cx);
         assert_eq!(view.read(cx).clicks, 2);
         assert!(view.read(cx).toggled);
-        window.click("red-letter", cx);
+        window.click_label("Words of Jesus in red", cx);
         assert!(!view.read(cx).toggled);
-        window.click(("flow", 1usize), cx);
+        window.click_label("Verse per line", cx);
         assert_eq!(view.read(cx).choice, 1);
         assert_eq!(
             window.find_by_label("Remove WEB").role(),
             Some(Role::Button)
         );
-        window.click("close-WEB", cx);
+        window.click_label("Remove WEB", cx);
         let chips: Vec<SharedString> = view.read(cx).chips.clone();
         assert_eq!(chips, vec![SharedString::from("KJV"), "BSB".into()]);
     })
@@ -118,11 +120,11 @@ fn buttons_toggles_radios_and_chips_act_on_a_click(cx: &mut TestAppContext) {
 fn a_click_focuses_a_control_and_tab_moves_the_focus(cx: &mut TestAppContext) {
     let (handle, _) = open(cx, |window, cx| cx.new(|cx| Catalogue::new(window, cx)));
     cx.update_window(handle, |_, window, cx| {
-        window.render_frame(cx);
-        window.click("save", cx);
-        assert_eq!(window.find("save").focused(), Some(true));
+        window.frame(cx);
+        window.click_label("Save", cx);
+        assert_eq!(window.find_by_label("Save").focused(), Some(true));
         window.press("tab", cx);
-        assert_eq!(window.find("save").focused(), Some(false));
+        assert_eq!(window.find_by_label("Save").focused(), Some(false));
     })
     .unwrap();
 }
@@ -153,27 +155,38 @@ fn the_text_field_types_composes_undoes_copies_and_pastes(cx: &mut TestAppContex
         })
     });
     cx.update_window(handle, |_, window, cx| {
-        window.render_frame(cx);
-        window.click("field", cx);
-        let f = window.find("field");
+        window.frame(cx);
+        window.click_label("Notebook name", cx);
+        let f = window.find_by_label("Notebook name");
         assert_eq!(f.focused(), Some(true));
         assert_eq!(f.label(), Some("Notebook name"));
         assert_eq!(f.role(), Some(Role::TextInput));
-        window.input("Romans ", cx);
-        assert_eq!(window.find("field").value(), Some("Romans "));
+        window.type_text("Romans ", cx);
+        assert_eq!(
+            window.find_by_label("Notebook name").value(),
+            Some("Romans ")
+        );
 
         // IME: a marked composition, then committed as one undo step.
         let state = view.read(cx).state.clone();
-        let bounds = window.find("field").bounds();
-        let mut ime = TestInput::new(ElementInputHandler::new(bounds, state), window);
-        ime.compose_text(None, "בָּ", Some(1..1), cx);
-        assert!(ime.marked_text_range(cx).is_some());
-        ime.commit_text("בָּרָא", cx);
-        assert_eq!(ime.marked_text_range(cx), None);
-        drop(ime);
-        assert_eq!(window.find("field").value(), Some("Romans בָּרָא"));
+        let bounds = window.find_by_label("Notebook name").bounds();
+        // The text-input protocol a platform IME drives, on the field's own input handler.
+        let mut ime = ElementInputHandler::new(bounds, state);
+        ime.replace_and_mark_text_in_range(None, "בָּ", Some(1..1), window, cx);
+        window.frame(cx);
+        assert!(ime.marked_text_range(window, cx).is_some());
+        ime.replace_text_in_range(None, "בָּרָא", window, cx);
+        window.frame(cx);
+        assert_eq!(ime.marked_text_range(window, cx), None);
+        assert_eq!(
+            window.find_by_label("Notebook name").value(),
+            Some("Romans בָּרָא")
+        );
         window.press(undo_key(), cx);
-        assert_eq!(window.find("field").value(), Some("Romans "));
+        assert_eq!(
+            window.find_by_label("Notebook name").value(),
+            Some("Romans ")
+        );
 
         // Copy and paste through the clipboard.
         window.press(&key("a"), cx);
@@ -185,7 +198,10 @@ fn the_text_field_types_composes_undoes_copies_and_pastes(cx: &mut TestAppContex
         cx.write_to_clipboard(ClipboardItem::new_string("8:28".into()));
         window.press("end", cx);
         window.press(&key("v"), cx);
-        assert_eq!(window.find("field").value(), Some("Romans 8:28"));
+        assert_eq!(
+            window.find_by_label("Notebook name").value(),
+            Some("Romans 8:28")
+        );
     })
     .unwrap();
 }
@@ -194,14 +210,14 @@ fn the_text_field_types_composes_undoes_copies_and_pastes(cx: &mut TestAppContex
 fn switching_the_look_redraws_in_the_same_frame(cx: &mut TestAppContext) {
     let (handle, _) = open(cx, |window, cx| cx.new(|cx| Catalogue::new(window, cx)));
     cx.update_window(handle, |_, window, cx| {
-        window.render_frame(cx);
+        window.frame(cx);
         assert!(!theme::look(cx).chrome.dark);
-        window.click(("look", 1usize), cx);
+        window.click_label("Dark", cx);
         assert!(
             theme::look(cx).chrome.dark,
             "Dark is current after the click"
         );
-        window.click(("look", 3usize), cx);
+        window.click_label("High contrast", cx);
         let l = theme::look(cx);
         assert!(l.chrome.high_contrast);
         assert_eq!(l.focus_width(), obs_ui_gpui::tokens::stroke::HEAVY);

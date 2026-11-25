@@ -86,6 +86,9 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
     accessibility on, so only single nodes can be checked (#374).
 - **Interaction tests** (`tests/interaction.rs`): `#[gpui_kit::test]` on GPUI's
   TestPlatform, on Linux, macOS and Windows alike.
+- **Component tests** (`tests/components.rs`, #378): the shared components and the
+  catalogue, on the same driver and TestPlatform. The IME is driven through the field's own
+  `ElementInputHandler`.
 - **Rendering** (`tests/rendering.rs`): its own harness on the main thread, drawn by GPUI's
   headless renderer.
   - **Linux:** wgpu; on a computer with no GPU, Mesa's software Vulkan driver, lavapipe
@@ -110,8 +113,9 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
     fail, which checks that the gallery catches a token change.
 - **Surfaces with goldens so far:** the scaffold's window (title bar and empty Workspace), in
   Light and Dark.
-- **Fonts:** the Shell draws its text in the bundled Gentium Plus, so frames are the same on
-  every computer. #378 chooses the Interface font.
+- **Fonts:** the Shell draws its chrome in the default Interface font (egui's Ubuntu Light)
+  and its wordmark in Gentium Plus. Both are bundled, so frames are the same on every
+  computer.
 
 **Only 2× for now.** gpui-pre 0.3.12's headless windows are fixed at 2×. 1× needs
 `HeadlessAppContext::simulate_window_scale_factor_change`: a 19-line patch, on the branch
@@ -143,7 +147,9 @@ is reachable only after focus leaves the window and comes back.
   size and reduce motion. It is resolved from the Session's appearance and Custom theme
   (ADR 0018) as the egui app's `theme.rs` does. `set_look` replaces it, makes GPUI's
   reduce-motion flag follow it, and refreshes every window, so a theme change shows in the
-  next frame.
+  next frame. The Shell makes the Session's Look current when the Session's appearance
+  changes (a command such as `view.theme`, or Follow system when the window's appearance
+  changes); the catalogue keeps the Look its buttons choose.
 - `icons.rs`: the Lucide set from `crates/ui-egui/assets/icons`, compiled in with the egui
   app's names and drawn as SVG masks in a theme role's colour. `icons::Assets` is the app's
   asset source.

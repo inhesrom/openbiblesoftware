@@ -7,14 +7,18 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 #[cfg(target_os = "linux")]
+mod support;
+
+#[cfg(target_os = "linux")]
 #[test]
 fn catalogue_previews() {
     use std::sync::Arc;
 
-    use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{AppContext as _, Bounds, HeadlessAppContext, WindowBounds, WindowOptions};
     use gpui_kit::{point, px, size};
     use obs_ui_gpui::catalogue::{Catalogue, LOOKS, look_named};
+
+    use crate::support::Driver as _;
 
     let save = std::env::var_os("OBS_GPUI_PREVIEWS").is_some();
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("previews");
@@ -45,7 +49,7 @@ fn catalogue_previews() {
                 )
             })
             .expect("open window");
-        cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        cx.update_window(handle, |_, window, cx| window.frame(cx))
             .unwrap();
         let Ok(image) = cx.capture_screenshot(handle) else {
             eprintln!("previews: no headless renderer here; skipped");
