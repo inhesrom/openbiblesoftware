@@ -4,7 +4,8 @@
 //! own rendering tests do). `cargo test -p obs-ui-gpui --test rendering`:
 //! - **Linux:** frames from GPUI's headless renderer (wgpu, Mesa lavapipe on a computer with no
 //!   GPU) are compared with the PNG goldens in `goldens/linux/` under ADR 0019's tolerance.
-//!   `UPDATE_GOLDEN=1` writes goldens that are missing or off.
+//!   `UPDATE_GOLDEN=1` writes goldens that are missing or off; without it a missing golden
+//!   fails.
 //! - **macOS:** no goldens (its text rasterizer differs from Linux's): each surface is drawn
 //!   three times and must be identical and not blank.
 //! - **Windows:** skipped; GPUI has no headless renderer there.
@@ -12,13 +13,92 @@
 //! With no usable headless renderer (Linux without Mesa's Vulkan drivers), the test prints why
 //! and passes, unless `OBS_GPUI_REQUIRE_RENDERER=1` (CI) makes that a failure.
 //!
-//! Frames go to `target/ui-gpui-frames/` for review. Only 2× for now: gpui-pre 0.3.12's
-//! headless windows are fixed at 2× (docs/dev/ui-gpui.md).
+//! Frames go to `ui-gpui-frames/` in the target folder (`CARGO_TARGET_DIR`, else the
+//! workspace's `target/`) for review. Only 2× for now: gpui-pre 0.3.12's headless windows are
+//! fixed at 2× (docs/dev/ui-gpui.md).
+//!
+//! Test runners call the binary with libtest's arguments: it lists itself as one test,
+//! `rendering`, for `--list` (nextest), and honours a name filter, `--exact` and `--skip`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// The one test this harness runs, by the name test runners list and filter it by.
+const TEST_NAME: &str = "rendering";
+
+/// What the command line asks of the harness, in the libtest arguments test runners pass:
+/// cargo test (`[FILTER...] [--exact] [--skip FILTER]`) and nextest (`--list --format terse`
+/// to list, `rendering --exact --nocapture` to run).
+#[derive(Debug, PartialEq, Eq)]
+enum Request {
+    /// `--list`: print the test, as `rendering: test` (none with `--ignored`; it is not ignored).
+    List { ignored_only: bool },
+    /// Run the test.
+    Run,
+    /// The filters, `--skip` or `--ignored` leave nothing to run.
+    Nothing,
+}
+
+fn request(args: &[String]) -> Request {
+    // libtest options that take a value, so it is not read as a filter.
+    const VALUED: [&str; 7] = [
+        "--format",
+        "--test-threads",
+        "--skip",
+        "--color",
+        "--logfile",
+        "--shuffle-seed",
+        "-Z",
+    ];
+    let mut filters = Vec::new();
+    let mut skips = Vec::new();
+    let (mut list, mut ignored_only, mut exact) = (false, false, false);
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--list" => list = true,
+            "--ignored" => ignored_only = true,
+            "--exact" => exact = true,
+            "--skip" => skips.extend(args.next().cloned()),
+            a if VALUED.contains(&a) => {
+                args.next();
+            }
+            a if a.starts_with('-') => {}
+            a => filters.push(a.to_owned()),
+        }
+    }
+    if list {
+        return Request::List { ignored_only };
+    }
+    let matches = |f: &String| {
+        if exact {
+            f == TEST_NAME
+        } else {
+            TEST_NAME.contains(f.as_str())
+        }
+    };
+    let selected = filters.is_empty() || filters.iter().any(matches);
+    if ignored_only || !selected || skips.iter().any(matches) {
+        Request::Nothing
+    } else {
+        Request::Run
+    }
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match request(&args) {
+        Request::List { ignored_only } => {
+            if !ignored_only {
+                println!("{TEST_NAME}: test");
+            }
+        }
+        Request::Nothing => println!("{TEST_NAME}: filtered out"),
+        Request::Run => run(),
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn run() {
     println!("rendering: skipped; GPUI has no headless renderer on this platform (ADR 0019, #374)");
 }
 
@@ -26,7 +106,7 @@ fn main() {
 mod support;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn main() {
+fn run() {
     rendering::run();
 }
 
@@ -100,8 +180,20 @@ mod rendering {
     /// A fresh context and window in `look`, one frame, one capture.
     fn shoot(look: &str) -> RgbaImage {
         let mut cx = context();
-        let (handle, _, _lab) = open(&mut cx, look);
-        frame(&mut cx, handle)
+        let (handle, shell, lab) = open(&mut cx, look);
+        let image = frame(&mut cx, handle);
+        close(cx, shell, lab);
+        image
+    }
+
+    /// Shut the app down, so the Session closes its User database, before the Lab removes the
+    /// scratch folder (Windows cannot remove a file that is open).
+    fn close(cx: HeadlessAppContext, shell: Entity<Shell>, lab: support::Lab) {
+        drop(shell);
+        drop(cx);
+        let root = lab.root.clone();
+        drop(lab);
+        assert!(!root.exists(), "{} is left behind", root.display());
     }
 
     pub fn run() {
@@ -181,15 +273,26 @@ mod rendering {
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 
-    /// Compare `frame` with its golden; `UPDATE_GOLDEN=1`, or no golden yet, writes it.
+    /// Compare `frame` with its golden; `UPDATE_GOLDEN=1` writes it when it is missing or off.
+    /// A missing golden fails otherwise, so a golden left out of a commit is noticed.
     fn check_golden(name: &str, frame: &RgbaImage) -> Option<String> {
         let dir = support::golden_dir();
-        std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
         let path = dir.join(format!("{name}.png"));
         if !path.exists() {
-            save(frame, &path);
-            println!("golden: wrote {} (new)", path.display());
-            return None;
+            if support::bless() {
+                std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+                save(frame, &path);
+                println!("golden: wrote {} (new)", path.display());
+                return None;
+            }
+            save(
+                frame,
+                &support::frame_dir().join(format!("{name}-actual.png")),
+            );
+            return Some(format!(
+                "{name} has no golden ({}); rerun with UPDATE_GOLDEN=1 and review",
+                path.display()
+            ));
         }
         let golden = image::open(&path)
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
@@ -225,11 +328,17 @@ mod rendering {
     /// fail the comparison with the Light golden: the gallery catches a token change.
     fn seeded_change() -> Option<String> {
         let golden_path = support::golden_dir().join("workspace-empty-light-2x.png");
-        let golden = image::open(&golden_path)
-            .unwrap_or_else(|e| panic!("{}: {e}", golden_path.display()))
-            .to_rgba8();
+        let golden = match image::open(&golden_path) {
+            Ok(golden) => golden.to_rgba8(),
+            Err(e) => {
+                return Some(format!(
+                    "seeded change: no Light golden to compare with ({}: {e})",
+                    golden_path.display()
+                ));
+            }
+        };
         let mut cx = context();
-        let (handle, shell, _lab) = open(&mut cx, "light");
+        let (handle, shell, lab) = open(&mut cx, "light");
         let mut seeded = obs_ui_gpui::tokens::light();
         // `surface` 0xf4f6f4 to 0xf0f2f0: 4 levels, past the ±2 channel tolerance.
         seeded.surface = gpui_kit::rgb(0xf0f2f0);
@@ -240,6 +349,7 @@ mod rendering {
             })
         });
         let changed = frame(&mut cx, handle);
+        close(cx, shell, lab);
         save(
             &changed,
             &support::frame_dir().join("workspace-empty-light-2x-seeded.png"),

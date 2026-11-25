@@ -172,9 +172,15 @@ pub fn golden_dir() -> PathBuf {
         .join(std::env::consts::OS)
 }
 
-/// Where frames are written for review: `target/ui-gpui-frames/` in the workspace.
+/// Where frames are written for review: `ui-gpui-frames/` in `CARGO_TARGET_DIR` when it is set
+/// (a relative one from the workspace), else in the workspace's `target/`.
 pub fn frame_dir() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-gpui-frames");
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) if !dir.is_empty() => workspace.join(dir),
+        _ => workspace.join("target"),
+    };
+    let dir = target.join("ui-gpui-frames");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -198,8 +204,10 @@ pub fn not_blank(image: &image::RgbaImage) -> bool {
 // the accessibility snapshots `gpui-base` records under its `test-support` feature (role,
 // label, value, focus, bounds: what GPUI writes into each AccessKit node). GPUI Kit wraps the
 // same snapshots in its own test API, but its `test-support` feature names its optional
-// styled and GPUI Fast layers, which would bring an HTTP client into Cargo.lock and fail the
-// layering check; so the driver uses `gpui-base` and GPUI directly.
+// styled and GPUI Fast layers. GPUI Fast is in Cargo.lock already (an optional dependency of
+// `gpui-base`) though in no build; the feature would add the styled layer's and GPUI Fast's
+// platform crates and an HTTP client, and fail the layering check. So the driver uses
+// `gpui-base` and GPUI directly.
 
 use gpui_base::test_support::{self as observation, ElementSnapshot};
 use gpui_kit::{

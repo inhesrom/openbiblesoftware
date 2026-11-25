@@ -77,8 +77,9 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
     under its `test-support` feature: the role, label, value, focus and bounds GPUI writes
     into each AccessKit node.
   - **Not GPUI Kit's test API:** its `test-support` feature names the kit's optional styled
-    and GPUI Fast layers. That brings an HTTP client into `Cargo.lock` and fails
-    `cargo xtask layers`. So the crate's dev-dependencies name GPUI (`gpui-pre`,
+    and GPUI Fast layers. GPUI Fast is in `Cargo.lock` already, as an optional dependency of
+    `gpui-base`, but in no build. The feature would add the styled layer's and GPUI Fast's
+    platform crates and an HTTP client, and fail `cargo xtask layers`. So the crate's dev-dependencies name GPUI (`gpui-pre`,
     `gpui-pre-platform`) and `gpui-base` directly, at the versions `gpui-kit` pins. Bump them
     together with `gpui-kit`.
   - **Not checkable yet:** the shape of the AccessKit tree. GPUI's test windows never turn
@@ -98,9 +99,12 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
   - **Without a headless renderer** (Linux without Mesa's Vulkan drivers), the test says why
     and passes. `OBS_GPUI_REQUIRE_RENDERER=1` makes that a failure, as CI should.
   - **Blessing:** `UPDATE_GOLDEN=1 cargo test -p obs-ui-gpui --test rendering` writes goldens
-    that are missing or off. Review the diff.
-  - **Review copies:** frames, including `*-actual.png` for a mismatch, are written to
-    `target/ui-gpui-frames/`.
+    that are missing or off. Review the diff. Without it, a missing golden fails.
+  - **Review copies:** frames, including `*-actual.png` for a mismatch or a missing golden,
+    are written to `ui-gpui-frames/` in `CARGO_TARGET_DIR`, or in the workspace's `target/`.
+  - **Test runners:** the harness lists itself as one test, `rendering`, so
+    `cargo nextest run` (and `cargo xtask ci`) runs it, and it honours a test-name filter,
+    `--exact` and `--skip` as `cargo test` does.
   - **The seeded change:** a test-only override (`Shell::override_chrome`, under the crate's
     `test-support` feature) changes the surface colour by 4 levels. The comparison must then
     fail, which checks that the gallery catches a token change.

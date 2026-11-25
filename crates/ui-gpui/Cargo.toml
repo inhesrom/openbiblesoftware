@@ -16,14 +16,16 @@ log.workspace = true
 serde_json.workspace = true
 
 [features]
-# The test driver's hooks (#379): GPUI Kit's test API and the seeded colour change. Only the
-# crate's own tests turn it on (the dev-dependency on itself below).
+# The test driver's hook (#379): `Shell::override_chrome`, the rendering test's seeded colour
+# change. Only the crate's own tests turn it on (the dev-dependency on itself below).
 test-support = []
 
 [dev-dependencies]
-# GPUI's own test support, named directly at the versions gpui-kit pins: GPUI Kit's
-# `test-support` feature names its optional styled and GPUI Fast layers, which would bring
-# their crates (and an HTTP client) into Cargo.lock and the layering check.
+# GPUI's own test support, named directly at the versions gpui-kit pins, not GPUI Kit's
+# `test-support` feature: that one names its optional styled and GPUI Fast layers. GPUI Fast
+# is in Cargo.lock already (an optional dependency of gpui-base) but in no build; the feature
+# would add the styled layer's and GPUI Fast's platform crates and an HTTP client, and fail
+# `cargo xtask layers`.
 gpui-pre = { version = "=0.3.12", features = ["test-support"] }
 gpui-pre-platform = { version = "=0.3.12", features = ["test-support"] }
 gpui-base = { version = "=0.10.0", features = ["test-support"] }

@@ -33,9 +33,31 @@ fn open(cx: &mut TestAppContext, name: &str) -> (AnyWindowHandle, Entity<Shell>,
     (handle, shell, lab)
 }
 
+/// Close the window and release the Shell, so its Session closes the User database, before
+/// the Lab removes the scratch folder (Windows cannot remove a file that is open).
+fn close(
+    cx: &mut TestAppContext,
+    handle: AnyWindowHandle,
+    shell: Entity<Shell>,
+    lab: support::Lab,
+) {
+    let released = shell.downgrade();
+    drop(shell);
+    cx.update_window(handle, |_, window, _| window.remove_window())
+        .unwrap();
+    cx.run_until_parked();
+    assert!(
+        released.upgrade().is_none(),
+        "the Shell outlived its window"
+    );
+    let root = lab.root.clone();
+    drop(lab);
+    assert!(!root.exists(), "{} is left behind", root.display());
+}
+
 #[gpui_kit::test]
 fn the_quit_button_is_found_by_its_accessible_label_and_clicked(cx: &mut TestAppContext) {
-    let (handle, shell, _lab) = open(cx, "quit");
+    let (handle, shell, lab) = open(cx, "quit");
     cx.update_window(handle, |_, window, cx| {
         window.frame(cx);
         // The AccessKit node a screen reader is given for it.
@@ -52,11 +74,12 @@ fn the_quit_button_is_found_by_its_accessible_label_and_clicked(cx: &mut TestApp
     })
     .unwrap();
     assert!(shell.read_with(cx, |s, _| s.quit_requested()));
+    close(cx, handle, shell, lab);
 }
 
 #[gpui_kit::test]
 fn the_title_bar_and_the_empty_workspace_are_drawn(cx: &mut TestAppContext) {
-    let (handle, _shell, _lab) = open(cx, "nodes");
+    let (handle, shell, lab) = open(cx, "nodes");
     cx.update_window(handle, |_, window, cx| {
         window.frame(cx);
         // Every node the frame exposes: one Button so far, and it is labelled.
@@ -73,11 +96,12 @@ fn the_title_bar_and_the_empty_workspace_are_drawn(cx: &mut TestAppContext) {
         );
     })
     .unwrap();
+    close(cx, handle, shell, lab);
 }
 
 #[gpui_kit::test]
 fn engine_commands_run_through_the_shell(cx: &mut TestAppContext) {
-    let (handle, shell, _lab) = open(cx, "commands");
+    let (handle, shell, lab) = open(cx, "commands");
     // The fixtures' Library is in the Session the window draws.
     let ids: Vec<String> = shell.read_with(cx, |s, _| {
         s.session()
@@ -110,11 +134,12 @@ fn engine_commands_run_through_the_shell(cx: &mut TestAppContext) {
         assert_eq!(window.find_by_label(QUIT_LABEL).role(), Some(Role::Button));
     })
     .unwrap();
+    close(cx, handle, shell, lab);
 }
 
 #[gpui_kit::test]
 fn the_keyboard_reaches_and_presses_the_quit_button(cx: &mut TestAppContext) {
-    let (handle, shell, _lab) = open(cx, "keys");
+    let (handle, shell, lab) = open(cx, "keys");
     cx.update_window(handle, |_, window, cx| {
         window.frame(cx);
         // The first tab stop is the one control (GPUI Kit's Root binds Tab only once
@@ -131,10 +156,36 @@ fn the_keyboard_reaches_and_presses_the_quit_button(cx: &mut TestAppContext) {
     })
     .unwrap();
     assert!(shell.read_with(cx, |s, _| s.quit_requested()));
+    close(cx, handle, shell, lab);
 }
 
 #[gpui_kit::test]
 fn the_fixed_clock_holds_in_tests(cx: &mut TestAppContext) {
-    let (_handle, _shell, _lab) = open(cx, "clock");
+    let (handle, shell, lab) = open(cx, "clock");
     assert_eq!(obs_store::clock::now_ms(), support::NOW_MS);
+    close(cx, handle, shell, lab);
+}
+
+#[gpui_kit::test]
+fn the_shell_redraws_when_the_window_appearance_changes(cx: &mut TestAppContext) {
+    // Follow system draws in the window's appearance, so the Shell observes it. GPUI's test
+    // windows cannot change appearance from outside GPUI, but GPUI reports the appearance to
+    // a window's observers once just after it opens: the Shell is notified then.
+    let (session, lab) = support::session("appearance");
+    let notified = std::rc::Rc::new(std::cell::Cell::new(0));
+    let (handle, shell) = cx.update(|cx| {
+        obs_ui_gpui::install(cx);
+        let options = obs_ui_gpui::main_window_options(None, cx);
+        let (handle, shell) = obs_ui_gpui::open_main_window(session, options, cx).unwrap();
+        let count = notified.clone();
+        cx.observe(&shell, move |_, _| count.set(count.get() + 1))
+            .detach();
+        (handle, shell)
+    });
+    cx.run_until_parked();
+    assert!(
+        notified.get() > 0,
+        "the Shell was not notified of the appearance"
+    );
+    close(cx, handle, shell, lab);
 }
