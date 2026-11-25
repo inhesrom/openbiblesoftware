@@ -126,6 +126,81 @@ pub fn session(name: &str) -> (Session, Lab) {
     (session, Lab { root })
 }
 
+/// Add `r` to `session`'s Library, written into the Lab's library folder (#380's reading
+/// fixtures).
+pub fn add_resource(session: &mut Session, lab: &Lab, r: &obs_model::Resource) {
+    let path = lab
+        .root
+        .join("library")
+        .join(format!("{}.obr", r.manifest.resource_id));
+    obs_store::write_obr(r, &path).unwrap();
+    session.library.add_file(&path).unwrap();
+}
+
+/// Genesis 1:1-5 in Hebrew with points and cantillation, as TAHOT prints it: one right-to-left
+/// paragraph, so its lines wrap right to left (#380).
+pub fn hebrew_genesis_1() -> obs_model::Resource {
+    use obs_engine::testing::bibles::{paragraphed_bible, v};
+    let verses = [
+        (
+            v(Book::Genesis, 1, 1),
+            "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃",
+        ),
+        (
+            v(Book::Genesis, 1, 2),
+            "וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ וְחֹ֖שֶׁךְ עַל־פְּנֵ֣י תְה֑וֹם וְר֣וּחַ אֱלֹהִ֔ים מְרַחֶ֖פֶת עַל־פְּנֵ֥י הַמָּֽיִם׃",
+        ),
+        (v(Book::Genesis, 1, 3), "וַיֹּ֥אמֶר אֱלֹהִ֖ים יְהִ֣י א֑וֹר וַֽיְהִי־אֽוֹר׃"),
+        (
+            v(Book::Genesis, 1, 4),
+            "וַיַּ֧רְא אֱלֹהִ֛ים אֶת־הָא֖וֹר כִּי־ט֑וֹב וַיַּבְדֵּ֣ל אֱלֹהִ֔ים בֵּ֥ין הָא֖וֹר וּבֵ֥ין הַחֹֽשֶׁךְ׃",
+        ),
+        (
+            v(Book::Genesis, 1, 5),
+            "וַיִּקְרָ֨א אֱלֹהִ֤ים ׀ לָאוֹר֙ י֔וֹם וְלַחֹ֖שֶׁךְ קָ֣רָא לָ֑יְלָה וַֽיְהִי־עֶ֥רֶב וַֽיְהִי־בֹ֖קֶר י֥וֹם אֶחָֽד׃",
+        ),
+    ];
+    let mut r = paragraphed_bible("tahot-test", "TAHOT", &verses, obs_model::Direction::Rtl);
+    r.manifest.language = "hbo".into();
+    r
+}
+
+/// John 1:1-5 in Greek: one left-to-right paragraph whose lines break at spaces (#380).
+pub fn greek_john_1() -> obs_model::Resource {
+    use obs_engine::testing::bibles::{paragraphed_bible, v};
+    let verses = [
+        (
+            v(Book::John, 1, 1),
+            "Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος.",
+        ),
+        (v(Book::John, 1, 2), "οὗτος ἦν ἐν ἀρχῇ πρὸς τὸν θεόν."),
+        (
+            v(Book::John, 1, 3),
+            "πάντα δι’ αὐτοῦ ἐγένετο, καὶ χωρὶς αὐτοῦ ἐγένετο οὐδὲ ἕν ὃ γέγονεν.",
+        ),
+        (
+            v(Book::John, 1, 4),
+            "ἐν αὐτῷ ζωὴ ἦν, καὶ ἡ ζωὴ ἦν τὸ φῶς τῶν ἀνθρώπων·",
+        ),
+        (
+            v(Book::John, 1, 5),
+            "καὶ τὸ φῶς ἐν τῇ σκοτίᾳ φαίνει, καὶ ἡ σκοτία αὐτὸ οὐ κατέλαβεν.",
+        ),
+    ];
+    let mut r = paragraphed_bible("tagnt-test", "TAGNT", &verses, obs_model::Direction::Ltr);
+    r.manifest.language = "grc".into();
+    r
+}
+
+/// Psalm 119 as one long paragraph (176 verses, about 30 KB): a jump deep into it lands in a
+/// block far too long to lay out within one frame's budget (#380).
+pub fn long_psalm() -> obs_model::Resource {
+    use obs_engine::testing::bibles::{paragraphed_bible, v};
+    const TEXT: &str = "Blessed are those whose ways are blameless, who walk according to                         the law of the LORD; blessed are those who keep his statutes and seek                         him with all their heart.";
+    let verses: Vec<(Verse, &str)> = (1..=176).map(|n| (v(Book::Psalms, 119, n), TEXT)).collect();
+    paragraphed_bible("long-psalm", "LP", &verses, obs_model::Direction::Ltr)
+}
+
 /// How a frame compares with another under ADR 0019's tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Comparison {

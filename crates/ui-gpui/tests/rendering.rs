@@ -170,6 +170,65 @@ mod rendering {
         (handle, shell, lab)
     }
 
+    /// The reading panes drawn (#380): golden name, Resource, reference.
+    const READING: [(&str, &str, &str); 3] = [
+        ("reading-kjv-gen-1-light-2x", "kjv-strongs", "Gen 1:1"),
+        ("reading-hebrew-gen-1-light-2x", "tahot-test", "Gen 1:1"),
+        ("reading-greek-john-1-light-2x", "tagnt-test", "John 1:1"),
+    ];
+
+    /// A fresh context and window showing `resource` at `reference` in a reading pane, in the
+    /// Light look, its layouts settled; one capture.
+    fn shoot_reading(resource: &str, reference: &str) -> RgbaImage {
+        let mut cx = context();
+        let (mut session, lab) = support::session(&format!("render-reading-{resource}"));
+        for r in [support::hebrew_genesis_1(), support::greek_john_1()] {
+            support::add_resource(&mut session, &lab, &r);
+        }
+        let (handle, shell) = cx
+            .update(|cx| {
+                let bounds = Bounds {
+                    origin: point(px(0.), px(0.)),
+                    size: size(
+                        px(obs_ui_gpui::tokens::WINDOW_WIDTH),
+                        px(obs_ui_gpui::tokens::WINDOW_HEIGHT),
+                    ),
+                };
+                let mut options = obs_ui_gpui::main_window_options(Some(bounds), cx);
+                options.focus = false;
+                options.show = false;
+                obs_ui_gpui::open_main_window(session, options, cx)
+            })
+            .unwrap_or_else(|e| panic!("the window did not open: {e}"));
+        let pane = cx
+            .update_window(handle, |_, window, cx| {
+                window.frame(cx);
+                shell.update(cx, |s, cx| {
+                    assert!(s.run("view.theme", &json!({ "value": "light" })).is_some());
+                    assert!(
+                        s.run("view.reduce_motion", &json!({ "on": true }))
+                            .is_some()
+                    );
+                    s.open_reading(resource, Some(reference), window, cx)
+                })
+            })
+            .unwrap_or_else(|e| panic!("{e}"))
+            .unwrap_or_else(|e| panic!("{resource} at {reference}: {e}"));
+        // Every block in view laid out (the workers deliver between frames), then one frame.
+        for _ in 0..200 {
+            let _ = cx.update_window(handle, |_, window, cx| window.frame(cx));
+            let busy = cx.update(|cx| pane.read(cx).view().has_pending());
+            if !busy {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let image = frame(&mut cx, handle);
+        drop(pane);
+        close(cx, shell, lab);
+        image
+    }
+
     fn frame(cx: &mut HeadlessAppContext, handle: AnyWindowHandle) -> RgbaImage {
         cx.update_window(handle, |_, window, cx| window.frame(cx))
             .unwrap_or_else(|e| panic!("render_frame: {e}"));
@@ -256,6 +315,29 @@ mod rendering {
                 shots.iter().all(|s| s.as_raw() == first.as_raw())
             );
             if GOLDENS && let Some(failure) = check_golden(&name, first) {
+                failures.push(failure);
+            }
+        }
+        // The reading pane (#380): Latin, Hebrew (right to left, with points and
+        // cantillation) and Greek, each through our layout and GPUI's glyph painter.
+        for (name, resource, reference) in READING {
+            let shots: Vec<RgbaImage> =
+                (0..3).map(|_| shoot_reading(resource, reference)).collect();
+            let first = &shots[0];
+            save(first, &support::frame_dir().join(format!("{name}.png")));
+            if !support::not_blank(first) {
+                failures.push(format!("{name}: the frame is blank"));
+            }
+            let identical = shots.iter().all(|s| s.as_raw() == first.as_raw());
+            if !identical {
+                failures.push(format!("{name}: the three captures differ"));
+            }
+            println!(
+                "determinism: {name}: 3 captures, {}x{} px, identical: {identical}",
+                first.width(),
+                first.height()
+            );
+            if GOLDENS && let Some(failure) = check_golden(name, first) {
                 failures.push(failure);
             }
         }
