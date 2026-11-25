@@ -90,9 +90,6 @@ pub struct Shell {
     session: Session,
     /// The component catalogue (#378), drawn instead of the Workspace when asked for.
     catalogue: Option<Entity<catalogue::Catalogue>>,
-    /// One reading pane (#380), drawn in place of the empty Workspace until the Workspace
-    /// hosts panes (#385): `OBS_GPUI_READ`, or [`Shell::open_reading`].
-    reading: Option<Entity<reading::ReadingPane>>,
     /// The Look the Session last asked for, so a change of appearance is made current once.
     look_asked: Option<theme::Look>,
     /// The Quit button was pressed (the app quits; the test platform's quit does nothing).
@@ -102,6 +99,8 @@ pub struct Shell {
     /// Tests: colours drawn instead of the theme's (the gallery's seeded change, #379).
     #[cfg(feature = "test-support")]
     chrome_override: Option<tokens::Chrome>,
+    /// Each Resource Tab's pane (#380), from its opening to its closing.
+    pub(crate) panes: std::collections::HashMap<obs_engine::TabId, workspace::ResourcePane>,
     /// The Workspace's dock (#385), made with the first frame (it needs the window).
     dock: Option<Entity<DockArea>>,
     /// Which dock group is which engine Panel, and which dock panel which engine Tab.
@@ -125,7 +124,7 @@ impl Shell {
         Self {
             session,
             catalogue: None,
-            reading: None,
+            panes: std::collections::HashMap::new(),
             look_asked: None,
             quit_requested: false,
             painted: Rc::new(Cell::new(None)),
@@ -179,40 +178,6 @@ impl Shell {
                 None
             }
         }
-    }
-
-    /// Show Resource `resource` in a reading pane in place of the empty Workspace, at
-    /// `reference` (a Bible reference in its own numbering) when given, with the keyboard.
-    pub fn open_reading(
-        &mut self,
-        resource: &str,
-        reference: Option<&str>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<Entity<reading::ReadingPane>, String> {
-        let (doc, settings) = reading::open_doc(&self.session, resource)?;
-        let pane = cx.new(|cx| reading::ReadingPane::with_doc(doc, settings, cx));
-        let look = theme::look(cx);
-        let palette = reading::palette_for(&self.session, &look);
-        let reduce = cx.reduce_motion();
-        let session = &self.session;
-        let mut went = Ok(());
-        pane.update(cx, |p, _| {
-            p.sync(session, palette, reduce);
-            if let Some(r) = reference {
-                went = p.go(r).map(|_| ());
-            }
-        });
-        let focus = pane.read(cx).focus_handle().clone();
-        window.focus(&focus, cx);
-        self.reading = Some(pane.clone());
-        cx.notify();
-        went.map(|()| pane)
-    }
-
-    /// The reading pane, when one is shown.
-    pub fn reading(&self) -> Option<&Entity<reading::ReadingPane>> {
-        self.reading.as_ref()
     }
 
     /// Whether the Quit button has been pressed.
@@ -295,12 +260,7 @@ impl Render for Shell {
             self.apply_effects(window, cx);
         }
         let overlays = self.overlays(&look, window, cx);
-        if let Some(pane) = &self.reading {
-            let palette = reading::palette_for(&self.session, &look);
-            let reduce = cx.reduce_motion();
-            let session = &self.session;
-            pane.update(cx, |p, _| p.sync(session, palette, reduce));
-        }
+        self.sync_panes(&look, cx);
         div()
             .relative()
             .size_full()
@@ -312,22 +272,12 @@ impl Render for Shell {
             .text_size(px(look.pt(tokens::text::BODY)))
             .text_color(tokens::rgba(ch.ink))
             .child(self.title_bar(&look, cx))
-            .map(|this| match (&self.catalogue, &self.reading) {
-                (Some(catalogue), _) => {
+            .map(|this| match &self.catalogue {
+                Some(catalogue) => {
                     this.child(div().flex_1().min_h(px(0.0)).child(catalogue.clone()))
                 }
-                // One reading pane (OBS_GPUI_READ) until Resource Tabs host them.
-                (None, Some(pane)) => this.child(
-                    div()
-                        .flex_1()
-                        .min_h(px(0.0))
-                        .m(px(look.pt(tokens::space::S)))
-                        .border_1()
-                        .border_color(tokens::rgba(ch.rule))
-                        .child(pane.clone()),
-                ),
                 // The Workspace (#385): the engine's Panels and Tabs in the dock.
-                (None, None) => this.child(
+                None => this.child(
                     div()
                         .flex_1()
                         .min_h(px(0.0))
@@ -415,8 +365,8 @@ fn catalogue_look() -> Option<theme::Look> {
     catalogue::look_named(&name, zoom).or_else(|| catalogue::look_named("Light", zoom))
 }
 
-/// `OBS_GPUI_READ=<resource id>[@<reference>]`: show that Resource in a reading pane in place
-/// of the empty Workspace (#380), at the reference when given (`kjv@Gen 1:1`).
+/// `OBS_GPUI_READ=<resource id>[@<reference>]`: open that Resource in a Resource Tab at launch
+/// (#380), at the reference when given (`kjv@Gen 1:1`).
 fn reading_asked() -> Option<(String, Option<String>)> {
     let asked = std::env::var("OBS_GPUI_READ").ok()?;
     let (resource, reference) = match asked.split_once('@') {

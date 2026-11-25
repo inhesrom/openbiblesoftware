@@ -170,18 +170,34 @@ mod rendering {
         (handle, shell, lab)
     }
 
-    /// The reading panes drawn (#380): golden name, Resource, reference.
-    const READING: [(&str, &str, &str); 3] = [
-        ("reading-kjv-gen-1-light-2x", "kjv-strongs", "Gen 1:1"),
-        ("reading-hebrew-gen-1-light-2x", "tahot-test", "Gen 1:1"),
-        ("reading-greek-john-1-light-2x", "tagnt-test", "John 1:1"),
+    /// The Resource Tabs drawn (#380, #385): golden name, and each Panel's Resource and
+    /// reference, left to right.
+    const READING: [(&str, &[(&str, &str)]); 5] = [
+        ("reading-kjv-gen-1-light-2x", &[("kjv-strongs", "Gen 1:1")]),
+        (
+            "reading-hebrew-gen-1-light-2x",
+            &[("tahot-test", "Gen 1:1")],
+        ),
+        (
+            "reading-greek-john-1-light-2x",
+            &[("tagnt-test", "John 1:1")],
+        ),
+        (
+            "workspace-two-panels-light-2x",
+            &[("kjv-strongs", "Gen 1:1"), ("bsb", "Gen 1:1")],
+        ),
+        (
+            "workspace-kjv-hebrew-light-2x",
+            &[("kjv-strongs", "Gen 1:1"), ("tahot-test", "Gen 1:1")],
+        ),
     ];
 
-    /// A fresh context and window showing `resource` at `reference` in a reading pane, in the
-    /// Light look, its layouts settled; one capture.
-    fn shoot_reading(resource: &str, reference: &str) -> RgbaImage {
+    /// A fresh context and window in the Light look showing each of `panels`' Resources at its
+    /// reference in a Resource Tab, each Tab in its own Panel at the right of the one before;
+    /// their layouts settled; one capture.
+    fn shoot_reading(panels: &[(&str, &str)]) -> RgbaImage {
         let mut cx = context();
-        let (mut session, lab) = support::session(&format!("render-reading-{resource}"));
+        let (mut session, lab) = support::session(&format!("render-reading-{}", panels.len()));
         for r in [support::hebrew_genesis_1(), support::greek_john_1()] {
             support::add_resource(&mut session, &lab, &r);
         }
@@ -200,7 +216,7 @@ mod rendering {
                 obs_ui_gpui::open_main_window(session, options, cx)
             })
             .unwrap_or_else(|e| panic!("the window did not open: {e}"));
-        let pane = cx
+        let tabs = cx
             .update_window(handle, |_, window, cx| {
                 window.frame(cx);
                 shell.update(cx, |s, cx| {
@@ -209,22 +225,40 @@ mod rendering {
                         s.run("view.reduce_motion", &json!({ "on": true }))
                             .is_some()
                     );
-                    s.open_reading(resource, Some(reference), window, cx)
+                    let mut tabs = Vec::new();
+                    for (i, (resource, reference)) in panels.iter().enumerate() {
+                        // Each after the first in a new Panel at the right.
+                        let tab = s
+                            .run("resource.open", &json!({ "id": resource, "split": i > 0 }))
+                            .and_then(|v| v["tab"].as_u64())
+                            .unwrap_or_else(|| panic!("{resource} did not open"));
+                        s.run("tab.go", &json!({ "tab": tab, "text": reference }))
+                            .unwrap_or_else(|| panic!("{resource} at {reference}"));
+                        tabs.push(obs_engine::TabId(tab));
+                    }
+                    cx.notify();
+                    tabs
                 })
             })
-            .unwrap_or_else(|e| panic!("{e}"))
-            .unwrap_or_else(|e| panic!("{resource} at {reference}: {e}"));
+            .unwrap_or_else(|e| panic!("{e}"));
+        // One frame opens the panes and puts them at their references.
+        let _ = frame(&mut cx, handle);
+        let panes: Vec<_> = cx.update(|cx| {
+            tabs.iter()
+                .map(|t| shell.read(cx).pane(*t).expect("a reading pane").clone())
+                .collect()
+        });
         // Every block in view laid out (the workers deliver between frames), then one frame.
         for _ in 0..200 {
             let _ = cx.update_window(handle, |_, window, cx| window.frame(cx));
-            let busy = cx.update(|cx| pane.read(cx).view().has_pending());
+            let busy = cx.update(|cx| panes.iter().any(|p| p.read(cx).view().has_pending()));
             if !busy {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         let image = frame(&mut cx, handle);
-        drop(pane);
+        drop(panes);
         close(cx, shell, lab);
         image
     }
@@ -236,24 +270,10 @@ mod rendering {
             .unwrap_or_else(|e| panic!("capture: {e}"))
     }
 
-    /// A fresh context and window in `look`, one frame, one capture. `two_panels`: a Bible
-    /// and a second Bible split off to its right (the Workspace, #385).
-    fn shoot(look: &str, two_panels: bool) -> RgbaImage {
+    /// A fresh context and window in `look`, one frame, one capture.
+    fn shoot(look: &str) -> RgbaImage {
         let mut cx = context();
         let (handle, shell, lab) = open(&mut cx, look);
-        if two_panels {
-            cx.update(|cx| {
-                shell.update(cx, |s, cx| {
-                    s.run("resource.open", &json!({ "id": "kjv-strongs" }))
-                        .unwrap();
-                    s.run("resource.open", &json!({ "id": "bsb", "split": true }))
-                        .unwrap();
-                    cx.notify();
-                })
-            });
-            // One frame places the Tabs; the next draws them where they settled.
-            let _ = frame(&mut cx, handle);
-        }
         let image = frame(&mut cx, handle);
         close(cx, shell, lab);
         image
@@ -284,13 +304,10 @@ mod rendering {
             return;
         }
         let mut failures = Vec::new();
-        let surfaces = LOOKS
-            .iter()
-            .map(|look| (format!("workspace-empty-{look}-2x"), *look, false))
-            .chain([("workspace-two-panels-light-2x".to_string(), "light", true)]);
-        for (name, look, two_panels) in surfaces {
+        for look in LOOKS {
+            let name = format!("workspace-empty-{look}-2x");
             // Three captures from fresh contexts: the pixels must be identical, and drawn.
-            let shots: Vec<RgbaImage> = (0..3).map(|_| shoot(look, two_panels)).collect();
+            let shots: Vec<RgbaImage> = (0..3).map(|_| shoot(look)).collect();
             let first = &shots[0];
             save(first, &support::frame_dir().join(format!("{name}.png")));
             if !support::not_blank(first) {
@@ -320,9 +337,8 @@ mod rendering {
         }
         // The reading pane (#380): Latin, Hebrew (right to left, with points and
         // cantillation) and Greek, each through our layout and GPUI's glyph painter.
-        for (name, resource, reference) in READING {
-            let shots: Vec<RgbaImage> =
-                (0..3).map(|_| shoot_reading(resource, reference)).collect();
+        for (name, panels) in READING {
+            let shots: Vec<RgbaImage> = (0..3).map(|_| shoot_reading(panels)).collect();
             let first = &shots[0];
             save(first, &support::frame_dir().join(format!("{name}.png")));
             if !support::not_blank(first) {

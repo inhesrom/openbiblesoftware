@@ -46,8 +46,23 @@ transport and the OS language.
   tab group is an engine Panel (`DockMap::groups`); a dock panel is a `TabView`, one per Tab.
 - **A Tab:** its header strip (link chip, ‹ ›, the reference or Key box running `tab.go`,
   title, Aa, ⋯ with Close Tab and Reopen closed Tab) over `workspace::tab_content`: the hook the
-  reading pane (#380) and the Tools plug into, one `match` arm per Tab kind. A placeholder
-  until then.
+  reading pane (#380) and the Tools plug into, one `match` arm per Tab kind. A Tool shows a
+  placeholder until its ticket.
+- **A Resource Tab** has one reading pane (`workspace::ResourcePane`), read when the Tab
+  opens and kept, across frames and drags, until it closes; a Layout restored reads every
+  pane again, as egui does. As the egui Shell's `load`, the Tab learns the Resource's
+  numbering and Keys, and the pane starts at the Tab's location (else its Link set's, else
+  another Bible's, else the first Verse).
+  - The Tab's navigation moves the pane: the engine's `Navigate` Effect (`tab.go`, the header
+    box, Back, Forward) jumps it; `NavigateStandard` and `NavigateOpened` go through the
+    engine first. A parallel Resource switched in, or a Resource file replaced, is read again.
+  - Where the pane is scrolled is the Tab's location (`Workspace::scrolled`), so the header
+    box and Back follow it. The Link set does not follow yet (#386).
+  - A Resource with no text (a Cross-reference set, a People & places index) says where its
+    data shows, with one button that goes there. A Resource that cannot be read says so, with
+    Retry and Details; the error shows only after Details (#223).
+- **Overlays** (the + menu, the ⋯ menu, the Layout-name dialog) occlude what is under them,
+  so a click on them never reaches a reading pane.
 - **The Panel's +** opens a Resource or the Library in that Panel.
 - **Layouts** are engine data: save (the name dialog), restore, rename and delete run the
   `layout.*` commands; a Layout saved by the egui app restores in GPUI, in its proportions.
@@ -145,8 +160,9 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
     fail, which checks that the gallery catches a token change.
 - **Surfaces with goldens so far:**
   - the window with an empty Workspace, in Light and Dark;
-  - a two-Panel Workspace (KJV and BSB split) in Light (#385);
-  - the reading pane (#380) in Light: `reading-kjv-gen-1` (the Starter KJV), `reading-hebrew-gen-1`
+  - a two-Panel Workspace in Light: KJV and BSB (#385), and KJV beside the Hebrew fixture
+    (`workspace-kjv-hebrew`, #380), each Bible at Gen 1:1 in its Resource Tab;
+  - a Resource Tab's reading pane (#380) in Light: `reading-kjv-gen-1` (the Starter KJV), `reading-hebrew-gen-1`
     (Gen 1:1-5 with points and cantillation, one right-to-left paragraph) and
     `reading-greek-john-1` (John 1:1-5). Each is drawn three times from a fresh context and must
     be identical. The egui app's counterparts are the gallery's reading surfaces in
@@ -156,6 +172,10 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
   frames.
 - **Workspace tests** (`tests/workspace.rs`, #385): on the TestPlatform, ported from the egui
   tests' behaviour.
+- **Resource Tab tests** (`tests/resource_tabs.rs`): the header box, Back, Forward and
+  `tab.go` move the Tab's one pane; scrolling moves the Tab's location; a closed Tab's pane
+  goes; and the egui `pane_states_tests` behaviours of a Resource Tab (nothing to read, and an
+  unreadable Resource with Retry and Details).
 - **Reading pane tests** (`tests/reading.rs`, #380), on the TestPlatform. Each names the egui
   test it ports: Scroll speed for wheel lines and trackpad points, Ctrl+wheel, the arrow and page
   keys, motion against Reduce motion, the Text size and Resource text size keeping the Current
@@ -265,13 +285,13 @@ reading core the egui app and the mobile app use. ADR 0004's #372 amendment deci
   footnotes, the Note margin and the jump flash (#383). Also faces loaded from the computer
   (#138): `obs-fonts` does not expose a loaded face's file yet, so their glyphs are not drawn.
 
-Until the Workspace hosts panes (#385), one pane can be shown in place of the empty Workspace:
+`OBS_GPUI_READ` opens a Resource in a Resource Tab at launch:
 
 ```sh
 OBS_GPUI_READ=kjv-strongs cargo run -p openbible --features gpui              # at its start
 OBS_GPUI_READ='tahot@Gen 1:1' cargo run -p openbible --features gpui          # at a reference
 ```
 
-The reference is read in the Resource's own numbering. Click the pane, or use the keys at once:
-it opens with the keyboard.
+The reference is typed as into the header box (`tab.go`), in the Resource's own numbering.
+The pane opens with the keyboard.
 

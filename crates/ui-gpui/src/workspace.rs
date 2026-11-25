@@ -26,7 +26,7 @@ use gpui_kit::base::dock::{
     Panel, PanelEvent, PanelId as DockPanelId, PanelView, TabGroupContext, TabGroupRenderer,
 };
 use gpui_kit::base::input::{InputEvent, InputState};
-use gpui_kit::base::{Button, Placement as DockSide};
+use gpui_kit::base::{Button, Placement as DockSide, TestSupportExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, App, Axis, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, Render,
@@ -34,12 +34,15 @@ use gpui_kit::{
 };
 use obs_engine::persist::LayoutNode;
 use obs_engine::{HeaderBox, PanelId, Placement, Side, TabId, TabKind};
+use obs_model::{Key, ResourceType};
+use obs_reading::ReadingDoc;
 use obs_scripture::{Passage, RefStyle, Standard, format_passage};
 use serde_json::json;
 
 use crate::Shell;
 use crate::components;
 use crate::icons::Icon;
+use crate::reading::{self, ReadingPane};
 use crate::theme::{self, Look};
 use crate::tokens::{self, rgba, size, space, text};
 
@@ -348,24 +351,182 @@ pub fn box_label(kind: HeaderBox, title: &str) -> String {
     }
 }
 
+/// A Resource Tab's pane (#380), kept across frames from its opening to its closing.
+pub enum ResourcePane {
+    /// The Resource read in a reading pane.
+    Reading(Entity<ReadingPane>),
+    /// The Resource could not be read: the error, shown only once Details is pressed (#223).
+    Failed { error: String, details: bool },
+}
+
 /// The content of a Tab under its header strip: the hook the reading pane (#380) and the
-/// Tools (#389–#397) plug into, one `match` arm each. Until then every Tab kind shows a
-/// placeholder naming what it will show.
-pub fn tab_content(shell: &Shell, tab: TabId, look: &Look) -> AnyElement {
+/// Tools (#389–#397) plug into, one `match` arm each. A Tool shows a placeholder naming it
+/// until its ticket.
+pub fn tab_content(
+    shell: &Shell,
+    this: &WeakEntity<Shell>,
+    tab: TabId,
+    look: &Look,
+    cx: &App,
+) -> AnyElement {
     let Some(t) = shell.session().workspace.tab(tab) else {
         return div().into_any_element();
     };
-    let what = match &t.kind {
-        TabKind::Resource(id) => format!("The reading pane for {id} comes with #380."),
-        _ => format!("{} comes with its Tool's ticket.", t.title),
+    let body = match (&t.kind, shell.panes.get(&tab)) {
+        (TabKind::Resource(_), Some(ResourcePane::Reading(pane))) => {
+            let doc = Arc::clone(&pane.read(cx).view().doc);
+            if doc.blocks.is_empty() {
+                nothing_to_read(&doc, this, look)
+            } else {
+                return div()
+                    .id(("tab-content", tab.0))
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .child(pane.clone())
+                    .into_any_element();
+            }
+        }
+        (TabKind::Resource(id), Some(ResourcePane::Failed { error, details })) => {
+            let name = shell
+                .session()
+                .library
+                .get(id)
+                .map_or_else(|| id.clone(), |e| e.manifest.abbreviation.clone());
+            could_not_open(&name, error, *details, tab, this, look)
+        }
+        _ => components::hint(format!("{} comes with its Tool's ticket.", t.title), look)
+            .into_any_element(),
     };
     components::page(look)
         .id(("tab-content", tab.0))
         .flex_1()
         .min_h(px(0.0))
-        .child(components::hint(what, look))
+        .child(body)
         .into_any_element()
 }
+
+/// Run command `id` in the Shell from a control in a Tab's content.
+fn run_later(this: &WeakEntity<Shell>, id: &'static str, params: serde_json::Value, cx: &mut App) {
+    let this = this.clone();
+    cx.defer(move |cx| {
+        if let Some(shell) = this.upgrade() {
+            shell.update(cx, |s, cx| {
+                s.run_in(cx, id, &params);
+            });
+        }
+    });
+}
+
+/// A Resource with no text to read (a Cross-reference set, a People & places index): where its
+/// data shows, and one Button that goes there (the egui Shell's `nothing_to_read`, #223).
+fn nothing_to_read(doc: &ReadingDoc, this: &WeakEntity<Shell>, look: &Look) -> AnyElement {
+    let name = &doc.manifest.abbreviation;
+    let (message, button, id, params) = match doc.manifest.resource_type {
+        ResourceType::CrossReferenceSet => (
+            format!(
+                "{name} has no text to read: its Cross-references show in the \
+                 Cross-references Tool and the Passage Guide."
+            ),
+            "Show John 3:16",
+            "tool.cross_references",
+            json!({ "passage": "Jn 3:16" }),
+        ),
+        ResourceType::PeopleAndPlaces => (
+            format!(
+                "{name} has no text to read: its people and places show in the Factbook, \
+                 the Atlas and the Timeline."
+            ),
+            "Show Abraham",
+            "guide.factbook",
+            json!({ "name": "Abraham" }),
+        ),
+        _ => (
+            format!("{name} has no text to read."),
+            "Open the Library",
+            "library.open",
+            json!({}),
+        ),
+    };
+    let this = this.clone();
+    let action = components::button("nothing-to-read", button, look)
+        .on_click(move |_, _, cx| run_later(&this, id, params.clone(), cx));
+    components::empty_state(message, action, look).into_any_element()
+}
+
+/// A Resource that could not be read: what failed in plain words, Retry (read it again) and
+/// Details (the error itself), as the egui Shell's error state (#223).
+fn could_not_open(
+    name: &str,
+    error: &str,
+    details: bool,
+    tab: TabId,
+    this: &WeakEntity<Shell>,
+    look: &Look,
+) -> AnyElement {
+    let retry = this.clone();
+    let toggle = this.clone();
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(look.pt(space::S)))
+        .p(px(look.pt(space::L)))
+        .child(
+            components::error_state(format!("{name} could not be opened."), "", look)
+                .test_support(),
+        )
+        .when(details, |d| {
+            d.child(
+                div()
+                    .id(("error-details", tab.0))
+                    .role(Role::Label)
+                    .aria_label(SharedString::from(error.to_string()))
+                    .child(components::hint(error.to_string(), look))
+                    .test_support(),
+            )
+        })
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .gap(px(look.pt(space::S)))
+                .child(components::button(("retry", tab.0), RETRY, look).on_click(
+                    move |_, _, cx| {
+                        if let Some(shell) = retry.upgrade() {
+                            shell.update(cx, |s, cx| {
+                                s.panes.remove(&tab);
+                                s.load_pane(tab, cx);
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
+                .child(
+                    components::button(
+                        ("details", tab.0),
+                        if details { HIDE_DETAILS } else { DETAILS },
+                        look,
+                    )
+                    .on_click(move |_, _, cx| {
+                        if let Some(shell) = toggle.upgrade() {
+                            shell.update(cx, |s, cx| {
+                                if let Some(ResourcePane::Failed { details, .. }) =
+                                    s.panes.get_mut(&tab)
+                                {
+                                    *details = !*details;
+                                }
+                                cx.notify();
+                            });
+                        }
+                    }),
+                ),
+        )
+        .into_any_element()
+}
+
+/// The error state's buttons, named as the egui app's.
+pub const RETRY: &str = "Retry";
+pub const DETAILS: &str = "Details";
+pub const HIDE_DETAILS: &str = "Hide details";
 
 /// What a Tab header strip shows, read from the Session before drawing.
 pub struct HeaderState {
@@ -574,6 +735,8 @@ impl TabView {
         Some(
             components::menu("Tab menu", look)
                 .absolute()
+                // Over the pane: a click on the menu goes to the menu only.
+                .occlude()
                 .top(px(look.pt(size::CONTROL) + look.pt(space::M)))
                 .right(px(look.pt(space::S)))
                 .child(
@@ -624,7 +787,7 @@ impl Render for TabView {
             return div().into_any_element();
         };
         let header = self.header(state, &look, window, cx);
-        let content = tab_content(shell.read(cx), self.tab, &look);
+        let content = tab_content(shell.read(cx), &self.shell, self.tab, &look, cx);
         div()
             .id(("tab-view", self.tab.0))
             .track_focus(&self.focus)
@@ -878,12 +1041,50 @@ impl Shell {
             for e in effects {
                 match e {
                     Effect::Opened { tab, placement } => {
+                        if !self.panes.contains_key(&tab) {
+                            self.load_pane(tab, cx);
+                        }
                         self.insert_tab(tab, placement, window, cx);
+                    }
+                    Effect::Navigate { tab, verse } => self.navigate_pane(tab, verse, cx),
+                    Effect::NavigateStandard { tab, verse } => {
+                        self.session.workspace.navigate_standard(tab, verse);
+                    }
+                    Effect::NavigateOpened { tab, verse, key } => {
+                        let ws = &mut self.session.workspace;
+                        if let Some(v) = verse {
+                            ws.navigate(tab, v);
+                        }
+                        if let Some(key) = key {
+                            ws.navigate_entry(tab, key);
+                        }
+                    }
+                    // A parallel Resource switched in, or the Resource's file replaced: the
+                    // pane reads it again, at the Tab's location.
+                    Effect::Switched(tab) => {
+                        self.panes.remove(&tab);
+                        self.load_pane(tab, cx);
+                    }
+                    Effect::Replaced(id) => {
+                        let tabs: Vec<TabId> = self
+                            .session
+                            .workspace
+                            .tabs()
+                            .filter(|t| t.kind == TabKind::Resource(id.clone()))
+                            .map(|t| t.id)
+                            .collect();
+                        for tab in tabs {
+                            self.panes.remove(&tab);
+                            self.load_pane(tab, cx);
+                        }
                     }
                     Effect::Focus(tab) | Effect::Activate(tab) | Effect::KeyboardToTab(tab) => {
                         self.show_tab(tab, window, cx);
                     }
-                    Effect::Closed(tab) => self.remove_tab_view(tab, window, cx),
+                    Effect::Closed(tab) => {
+                        self.panes.remove(&tab);
+                        self.remove_tab_view(tab, window, cx);
+                    }
                     Effect::Rebuild => self.rebuild(window, cx),
                     Effect::ResetLayout => {
                         self.reset_engine_layout();
@@ -996,6 +1197,166 @@ impl Shell {
         }
     }
 
+    /// Read a Resource Tab's Resource into its pane (the egui Shell's `load`): the Tab learns
+    /// the Resource's numbering and Keys, and the pane starts at the Tab's location (else where
+    /// its Link set is, else where another Bible is, else at its first Verse). The pane redraws
+    /// the Shell when it moves, so the Tab's location follows it ([`Self::report_panes`]).
+    pub(crate) fn load_pane(&mut self, tab: TabId, cx: &mut Context<Self>) {
+        let Some(TabKind::Resource(id)) = self.session.workspace.tab(tab).map(|t| t.kind.clone())
+        else {
+            return;
+        };
+        let (doc, settings) = match reading::open_doc(&self.session, &id) {
+            Ok(opened) => opened,
+            Err(error) => {
+                self.panes.insert(
+                    tab,
+                    ResourcePane::Failed {
+                        error,
+                        details: false,
+                    },
+                );
+                return;
+            }
+        };
+        let kind = doc.manifest.resource_type;
+        if let Some(t) = self.session.workspace.tab_mut(tab) {
+            t.versification =
+                (kind == ResourceType::Bible).then(|| Arc::new(doc.versification.clone()));
+            if kind != ResourceType::Bible {
+                t.navigation = Some(Arc::clone(&doc.navigation));
+            }
+            t.verse_map = doc.verse_map.clone();
+            if !doc.manifest.key_schemes.is_empty() {
+                t.key_schemes = doc.manifest.key_schemes.clone();
+            }
+        }
+        let arrived = self.session.workspace.arrival(tab);
+        let ws = &self.session.workspace;
+        let at = arrived
+            .or_else(|| ws.tab(tab).and_then(|t| t.history.current()))
+            .or_else(|| ws.set_location(tab))
+            .or_else(|| {
+                ws.tabs()
+                    .filter(|t| t.id != tab && t.kind.is_reading() && t.verse_map.is_none())
+                    .find_map(|t| t.history.current())
+            });
+        // A Commentary starts at the section holding the Verse.
+        let local = at.and_then(|v| {
+            if kind == ResourceType::Commentary {
+                doc.navigation.section(v).and_then(|e| match e.key {
+                    Key::Passage(p) => Some(p.start()),
+                    _ => None,
+                })
+            } else {
+                Some(v)
+            }
+        });
+        let first = doc.verses.first().map(|v| v.verse);
+        let pane = cx.new(|cx| ReadingPane::with_doc(doc, settings, cx));
+        // A new pane does not glide: it starts where it is put.
+        let jumped = local.filter(|v| pane.update(cx, |p, _| p.jump_to(*v)));
+        match (jumped, first) {
+            (Some(v), _) => self.session.workspace.scrolled(tab, v),
+            // Nowhere to start: a Bible starts at its first Verse, its location from now on.
+            (None, Some(v)) if kind == ResourceType::Bible => {
+                self.session.workspace.scrolled(tab, v);
+            }
+            _ => {}
+        }
+        cx.observe(&pane, |_, _, cx| cx.notify()).detach();
+        self.panes.insert(tab, ResourcePane::Reading(pane));
+    }
+
+    /// The engine moved a Tab (a jump, `tab.go`, Back or Forward): its pane goes there.
+    fn navigate_pane(&mut self, tab: TabId, verse: obs_scripture::Verse, cx: &mut Context<Self>) {
+        let Some(ResourcePane::Reading(pane)) = self.panes.get(&tab) else {
+            return;
+        };
+        let jumped = pane.update(cx, |p, cx| {
+            cx.notify();
+            p.jump_to(verse)
+        });
+        if !jumped {
+            self.toast = Some(format!("No section or Verse for {verse} in this Resource"));
+        }
+    }
+
+    /// Each pane's Session state (its Text settings, Page tone, Scroll speed and motion), and
+    /// where each pane the user moved now is: the Tab's location, shown in its header box and
+    /// where Back returns from. A Link set does not follow yet (#386).
+    pub(crate) fn sync_panes(&mut self, look: &Look, cx: &mut Context<Self>) {
+        let palette = reading::palette_for(&self.session, look);
+        let reduce = cx.reduce_motion();
+        for (tab, pane) in &self.panes {
+            let ResourcePane::Reading(pane) = pane else {
+                continue;
+            };
+            let session = &self.session;
+            let at = pane.update(cx, |p, _| {
+                p.sync(session, palette, reduce);
+                let view = p.view_mut();
+                if view.is_following() {
+                    None
+                } else {
+                    view.current_location()
+                }
+            });
+            let ws = &mut self.session.workspace;
+            if let Some(at) = at
+                && ws
+                    .tab(*tab)
+                    .is_some_and(|t| t.history.current() != Some(at))
+            {
+                ws.scrolled(*tab, at);
+            }
+        }
+    }
+
+    /// The reading pane of Resource Tab `tab`, once read.
+    pub fn pane(&self, tab: TabId) -> Option<&Entity<ReadingPane>> {
+        match self.panes.get(&tab) {
+            Some(ResourcePane::Reading(p)) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// Open Resource `resource` in a Resource Tab, at `reference` (a Bible reference in its own
+    /// numbering, typed as into the header box) when given, with the keyboard in its pane.
+    /// Returns its pane.
+    pub fn open_reading(
+        &mut self,
+        resource: &str,
+        reference: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<Entity<ReadingPane>, String> {
+        self.ensure_dock(window, cx);
+        let tab = self
+            .run("resource.open", &json!({ "id": resource }))
+            .and_then(|v| v["tab"].as_u64())
+            .map(TabId)
+            .ok_or_else(|| format!("{resource} could not be opened"))?;
+        self.apply_effects(window, cx);
+        let pane = match self.panes.get(&tab) {
+            Some(ResourcePane::Reading(p)) => p.clone(),
+            Some(ResourcePane::Failed { error, .. }) => return Err(error.clone()),
+            None => return Err(format!("{resource} has no reading pane")),
+        };
+        if let Some(r) = reference {
+            self.toast = None;
+            self.run("tab.go", &json!({ "tab": tab.0, "text": r }));
+            self.apply_effects(window, cx);
+            if let Some(m) = &self.toast {
+                return Err(m.clone());
+            }
+        }
+        let focus = pane.read(cx).focus_handle().clone();
+        window.focus(&focus, cx);
+        cx.notify();
+        Ok(pane)
+    }
+
     /// Show a Tab in its group.
     fn show_tab(&mut self, tab: TabId, window: &mut Window, cx: &mut Context<Self>) {
         if let (Some(dock), Some(id)) = (self.dock.clone(), self.map.dock_panel(tab)) {
@@ -1043,10 +1404,14 @@ impl Shell {
         }
         let ids: Vec<TabId> = self.session.workspace.tabs().map(|t| t.id).collect();
         let shell = cx.weak_entity();
+        // The restored Tabs may reuse the ids of those they replace: every pane is read again,
+        // at its Tab's location, as the egui Shell's `rebuild` does.
+        self.panes.clear();
         for t in ids {
             let view = cx.new(|cx| TabView::new(shell.clone(), t, window, cx));
             self.map.tabs.insert(DockPanelId::from(view.entity_id()), t);
             self.map.views.insert(t, view);
+            self.load_pane(t, cx);
         }
         let ws = &self.session.workspace;
         let panels: Vec<(PanelId, Vec<TabId>, Option<TabId>)> = ws
@@ -1166,6 +1531,7 @@ impl Shell {
             self.shown = shown;
             let live: Vec<TabId> = ws.tabs().map(|t| t.id).collect();
             self.map.views.retain(|t, _| live.contains(t));
+            self.panes.retain(|t, _| live.contains(t));
             self.map.tabs.retain(|_, t| live.contains(t));
         }
         ws.arrangement = layout_node(tree.root(), &self.map);
@@ -1190,6 +1556,7 @@ impl Shell {
             let panel = self.map.groups.get(&node).map(|p| p.0);
             let mut menu = components::menu("Open in this Panel", look)
                 .absolute()
+                .occlude()
                 .top(px(look.pt(tokens::TITLE_BAR_HEIGHT) + look.pt(size::ROW)))
                 .right(px(look.pt(space::L)));
             let entries: Vec<(String, String)> = self
@@ -1244,8 +1611,12 @@ impl Shell {
             let rename2 = rename.clone();
             out.push(
                 div()
+                    .id("layout-prompt")
                     .absolute()
                     .size_full()
+                    // A dialog: nothing under it takes the pointer (a reading pane would take
+                    // the keyboard from its box).
+                    .occlude()
                     .flex()
                     .items_center()
                     .justify_center()
