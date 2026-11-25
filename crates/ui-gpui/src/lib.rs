@@ -389,6 +389,10 @@ pub fn run(launch: Launch, options: Options, started: Instant) -> Outcome {
                     return;
                 }
             };
+            // The Workspace comes back as it was: the Last session, else the default one.
+            if !catalogue {
+                shell.update(cx, |s, _| s.restore_at_launch());
+            }
             let painted = shell.read(cx).painted.clone();
             // Closing the last window quits the app.
             cx.on_window_closed(|cx, _| {

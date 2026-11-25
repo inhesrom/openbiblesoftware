@@ -17,7 +17,7 @@
 //! the reading pane, #380, and the Tools plug into). Each dock tab group is one engine Panel;
 //! [`DockMap`] remembers which.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -29,8 +29,8 @@ use gpui_kit::base::input::{InputEvent, InputState};
 use gpui_kit::base::{Button, Placement as DockSide};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyElement, App, Axis, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, Pixels,
-    Render, Role, SharedString, Stateful, WeakEntity, Window, div, px,
+    AnyElement, App, Axis, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, Render,
+    Role, SharedString, Stateful, WeakEntity, Window, div, px,
 };
 use obs_engine::persist::LayoutNode;
 use obs_engine::{HeaderBox, PanelId, Placement, Side, TabId, TabKind};
@@ -144,17 +144,30 @@ pub fn layout_node(node: &PaneNode, map: &DockMap) -> Option<LayoutNode> {
             children,
             sizes,
         } => {
-            let children: Vec<(LayoutNode, f32)> = children
-                .iter()
-                .enumerate()
-                .filter_map(|(i, c)| {
-                    let share = sizes
+            // The shares are the slots' sizes, scaled to average 1 (egui_tiles' scale, and the
+            // engine's when it adds a Panel beside them); equal while the dock has not sized
+            // every slot, as a mix of sized and unsized slots has no ratio.
+            let sized: Option<Vec<f32>> = (0..children.len())
+                .map(|i| {
+                    sizes
                         .get(i)
                         .copied()
                         .flatten()
-                        .map_or(1.0, |s: Pixels| f32::from(s).max(1.0));
-                    Some((layout_node(c, map)?, share))
+                        .map(f32::from)
+                        .filter(|s| *s > 0.0)
                 })
+                .collect();
+            let shares = match sized {
+                Some(s) if !s.is_empty() => {
+                    let mean = s.iter().sum::<f32>() / s.len() as f32;
+                    s.into_iter().map(|x| x / mean).collect()
+                }
+                _ => vec![1.0; children.len()],
+            };
+            let children: Vec<(LayoutNode, f32)> = children
+                .iter()
+                .zip(shares)
+                .filter_map(|(c, share)| Some((layout_node(c, map)?, share)))
                 .collect();
             match children.len() {
                 0 => None,
@@ -169,11 +182,12 @@ pub fn layout_node(node: &PaneNode, map: &DockMap) -> Option<LayoutNode> {
 }
 
 /// A saved arrangement as a dock layout, with the views of `tab_view`; Tabs it has no view
-/// for are left out. Returns the layout and, per tab group in build order, the engine Panel it
-/// is (0: a new one).
+/// for are left out. `extent` is the width and height the arrangement fills: each split's
+/// slots get its shares of it, so a Layout comes back in its proportions.
 pub fn dock_layout(
     node: &LayoutNode,
     tab_view: &mut dyn FnMut(TabId) -> Option<Arc<dyn PanelView>>,
+    extent: (f32, f32),
     cx: &App,
 ) -> Option<DockLayout> {
     match node {
@@ -195,22 +209,95 @@ pub fn dock_layout(
             Some(layout)
         }
         LayoutNode::Row { children } | LayoutNode::Column { children } => {
-            let built: Vec<DockLayout> = children
+            let row = matches!(node, LayoutNode::Row { .. });
+            let along = if row { extent.0 } else { extent.1 };
+            let total: f32 = children.iter().map(|(_, s)| s.max(0.0)).sum();
+            let built: Vec<(DockLayout, f32)> = children
                 .iter()
-                .filter_map(|(c, _)| dock_layout(c, tab_view, cx))
+                .filter_map(|(c, share)| {
+                    let part = if total > 0.0 {
+                        along * share.max(0.0) / total
+                    } else {
+                        along / children.len() as f32
+                    };
+                    let sub = if row {
+                        (part, extent.1)
+                    } else {
+                        (extent.0, part)
+                    };
+                    Some((dock_layout(c, tab_view, sub, cx)?, part))
+                })
                 .collect();
             if built.len() <= 1 {
-                return built.into_iter().next();
+                return built.into_iter().next().map(|(b, _)| b);
             }
-            let mut layout = if matches!(node, LayoutNode::Row { .. }) {
+            let mut layout = if row {
                 DockLayout::h_split()
             } else {
                 DockLayout::v_split()
             };
-            for b in built {
-                layout = layout.child(b, None);
+            for (b, part) in built {
+                layout = layout.child(b, (part > 0.0).then(|| px(part)));
             }
             Some(layout)
+        }
+    }
+}
+
+/// `arrangement` with every Tab of the engine's Panels in it: a Tab it leaves out goes into
+/// its Panel's node, or a new node at the right for a Panel it does not have. A Tab the dock
+/// does not show would be closed by the next `sync_panels`.
+pub fn with_every_tab(
+    arrangement: Option<LayoutNode>,
+    panels: &[(PanelId, Vec<TabId>, Option<TabId>)],
+) -> Option<LayoutNode> {
+    let mut node = arrangement;
+    for (panel, tabs, active) in panels {
+        let placed: Vec<u64> = node
+            .as_ref()
+            .map(|n| n.panels().into_iter().flat_map(|(_, t, _)| t).collect())
+            .unwrap_or_default();
+        let missing: Vec<u64> = tabs
+            .iter()
+            .map(|t| t.0)
+            .filter(|t| !placed.contains(t))
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        let added = node
+            .as_mut()
+            .is_some_and(|n| add_to_panel(n, panel.0, &missing));
+        if !added {
+            let new = LayoutNode::Panel {
+                panel: panel.0,
+                tabs: missing,
+                active: active.map(|t| t.0),
+            };
+            node = Some(match node {
+                None => new,
+                Some(LayoutNode::Row { mut children }) => {
+                    children.push((new, 1.0));
+                    LayoutNode::Row { children }
+                }
+                Some(other) => LayoutNode::Row {
+                    children: vec![(other, 2.0), (new, 1.0)],
+                },
+            });
+        }
+    }
+    node
+}
+
+fn add_to_panel(node: &mut LayoutNode, id: u64, tabs: &[u64]) -> bool {
+    match node {
+        LayoutNode::Panel { panel, tabs: t, .. } if *panel == id => {
+            t.extend_from_slice(tabs);
+            true
+        }
+        LayoutNode::Panel { .. } => false,
+        LayoutNode::Row { children } | LayoutNode::Column { children } => {
+            children.iter_mut().any(|(c, _)| add_to_panel(c, id, tabs))
         }
     }
 }
@@ -270,10 +357,7 @@ pub fn tab_content(shell: &Shell, tab: TabId, look: &Look) -> AnyElement {
     };
     let what = match &t.kind {
         TabKind::Resource(id) => format!("The reading pane for {id} comes with #380."),
-        other => format!(
-            "{} comes with its Tool's ticket.",
-            other_title(other, &t.title)
-        ),
+        _ => format!("{} comes with its Tool's ticket.", t.title),
     };
     components::page(look)
         .id(("tab-content", tab.0))
@@ -281,10 +365,6 @@ pub fn tab_content(shell: &Shell, tab: TabId, look: &Look) -> AnyElement {
         .min_h(px(0.0))
         .child(components::hint(what, look))
         .into_any_element()
-}
-
-fn other_title(_kind: &TabKind, title: &str) -> String {
-    title.to_string()
 }
 
 /// What a Tab header strip shows, read from the Session before drawing.
@@ -643,6 +723,7 @@ impl TabGroupRenderer for TabStrip {
             let select = group.clone();
             let close = group.clone();
             let panel_id = group.panels().get(ix).map(|p| p.panel_id(cx));
+            let ring = rgba(ch.lapis);
             let mut tab_el = Button::new(("tab", tab.0))
                 .role(Role::Tab)
                 .accessibility_label(label.clone())
@@ -653,6 +734,11 @@ impl TabGroupRenderer for TabStrip {
                 .text_size(px(look.pt(text::BODY)))
                 .text_color(rgba(if selected { ch.ink } else { ch.muted }))
                 .when(selected, |b| b.bg(rgba(ch.surface)))
+                // The keyboard focus ring (#224); its room is kept, so focus does not move
+                // the title.
+                .border(px(look.focus_width()))
+                .border_color(gpui_kit::transparent_black())
+                .focus_visible(move |s| s.border_color(ring))
                 .child(label.clone())
                 .on_click({
                     let shell = self.shell.clone();
@@ -810,8 +896,13 @@ impl Shell {
                         self.layout_prompt = Some((rename, state));
                     }
                     Effect::Message(m) => self.toast = Some(m),
-                    // Moving views, Tools' windows and Floating windows come with their
-                    // tickets (#380–#397, #388).
+                    // Floating windows come with #388: a Tab floated stays in the main
+                    // window, docked by the engine at its right, and the dock follows.
+                    Effect::Float { window: w, .. } => {
+                        self.session.workspace.dock_window(w);
+                    }
+                    Effect::Dock { .. } | Effect::DockWindow(_) => self.rebuild(window, cx),
+                    // Moving views and Tools' windows come with their tickets (#380–#397).
                     _ => {}
                 }
             }
@@ -938,6 +1029,18 @@ impl Shell {
         };
         self.map.clear();
         self.shown.clear();
+        // Floating windows come with #388: until then the engine docks them at the right of
+        // the main window, so their Tabs are shown, not closed by the next sync.
+        let windows: Vec<_> = self
+            .session
+            .workspace
+            .floating
+            .iter()
+            .map(|w| w.id)
+            .collect();
+        for w in windows {
+            self.session.workspace.dock_window(w);
+        }
         let ids: Vec<TabId> = self.session.workspace.tabs().map(|t| t.id).collect();
         let shell = cx.weak_entity();
         for t in ids {
@@ -945,33 +1048,29 @@ impl Shell {
             self.map.tabs.insert(DockPanelId::from(view.entity_id()), t);
             self.map.views.insert(t, view);
         }
-        let arrangement = self.session.workspace.arrangement.clone().or_else(|| {
-            let children: Vec<(LayoutNode, f32)> = self
-                .session
-                .workspace
-                .panels()
-                .map(|(p, tabs)| {
-                    (
-                        LayoutNode::Panel {
-                            panel: p.0,
-                            tabs: tabs.iter().map(|t| t.0).collect(),
-                            active: self.session.workspace.active_in(p).map(|t| t.0),
-                        },
-                        1.0,
-                    )
-                })
-                .collect();
-            (!children.is_empty()).then_some(LayoutNode::Row { children })
-        });
+        let ws = &self.session.workspace;
+        let panels: Vec<(PanelId, Vec<TabId>, Option<TabId>)> = ws
+            .panels()
+            .map(|(p, tabs)| (p, tabs.to_vec(), ws.active_in(p)))
+            .collect();
+        let arrangement = with_every_tab(ws.arrangement.clone(), &panels);
+        let viewport = window.viewport_size();
+        let extent = (f32::from(viewport.width), f32::from(viewport.height));
         let views = &self.map.views;
+        // A Tab is shown once, where the arrangement first has it.
+        let mut placed = HashSet::new();
         let layout = arrangement.and_then(|a| {
             dock_layout(
                 &a,
                 &mut |t| {
+                    if !placed.insert(t) {
+                        return None;
+                    }
                     views
                         .get(&t)
                         .map(|v| Arc::new(v.clone()) as Arc<dyn PanelView>)
                 },
+                extent,
                 cx,
             )
         });
@@ -1048,11 +1147,16 @@ impl Shell {
                 continue;
             }
             present.push(node);
-            let panel = *self
+            let mut panel = *self
                 .map
                 .groups
                 .entry(node)
                 .or_insert_with(|| ws.new_panel_id());
+            // Two groups are never one Panel: `sync_panels` would keep one group's Tabs.
+            if shown.iter().any(|(p, _)| *p == panel) {
+                panel = ws.new_panel_id();
+                self.map.groups.insert(node, panel);
+            }
             shown.push((panel, tabs));
         }
         self.map.groups.retain(|n, _| present.contains(n));
@@ -1065,6 +1169,8 @@ impl Shell {
             self.map.tabs.retain(|_, t| live.contains(t));
         }
         ws.arrangement = layout_node(tree.root(), &self.map);
+        // The main window is all the dock shows until Floating windows come (#388).
+        ws.floating.clear();
         if self.save_session
             && let Err(e) = self.session.save_last_session()
         {
@@ -1193,10 +1299,4 @@ impl Shell {
         }
         out
     }
-}
-
-/// The share of the window's width a narrow Panel keeps for its header: the reference box
-/// shrinks before the title (the egui `narrow_panels` rule). Exposed for tests.
-pub fn min_panel_width(look: &Look) -> f32 {
-    look.pt(size::FIELD) / 2.0
 }

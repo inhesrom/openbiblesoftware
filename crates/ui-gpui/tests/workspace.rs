@@ -319,7 +319,8 @@ fn the_header_box_goes_to_a_typed_reference(cx: &mut TestAppContext) {
         let field = window.find_by_label(&label);
         assert_eq!(field.role(), Some(Role::TextInput));
         window.click_label(&label, cx);
-        window.press("ctrl-a", cx);
+        // Select all: Cmd-A on macOS, Ctrl-A elsewhere.
+        window.press("secondary-a", cx);
         window.type_text("Gen 1:3", cx);
         window.press("enter", cx);
     })
@@ -477,6 +478,150 @@ fn a_layout_saved_by_the_egui_shell_restores_in_gpui(cx: &mut TestAppContext) {
             if children.len() == 2 && matches!(children[1].0, LayoutNode::Column { .. })),
         "{arrangement:?}"
     );
+    // The proportions come back too: 2:1 on screen, and 2:1 in the arrangement saved again.
+    let Some(LayoutNode::Row { children }) = &arrangement else {
+        unreachable!()
+    };
+    let ratio = children[0].1 / children[1].1;
+    assert!((ratio - 2.0).abs() < 0.1, "shares {children:?}");
+    let title_b = cx.update(|cx| {
+        let ws = &shell.read(cx).session().workspace;
+        ws.tab(TabId(b)).unwrap().title.clone()
+    });
+    cx.update_window(handle, |_, window, cx| {
+        window.frame(cx);
+        let x = f32::from(
+            window
+                .find_by_label(&format!("Back in {title_b}"))
+                .bounds()
+                .origin
+                .x,
+        );
+        let width = obs_ui_gpui::tokens::WINDOW_WIDTH;
+        assert!(
+            (x / width - 2.0 / 3.0).abs() < 0.05,
+            "the second Panel starts at {x} of {width}"
+        );
+    })
+    .unwrap();
+    close(cx, handle, shell, lab);
+}
+
+/// Floating windows come with #388: a Tab in a floating window of an egui Last session or
+/// Layout is docked into the main window, not closed, and shown once.
+#[gpui_kit::test]
+fn a_floating_windows_tabs_are_docked_not_lost(cx: &mut TestAppContext) {
+    let (mut session, lab) = support::session("ws-floating");
+    let a = TabId(
+        session
+            .run("resource.open", &json!({ "id": "kjv-strongs" }))
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    let b = TabId(
+        session
+            .run("resource.open", &json!({ "id": "bsb", "split": true }))
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    assert!(session.workspace.float(b, None).is_some());
+    let (handle, shell) = open_with(cx, session);
+    settle(cx, handle);
+    let groups = dock_groups(cx, &shell);
+    let shown: Vec<TabId> = groups.iter().flatten().copied().collect();
+    assert_eq!(shown.len(), 2, "each Tab once: {groups:?}");
+    assert!(shown.contains(&a) && shown.contains(&b), "{groups:?}");
+    assert_eq!(sorted(groups), engine_groups(cx, &shell));
+    let floating = cx.update(|cx| shell.read(cx).session().workspace.floating.len());
+    assert_eq!(floating, 0);
+    // Floated while running: it stays in the main window.
+    run(cx, &shell, "resource.open", json!({ "id": "bsb" }));
+    cx.update(|cx| {
+        shell.update(cx, |s, cx| {
+            s.run("tab.float", &json!({ "tab": a.0 }));
+            cx.notify();
+        })
+    });
+    settle(cx, handle);
+    let groups = dock_groups(cx, &shell);
+    let shown: Vec<TabId> = groups.iter().flatten().copied().collect();
+    assert!(shown.contains(&a) && shown.contains(&b), "{groups:?}");
+    let mut once = shown.clone();
+    once.dedup();
+    assert_eq!(once.len(), shown.len(), "{groups:?}");
+    assert_eq!(sorted(groups), engine_groups(cx, &shell));
+    close(cx, handle, shell, lab);
+}
+
+/// `with_every_tab`: a Tab the arrangement leaves out goes into its Panel's node, or a new
+/// Panel at the right, so the dock shows every Tab the engine has.
+#[test]
+fn an_arrangement_missing_a_tab_gets_it_back() {
+    use obs_engine::PanelId;
+    use obs_ui_gpui::workspace::with_every_tab;
+    let arrangement = Some(LayoutNode::Panel {
+        panel: 1,
+        tabs: vec![10],
+        active: Some(10),
+    });
+    let panels = vec![
+        (PanelId(1), vec![TabId(10), TabId(11)], Some(TabId(10))),
+        (PanelId(2), vec![TabId(12)], Some(TabId(12))),
+    ];
+    let node = with_every_tab(arrangement, &panels).unwrap();
+    assert_eq!(
+        node.panels(),
+        vec![(1, vec![10, 11], Some(10)), (2, vec![12], Some(12))]
+    );
+    assert!(matches!(node, LayoutNode::Row { .. }));
+}
+
+/// The Panel's Tab strip: each Tab's tab is a Tab (AccessKit) named by its title, and the
+/// keyboard reaches it (its focus ring shows then, `focus_visible`).
+#[gpui_kit::test]
+fn the_tab_strip_has_named_tabs_the_keyboard_reaches(cx: &mut TestAppContext) {
+    let (handle, shell, lab) = open(cx, "ws-strip");
+    let bsb = TabId(
+        run(cx, &shell, "resource.open", json!({ "id": "bsb" }))["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    settle(cx, handle);
+    let title = cx.update(|cx| {
+        let ws = &shell.read(cx).session().workspace;
+        ws.tab(bsb).unwrap().title.clone()
+    });
+    cx.update_window(handle, |_, window, cx| {
+        window.frame(cx);
+        let tabs = window.find_all_by_role(Role::Tab);
+        assert!(
+            tabs.iter().any(|t| t.label() == Some(title.as_str())),
+            "a Tab named {title}"
+        );
+        let focused = |window: &mut gpui_kit::Window| {
+            window
+                .find_all_by_role(Role::Tab)
+                .into_iter()
+                .find(|t| t.label() == Some(title.as_str()))
+                .and_then(|t| t.focused())
+        };
+        window.click_label(&format!("Back in {title}"), cx);
+        assert_eq!(focused(window), Some(false));
+        // Back along the keyboard order, from the header to the strip's tab.
+        let mut reached = false;
+        for _ in 0..6 {
+            window.press("shift-tab", cx);
+            window.frame(cx);
+            if focused(window) == Some(true) {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "Shift-Tab moves the keyboard to the strip's tab");
+    })
+    .unwrap();
     close(cx, handle, shell, lab);
 }
 

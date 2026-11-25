@@ -35,7 +35,11 @@ transport and the OS language.
   and `Activate` show it, `Closed` removes it, `Rebuild` builds the dock from
   `Workspace::arrangement` (a Layout or the Last session), `ResetLayout` makes the default
   arrangement, `PromptLayoutName` asks for a Layout's name, `Message` shows a toast. Moving
-  views, Tools' windows and Floating windows come with their tickets.
+  views and Tools' windows come with their tickets.
+- **Floating windows** come with #388. Until then the engine docks them (`dock_window`) at
+  the right of the main window: the Panels of an egui Last session's or Layout's floating
+  windows, and a Tab floated by `tab.float`. A Tab is never closed because the dock left it
+  out: a Tab the arrangement misses goes into its Panel (`workspace::with_every_tab`).
 - **Dock → engine:** after every change of the dock (a drag, a split, a ×) the Shell tells the
   engine each Panel's Tabs (`sync_panels`: a Tab no Panel shows is closed and goes to
   Recently closed, #214) and records the arrangement for Layouts and the Last session. A dock
@@ -46,15 +50,15 @@ transport and the OS language.
   until then.
 - **The Panel's +** opens a Resource or the Library in that Panel.
 - **Layouts** are engine data: save (the name dialog), restore, rename and delete run the
-  `layout.*` commands; a Layout saved by the egui app restores in GPUI.
+  `layout.*` commands; a Layout saved by the egui app restores in GPUI, in its proportions.
+  A split's shares are its slots' sizes scaled to average 1, as egui_tiles' are.
 - **The Last session:** the GPUI app restores it at launch, but writes it only with
   `OBS_GPUI_SAVE_SESSION=1` (`Shell::set_save_session`). While egui ships, trying the GPUI app
   must not overwrite the egui app's Last session with a Workspace whose Tools are
   placeholders.
 
 The system fonts, system motion and rich clipboard are handed to the egui Shell only: their
-traits live in `obs-ui-egui` and move down when a GPUI surface needs them. The system fonts, system motion and rich clipboard are handed to the egui Shell only:
-their traits live in `obs-ui-egui` and move down when a GPUI surface needs them.
+traits live in `obs-ui-egui` and move down when a GPUI surface needs them.
 
 ### Linux build dependencies
 
