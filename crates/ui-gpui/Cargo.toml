@@ -39,7 +39,8 @@ obs-store = { workspace = true, features = ["test-support"] }
 obs-model.workspace = true
 obs-formats.workspace = true
 obs-scripture.workspace = true
-# Frames as PNG goldens; the same `image` GPUI returns captures in.
+# Frames as PNG goldens and the catalogue previews (tests/previews.rs); the same `image` GPUI
+# returns captures in.
 image = { version = "0.25", default-features = false, features = ["png"] }
 gpui-kit = { workspace = true, features = ["test-support"] }
 # The token parity test reads the egui app's tokens (tests/tokens.rs).

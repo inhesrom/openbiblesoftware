@@ -132,3 +132,40 @@ GPUI's AccessKit is on by default. The title bar's **Quit** button (labelled "Qu
 Software") is there so a screen reader has something to reach; check it with VoiceOver
 (macOS), NVDA (Windows) and Orca (Linux). A known upstream bug on Windows: the window's content
 is reachable only after focus leaves the window and comes back.
+
+## The look and the shared components (#378)
+
+- `tokens.rs`: the design tokens (ADR 0015), copied from the egui app's `tokens.rs` and
+  `Palette`: spacing, type scale, radii, strokes, insets, elevations, sizes, motion durations,
+  the chrome colour roles (Light, Dark, High contrast light and dark) and the page colours of
+  each Page tone. `tests/tokens.rs` fails if any value differs from the egui one.
+- `theme.rs`: the `Look`, a GPUI global that holds the chrome, page, Interface font, Interface
+  size and reduce motion. It is resolved from the Session's appearance and Custom theme
+  (ADR 0018) as the egui app's `theme.rs` does. `set_look` replaces it, makes GPUI's
+  reduce-motion flag follow it, and refreshes every window, so a theme change shows in the
+  next frame.
+- `icons.rs`: the Lucide set from `crates/ui-egui/assets/icons`, compiled in with the egui
+  app's names and drawn as SVG masks in a theme role's colour. `icons::Assets` is the app's
+  asset source.
+- `components.rs`: buttons, icon buttons, text and search fields, switches, radios, chips,
+  section headers, the Tab page, cards, notices, menus and menu items, popovers, tooltips,
+  toasts, dialogs, the empty, loading and error states, and scroll bars.
+  - Controls are built on gpui-base's primitives (`Button`, `Switch`, `Radio`, and
+    `InputBase` over `InputState`). Those give them activation, keyboard focus, IME, undo and
+    the clipboard, plus their AccessKit roles.
+  - Every component has an accessible name, and every control has a visible keyboard focus
+    ring (heavy in High contrast).
+  - Containers (menus, dialogs, notices, states) get their role and name through a stateful
+    element. Call `.test_support()` on the finished element to make it findable by name in
+    headless tests.
+
+### The component catalogue
+
+`OBS_GPUI_CATALOGUE=<Look> cargo run -p openbible --features gpui` opens the catalogue instead
+of the Workspace:
+- the Look is `Light`, `Dark`, `Sepia`, `High contrast` or `High contrast dark`;
+- `OBS_GPUI_ZOOM=1.25` sets the Interface size;
+- buttons at the catalogue's top switch the Look while it runs.
+
+`OBS_GPUI_PREVIEWS=1 cargo test -p obs-ui-gpui --test previews` draws the catalogue in every
+Look with GPUI's headless renderer, at 2×, into `crates/ui-gpui/previews/`.
