@@ -36,7 +36,7 @@ to Claude Opus 5.5 later on".
 
 | ID | Step | AFK/HITL | Xcode | Depends on | Key deliverable | Status |
 |---|---|---|---|---|---|---|
-| S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | todo |
+| S01 | Lift the reading core into `obs-reading` (L5) | AFK | n | — | `crates/reading`, desktop unchanged (gallery byte-identical) | done (PR #359) |
 | S02 | Scaffold `obs-mobile` (L5) + `apps/obs-ffi` (UniFFI) + gates + `cargo xtask ios` | AFK | n | — (∥ S01) | crates, xtask commands, `docs/dev/mobile-core.md`, D21 (UniFFI licence) | todo |
 | S03 | "Hello engine" through the FFI on the macOS host | AFK | n | S01, S02 | host test: open BSB → lay out Gen 1 → tile PNG; `swiftc` smoke | todo |
 | S04 | Bundled set + Study set in the Starter build | AFK | n | — (∥ S01–S03) | `cargo xtask ios bundled-set`, `apps/ios/bundled-set.lock`, `mobile_set` manifest field, workspace `exclude` | todo |
@@ -489,6 +489,58 @@ this in addition to its own lines):
 - **Stop-and-ask:** a moved function needs egui to stay correct; any golden changes; the bench
   regresses; a public re-export cannot keep a name; the step overruns (then split the palette
   work into S01b, which must still land before S03).
+- **Outcome (2026-11-21):**
+  - **Shipped:** `crates/reading` (`obs-reading`, L5, `[lints] workspace = true`, no egui:
+    `cargo tree -p obs-reading --edges normal | grep -c egui` → `0`) with `doc`, `view`,
+    `interlinear`, `selection`, `marks`, `heights`, `workers` moved by `git mv` and unchanged
+    apart from paths and visibility; `palette` (`TonePalette` over `Rgb`: the six tone constants,
+    `for_theme`/`for_tone`/`for_style_tone`, `check`, `derive`, `text_on`, `paint` → `StylePaint`
+    over `Rgb`, `color`, `overlays`, `inks`, `contrast`, `ContrastShort` and the three contrast
+    constants); `reading_tokens` (`space` and `motion` whole, `size::TEXT_MIN`,
+    `mark::FOOTNOTE_BOX`), re-exported by `obs_ui_egui::tokens`. `obs_ui_egui::Palette` keeps its
+    `Color32` fields and every method; its constants are `const` conversions of `TonePalette`'s,
+    `From` goes both ways, and each method converts and asks `TonePalette`. `obs_ui_egui/lib.rs`
+    brings the moved modules in by name (`use obs_reading::{doc, view, …}`), so no call site or
+    `crate::view::…` path changed and no `pane.rs` line was touched. `LAYERS` gains
+    `("obs-reading", 5)`; README layer table gains L5; `docs/dev/reading-core.md`; design-tokens
+    note and ADR 0015 "Amended by" line; path fixes in `docs/dev/annotations.md` and
+    `interlinear.md`.
+  - **Beyond the letter of "Do", each forced by the move:** `impl ComparedBible`/`CopiedBible for
+    ReadingDoc` moved from `compare_view.rs` to `reading/doc.rs` (orphan rule); `pub(crate)` items
+    the painting code uses became `pub` (`ReadingView::{text_under, top_block_laid,
+    drew_all_text}` and four fields, `selection::{text_range_rects, block_range_rects}`); the
+    workers' test-only hold/release hooks are behind `cfg(any(test, feature = "test-support"))`,
+    a feature `obs-ui-egui` enables in its dev-dependencies only; `unicode-segmentation` moved to
+    `obs-ui-egui`'s dev-dependencies (only its tests still use it). The emoji/chrome-font lint
+    (`icons_tests.rs`) scans `crates/reading/src` too, so its coverage did not shrink.
+  - **Lint:** `design_tokens_tests.rs` reads `source_roots()` (ui-egui's `src`, and
+    `crates/reading/src` named `reading/…`); `TOKEN_FILES` gains `reading_tokens.rs`; the eight
+    `view.rs`/`selection.rs` allowlist entries are now keyed `reading/view.rs`,
+    `reading/selection.rs` (none dropped, all still used). A literal planted in
+    `crates/reading/src/view.rs` (`space::XXL + 6.0`) fails it as
+    `reading/view.rs:38: float literal 6.0`; reverted. S13 adds `crates/mobile/src` as a third
+    `source_roots()` entry.
+  - **Tests:** the inline tests of `doc.rs` and `heights.rs` moved with them (2 pass in
+    `obs-reading`). The ReadingView and selection tests in `crates/ui-egui/src/tests.rs` stay there:
+    they share the `bible()` fixtures and the bench's synthetic Bibles with the egui tests, and
+    test `obs-reading` through the re-exports. New `tests::palette_is_the_tone_palette_in_egui_colours`
+    checks each tone constant round-trips and every built-in style paints and checks the same.
+  - **Measurements:** `cargo xtask ci` all gates pass (780 `obs-ui-egui` tests). `cargo xtask
+    gallery` (no `--bless`): 15/15, zero changed goldens (`target/gallery/new` empty).
+    `cargo xtask bench` fails one threshold on this Mac under load: `search-preview` action max
+    675 ms and 795 ms (max 150). The base commit `055d47d`, benched the same way on the same
+    machine, fails it too (678 ms, plus `atlas`, `exegetical-guide` and `text-size-tools`), so it
+    is the machine, not this step; steady/fling frame CPU p50 0.89/0.94 ms on the branch vs
+    1.12/1.41 ms at base. Worth re-running the bench on an idle machine or CI before merge.
+    **Idle re-check (supervisor, 2026-11-21, load ≤ 3):** two interleaved runs each of base `055d47d`
+    and branch `14700fa` exceed the same thresholds by similar amounts: `search-preview` action max
+    704/619 ms base vs 695/842 ms branch (limit 150), `text-size-tools` 103–121 ms on both, and
+    `atlas`/`exegetical-guide` sync p99 ≈ 2.0–2.8 ms on both. `jumps` placeholder frames 21/21 base vs
+    20/20 branch, and steady p50 1.10–1.11 vs 1.13–1.14 ms. No regression from S01. The bench
+    fails at `master` on this Mac (it is not a `cargo xtask ci` gate), which needs its own issue.
+  - **For later steps:** S03 can call `obs_reading::TonePalette` and `reading_tokens` directly;
+    the CPU tile compositor of A1 is not here yet (S03 adds it). The PR carries `ui-review`
+    (ADR 0020 rule 4: shared painting code moved); no screenshots change.
 
 #### S02 — Scaffold `obs-mobile`, `apps/obs-ffi`, gates, `cargo xtask ios`
 
