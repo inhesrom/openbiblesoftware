@@ -19,6 +19,7 @@ enum Pick {
     UsfmFile,
     UsfmFolder,
     SwordConf,
+    MarkdownBook,
 }
 
 impl State {
@@ -98,8 +99,8 @@ impl State {
         }
     }
 
-    /// The Import… chooser: a USFM file, a folder of Bible books, or a SWORD module's
-    /// `.conf` file. The native picker can wait for the user indefinitely, so it runs on its
+    /// The Import… chooser: a USFM file, a folder of Bible books, a SWORD module's `.conf`
+    /// file, or a Markdown book (ADR 0023). The native picker can wait for the user indefinitely, so it runs on its
     /// own thread and reports back through [`State::poll_picker`].
     pub(super) fn import_chooser(&mut self, ctx: &egui::Context) {
         if !self.pick_import {
@@ -115,6 +116,9 @@ impl State {
             .show(ctx, |ui| {
                 ui.label("Choose a USFM file or a folder of Bible books.");
                 ui.label("For a SWORD module, choose its .conf file in mods.d/.");
+                ui.label(
+                    "For a book kept as Markdown, choose its .md file; its Part files come with it.",
+                );
                 ui.add_space(space::S);
                 ui.horizontal(|ui| {
                     if ui.button("USFM file…").clicked() {
@@ -125,6 +129,9 @@ impl State {
                     }
                     if ui.button("SWORD module…").clicked() {
                         chosen = Some(Pick::SwordConf);
+                    }
+                    if ui.button("Markdown book…").clicked() {
+                        chosen = Some(Pick::MarkdownBook);
                     }
                 });
             });
@@ -159,6 +166,10 @@ impl State {
                     Pick::SwordConf => rfd::FileDialog::new()
                         .set_title("Import SWORD module (its .conf file in mods.d/)")
                         .add_filter("SWORD module conf", &["conf"])
+                        .pick_file(),
+                    Pick::MarkdownBook => rfd::FileDialog::new()
+                        .set_title("Import a Markdown book")
+                        .add_filter("Markdown", &["md", "markdown"])
                         .pick_file(),
                 };
                 let _ = tx.send(selected);

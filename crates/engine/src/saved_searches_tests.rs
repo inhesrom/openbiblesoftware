@@ -510,7 +510,10 @@ fn search_scope_details_name_the_bibles_resources_and_notebook() {
         "search.run",
         json!({ "tab": t.0, "text": "covenant", "mode": "library" }),
     );
-    assert_eq!(of(&s), "Resources: Commentaries, Lexicons, Dictionaries");
+    assert_eq!(
+        of(&s),
+        "Resources: Commentaries, Lexicons, Dictionaries, Books"
+    );
     run(
         &mut s,
         "search.run",

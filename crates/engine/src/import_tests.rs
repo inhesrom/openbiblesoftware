@@ -390,12 +390,14 @@ fn import_report_tabs_name_what_was_imported() {
 fn failed_imports_say_what_went_wrong_in_plain_words() {
     let (mut s, root) = fixture("failure-words", JobMode::Inline);
     std::fs::write(root.join("README.md"), "# Not a Bible\n").unwrap();
+    std::fs::write(root.join("notes.txt"), "Not a Bible\n").unwrap();
     for (path, plain) in [
         (
             root.join("missing/foo.usfm"),
             "That file or folder does not exist",
         ),
-        (root.join("README.md"), "That is not a USFM file"),
+        (root.join("notes.txt"), "That is not a USFM file"),
+        (root.join("README.md"), "That Markdown file has no text"),
     ] {
         let id = start(&mut s, &path);
         finish(&mut s);
@@ -404,7 +406,7 @@ fn failed_imports_say_what_went_wrong_in_plain_words() {
         let error = record.error.as_deref().unwrap();
         let message = failure_message(error);
         assert!(message.starts_with(plain), "{error:?} reads {message:?}");
-        for raw in ["os error", "\\id", "README.md", "foo.usfm"] {
+        for raw in ["os error", "\\id", "README.md", "foo.usfm", "notes.txt"] {
             assert!(!message.contains(raw), "{message:?}");
         }
         // A failed Import never reaches the Library; its report reopened later is still
@@ -458,4 +460,126 @@ fn failed_imports_say_what_went_wrong_in_plain_words() {
     }
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// A Markdown book's folder: a main file with front matter and its Part files, beside
+/// another book (ADR 0023).
+fn markdown_fixture(name: &str) -> (Session, std::path::PathBuf) {
+    let (s, root) = fixture(name, JobMode::Inline);
+    let books = root.join("books");
+    std::fs::create_dir_all(&books).unwrap();
+    std::fs::write(
+        books.join("Owen - Mortification.md"),
+        "---\ntitle: Of the Mortification of Sin\nauthor: John Owen\ndate: 1656\n\
+         license: public domain\nsource: https://example.org/owen\n---\n\n\
+         # Of the Mortification of Sin\n\n## Parts\n\n- [Part 1](x)\n- [Part 2](y)\n",
+    )
+    .unwrap();
+    std::fs::write(
+        books.join("Owen - Mortification — Part 1.md"),
+        "# Of the Mortification of Sin\n\n<!-- p. 1 -->\n\n## Chapter I\n\nMortify, Rom. 8. 13.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        books.join("Owen - Mortification — Part 2.md"),
+        "# Of the Mortification of Sin\n\n## Chapter II\n\nThe second <!-- p. 40 --> chapter.\n",
+    )
+    .unwrap();
+    std::fs::write(books.join("Baxter - Saints Rest.md"), "Another book.\n").unwrap();
+    (s, root)
+}
+
+#[test]
+fn import_source_detects_markdown_files_and_folders() {
+    let (_s, root) = markdown_fixture("md-detect");
+    let books = root.join("books");
+    let part = books.join("Owen - Mortification — Part 2.md");
+    assert_eq!(
+        ImportSource::detect(part.clone(), None),
+        ImportSource::Markdown(part)
+    );
+    assert_eq!(
+        ImportSource::detect(books.clone(), None),
+        ImportSource::Markdown(books)
+    );
+    // A folder of USFM books stays USFM, even beside a README.md.
+    std::fs::write(root.join("source/README.md"), "# Notes").unwrap();
+    assert_eq!(
+        ImportSource::detect(root.join("source"), None),
+        ImportSource::Usfm(root.join("source"))
+    );
+}
+
+#[test]
+fn a_markdown_book_imports_from_any_of_its_files_as_one_book() {
+    let (mut s, root) = markdown_fixture("md-book");
+    let id = start(&mut s, &root.join("books/Owen - Mortification — Part 1.md"));
+    assert!(id.starts_with("owen-mortification-"), "{id}");
+    finish(&mut s);
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+    let report = record.report.as_ref().unwrap();
+    assert_eq!(
+        report.source_files,
+        [
+            "Owen - Mortification.md",
+            "Owen - Mortification — Part 1.md",
+            "Owen - Mortification — Part 2.md"
+        ]
+    );
+    assert_eq!(report.entries, 2);
+    assert_eq!(report.scripture_refs, 1);
+    assert!(!report.license_missing);
+    let entry = s.library.get(&id).unwrap();
+    let m = &entry.manifest;
+    assert_eq!(m.resource_type, ResourceType::Book);
+    assert_eq!(m.title, "Of the Mortification of Sin");
+    assert_eq!(m.license, "LicenseRef-PublicDomain");
+    assert_eq!(m.source_url.as_deref(), Some("https://example.org/owen"));
+    // The written file reads back with its Divisions and printed pages.
+    use obs_store::ResourceStore;
+    let resource = obs_store::ObrReader::open(&entry.path)
+        .unwrap()
+        .load()
+        .unwrap();
+    let titles: Vec<_> = resource
+        .units
+        .iter()
+        .filter(|u| u.kind == obs_model::UnitKind::Division)
+        .map(|u| u.title.clone().unwrap_or_default())
+        .collect();
+    assert_eq!(titles, ["Chapter I", "Chapter II"]);
+    let pages: Vec<String> = resource
+        .units
+        .iter()
+        .flat_map(|u| &u.spans)
+        .filter_map(|s| match &s.kind {
+            obs_model::SpanKind::Page { label } => Some(label.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pages, ["1", "40"]);
+}
+
+#[test]
+fn a_folder_of_several_markdown_books_asks_for_one() {
+    let (mut s, root) = markdown_fixture("md-several");
+    let id = start(&mut s, &root.join("books"));
+    finish(&mut s);
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    assert!(
+        record
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("this folder holds 2 books"),
+        "{:?}",
+        record.error
+    );
+    assert!(s.library.get(&id).is_none());
+    assert_eq!(
+        failure_message(record.error.as_deref().unwrap()),
+        "That folder holds several books. Choose one book's Markdown file."
+    );
 }

@@ -251,14 +251,14 @@ fn the_picker_chooses_types_or_single_resources_and_reruns_the_search() {
         )
         .unwrap();
     settle(&mut s);
-    assert_eq!(out["types"], json!(["commentary", "dictionary"]));
+    assert_eq!(out["types"], json!(["commentary", "dictionary", "book"]));
     assert_eq!(abbrs(&s), ["TCC", "TC2", "TBD"]);
     // Leaving out one Commentary keeps the other, one by one.
     s.run("search.resource", &json!({ "tab": tab.0, "id": "tcc" }))
         .unwrap();
     settle(&mut s);
     let scope = s.search_tab(tab).unwrap().library.clone();
-    assert_eq!(scope.types, [ResourceType::Dictionary]);
+    assert_eq!(scope.types, [ResourceType::Dictionary, ResourceType::Book]);
     assert_eq!(scope.resources, ["tc2"]);
     assert_eq!(abbrs(&s), ["TC2", "TBD"]);
     // Choosing it again makes the whole type again.
@@ -268,7 +268,11 @@ fn the_picker_chooses_types_or_single_resources_and_reruns_the_search() {
     let scope = s.search_tab(tab).unwrap().library.clone();
     assert_eq!(
         scope.types,
-        [ResourceType::Commentary, ResourceType::Dictionary]
+        [
+            ResourceType::Commentary,
+            ResourceType::Dictionary,
+            ResourceType::Book
+        ]
     );
     assert!(scope.resources.is_empty());
     // A single Lexicon.
@@ -282,7 +286,7 @@ fn the_picker_chooses_types_or_single_resources_and_reruns_the_search() {
             .is_err()
     );
     // Nothing left: an inline error under the picker.
-    for ty in ["commentary", "dictionary"] {
+    for ty in ["commentary", "dictionary", "book"] {
         s.run(
             "search.resource_type",
             &json!({ "tab": tab.0, "value": ty }),

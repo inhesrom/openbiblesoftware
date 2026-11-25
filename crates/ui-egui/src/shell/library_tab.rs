@@ -904,6 +904,7 @@ pub(super) fn type_singular(t: ResourceType) -> &'static str {
         ResourceType::Dictionary => "Dictionary",
         ResourceType::CrossReferenceSet => "Cross-reference set",
         ResourceType::PeopleAndPlaces => "People & places index",
+        ResourceType::Book => "Book",
     }
 }
 

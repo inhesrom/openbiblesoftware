@@ -1682,6 +1682,7 @@ fn gallery(section: Section) {
             for (scale, scale_slug) in SCALES {
                 h.root_info.native_pixels_per_point = Some(scale);
                 h.frames(4);
+                text_laid_out(&mut h);
                 assert!(
                     is_open(&h, surface),
                     "{} is not on screen in {} at {scale_slug}: {:?}",
@@ -1704,6 +1705,25 @@ fn gallery(section: Section) {
         section.heading(),
         failures.join("\n\n")
     );
+}
+
+/// Paced frames while text is still being laid out on the layout workers at this scale (a
+/// Note card's text in the Notes Tool, a reading pane, a Search or Text Comparison row): a
+/// slow machine has not always finished in the frames above, and the image then shows the
+/// gap the text will fill (`notes-in-a-side-panel-light-2x` on CI).
+fn text_laid_out(h: &mut Harness) {
+    for _ in 0..120 {
+        let st = &h.shell.st;
+        let tabs = st.tabs.values().any(|t| {
+            t.view.as_ref().is_some_and(|v| v.has_pending())
+                || t.comparison.as_ref().is_some_and(|v| v.has_pending())
+                || t.search.as_ref().is_some_and(|v| v.has_pending())
+        });
+        if !tabs && !st.notes_ui.has_pending() {
+            return;
+        }
+        h.paced_frame();
+    }
 }
 
 #[test]

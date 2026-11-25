@@ -199,7 +199,7 @@ pub fn import_sword(
             import_dictionary(&module, &conf, lexicon, &mut builder, &mut w, &mut report)
                 .map_err(sword_err)?;
         }
-        ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces => {
+        ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces | ResourceType::Book => {
             return Err(unsupported("not a SWORD module kind".into()));
         }
     }

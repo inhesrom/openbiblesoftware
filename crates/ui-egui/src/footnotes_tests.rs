@@ -1381,7 +1381,16 @@ fn copying_across_a_marker_copies_clean_text() {
         &json!({ "passages": "Jn 1:14", "bibles": "bsb" }),
     );
     h.frames(3);
-    h.click_text("Copy plain text");
+    // The window's Copy buttons are enabled once its text is made, which a slow machine may
+    // not have done by the first click (#352's CI): click again until it copies.
+    let before = h.copied.len();
+    for _ in 0..20 {
+        h.click_text("Copy plain text");
+        if h.copied.len() > before {
+            break;
+        }
+        h.frames(2);
+    }
     let copied = h.copied.last().cloned().unwrap_or_default();
     assert!(copied.contains("full of grace and truth."), "{copied:?}");
     for note in ["tabernacled", "Only Begotten", "Unique One"] {

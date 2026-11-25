@@ -20,6 +20,8 @@ When a repository offers a newer edition of a Resource you downloaded, Get Resou
 
 **File → Import…** adds a Bible you already have as a USFM or SWORD file. An Import report then says what was brought in.
 
+**Markdown book…** in the same window adds a book kept as Markdown, such as a sermon, treatise or confession from the Christian Open Library. Choose its `.md` file; a long work split into Part files comes in as one Book. A Book is read by its chapters, shows its printed pages as [p. 23], and its Bible references are links. Its licence is the one its file names; one the app does not recognise is shown as given, and the Book is marked for personal use.
+
 ## The Starter library
 
 **File → Starter library** lists every Starter Resource, and adds back any you removed. **Help → Credits** credits every Starter Resource and its licence; each Resource's own licence and Attribution are in its About Tab (right-click it in the Library Tab and choose About).

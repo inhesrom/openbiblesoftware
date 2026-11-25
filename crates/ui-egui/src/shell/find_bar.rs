@@ -255,10 +255,15 @@ impl State {
                 "scope": "",
             })
         } else {
+            // Every type Library search reads (Books too, ADR 0023).
+            let types: Vec<&str> = obs_engine::library_search::LIBRARY_TYPES
+                .iter()
+                .map(|t| obs_engine::library_search::type_id(*t))
+                .collect();
             json!({
                 "text": format!("\"{phrase}\""),
                 "mode": "library",
-                "resources": "commentary,lexicon,dictionary",
+                "resources": types.join(","),
             })
         };
         self.run("search.run", &params);

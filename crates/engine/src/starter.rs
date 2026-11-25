@@ -315,6 +315,7 @@ pub fn features(
             vec!["Passage Guide: Cross-references", "Cross-references Tool"]
         }
         Some(ResourceType::PeopleAndPlaces) => vec!["Passage Guide: People & places"],
+        Some(ResourceType::Book) => vec!["Reading", "Library search"],
         None => Vec::new(),
     }
 }
