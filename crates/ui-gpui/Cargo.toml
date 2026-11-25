@@ -14,6 +14,9 @@ obs-fonts.workspace = true
 gpui-kit.workspace = true
 log.workspace = true
 serde_json.workspace = true
+# The default Interface font: egui's proportional face (Ubuntu Light), so both UIs draw the
+# chrome alike (#378). Already in the build through egui.
+epaint_default_fonts = "0.37"
 
 [features]
 # The test driver's hook (#379): `Shell::override_chrome`, the rendering test's seeded colour
@@ -38,6 +41,10 @@ obs-formats.workspace = true
 obs-scripture.workspace = true
 # Frames as PNG goldens; the same `image` GPUI returns captures in.
 image = { version = "0.25", default-features = false, features = ["png"] }
+gpui-kit = { workspace = true, features = ["test-support"] }
+# The token parity test reads the egui app's tokens (tests/tokens.rs).
+obs-ui-egui.workspace = true
+egui.workspace = true
 
 # Interaction tests run on GPUI's TestPlatform with `#[gpui_kit::test]`.
 [[test]]
