@@ -1,5 +1,7 @@
 # Floating windows are immediate egui viewports drawn by the one Shell
 
+Amended by ADR 0025: in the GPUI UI a Floating window is a GPUI window of the one app, drawing Tabs of the one Workspace and Session (#388).
+
 A Floating window (#152) is an egui **immediate** viewport (`Context::show_viewport_immediate`) that the main window's `Shell` shows every frame, with an `egui_tiles` tree of its own. Its Tabs are Tabs of the one Workspace in the one Session: Link sets, focus, commands, History and saving work across windows with no extra plumbing. The Workspace keeps each window's Panels and place (`Workspace::floating`, saved as `WorkspaceSnapshot::windows`), the same way it keeps the main window's `arrangement`. This amends ADR 0005, which noted that egui_tiles has no floating windows: we make them out of egui viewports instead of switching docking crates.
 
 ## Considered Options

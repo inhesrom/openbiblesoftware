@@ -1,5 +1,9 @@
 # Resource text is laid out and drawn by our own pipeline; egui renders chrome only
 
+Amended by ADR 0025: the desktop UI moves to GPUI, which draws the chrome once it ships; Resource text keeps this pipeline, and #372 decides how its laid-out text is painted through GPUI.
+
+Amended by #372 (below): on GPUI, our laid-out glyphs are painted with GPUI's glyph painter.
+
 All text that comes from a Resource goes through our own pipeline, wherever it appears: reading panes, Text Comparison cells, Guide sections, Word Info, search results, hover popups. The pipeline uses harfrust and skrifa for shaping, unicode-bidi for direction, unicode-linebreak for line breaking, our own hit-testing and selection, and a shared glyph atlas (glyphs rastered once, then drawn as egui meshes) for painting (amended below; originally vello_cpu block textures). This follows WordCraft's architecture (MIT OR Apache-2.0), whose code we adapt with attribution rather than depend on. egui's own text handles only UI chrome: menus, labels, buttons and text inputs. Stock egui and the storytold fork as of rev 6d518fc have no bidi, so they cannot show the full Hebrew OT that v0.1 requires, and egui's label selection does not survive virtualization.
 
 ## Considered Options
@@ -35,3 +39,41 @@ Resource text no longer uses only the Bundled fonts. View → Fonts chooses a Re
 - **The Interface font goes first in egui's proportional family**; egui's own fonts stay behind it, so emoji and symbols still draw. Headings keep Gentium Plus Bold.
 
 Considered: a font per Resource (left for later), and `font-kit` instead of `fontdb` (native system APIs, but heavier and with C dependencies on Linux).
+
+## Amendment (#372): on GPUI, our laid-out glyphs are painted with GPUI's glyph painter
+
+When the desktop UI moves to GPUI (ADR 0025), Resource text keeps this pipeline for shaping
+(harfrust), direction (unicode-bidi), line breaking and hit-testing. Only the painter changes:
+- The reading fonts' files (the Bundled fonts, and user faces loaded per #138) are registered
+  with GPUI's text system.
+- Each `FaceId` is mapped once to a GPUI `FontId`.
+- Every glyph a laid block places is painted with `Window::paint_glyph`, at our position.
+
+The glyph ids match because the font files are the same. A throwaway prototype checked
+Gentium Plus (regular, italic and Greek) and Ezra SIL Hebrew with points and cantillation
+(#372, branch `prototype/372-gpui-text-paint`). Its screenshots matched the egui app's for
+Hebrew, which wraps right to left, for Greek, which breaks at spaces, and for small capitals.
+
+GPUI rasterizes each glyph at its subpixel variant and scale and keeps it in its own atlas. So
+on GPUI, `obs-render`'s glyph atlas and its lifecycle (#255) are not used. Drawing our atlas
+through GPUI was rejected:
+- GPUI has no public way to draw a tinted part of an app-owned texture;
+- `paint_surface` is macOS-only;
+- re-uploading the atlas as an image on every change, with the colours baked in, would cost
+  more than it saves.
+
+Layout stays off the UI thread, as the #19 amendment says:
+- Workers lay blocks out into a cache keyed by Resource, block and width.
+- The UI thread lays out at most `SYNC_BUDGET` (2 ms) per frame, plus the block a jump lands
+  in, laid out at once.
+
+Accessibility (#19's rule of one node per laid block) stays:
+- Each laid block in view is one GPUI element with `Role::Paragraph` and its text.
+- Its links (Tagged words, references) are synthetic children. Their bounds are relative to the
+  window, in device pixels, which is how GPUI gives its own nodes their bounds.
+
+The #19 performance targets are checked on the GPUI build by the windowed bench (#384), at the
+display's refresh rate, before the cutover (ADR 0025, rule 9). On Xvfb with software rendering
+the prototype had no frame showing a block that was not yet laid out, and a UI-thread p99 of
+3.4 ms. Those numbers are not representative.
+

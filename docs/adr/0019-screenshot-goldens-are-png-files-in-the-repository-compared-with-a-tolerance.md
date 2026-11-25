@@ -1,5 +1,7 @@
 # Screenshot goldens are PNG files in the repository, drawn headlessly and compared with a tolerance
 
+Amended by #374 (below): in the GPUI UI (ADR 0025) the goldens are drawn on Linux by GPUI's headless renderer, and macOS and Windows get smoke screenshots instead of goldens.
+
 The design-token pass (#221) changed the look of every surface at once, and nothing would have
 said so if a later change moved a colour or a spacing by accident. The Screenshot gallery (#222)
 draws every Tab kind, toolbar pane, menu, window, dialog and popover in Light, Dark and Sepia at
@@ -50,3 +52,54 @@ draws every Tab kind, toolbar pane, menu, window, dialog and popover in Light, D
 - The app version is drawn in About Open Bible and Credits, so a version bump re-blesses them.
 - The fixed clock is a thread-local behind `test-support`; a job run on a worker thread reads
   the system clock, so the gallery runs its jobs inline.
+
+## Amendment (#374): GPUI goldens are drawn on Linux; macOS and Windows get smoke screenshots
+
+The desktop UI moves to GPUI (ADR 0025). GPUI rasterizes text with each system's own text
+stack: cosmic-text on Linux, Core Text on macOS and DirectWrite on Windows. So one set of
+goldens can no longer serve all three systems, as rule 2 says. A throwaway prototype (#374,
+branch `prototype/374-gpui-headless`) drew one GPUI surface with `gpui-kit` 0.10 on Linux,
+on GitHub's Linux, macOS and Windows runners:
+- **Linux:** GPUI's headless renderer runs on Mesa's software Vulkan driver (lavapipe), with
+  no display and no GPU. Three fresh captures were byte-identical at 1× and 2×, in light and
+  dark. Changing one label moved 198 pixels, well over rule 3's tolerance.
+- **macOS:** headless Metal frames on the hosted runner were byte-identical run to run. The
+  same surface was 4.1 % of its pixels away from the Linux golden; the tolerance allows
+  0.01 %.
+- **Windows:** GPUI has no headless renderer. Reading back a window that was never shown gave
+  a 1 × 1 image, so Windows has no usable capture yet.
+- **Interaction tests passed on all three systems:** clicks, typing, IME composition, and
+  finding controls by their accessible label and role.
+
+For the GPUI UI:
+
+1. **The goldens are Linux frames.** GPUI's headless renderer draws them on Mesa lavapipe,
+   on the CI image's pinned Mesa, with the bundled fonts. They replace rule 2's CPU
+   tessellation. The files, the gallery page, `--bless` and rule 4's fixtures stay as they
+   are.
+2. **The tolerance is unchanged.** Rule 3 still applies: ±2 per channel, and at most 0.01 % of
+   the pixels. Upgrading Mesa on CI means a deliberate re-bless, reviewed like any other
+   change (ADR 0020).
+3. **macOS and Windows have no goldens.**
+   - **macOS:** CI draws a fixed set of smoke surfaces with headless Metal. Each surface is
+     captured three times and must be identical and not blank. The images are kept as CI
+     artifacts for review.
+   - **Windows:** runs the interaction and accessibility tests only, until a capture works.
+     #379 tries a window shown off-screen.
+   - Interaction and accessibility tests run on all three systems.
+4. **Two small GPUI changes for the test contexts**, carried as a `[patch]` on the pinned
+   GPUI until they are merged upstream:
+   - setting a headless window's scale, since gpui-pre 0.3.12 draws headless windows at 2×
+     only;
+   - letting a test window turn accessibility on, so tests can check the shape of the
+     AccessKit tree and not only each node.
+
+### Considered options
+
+- **Committed goldens per system:** three times the repository weight. The macOS goldens
+  could be blessed only on macOS runners, and Windows has none to bless.
+- **Goldens drawn on a GPU runner:** frames vary with the driver version, and hosted runners
+  have no GPU.
+- **Keeping egui-style CPU rasterization for the gallery:** it would test a renderer the app
+  no longer ships.
+
