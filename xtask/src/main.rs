@@ -4,6 +4,7 @@ mod assets;
 mod atlas_basemap;
 mod bench;
 mod gallery;
+mod ios;
 mod language_names;
 mod layers;
 mod licenses;
@@ -39,6 +40,12 @@ screenshots:
 performance:
   bench    headless reading-pane and feature benchmark; fails past the thresholds in xtask/bench.toml
            (`--scale`: the app over a generated 2,000-Resource library, a manual gate; docs/dev/bench.md)
+
+mobile (docs/dev/mobile-core.md):
+  ios      `ios bindgen`: the Swift bindings of apps/obs-ffi in target/ios/bindings;
+           `ios check`: host-only check of obs-ffi plus bindgen;
+           `ios build [--sim-only]`: the iOS staticlibs and target/ios/ObsFFI.xcframework
+           (needs Xcode; `cargo xtask ios --help`)
 
 starter library:
   starter  build dist/starter/*.obr from starter/sources.toml (`cargo xtask starter --help`)
@@ -90,6 +97,10 @@ fn run() -> Result<()> {
         "starter" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             starter::run(&root, &rest)
+        }
+        "ios" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            ios::run(&root, &rest)
         }
         "release-archive" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

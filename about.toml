@@ -1,7 +1,8 @@
 # cargo-about configuration for the third-party licence listing shown in Help → Credits (#67).
 # `cargo xtask licenses` runs cargo-about with this file over the desktop app's dependency
-# graph and writes crates/engine/data/third-party-licenses.json; the `licenses` gate of
-# `cargo xtask ci` fails when that file is stale.
+# graph and writes crates/engine/data/third-party-licenses.json, and over the iOS app's
+# (`apps/obs-ffi`, for the iOS targets) into third-party-licenses-ios.json; the `licenses`
+# gate of `cargo xtask ci` fails when either file is stale.
 
 # Licences we may ship, in order of preference: for an `A OR B` crate the first one listed
 # here is the one we take. Copyleft alternatives (GPL, LGPL) are deliberately absent, so a
@@ -23,6 +24,11 @@ accepted = [
     "bzip2-1.0.6",
     "OFL-1.1",
     "Ubuntu-font-1.0",
+    # Weak copyleft, accepted by the owner (D21 in docs/plans/mobile-ios.md, 2026-11-20) for
+    # the UniFFI runtime in the iOS binary only: Credits shows its text and a source link.
+    # Last, so a dual-licensed crate is still taken under a permissive licence; the `licenses`
+    # tests fail if any crate but UniFFI's, or anything in the desktop app, is taken under it.
+    "MPL-2.0",
 ]
 
 # The desktop targets the app ships for, so the listing is the same whichever host runs it.
