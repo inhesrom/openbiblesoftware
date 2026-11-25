@@ -24,6 +24,7 @@
 
 mod builder;
 mod dataset;
+mod json;
 mod key;
 mod manifest;
 pub mod morph;
@@ -39,6 +40,7 @@ pub use dataset::{
     CrossReference, Entity, EntityKind, EntityRelation, Event, EventEntity, EventKind,
     HistoricalDate, Mention, ParallelSection, PlaceLocation, Relation,
 };
+pub use json::canonical_json;
 pub use key::{Key, KeyEntry};
 pub use manifest::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, OLDEST_FORMAT_VERSION, Origin,

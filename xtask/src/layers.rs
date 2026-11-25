@@ -1,7 +1,8 @@
 //! Crate layering rules (ADR 0005, #12).
 //!
 //! - A workspace crate may depend only on workspace crates in the same or a lower layer.
-//! - Below L6 no crate may depend, even transitively, on a UI crate (egui, eframe, winit, rfd, …).
+//! - Below L6 no crate may depend, even transitively, on a UI crate (egui, eframe, winit, rfd,
+//!   GPUI and its kit, …).
 //! - Only `obs-store` may depend directly on SQLite crates.
 //! - No library crate may depend, even transitively, on a networking crate; only apps may
 //!   (offline-first engine; Get Bibles, #91, injects its transport from the app).
@@ -26,6 +27,7 @@ pub const LAYERS: &[(&str, u8)] = &[
     ("obs-engine", 4),
     ("obs-reading", 5),
     ("obs-ui-egui", 6),
+    ("obs-ui-gpui", 6),
 ];
 
 /// The first layer allowed to use UI crates.
@@ -44,6 +46,26 @@ const UI_CRATES: &[&str] = &[
     "rfd",
     "accesskit_winit",
 ];
+
+/// Families of UI crates, by name prefix, that must not appear below [`UI_LAYER`] either:
+/// GPUI (`gpui`, the `gpui-pre-*` snapshots and their platform crates, `gpui_*`, GPUI Fast)
+/// and GPUI Kit (`gpui-kit`, `gpui-base`, `gpui-component`), ADR 0025.
+const UI_CRATE_FAMILIES: &[&str] = &["gpui"];
+
+/// Whether `name` is a UI crate: one of [`UI_CRATES`] or of a [`UI_CRATE_FAMILIES`] family.
+fn is_ui_crate(name: &str) -> bool {
+    UI_CRATES.contains(&name)
+        || UI_CRATE_FAMILIES.iter().any(|family| {
+            name == *family
+                || name
+                    .strip_prefix(family)
+                    .is_some_and(|rest| rest.starts_with(['-', '_']))
+        })
+}
+
+/// Library crates exempt from the wasm32 check: the GPUI UI, which a web build would not use
+/// (ADR 0025, rule 7). Every crate below the UI layer is checked.
+const WASM_EXEMPT: &[&str] = &["obs-ui-gpui"];
 
 /// Crates that make network connections. Only apps may depend on them, directly or
 /// transitively; libraries take a transport from the app instead.
@@ -95,12 +117,16 @@ pub fn metadata(root: &Path) -> Result<Metadata> {
         .context("cargo metadata failed")
 }
 
-/// Library crates checked for wasm32 (everything except apps and tools).
+/// Library crates checked for wasm32 (everything except apps, tools and [`WASM_EXEMPT`]).
 pub fn wasm_crates(metadata: &Metadata) -> Vec<String> {
-    packages(metadata)
-        .into_iter()
+    wasm_checked(&packages(metadata))
+}
+
+fn wasm_checked(pkgs: &[Package]) -> Vec<String> {
+    pkgs.iter()
         .filter(|p| matches!(p.kind, Some(Kind::Library(_))))
-        .map(|p| p.name)
+        .filter(|p| !WASM_EXEMPT.contains(&p.name.as_str()))
+        .map(|p| p.name.clone())
         .collect()
 }
 
@@ -223,18 +249,16 @@ pub fn check(pkgs: &[Package]) -> Vec<String> {
             }
         }
         if layer < UI_LAYER {
-            for ui in UI_CRATES {
-                if pkg.transitive_deps.contains(*ui) {
-                    let how = if pkg.external_deps.contains(*ui) {
-                        "directly"
-                    } else {
-                        "transitively"
-                    };
-                    errors.push(format!(
-                        "`{}` (L{layer}) depends {how} on UI crate `{ui}`; only L{UI_LAYER} may",
-                        pkg.name
-                    ));
-                }
+            for ui in pkg.transitive_deps.iter().filter(|d| is_ui_crate(d)) {
+                let how = if pkg.external_deps.contains(ui) {
+                    "directly"
+                } else {
+                    "transitively"
+                };
+                errors.push(format!(
+                    "`{}` (L{layer}) depends {how} on UI crate `{ui}`; only L{UI_LAYER} may",
+                    pkg.name
+                ));
             }
         }
         for net in NET_CRATES {
@@ -364,6 +388,77 @@ mod tests {
         let errors = check(&pkgs);
         assert_eq!(errors.len(), 1, "{errors:?}");
         assert!(errors[0].contains("`obs-layout`") && errors[0].contains("directly"));
+    }
+
+    #[test]
+    fn gpui_below_ui_layer_fails_naming_the_crate() {
+        let mut pkgs = good();
+        pkgs.push(pkg(
+            "obs-render",
+            Some(Kind::Library(3)),
+            &[],
+            &["gpui-kit"],
+            &["gpui-pre", "gpui-pre-platform", "gpui_macros"],
+        ));
+        let errors = check(&pkgs);
+        assert_eq!(errors.len(), 4, "{errors:?}");
+        assert!(
+            errors.iter().any(
+                |e| e.contains("`obs-render`") && e.contains("directly on UI crate `gpui-kit`")
+            )
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("transitively on UI crate `gpui-pre-platform`"))
+        );
+
+        // In the UI layer GPUI is allowed, and so is its trait-only HTTP client.
+        let mut pkgs = good();
+        pkgs.push(pkg(
+            "obs-ui-gpui",
+            Some(Kind::Library(6)),
+            &["obs-engine"],
+            &["gpui-kit"],
+            &["gpui-pre", "gpui-pre-http-client", "http"],
+        ));
+        assert_eq!(check(&pkgs), Vec::<String>::new());
+    }
+
+    #[test]
+    fn ui_crate_families_match_by_prefix_only() {
+        for name in [
+            "gpui",
+            "gpui-pre",
+            "gpui-pre-linux",
+            "gpui_platform",
+            "gpui-kit",
+            "gpui-fast",
+        ] {
+            assert!(is_ui_crate(name), "{name}");
+        }
+        for name in ["gpuiish", "obs-ui-gpui", "wgpu", "egui-extras-not"] {
+            assert!(!is_ui_crate(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn the_gpui_ui_is_exempt_from_the_wasm_check_and_the_rest_is_not() {
+        let mut pkgs = good();
+        pkgs.push(pkg(
+            "obs-ui-gpui",
+            Some(Kind::Library(6)),
+            &["obs-engine"],
+            &["gpui-kit"],
+            &[],
+        ));
+        let checked = wasm_checked(&pkgs);
+        assert!(!checked.contains(&"obs-ui-gpui".to_string()), "{checked:?}");
+        for name in ["obs-scripture", "obs-store", "obs-engine", "obs-ui-egui"] {
+            assert!(checked.contains(&name.to_string()), "{name}: {checked:?}");
+        }
+        assert!(!checked.contains(&"openbible".to_string()));
+        assert!(!checked.contains(&"xtask".to_string()));
     }
 
     #[test]
