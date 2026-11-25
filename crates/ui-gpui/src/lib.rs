@@ -180,6 +180,8 @@ impl Shell {
                     .border_color(c.rule)
                     .text_color(c.ink)
                     .hover(|s| s.bg(c.hover))
+                    // The keyboard focus: the outline in ink instead of the rule's grey.
+                    .focus_visible(|s| s.border_color(c.ink))
                     .on_click(cx.listener(|shell, _, _, cx| {
                         shell.quit_requested = true;
                         cx.quit();
@@ -259,7 +261,14 @@ pub fn open_main_window(
     options: WindowOptions,
     cx: &mut App,
 ) -> gpui_kit::Result<(AnyWindowHandle, Entity<Shell>)> {
-    gpui_kit::open_window(options, cx, move |_, cx| cx.new(|_| Shell::new(session)))
+    gpui_kit::open_window(options, cx, move |window, cx| {
+        cx.new(|cx| {
+            // Follow system draws in the window's appearance: redraw when it changes.
+            cx.observe_window_appearance(window, |_, _, cx| cx.notify())
+                .detach();
+            Shell::new(session)
+        })
+    })
 }
 
 /// Open the app window over `launch`'s Session and run until it closes (or, for a smoke run,
