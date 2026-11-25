@@ -177,10 +177,24 @@ mod rendering {
             .unwrap_or_else(|e| panic!("capture: {e}"))
     }
 
-    /// A fresh context and window in `look`, one frame, one capture.
-    fn shoot(look: &str) -> RgbaImage {
+    /// A fresh context and window in `look`, one frame, one capture. `two_panels`: a Bible
+    /// and a second Bible split off to its right (the Workspace, #385).
+    fn shoot(look: &str, two_panels: bool) -> RgbaImage {
         let mut cx = context();
         let (handle, shell, lab) = open(&mut cx, look);
+        if two_panels {
+            cx.update(|cx| {
+                shell.update(cx, |s, cx| {
+                    s.run("resource.open", &json!({ "id": "kjv-strongs" }))
+                        .unwrap();
+                    s.run("resource.open", &json!({ "id": "bsb", "split": true }))
+                        .unwrap();
+                    cx.notify();
+                })
+            });
+            // One frame places the Tabs; the next draws them where they settled.
+            let _ = frame(&mut cx, handle);
+        }
         let image = frame(&mut cx, handle);
         close(cx, shell, lab);
         image
@@ -211,10 +225,13 @@ mod rendering {
             return;
         }
         let mut failures = Vec::new();
-        for look in LOOKS {
-            let name = format!("workspace-empty-{look}-2x");
+        let surfaces = LOOKS
+            .iter()
+            .map(|look| (format!("workspace-empty-{look}-2x"), *look, false))
+            .chain([("workspace-two-panels-light-2x".to_string(), "light", true)]);
+        for (name, look, two_panels) in surfaces {
             // Three captures from fresh contexts: the pixels must be identical, and drawn.
-            let shots: Vec<RgbaImage> = (0..3).map(|_| shoot(look)).collect();
+            let shots: Vec<RgbaImage> = (0..3).map(|_| shoot(look, two_panels)).collect();
             let first = &shots[0];
             save(first, &support::frame_dir().join(format!("{name}.png")));
             if !support::not_blank(first) {
