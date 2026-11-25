@@ -120,7 +120,7 @@ it is not carried yet. Until it is merged upstream, it goes in as:
 gpui-pre = { path = "vendor/gpui-pre-0.3.12" }   # gpui-pre 0.3.12 plus the headless-scale patch
 ```
 
-Then the rendering test draws `--1x` frames too.
+Then the rendering test can draw 1× frames too.
 
 ## Screen readers
 
