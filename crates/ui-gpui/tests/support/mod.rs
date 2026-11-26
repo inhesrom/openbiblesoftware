@@ -126,6 +126,154 @@ pub fn session(name: &str) -> (Session, Lab) {
     (session, Lab { root })
 }
 
+/// Add `r` to `session`'s Library, written into the Lab's library folder (#380's reading
+/// fixtures).
+pub fn add_resource(session: &mut Session, lab: &Lab, r: &obs_model::Resource) {
+    let path = lab
+        .root
+        .join("library")
+        .join(format!("{}.obr", r.manifest.resource_id));
+    obs_store::write_obr(r, &path).unwrap();
+    session.library.add_file(&path).unwrap();
+}
+
+/// Genesis 1:1-5 in Hebrew with points and cantillation, as TAHOT prints it: one right-to-left
+/// paragraph, so its lines wrap right to left (#380).
+pub fn hebrew_genesis_1() -> obs_model::Resource {
+    use obs_engine::testing::bibles::{paragraphed_bible, v};
+    let verses = [
+        (
+            v(Book::Genesis, 1, 1),
+            "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃",
+        ),
+        (
+            v(Book::Genesis, 1, 2),
+            "וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ וְחֹ֖שֶׁךְ עַל־פְּנֵ֣י תְה֑וֹם וְר֣וּחַ אֱלֹהִ֔ים מְרַחֶ֖פֶת עַל־פְּנֵ֥י הַמָּֽיִם׃",
+        ),
+        (v(Book::Genesis, 1, 3), "וַיֹּ֥אמֶר אֱלֹהִ֖ים יְהִ֣י א֑וֹר וַֽיְהִי־אֽוֹר׃"),
+        (
+            v(Book::Genesis, 1, 4),
+            "וַיַּ֧רְא אֱלֹהִ֛ים אֶת־הָא֖וֹר כִּי־ט֑וֹב וַיַּבְדֵּ֣ל אֱלֹהִ֔ים בֵּ֥ין הָא֖וֹר וּבֵ֥ין הַחֹֽשֶׁךְ׃",
+        ),
+        (
+            v(Book::Genesis, 1, 5),
+            "וַיִּקְרָ֨א אֱלֹהִ֤ים ׀ לָאוֹר֙ י֔וֹם וְלַחֹ֖שֶׁךְ קָ֣רָא לָ֑יְלָה וַֽיְהִי־עֶ֥רֶב וַֽיְהִי־בֹ֖קֶר י֥וֹם אֶחָֽד׃",
+        ),
+    ];
+    let mut r = paragraphed_bible("tahot-test", "TAHOT", &verses, obs_model::Direction::Rtl);
+    r.manifest.language = "hbo".into();
+    r
+}
+
+/// John 1:1-5 in Greek: one left-to-right paragraph whose lines break at spaces (#380).
+pub fn greek_john_1() -> obs_model::Resource {
+    use obs_engine::testing::bibles::{paragraphed_bible, v};
+    let verses = [
+        (
+            v(Book::John, 1, 1),
+            "Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος.",
+        ),
+        (v(Book::John, 1, 2), "οὗτος ἦν ἐν ἀρχῇ πρὸς τὸν θεόν."),
+        (
+            v(Book::John, 1, 3),
+            "πάντα δι’ αὐτοῦ ἐγένετο, καὶ χωρὶς αὐτοῦ ἐγένετο οὐδὲ ἕν ὃ γέγονεν.",
+        ),
+        (
+            v(Book::John, 1, 4),
+            "ἐν αὐτῷ ζωὴ ἦν, καὶ ἡ ζωὴ ἦν τὸ φῶς τῶν ἀνθρώπων·",
+        ),
+        (
+            v(Book::John, 1, 5),
+            "καὶ τὸ φῶς ἐν τῇ σκοτίᾳ φαίνει, καὶ ἡ σκοτία αὐτὸ οὐ κατέλαβεν.",
+        ),
+    ];
+    let mut r = paragraphed_bible("tagnt-test", "TAGNT", &verses, obs_model::Direction::Ltr);
+    r.manifest.language = "grc".into();
+    r
+}
+
+/// Psalm 119 as one long paragraph (176 verses, about 30 KB): a jump deep into it lands in a
+/// block far too long to lay out within one frame's budget (#380).
+pub fn long_psalm() -> obs_model::Resource {
+    use obs_engine::testing::bibles::{paragraphed_bible, v};
+    const TEXT: &str = "Blessed are those whose ways are blameless, who walk according to                         the law of the LORD; blessed are those who keep his statutes and seek                         him with all their heart.";
+    let verses: Vec<(Verse, &str)> = (1..=176).map(|n| (v(Book::Psalms, 119, n), TEXT)).collect();
+    paragraphed_bible("long-psalm", "LP", &verses, obs_model::Direction::Ltr)
+}
+
+/// The egui `resource_tabs_tests` study Lexicon (`study_resource(ResourceType::Lexicon)`):
+/// G25, G26 (also under its Lemma ἀγάπη) and G27, one entry unit each.
+pub fn study_lexicon() -> obs_model::Resource {
+    let entries = [
+        ("G25", "G25 — ἀγαπάω\nTo love."),
+        ("G26", "G26 — ἀγάπη\nLove; affection."),
+        ("G27", "G27 — ἀγαπητός\nBeloved."),
+    ]
+    .map(|(n, t)| (n.to_string(), t.to_string()));
+    lexicon(
+        "test-lexicon",
+        "Test Lexicon",
+        &entries,
+        &[("G26", "ἀγάπη")],
+    )
+}
+
+/// A Lexicon of 80 entries, G1 to G80, many pages long: far down it, blocks are not laid out
+/// until they are drawn (#380).
+pub fn long_lexicon() -> obs_model::Resource {
+    let entries: Vec<(String, String)> = (1..=80)
+        .map(|n| {
+            let text = format!(
+                "G{n} — entry {n}\nA definition long enough to wrap onto a second line of the \
+                 Reading column, as a Lexicon's entries do."
+            );
+            (format!("G{n}"), text)
+        })
+        .collect();
+    lexicon("long-lexicon", "Long Lexicon", &entries, &[])
+}
+
+/// A Lexicon keyed by Strong's numbers (and the Lemmas in `lemmas`, by number): each entry one
+/// unit, its first line a heading and the rest one prose paragraph.
+fn lexicon(
+    id: &str,
+    title: &str,
+    entries: &[(String, String)],
+    lemmas: &[(&str, &str)],
+) -> obs_model::Resource {
+    use obs_model::{
+        Key, KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, UnitId,
+        UnitKind,
+    };
+    let mut manifest = Manifest::new(id, title, "TL", ResourceType::Lexicon, "en");
+    manifest.key_schemes = vec![KeyScheme::StrongsNumber, KeyScheme::Lemma];
+    manifest.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(manifest);
+    for (number, text) in entries {
+        let unit = UnitId::new(number).unwrap();
+        let split = text.find('\n').unwrap();
+        b.add_unit(unit.clone(), UnitKind::Entry, None, text.clone());
+        b.add_span(&unit, 0..split, SpanKind::Heading { level: 1 });
+        b.add_span(
+            &unit,
+            split + 1..text.len(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        b.add_key(
+            Key::StrongsNumber(number.parse().unwrap()),
+            &unit,
+            None,
+            false,
+        );
+        for (_, lemma) in lemmas.iter().filter(|(n, _)| n == number) {
+            b.add_key(Key::Lemma((*lemma).into()), &unit, None, false);
+        }
+    }
+    b.build().unwrap()
+}
+
 /// How a frame compares with another under ADR 0019's tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Comparison {

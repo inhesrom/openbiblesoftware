@@ -24,6 +24,7 @@ use serde_json::Value;
 pub mod catalogue;
 pub mod components;
 pub mod icons;
+pub mod reading;
 pub mod theme;
 pub mod tokens;
 pub mod workspace;
@@ -79,6 +80,7 @@ pub fn install(cx: &mut App) {
     if let Err(e) = cx.text_system().add_fonts(bundled_fonts()) {
         log::warn!("bundled fonts: {e}");
     }
+    reading::install(cx);
 }
 
 /// The main window's view: the Session and, for now, an empty Workspace.
@@ -97,6 +99,8 @@ pub struct Shell {
     /// Tests: colours drawn instead of the theme's (the gallery's seeded change, #379).
     #[cfg(feature = "test-support")]
     chrome_override: Option<tokens::Chrome>,
+    /// Each Resource Tab's pane (#380), from its opening to its closing.
+    pub(crate) panes: std::collections::HashMap<obs_engine::TabId, workspace::ResourcePane>,
     /// The Workspace's dock (#385), made with the first frame (it needs the window).
     dock: Option<Entity<DockArea>>,
     /// Which dock group is which engine Panel, and which dock panel which engine Tab.
@@ -120,6 +124,7 @@ impl Shell {
         Self {
             session,
             catalogue: None,
+            panes: std::collections::HashMap::new(),
             look_asked: None,
             quit_requested: false,
             painted: Rc::new(Cell::new(None)),
@@ -255,6 +260,7 @@ impl Render for Shell {
             self.apply_effects(window, cx);
         }
         let overlays = self.overlays(&look, window, cx);
+        self.sync_panes(&look, cx);
         div()
             .relative()
             .size_full()
@@ -359,6 +365,17 @@ fn catalogue_look() -> Option<theme::Look> {
     catalogue::look_named(&name, zoom).or_else(|| catalogue::look_named("Light", zoom))
 }
 
+/// `OBS_GPUI_READ=<resource id>[@<reference>]`: open that Resource in a Resource Tab at launch
+/// (#380), at the reference when given (`kjv@Gen 1:1`).
+fn reading_asked() -> Option<(String, Option<String>)> {
+    let asked = std::env::var("OBS_GPUI_READ").ok()?;
+    let (resource, reference) = match asked.split_once('@') {
+        Some((r, at)) => (r.trim().to_string(), Some(at.trim().to_string())),
+        None => (asked.trim().to_string(), None),
+    };
+    (!resource.is_empty()).then_some((resource, reference))
+}
+
 /// Open the app window over `launch`'s Session and run until it closes (or, for a smoke run,
 /// until a frame has been drawn). `started` is when the process started, for the smoke run's
 /// first-frame time.
@@ -379,8 +396,8 @@ pub fn run(launch: Launch, options: Options, started: Instant) -> Outcome {
                 theme::set_look(look, cx);
             }
             let window_options = main_window_options(None, cx);
-            let shell = match open_shell(session, window_options, catalogue, cx) {
-                Ok((_, shell)) => shell,
+            let (handle, shell) = match open_shell(session, window_options, catalogue, cx) {
+                Ok(opened) => opened,
                 Err(e) => {
                     result.set(Some(Outcome::SmokeFailed(format!(
                         "the window did not open: {e}"
@@ -392,6 +409,17 @@ pub fn run(launch: Launch, options: Options, started: Instant) -> Outcome {
             // The Workspace comes back as it was: the Last session, else the default one.
             if !catalogue {
                 shell.update(cx, |s, _| s.restore_at_launch());
+            }
+            if let Some((resource, reference)) = reading_asked() {
+                let opened = cx.update_window(handle, |_, window, cx| {
+                    shell.update(cx, |s, cx| {
+                        s.open_reading(&resource, reference.as_deref(), window, cx)
+                            .map(|_| ())
+                    })
+                });
+                if let Ok(Err(e)) | Err(e) = opened.map_err(|e| e.to_string()) {
+                    log::warn!("OBS_GPUI_READ: {e}");
+                }
             }
             let painted = shell.read(cx).painted.clone();
             // Closing the last window quits the app.

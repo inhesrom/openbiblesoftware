@@ -11,6 +11,9 @@ publish.workspace = true
 [dependencies]
 obs-engine.workspace = true
 obs-fonts.workspace = true
+# The reading core both UIs share (#380): ReadingDoc, ReadingView, the layout workers.
+obs-reading.workspace = true
+obs-layout.workspace = true
 obs-model.workspace = true
 obs-scripture.workspace = true
 gpui-kit.workspace = true
