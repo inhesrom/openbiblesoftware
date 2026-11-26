@@ -5265,6 +5265,8 @@ dependencies = [
 name = "obs-ui-gpui"
 version = "0.2.0"
 dependencies = [
+ "egui",
+ "epaint_default_fonts",
  "gpui-base",
  "gpui-kit",
  "gpui-pre",
@@ -5277,6 +5279,7 @@ dependencies = [
  "obs-model",
  "obs-scripture",
  "obs-store",
+ "obs-ui-egui",
  "obs-ui-gpui",
  "serde_json",
 ]

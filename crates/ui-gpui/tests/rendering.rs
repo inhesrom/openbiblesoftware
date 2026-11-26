@@ -339,9 +339,9 @@ mod rendering {
         };
         let mut cx = context();
         let (handle, shell, lab) = open(&mut cx, "light");
-        let mut seeded = obs_ui_gpui::tokens::light();
-        // `surface` 0xf4f6f4 to 0xf0f2f0: 4 levels, past the ±2 channel tolerance.
-        seeded.surface = gpui_kit::rgb(0xf0f2f0);
+        let mut seeded = obs_ui_gpui::tokens::LIGHT;
+        // `surface` (244, 246, 244) to (240, 242, 240): 4 levels, past the ±2 channel tolerance.
+        seeded.surface = obs_engine::Rgb::new(240, 242, 240);
         cx.update(|cx| {
             shell.update(cx, |s, cx| {
                 s.override_chrome(Some(seeded));

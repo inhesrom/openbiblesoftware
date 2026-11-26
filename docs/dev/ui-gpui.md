@@ -86,6 +86,9 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
     accessibility on, so only single nodes can be checked (#374).
 - **Interaction tests** (`tests/interaction.rs`): `#[gpui_kit::test]` on GPUI's
   TestPlatform, on Linux, macOS and Windows alike.
+- **Component tests** (`tests/components.rs`, #378): the shared components and the
+  catalogue, on the same driver and TestPlatform. The IME is driven through the field's own
+  `ElementInputHandler`.
 - **Rendering** (`tests/rendering.rs`): its own harness on the main thread, drawn by GPUI's
   headless renderer.
   - **Linux:** wgpu; on a computer with no GPU, Mesa's software Vulkan driver, lavapipe
@@ -110,8 +113,9 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
     fail, which checks that the gallery catches a token change.
 - **Surfaces with goldens so far:** the scaffold's window (title bar and empty Workspace), in
   Light and Dark.
-- **Fonts:** the Shell draws its text in the bundled Gentium Plus, so frames are the same on
-  every computer. #378 chooses the Interface font.
+- **Fonts:** the Shell draws its chrome in the default Interface font (egui's Ubuntu Light,
+  asked for by its Light weight, so an installed Ubuntu Regular is not drawn instead) and its
+  wordmark in Gentium Plus. Both are bundled, so frames are the same on every computer.
 
 **Only 2× for now.** gpui-pre 0.3.12's headless windows are fixed at 2×. 1× needs
 `HeadlessAppContext::simulate_window_scale_factor_change`: a 19-line patch, on the branch
@@ -132,3 +136,51 @@ GPUI's AccessKit is on by default. The title bar's **Quit** button (labelled "Qu
 Software") is there so a screen reader has something to reach; check it with VoiceOver
 (macOS), NVDA (Windows) and Orca (Linux). A known upstream bug on Windows: the window's content
 is reachable only after focus leaves the window and comes back.
+
+## The look and the shared components (#378)
+
+- `tokens.rs`: the design tokens (ADR 0015), copied from the egui app's `tokens.rs` and
+  `Palette`: spacing, type scale, radii, strokes, insets, elevations, sizes, motion durations,
+  the chrome colour roles (Light, Dark, High contrast light and dark) and the page colours of
+  each Page tone. `tests/tokens.rs` fails if any value differs from the egui one.
+- `theme.rs`: the `Look`, a GPUI global that holds the chrome, page, Interface font, Interface
+  size and the app's own Reduce motion setting. It is resolved from the Session's appearance
+  and Custom theme (ADR 0018) as the egui app's `theme.rs` does. `set_look` replaces it and
+  refreshes every window, so a theme change shows in the next frame. It also sets gpui-base's
+  reduce motion preference from the app's setting alone: Reduce when the app asks, else
+  System (the operating system's setting, which gpui-base keeps current). Code that animates
+  reads `cx.reduce_motion()`, not the Look. The Shell makes the Session's Look current when the Session's appearance
+  changes (a command such as `view.theme`, or Follow system when the window's appearance
+  changes); the catalogue keeps the Look its buttons choose.
+- `icons.rs`: the Lucide set from `crates/ui-egui/assets/icons`, compiled in with the egui
+  app's names and drawn as SVG masks in a theme role's colour. `icons::Assets` is the app's
+  asset source.
+- `components.rs`: buttons, icon buttons, text and search fields, switches, radios, chips,
+  section headers, the Tab page, cards, notices, menus and menu items, popovers, tooltips,
+  toasts, dialogs, the empty, loading and error states, and scroll bars.
+  - Controls are built on gpui-base's primitives (`Button`, `Switch`, `Radio`, and
+    `InputBase` over `InputState`). Those give them activation, keyboard focus, IME, undo and
+    the clipboard, plus their AccessKit roles.
+  - Every component has an accessible name, and every control has a visible keyboard focus
+    ring (heavy in High contrast). A primary button's ring is two rings, the label's colour
+    inside and lapis around it, as lapis alone would not show on its lapis fill. Switches,
+    radios, menu items and a chip's Close button keep a transparent border the ring's width,
+    so focus does not move them.
+  - An icon button shows its name in a tooltip while the pointer rests on it.
+  - Containers (menus, dialogs, notices, states) get their role and name through a stateful
+    element. Call `.test_support()` on the finished element to make it findable by name in
+    headless tests.
+
+### The component catalogue
+
+`OBS_GPUI_CATALOGUE=<Look> cargo run -p openbible --features gpui` opens the catalogue instead
+of the Workspace:
+- the Look is `Light`, `Dark`, `Sepia`, `High contrast` or `High contrast dark`;
+- `OBS_GPUI_ZOOM=1.25` sets the Interface size;
+- buttons at the catalogue's top switch the Look while it runs.
+
+`OBS_GPUI_PREVIEWS=1 cargo test -p obs-ui-gpui --test previews` draws the catalogue in every
+Look with GPUI's headless renderer, at 2×, into `crates/ui-gpui/previews/`. The same test file
+checks the pixels of the focus rings a colour could hide (the primary button's, a chip's Close
+button's, a menu item's). Without a headless renderer these tests are skipped, unless
+`OBS_GPUI_REQUIRE_RENDERER=1`.

@@ -10,16 +10,19 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::base::Button;
+use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext, Bounds, Context, Entity, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, Render, Styled, TitlebarOptions, Window, WindowAppearance,
+    AnyWindowHandle, App, Bounds, Context, Entity, FontWeight, Render, TitlebarOptions, Window,
     WindowBounds, WindowOptions, canvas, div, px, size,
 };
+use obs_engine::Session;
 use obs_engine::launch::Launch;
-use obs_engine::{Session, Theme};
 use serde_json::Value;
 
+pub mod catalogue;
+pub mod components;
+pub mod icons;
+pub mod theme;
 pub mod tokens;
 
 /// Window title until the product is named (the egui app's `APP_TITLE`).
@@ -54,16 +57,20 @@ pub enum Outcome {
 
 /// The fonts the app draws with, registered with GPUI's text system: the bundled faces of
 /// `obs-fonts` (Gentium Plus and Ezra SIL), so text looks the same on every computer.
-fn bundled_fonts() -> Vec<Cow<'static, [u8]>> {
+pub fn bundled_fonts() -> Vec<Cow<'static, [u8]>> {
     obs_fonts::FaceId::ALL
         .iter()
         .filter_map(|face| face.bundled_bytes())
         .map(Cow::Borrowed)
+        // The default Interface font (#138): egui's own proportional face, so both UIs draw
+        // the chrome alike.
+        .chain([Cow::Borrowed(epaint_default_fonts::UBUNTU_LIGHT)])
         .collect()
 }
 
-/// Set up GPUI Kit and the bundled fonts in `cx`: once per app (or test context), before any
-/// window opens.
+/// Set up GPUI for the app (or a test context), once, before any window opens: GPUI Kit's
+/// layers and the bundled fonts. The icon set's assets are the application's
+/// ([`icons::Assets`]).
 pub fn install(cx: &mut App) {
     gpui_kit::init(cx);
     if let Err(e) = cx.text_system().add_fonts(bundled_fonts()) {
@@ -73,9 +80,13 @@ pub fn install(cx: &mut App) {
 
 /// The main window's view: the Session and, for now, an empty Workspace.
 pub struct Shell {
-    /// The study state the UI draws. Only the theme is drawn until the Workspace is built
+    /// The study state the UI draws. Only its appearance is drawn until the Workspace is built
     /// (#385); held so it lives, with its background jobs, as long as the window.
     session: Session,
+    /// The component catalogue (#378), drawn instead of the Workspace when asked for.
+    catalogue: Option<Entity<catalogue::Catalogue>>,
+    /// The Look the Session last asked for, so a change of appearance is made current once.
+    look_asked: Option<theme::Look>,
     /// The Quit button was pressed (the app quits; the test platform's quit does nothing).
     quit_requested: bool,
     /// Set when a frame has finished painting (a smoke run waits for it).
@@ -89,6 +100,8 @@ impl Shell {
     pub fn new(session: Session) -> Self {
         Self {
             session,
+            catalogue: None,
+            look_asked: None,
             quit_requested: false,
             painted: Rc::new(Cell::new(None)),
             #[cfg(feature = "test-support")]
@@ -105,7 +118,7 @@ impl Shell {
     }
 
     /// Run a command, as the egui Shell's `run` does: its result, or `None` when it failed
-    /// (logged; the toast comes with the GPUI chrome, #378).
+    /// (logged; the toast comes with the Workspace's chrome, #385).
     pub fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
         match self.session.run(id, params) {
             Ok(out) => Some(out),
@@ -127,98 +140,98 @@ impl Shell {
         self.chrome_override = chrome;
     }
 
-    /// The colours of the theme the Session asks for. Follow system takes the window's
-    /// appearance; the High contrast and Custom themes draw as their base until #378.
-    fn chrome(&self, window: &Window) -> tokens::Chrome {
+    /// The Look this frame draws in. The catalogue draws in the Look it switches to; otherwise
+    /// the Session's appearance decides it (Follow system takes the window's appearance), and
+    /// when that changes it is made current ([`theme::set_look`]) for every view.
+    fn look(&mut self, window: &Window, cx: &mut App) -> theme::Look {
+        if self.catalogue.is_none() {
+            self.follow_session(window, cx);
+        }
+        let look = theme::look(cx);
         #[cfg(feature = "test-support")]
-        if let Some(chrome) = self.chrome_override {
-            return chrome;
-        }
-        let dark = match self.session.appearance.theme {
-            Theme::Dark | Theme::HighContrastDark => true,
-            Theme::Light | Theme::HighContrastLight | Theme::Custom => false,
-            Theme::System => matches!(
-                window.appearance(),
-                WindowAppearance::Dark | WindowAppearance::VibrantDark
-            ),
+        let look = match self.chrome_override {
+            Some(chrome) => theme::Look { chrome, ..look },
+            None => look,
         };
-        if dark {
-            tokens::dark()
-        } else {
-            tokens::light()
-        }
+        look
     }
 
-    fn title_bar(&self, c: &tokens::Chrome, cx: &mut Context<Self>) -> impl IntoElement {
+    fn follow_session(&mut self, window: &Window, cx: &mut App) {
+        let asked = theme::session_look(&self.session, theme::is_dark(window.appearance()));
+        if self.look_asked.as_ref() == Some(&asked) {
+            return;
+        }
+        self.look_asked = Some(asked.clone());
+        theme::set_look(asked, cx);
+    }
+
+    fn title_bar(&self, look: &theme::Look, cx: &mut Context<Self>) -> impl IntoElement {
+        let ch = look.chrome;
         div()
             .flex()
             .flex_row()
             .items_center()
             .flex_none()
-            .h(px(tokens::TITLE_BAR_HEIGHT))
-            .px(px(tokens::SPACE_L))
-            .gap(px(tokens::SPACE_M))
-            .bg(c.surface)
+            .h(px(look.pt(tokens::TITLE_BAR_HEIGHT)))
+            .px(px(look.pt(tokens::inset::MENU_BAR.0)))
+            .gap(px(look.pt(tokens::space::M)))
+            .bg(tokens::rgba(ch.surface))
             .border_b_1()
-            .border_color(c.rule)
+            .border_color(tokens::rgba(ch.rule))
             .child(
                 div()
+                    .font_family(theme::DISPLAY_FAMILY)
                     .font_weight(FontWeight::BOLD)
-                    .text_size(px(tokens::TEXT_WORDMARK))
-                    .text_color(c.ink)
+                    .text_size(px(look.pt(tokens::text::TITLE)))
+                    .text_color(tokens::rgba(ch.ink))
                     .child("Open Bible"),
             )
             .child(div().flex_1())
             // The one control so far, so a screen reader has something to reach (#377).
             .child(
-                Button::new("quit")
+                components::button("quit", "Quit", look)
                     .accessibility_label(QUIT_LABEL)
-                    .px(px(tokens::SPACE_M))
-                    .py(px(tokens::SPACE_S / 2.0))
-                    .rounded(px(tokens::RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(c.rule)
-                    .text_color(c.ink)
-                    .hover(|s| s.bg(c.hover))
-                    // The keyboard focus: the outline in ink instead of the rule's grey.
-                    .focus_visible(|s| s.border_color(c.ink))
                     .on_click(cx.listener(|shell, _, _, cx| {
                         shell.quit_requested = true;
                         cx.quit();
-                    }))
-                    .child("Quit"),
+                    })),
             )
     }
 }
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let c = self.chrome(window);
         let painted = self.painted.clone();
+        let look = self.look(window, cx);
+        let ch = look.chrome;
         div()
             .size_full()
             .flex()
             .flex_col()
-            .bg(c.shell)
-            // The interface font is the bundled Gentium Plus until #378 chooses one, so the
-            // goldens draw the same on every computer (ADR 0019 rule 4).
-            .font_family("Gentium Plus")
-            .text_size(px(tokens::TEXT_BODY))
-            .text_color(c.ink)
-            .child(self.title_bar(&c, cx))
-            // The Workspace: its Panels and Tabs come with #385.
-            .child(
-                div()
-                    .flex_1()
-                    .m(px(tokens::SPACE_S))
-                    .p(px(tokens::SPACE_XL))
-                    .bg(c.surface)
-                    .border_1()
-                    .border_color(c.rule)
-                    .rounded(px(tokens::RADIUS_CONTROL))
-                    .text_color(c.muted)
-                    .child("The GPUI Workspace is not built yet."),
-            )
+            .bg(tokens::rgba(ch.shell))
+            .font_family(look.interface_family.clone())
+            .font_weight(look.interface_weight)
+            .text_size(px(look.pt(tokens::text::BODY)))
+            .text_color(tokens::rgba(ch.ink))
+            .child(self.title_bar(&look, cx))
+            .map(|this| match &self.catalogue {
+                Some(catalogue) => {
+                    this.child(div().flex_1().min_h(px(0.0)).child(catalogue.clone()))
+                }
+                // The Workspace: its Panels and Tabs come with #385.
+                None => this.child(
+                    components::page(&look)
+                        .flex_1()
+                        .m(px(look.pt(tokens::space::S)))
+                        .border_1()
+                        .border_color(tokens::rgba(ch.rule))
+                        .rounded(px(look.pt(tokens::radius::M)))
+                        .child(components::hint(
+                            "The GPUI Workspace is not built yet.",
+                            &look,
+                        )),
+                ),
+            })
             .child(
                 canvas(
                     |_, _, _| (),
@@ -261,76 +274,107 @@ pub fn open_main_window(
     options: WindowOptions,
     cx: &mut App,
 ) -> gpui_kit::Result<(AnyWindowHandle, Entity<Shell>)> {
+    open_shell(session, options, false, cx)
+}
+
+/// Open the main window, with the component catalogue in place of the Workspace when
+/// `catalogue` is set.
+fn open_shell(
+    session: Session,
+    options: WindowOptions,
+    catalogue: bool,
+    cx: &mut App,
+) -> gpui_kit::Result<(AnyWindowHandle, Entity<Shell>)> {
     gpui_kit::open_window(options, cx, move |window, cx| {
+        let catalogue = catalogue.then(|| cx.new(|cx| catalogue::Catalogue::new(window, cx)));
         cx.new(|cx| {
             // Follow system draws in the window's appearance: redraw when it changes.
             cx.observe_window_appearance(window, |_, _, cx| cx.notify())
                 .detach();
-            Shell::new(session)
+            Shell {
+                catalogue,
+                ..Shell::new(session)
+            }
         })
     })
+}
+
+/// `OBS_GPUI_CATALOGUE`: open the component catalogue instead of the Workspace; its value
+/// (`Light`, `Dark`, `Sepia`, `High contrast`, `High contrast dark`) chooses the Look it opens
+/// in, and `OBS_GPUI_ZOOM` its Interface size.
+fn catalogue_look() -> Option<theme::Look> {
+    let name = std::env::var("OBS_GPUI_CATALOGUE").ok()?;
+    let zoom = std::env::var("OBS_GPUI_ZOOM")
+        .ok()
+        .and_then(|z| z.parse().ok())
+        .unwrap_or(1.0);
+    catalogue::look_named(&name, zoom).or_else(|| catalogue::look_named("Light", zoom))
 }
 
 /// Open the app window over `launch`'s Session and run until it closes (or, for a smoke run,
 /// until a frame has been drawn). `started` is when the process started, for the smoke run's
 /// first-frame time.
 pub fn run(launch: Launch, options: Options, started: Instant) -> Outcome {
-    for problem in &launch.problems {
-        log::warn!("{problem}");
-    }
     let outcome: Rc<Cell<Option<Outcome>>> = Rc::new(Cell::new(None));
     let result = outcome.clone();
     let mut session = Some(launch.session);
-    gpui_kit::application().run(move |cx: &mut App| {
-        install(cx);
-        let Some(session) = session.take() else {
-            return;
-        };
-        let window_options = main_window_options(None, cx);
-        let shell = match open_main_window(session, window_options, cx) {
-            Ok((_, shell)) => shell,
-            Err(e) => {
-                result.set(Some(Outcome::SmokeFailed(format!(
-                    "the window did not open: {e}"
-                ))));
-                cx.quit();
+    gpui_kit::application()
+        .with_assets(icons::Assets)
+        .run(move |cx: &mut App| {
+            install(cx);
+            let Some(session) = session.take() else {
                 return;
+            };
+            let catalogue_look = catalogue_look();
+            let catalogue = catalogue_look.is_some();
+            if let Some(look) = catalogue_look {
+                theme::set_look(look, cx);
             }
-        };
-        let painted = shell.read(cx).painted.clone();
-        // Closing the last window quits the app.
-        cx.on_window_closed(|cx, _| {
-            if cx.windows().is_empty() {
-                cx.quit();
-            }
-        })
-        .detach();
-        if options.smoke {
-            let result = result.clone();
-            cx.spawn(async move |cx| {
-                let opened_at = Instant::now();
-                loop {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(100))
-                        .await;
-                    if let Some(at) = painted.get() {
-                        result.set(Some(Outcome::SmokePassed {
-                            first_frame: at.duration_since(started),
-                        }));
-                        break;
-                    }
-                    if opened_at.elapsed() > SMOKE_TIMEOUT {
-                        result.set(Some(Outcome::SmokeFailed(format!(
-                            "no frame was drawn within {} s",
-                            SMOKE_TIMEOUT.as_secs()
-                        ))));
-                        break;
-                    }
+            let window_options = main_window_options(None, cx);
+            let shell = match open_shell(session, window_options, catalogue, cx) {
+                Ok((_, shell)) => shell,
+                Err(e) => {
+                    result.set(Some(Outcome::SmokeFailed(format!(
+                        "the window did not open: {e}"
+                    ))));
+                    cx.quit();
+                    return;
                 }
-                cx.update(|cx| cx.quit());
+            };
+            let painted = shell.read(cx).painted.clone();
+            // Closing the last window quits the app.
+            cx.on_window_closed(|cx, _| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
             })
             .detach();
-        }
-    });
+            if options.smoke {
+                let result = result.clone();
+                cx.spawn(async move |cx| {
+                    let opened_at = Instant::now();
+                    loop {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(100))
+                            .await;
+                        if let Some(at) = painted.get() {
+                            result.set(Some(Outcome::SmokePassed {
+                                first_frame: at.duration_since(started),
+                            }));
+                            break;
+                        }
+                        if opened_at.elapsed() > SMOKE_TIMEOUT {
+                            result.set(Some(Outcome::SmokeFailed(format!(
+                                "no frame was drawn within {} s",
+                                SMOKE_TIMEOUT.as_secs()
+                            ))));
+                            break;
+                        }
+                    }
+                    cx.update(|cx| cx.quit());
+                })
+                .detach();
+            }
+        });
     outcome.take().unwrap_or(Outcome::Closed)
 }
