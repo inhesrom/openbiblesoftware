@@ -201,6 +201,79 @@ pub fn long_psalm() -> obs_model::Resource {
     paragraphed_bible("long-psalm", "LP", &verses, obs_model::Direction::Ltr)
 }
 
+/// The egui `resource_tabs_tests` study Lexicon (`study_resource(ResourceType::Lexicon)`):
+/// G25, G26 (also under its Lemma ἀγάπη) and G27, one entry unit each.
+pub fn study_lexicon() -> obs_model::Resource {
+    let entries = [
+        ("G25", "G25 — ἀγαπάω\nTo love."),
+        ("G26", "G26 — ἀγάπη\nLove; affection."),
+        ("G27", "G27 — ἀγαπητός\nBeloved."),
+    ]
+    .map(|(n, t)| (n.to_string(), t.to_string()));
+    lexicon(
+        "test-lexicon",
+        "Test Lexicon",
+        &entries,
+        &[("G26", "ἀγάπη")],
+    )
+}
+
+/// A Lexicon of 80 entries, G1 to G80, many pages long: far down it, blocks are not laid out
+/// until they are drawn (#380).
+pub fn long_lexicon() -> obs_model::Resource {
+    let entries: Vec<(String, String)> = (1..=80)
+        .map(|n| {
+            let text = format!(
+                "G{n} — entry {n}\nA definition long enough to wrap onto a second line of the \
+                 Reading column, as a Lexicon's entries do."
+            );
+            (format!("G{n}"), text)
+        })
+        .collect();
+    lexicon("long-lexicon", "Long Lexicon", &entries, &[])
+}
+
+/// A Lexicon keyed by Strong's numbers (and the Lemmas in `lemmas`, by number): each entry one
+/// unit, its first line a heading and the rest one prose paragraph.
+fn lexicon(
+    id: &str,
+    title: &str,
+    entries: &[(String, String)],
+    lemmas: &[(&str, &str)],
+) -> obs_model::Resource {
+    use obs_model::{
+        Key, KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, UnitId,
+        UnitKind,
+    };
+    let mut manifest = Manifest::new(id, title, "TL", ResourceType::Lexicon, "en");
+    manifest.key_schemes = vec![KeyScheme::StrongsNumber, KeyScheme::Lemma];
+    manifest.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(manifest);
+    for (number, text) in entries {
+        let unit = UnitId::new(number).unwrap();
+        let split = text.find('\n').unwrap();
+        b.add_unit(unit.clone(), UnitKind::Entry, None, text.clone());
+        b.add_span(&unit, 0..split, SpanKind::Heading { level: 1 });
+        b.add_span(
+            &unit,
+            split + 1..text.len(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        b.add_key(
+            Key::StrongsNumber(number.parse().unwrap()),
+            &unit,
+            None,
+            false,
+        );
+        for (_, lemma) in lemmas.iter().filter(|(n, _)| n == number) {
+            b.add_key(Key::Lemma((*lemma).into()), &unit, None, false);
+        }
+    }
+    b.build().unwrap()
+}
+
 /// How a frame compares with another under ADR 0019's tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Comparison {

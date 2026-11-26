@@ -8,13 +8,13 @@
 mod support;
 
 use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Bounds, Entity, Modifiers, Role, ScrollDelta, ScrollEvent,
-    TestAppContext, TouchPhase, point, px, size,
+    AnyWindowHandle, AppContext as _, Bounds, Entity, Modifiers, MouseButton, MouseMoveEvent, Role,
+    ScrollDelta, ScrollEvent, TestAppContext, TouchPhase, Window, point, px, size,
 };
 use obs_engine::Session;
 use obs_scripture::{Book, Verse};
 use obs_ui_gpui::Shell;
-use obs_ui_gpui::reading::{self, ARROW_STEP, LINE_STEP, PAGE_SHARE, ReadingPane};
+use obs_ui_gpui::reading::{self, ARROW_STEP, LINE_STEP, PAGE_SHARE, ReadingPane, SCROLLBAR};
 use serde_json::json;
 use support::Driver;
 
@@ -556,5 +556,104 @@ fn every_laid_block_in_view_is_a_paragraph_node_with_its_links(cx: &mut TestAppC
             assert!(x1 > x0 && y1 > y0, "{l:?} has a box");
         }
     }
+    close(cx, o);
+}
+
+/// egui `a11y::publish`: the pane is a Document named by its Resource's title. Tab reaches it,
+/// and the node with the keyboard is that Document.
+#[gpui_kit::test]
+fn tab_reaches_the_pane_and_it_is_a_document_named_by_its_resource(cx: &mut TestAppContext) {
+    let o = open(cx, "tab-stop", "bsb", "Gen 1:1", true);
+    settle(cx, &o);
+    let title = support::bsb_genesis_1().manifest.title;
+    let document = |window: &Window| {
+        let mut found: Vec<_> = window
+            .find_all_by_role(Role::Document)
+            .into_iter()
+            .filter(|e| e.label() == Some(title.as_str()))
+            .collect();
+        assert_eq!(found.len(), 1, "one Document named {title:?}");
+        found.remove(0)
+    };
+    let focus = o.pane.read_with(cx, |p, _| p.focus_handle().clone());
+    cx.update_window(o.handle, |_, window, cx| {
+        // The keyboard starts in the Tab's header, on its Aa button.
+        window.frame(cx);
+        let aa = window
+            .elements()
+            .into_iter()
+            .find_map(|e| {
+                e.label()
+                    .filter(|l| l.starts_with("Text size and layout for"))
+                    .map(str::to_string)
+            })
+            .expect("the Tab's Aa button");
+        window.click_label(&aa, cx);
+        assert_eq!(window.find_by_label(&aa).focused(), Some(true));
+        assert_eq!(document(window).focused(), Some(false));
+        let mut presses = 0;
+        while document(window).focused() != Some(true) {
+            assert!(presses < 40, "Tab never reached the pane");
+            window.press("tab", cx);
+            presses += 1;
+        }
+        assert!(focus.is_focused(window), "the pane has the keyboard");
+    })
+    .unwrap();
+    // The keyboard scrolls it from there, with no click.
+    let before = position(cx, &o);
+    press(cx, &o, "down");
+    settle(cx, &o);
+    assert!(
+        position(cx, &o) > before,
+        "Down scrolled the pane Tab reached"
+    );
+    close(cx, o);
+}
+
+/// egui `pane.rs`' scroll bar: the thumb follows a drag, and a drag let go outside the pane
+/// ends there. The pointer coming back over the track with the button down (another drag)
+/// does not move the text.
+#[gpui_kit::test]
+fn a_thumb_drag_let_go_outside_the_pane_ends(cx: &mut TestAppContext) {
+    let o = open(cx, "thumb-drag", "long-psalm", "Ps 119:1", true);
+    settle(cx, &o);
+    let b = o.pane.read_with(cx, |p, _| p.bounds());
+    let x = b.origin.x + b.size.width - px(SCROLLBAR / 2.0);
+    let at = |share: f32| point(x, b.origin.y + b.size.height * share);
+    let before = position(cx, &o);
+    cx.update_window(o.handle, |_, window, cx| {
+        window.pointer_move(at(0.5), cx);
+        window.pointer_down(at(0.5), cx);
+    })
+    .unwrap();
+    let dragged = position(cx, &o);
+    assert!(
+        dragged > before + 100.0,
+        "the thumb went to the middle: {dragged}"
+    );
+    // Let go over the title bar, outside the pane.
+    let outside = point(px(5.0), px(5.0));
+    assert!(!b.contains(&outside));
+    cx.update_window(o.handle, |_, window, cx| {
+        window.pointer_move(outside, cx);
+        window.pointer_up(outside, cx);
+        let modifiers = window.modifiers();
+        window.dispatch_event(
+            gpui_kit::InputEvent::to_platform_input(MouseMoveEvent {
+                position: at(0.9),
+                pressed_button: Some(MouseButton::Left),
+                modifiers,
+            }),
+            cx,
+        );
+        window.frame(cx);
+    })
+    .unwrap();
+    assert_eq!(
+        position(cx, &o),
+        dragged,
+        "the drag ended when the button came up"
+    );
     close(cx, o);
 }

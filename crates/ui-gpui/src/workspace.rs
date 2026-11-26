@@ -1047,6 +1047,7 @@ impl Shell {
                         self.insert_tab(tab, placement, window, cx);
                     }
                     Effect::Navigate { tab, verse } => self.navigate_pane(tab, verse, cx),
+                    Effect::NavigateEntry { tab, key } => self.navigate_entry_pane(tab, &key, cx),
                     Effect::NavigateStandard { tab, verse } => {
                         self.session.workspace.navigate_standard(tab, verse);
                     }
@@ -1199,8 +1200,9 @@ impl Shell {
 
     /// Read a Resource Tab's Resource into its pane (the egui Shell's `load`): the Tab learns
     /// the Resource's numbering and Keys, and the pane starts at the Tab's location (else where
-    /// its Link set is, else where another Bible is, else at its first Verse). The pane redraws
-    /// the Shell when it moves, so the Tab's location follows it ([`Self::report_panes`]).
+    /// its Link set is, else where another Bible is, else at its first Verse). A Lexicon or
+    /// Dictionary starts at the Tab's Key (else its Link set's, else its first entry). The pane
+    /// redraws the Shell when it moves, so the Tab's location follows it ([`Self::sync_panes`]).
     pub(crate) fn load_pane(&mut self, tab: TabId, cx: &mut Context<Self>) {
         let Some(TabKind::Resource(id)) = self.session.workspace.tab(tab).map(|t| t.kind.clone())
         else {
@@ -1253,6 +1255,19 @@ impl Shell {
             }
         });
         let first = doc.verses.first().map(|v| v.verse);
+        let entries = matches!(kind, ResourceType::Lexicon | ResourceType::Dictionary);
+        // Another Lexicon or Dictionary's Key (a parallel Resource, #151) is looked up in this
+        // one.
+        let entry = entries
+            .then(|| {
+                let ws = &self.session.workspace;
+                ws.tab(tab)
+                    .and_then(|t| t.entry_history.current())
+                    .and_then(|k| doc.navigation.lookup(&k).map(|e| e.key.clone()))
+                    .or_else(|| ws.set_entry_location(tab))
+                    .or_else(|| doc.navigation.entries().next().map(|e| e.key.clone()))
+            })
+            .flatten();
         let pane = cx.new(|cx| ReadingPane::with_doc(doc, settings, cx));
         // A new pane does not glide: it starts where it is put.
         let jumped = local.filter(|v| pane.update(cx, |p, _| p.jump_to(*v)));
@@ -1263,6 +1278,12 @@ impl Shell {
                 self.session.workspace.scrolled(tab, v);
             }
             _ => {}
+        }
+        if let Some(key) = entry
+            && pane.update(cx, |p, _| p.view_mut().jump_to_entry(&key))
+            && let Some(t) = self.session.workspace.tab_mut(tab)
+        {
+            t.entry_history.scrolled_to(key);
         }
         cx.observe(&pane, |_, _, cx| cx.notify()).detach();
         self.panes.insert(tab, ResourcePane::Reading(pane));
@@ -1282,9 +1303,23 @@ impl Shell {
         }
     }
 
+    /// The engine moved a Lexicon or Dictionary Tab (`tab.go`, the Key box, Back or Forward):
+    /// its pane goes to the entry, as the egui Shell's `NavigateEntry` does.
+    fn navigate_entry_pane(&mut self, tab: TabId, key: &Key, cx: &mut Context<Self>) {
+        if let Some(ResourcePane::Reading(pane)) = self.panes.get(&tab) {
+            pane.update(cx, |p, cx| {
+                cx.notify();
+                p.view_mut().jump_to_entry(key);
+            });
+        }
+    }
+
     /// Each pane's Session state (its Text settings, Page tone, Scroll speed and motion), and
-    /// where each pane the user moved now is: the Tab's location, shown in its header box and
-    /// where Back returns from. A Link set does not follow yet (#386).
+    /// where each pane now is: the Tab's location, shown in its header box and where Back
+    /// returns from. Only a pane drawn since the last frame is asked where it is, so a pane
+    /// not shown never lays text out here, outside a frame's budget. A Lexicon or Dictionary
+    /// the user scrolled records the entry at its top, as the egui Shell's
+    /// `user_scrolled_entry`. A Link set does not follow yet (#386).
     pub(crate) fn sync_panes(&mut self, look: &Look, cx: &mut Context<Self>) {
         let palette = reading::palette_for(&self.session, look);
         let reduce = cx.reduce_motion();
@@ -1293,14 +1328,17 @@ impl Shell {
                 continue;
             };
             let session = &self.session;
-            let at = pane.update(cx, |p, _| {
+            let (at, entry) = pane.update(cx, |p, _| {
                 p.sync(session, palette, reduce);
+                let drawn = p.take_drawn();
+                let moved = p.take_user_moved();
                 let view = p.view_mut();
-                if view.is_following() {
-                    None
-                } else {
+                let at = if drawn && !view.is_following() {
                     view.current_location()
-                }
+                } else {
+                    None
+                };
+                (at, moved.then(|| view.current_entry()).flatten())
             });
             let ws = &mut self.session.workspace;
             if let Some(at) = at
@@ -1309,6 +1347,12 @@ impl Shell {
                     .is_some_and(|t| t.history.current() != Some(at))
             {
                 ws.scrolled(*tab, at);
+            }
+            if let Some(key) = entry
+                && let Some(t) = ws.tab_mut(*tab)
+                && t.entry_history.current().as_ref() != Some(&key)
+            {
+                t.entry_history.scrolled_to(key);
             }
         }
     }

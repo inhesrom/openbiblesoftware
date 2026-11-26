@@ -8,6 +8,7 @@ mod support;
 
 use gpui_kit::{AnyWindowHandle, AppContext as _, Bounds, Entity, TestAppContext, point, px, size};
 use obs_engine::{TabId, TabKind};
+use obs_model::Key;
 use obs_scripture::Verse;
 use obs_ui_gpui::Shell;
 use obs_ui_gpui::workspace::{DETAILS, HIDE_DETAILS, RETRY};
@@ -15,7 +16,19 @@ use serde_json::json;
 use support::Driver;
 
 fn open(cx: &mut TestAppContext, name: &str) -> (AnyWindowHandle, Entity<Shell>, support::Lab) {
+    open_with(cx, name, &[])
+}
+
+/// [`open`], with `extra` in the Library too.
+fn open_with(
+    cx: &mut TestAppContext,
+    name: &str,
+    extra: &[obs_model::Resource],
+) -> (AnyWindowHandle, Entity<Shell>, support::Lab) {
     let (mut session, lab) = support::session(name);
+    for r in extra {
+        support::add_resource(&mut session, &lab, r);
+    }
     session.appearance.reduce_motion = true;
     let (handle, shell) = cx.update(|cx| {
         obs_ui_gpui::install(cx);
@@ -93,6 +106,53 @@ fn at(
         let ws = &shell.read(cx).session().workspace;
         (shown, ws.tab(tab).unwrap().history.current())
     })
+}
+
+/// The unit at the top of Tab `tab`'s pane (the egui tests' `shown_unit`).
+fn shown_unit(cx: &mut TestAppContext, shell: &Entity<Shell>, tab: TabId) -> String {
+    cx.update(|cx| {
+        let pane = shell.read(cx).pane(tab).expect("the Tab's pane").clone();
+        pane.update(cx, |p, _| {
+            let view = p.view_mut();
+            let top = view.visible(400.0)[0].index;
+            view.doc.units[view.doc.blocks[top].unit].id.to_string()
+        })
+    })
+}
+
+/// The Key Tab `tab` is at (its header box), and the entry at the top of its pane.
+fn entry_at(
+    cx: &mut TestAppContext,
+    shell: &Entity<Shell>,
+    tab: TabId,
+) -> (Option<Key>, Option<Key>) {
+    cx.update(|cx| {
+        let pane = shell.read(cx).pane(tab).expect("the Tab's pane").clone();
+        let shown = pane.read(cx).view().current_entry();
+        let ws = &shell.read(cx).session().workspace;
+        (ws.tab(tab).unwrap().entry_history.current(), shown)
+    })
+}
+
+fn strongs(number: &str) -> Option<Key> {
+    Some(Key::StrongsNumber(number.parse().unwrap()))
+}
+
+/// Open Resource `id` in a Resource Tab with the keyboard in its pane: the Tab.
+fn open_reading(
+    cx: &mut TestAppContext,
+    handle: AnyWindowHandle,
+    shell: &Entity<Shell>,
+    id: &str,
+) -> TabId {
+    cx.update_window(handle, |_, window, cx| {
+        window.frame(cx);
+        shell.update(cx, |s, cx| {
+            s.open_reading(id, None, window, cx).unwrap();
+            s.session().workspace.focused().unwrap()
+        })
+    })
+    .unwrap()
 }
 
 fn genesis(chapter: u16, verse: u16) -> Option<Verse> {
@@ -282,5 +342,128 @@ fn a_closed_tabs_pane_goes_and_comes_back_when_reopened(cx: &mut TestAppContext)
         s.pane(t).is_some()
     });
     assert!(again, "the reopened Tab has its pane");
+    close(cx, handle, shell, lab);
+}
+
+/// Port of resource_tabs_tests
+/// `g26_typed_in_lexicon_tab_renders_entry_with_shared_pipeline_and_entry_navigation` and
+/// `dictionary_headword_alias_and_saved_lexicon_location_reopen_correct_entries`, on the pane:
+/// a Lexicon Tab's pane starts at its first entry; the Key box, Back and Forward move it; and
+/// the Workspace restored reopens it at the Tab's Key.
+#[gpui_kit::test]
+fn the_key_box_back_and_forward_move_a_lexicon_tabs_pane(cx: &mut TestAppContext) {
+    let (handle, shell, lab) = open_with(cx, "rt-lexicon", &[support::study_lexicon()]);
+    let tab = open_reading(cx, handle, &shell, "test-lexicon");
+    settle(cx, handle);
+    assert_eq!(shown_unit(cx, &shell, tab), "G25");
+    assert_eq!(
+        entry_at(cx, &shell, tab).0,
+        strongs("G25"),
+        "the Tab is at its first entry"
+    );
+    let name = title(cx, &shell, tab);
+    let label = format!("Go to an entry in {name}");
+    for number in ["G26", "G27"] {
+        cx.update_window(handle, |_, window, cx| {
+            window.click_label(&label, cx);
+            window.press("secondary-a", cx);
+            window.type_text(number, cx);
+            window.press("enter", cx);
+        })
+        .unwrap();
+        settle(cx, handle);
+        assert_eq!(shown_unit(cx, &shell, tab), number, "typed {number}");
+        assert_eq!(entry_at(cx, &shell, tab).0, strongs(number));
+    }
+    for (button, number) in [("Back", "G26"), ("Back", "G25"), ("Forward", "G26")] {
+        cx.update_window(handle, |_, window, cx| {
+            window.click_label(&format!("{button} in {name}"), cx);
+        })
+        .unwrap();
+        settle(cx, handle);
+        assert_eq!(shown_unit(cx, &shell, tab), number, "{button} to {number}");
+        assert_eq!(entry_at(cx, &shell, tab).0, strongs(number));
+    }
+    // The header box shows the Key.
+    cx.update_window(handle, |_, window, cx| {
+        window.frame(cx);
+        assert_eq!(window.find_by_label(&label).value(), Some("G26"));
+    })
+    .unwrap();
+    // A Layout or the Last session restored reads the pane again, at the Tab's Key.
+    cx.update(|cx| {
+        shell.update(cx, |s, cx| {
+            let snapshot = s.session().workspace.snapshot();
+            s.session_mut().workspace.restore(snapshot);
+            cx.notify();
+        })
+    });
+    settle(cx, handle);
+    let tab = cx.update(|cx| {
+        let ws = &shell.read(cx).session().workspace;
+        ws.tabs()
+            .find(|t| t.kind == TabKind::Resource("test-lexicon".into()))
+            .map(|t| t.id)
+            .unwrap()
+    });
+    assert_eq!(
+        shown_unit(cx, &shell, tab),
+        "G26",
+        "restored at the Tab's Key"
+    );
+    close(cx, handle, shell, lab);
+}
+
+/// Port of the egui Shell's `user_scrolled_entry`: the user scrolls a Lexicon Tab's pane, and
+/// the Tab's Key (its header box, where Back returns from) is the entry at the top.
+#[gpui_kit::test]
+fn scrolling_a_lexicon_tabs_pane_moves_its_key(cx: &mut TestAppContext) {
+    let (handle, shell, lab) = open_with(cx, "rt-lexicon-scroll", &[support::long_lexicon()]);
+    let tab = open_reading(cx, handle, &shell, "long-lexicon");
+    settle(cx, handle);
+    assert_eq!(entry_at(cx, &shell, tab), (strongs("G1"), strongs("G1")));
+    for _ in 0..3 {
+        cx.update_window(handle, |_, window, cx| window.press("pagedown", cx))
+            .unwrap();
+        settle(cx, handle);
+    }
+    let (key, shown) = entry_at(cx, &shell, tab);
+    assert_ne!(shown, strongs("G1"), "the pane moved");
+    assert_eq!(key, shown, "the Tab's Key follows its pane");
+    close(cx, handle, shell, lab);
+}
+
+/// A pane not shown (its Tab behind another in its Panel) is never asked where it is, so it
+/// lays no text out on the UI thread outside a frame's budget (`SYNC_BUDGET`).
+#[gpui_kit::test]
+fn a_pane_not_shown_lays_nothing_out_between_frames(cx: &mut TestAppContext) {
+    let (handle, shell, lab) = open_with(cx, "rt-hidden", &[support::long_lexicon()]);
+    let hidden = open_reading(cx, handle, &shell, "long-lexicon");
+    settle(cx, handle);
+    let panel = cx.update(|cx| {
+        let ws = &shell.read(cx).session().workspace;
+        ws.panel_of(hidden).unwrap()
+    });
+    run(
+        cx,
+        &shell,
+        "resource.open",
+        json!({ "id": "bsb", "panel": panel.0 }),
+    );
+    settle(cx, handle);
+    let shown = cx.update(|cx| shell.read(cx).session().workspace.active_in(panel));
+    assert_ne!(shown, Some(hidden), "the Lexicon's Tab is behind the BSB's");
+    let pane = cx.update(|cx| shell.read(cx).pane(hidden).unwrap().clone());
+    // Moved far down while hidden, to text never laid out.
+    let laid = pane.update(cx, |p, _| {
+        let view = p.view_mut();
+        let total = view.position().1;
+        view.scroll_to_position(total * 0.9);
+        view.layouts
+    });
+    settle(cx, handle);
+    let after = pane.read_with(cx, |p, _| p.view().layouts);
+    assert_eq!(after, laid, "the hidden pane laid text out");
+    drop(pane);
     close(cx, handle, shell, lab);
 }

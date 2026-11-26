@@ -53,11 +53,16 @@ transport and the OS language.
   pane again, as egui does. As the egui Shell's `load`, the Tab learns the Resource's
   numbering and Keys, and the pane starts at the Tab's location (else its Link set's, else
   another Bible's, else the first Verse).
-  - The Tab's navigation moves the pane: the engine's `Navigate` Effect (`tab.go`, the header
-    box, Back, Forward) jumps it; `NavigateStandard` and `NavigateOpened` go through the
-    engine first. A parallel Resource switched in, or a Resource file replaced, is read again.
-  - Where the pane is scrolled is the Tab's location (`Workspace::scrolled`), so the header
-    box and Back follow it. The Link set does not follow yet (#386).
+  - A Lexicon or Dictionary starts at the Tab's Key (else its Link set's, else its first entry).
+  - The Tab's navigation moves the pane: the engine's `Navigate` and `NavigateEntry` Effects
+    (`tab.go`, the header's reference or Key box, Back, Forward) jump it; `NavigateStandard`
+    and `NavigateOpened` go through the engine first. A parallel Resource switched in, or a
+    Resource file replaced, is read again.
+  - Where the pane is scrolled is the Tab's location (`Workspace::scrolled`), and in a Lexicon
+    or Dictionary the user scrolled, the entry at its top is the Tab's Key, so the header box
+    and Back follow it. Only a pane drawn in the last frame is asked where it is: a pane not
+    shown never lays text out outside a frame's budget. The Link set does not follow yet
+    (#386).
   - A Resource with no text (a Cross-reference set, a People & places index) says where its
     data shows, with one button that goes there. A Resource that cannot be read says so, with
     Retry and Details; the error shows only after Details (#223).
@@ -175,12 +180,17 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
 - **Resource Tab tests** (`tests/resource_tabs.rs`): the header box, Back, Forward and
   `tab.go` move the Tab's one pane; scrolling moves the Tab's location; a closed Tab's pane
   goes; and the egui `pane_states_tests` behaviours of a Resource Tab (nothing to read, and an
-  unreadable Resource with Retry and Details).
+  unreadable Resource with Retry and Details). A Lexicon Tab (the egui tests' study Lexicon,
+  `support::study_lexicon`) starts at its first entry, its Key box, Back and Forward move its
+  pane, a restored Workspace reopens it at its Key, and scrolling moves its Key. A pane not
+  shown lays nothing out between frames.
 - **Reading pane tests** (`tests/reading.rs`, #380), on the TestPlatform. Each names the egui
   test it ports: Scroll speed for wheel lines and trackpad points, Ctrl+wheel, the arrow and page
   keys, motion against Reduce motion, the Text size and Resource text size keeping the Current
   location, and Hebrew right to left and never hyphenated. Also: Greek breaks between words, a
-  jump into a long paragraph is drawn in its first frame, and the paragraph nodes.
+  jump into a long paragraph is drawn in its first frame, the paragraph nodes, Tab reaching
+  the pane (a Document named by its Resource's title), and a thumb drag let go outside the
+  pane ending.
   - GPUI's test windows never turn accessibility on, so each block records the node it writes
     (`reading::observed`, under `test-support`), and the tests read that.
 - **Fonts:** the Shell draws its chrome in the default Interface font (egui's Ubuntu Light,
@@ -273,17 +283,34 @@ reading core the egui app and the mobile app use. ADR 0004's #372 amendment deci
     Cmd with the wheel never scrolls.
   - Page Down, Space and Page Up move 0.9 of the pane; the arrows move 40 points at the Scroll
     speed. Keys and jumps glide unless motion is reduced (#225).
-  - The scroll bar's thumb follows the position and can be dragged.
+  - The scroll bar's thumb follows the position and can be dragged; the drag ends when the
+    button comes up, over the pane or outside it.
+  - Tab reaches the pane, as it reaches the Tab's header controls.
   - Unlike egui, the wheel is not smoothed over frames.
 - **Settings:** each frame the Shell hands the pane the Resource's Text settings (the Text size,
   or the Resource's own text size, and the Reading layout), the Page tone and the Scroll speed. A
   change lays the text out again and keeps the Current location.
-- **Accessibility:** each laid block in view is one element with `Role::Paragraph`, its text and
-  its direction. Its Tagged words and references are synthetic `Role::Link` children, with bounds
-  relative to the window in device pixels.
-- **Not yet:** marks and highlights (#382), selection, Find and Word Info hover (#381),
-  footnotes, the Note margin and the jump flash (#383). Also faces loaded from the computer
-  (#138): `obs-fonts` does not expose a loaded face's file yet, so their glyphs are not drawn.
+- **Accessibility:** the pane is one element with `Role::Document`, named by its Resource's
+  title, as the egui pane publishes it. Each laid block in view is one element with
+  `Role::Paragraph`, its text and its direction. Its Tagged words and references are synthetic
+  `Role::Link` children, with bounds relative to the window in device pixels.
+- **Not yet:**
+  - marks and highlights (#382), selection, Find and Word Info hover (#381), footnotes, the
+    Note margin and the jump flash (#383);
+  - faces loaded from the computer (#138): `obs-fonts` does not expose a loaded face's file
+    yet, so their glyphs are not drawn;
+  - the engine's `ShowUnit`, `NavigateText` and `RevealText` Effects are not applied to the
+    pane: Back or Forward to a history entry that showed another unit at the same Verse or
+    Key (#176), a jump to a paragraph of a unit, and a text position brought into view (the
+    Notes Tool following a Text-range anchor, #64);
+  - `view_scrolled` (#214): where a pane is scrolled is not reported, so a Tab closed and
+    reopened from Recently closed starts at its location, not where it was scrolled;
+  - `report_view_unit` (#176): the unit at the top of a pane is not reported, so the history
+    entries a Lexicon, Dictionary or Commentary Tab pushes do not record it;
+  - no document cache: each pane reads its Resource from its file, and two Tabs of one
+    Resource read it twice;
+  - the Interface size does not scale the reading text: only the Text size and the
+    Resource's own text size do.
 
 `OBS_GPUI_READ` opens a Resource in a Resource Tab at launch:
 

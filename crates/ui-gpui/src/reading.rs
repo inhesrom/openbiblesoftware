@@ -15,13 +15,14 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Instant;
 
+use gpui_kit::base::TestSupportExt;
 use gpui_kit::prelude::*;
 use gpui_kit::{
     A11ySubtreeBuilder, AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, Element,
     ElementId, FocusHandle, FontId, Global, GlobalElementId, GlyphId, Hsla, InspectorElementId,
     KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
-    Role, ScrollDelta, ScrollEvent, Style, Window, accesskit, div, fill, font, point, px, relative,
-    size,
+    Role, ScrollDelta, ScrollEvent, SharedString, Style, Window, accesskit, div, fill, font, point,
+    px, relative, size,
 };
 use obs_engine::Session;
 use obs_fonts::FaceId;
@@ -127,8 +128,16 @@ pub struct ReadingPane {
     started: Instant,
     /// The last frame's viewport height, for Page Down.
     height: f32,
-    /// The last frame's track (pane coordinates: top, height) while the thumb is dragged.
+    /// The thumb is being dragged: the left button went down in the scroll bar's track and has
+    /// not come up, over the pane or outside it.
     dragging: bool,
+    /// The pane was drawn since the Shell last asked ([`Self::take_drawn`]): a pane not shown
+    /// (a Tab behind another in its Panel) is never asked where it is, so it never lays out
+    /// outside a frame's budget.
+    drawn: bool,
+    /// The user scrolled the pane (wheel, keys, scroll bar) since the Shell last asked
+    /// ([`Self::take_user_moved`]).
+    user_moved: bool,
     /// The pane's bounds as last drawn, in window points.
     bounds: Bounds<Pixels>,
     /// What the last frame cost.
@@ -145,10 +154,13 @@ impl ReadingPane {
             palette: TonePalette::for_theme(obs_engine::PageTone::Paper, false),
             scroll_speed: 1.0,
             reduce_motion: true,
-            focus: cx.focus_handle(),
+            // Tab reaches the pane, so the keyboard can scroll it without a click.
+            focus: cx.focus_handle().tab_stop(true),
             started: Instant::now(),
             height: 0.0,
             dragging: false,
+            drawn: false,
+            user_moved: false,
             bounds: Bounds::default(),
             last_frame: None,
         }
@@ -178,6 +190,16 @@ impl ReadingPane {
     /// The pane's bounds as last drawn, in window points.
     pub fn bounds(&self) -> Bounds<Pixels> {
         self.bounds
+    }
+
+    /// Whether the pane was drawn since this was last asked.
+    pub(crate) fn take_drawn(&mut self) -> bool {
+        std::mem::take(&mut self.drawn)
+    }
+
+    /// Whether the user scrolled the pane since this was last asked.
+    pub(crate) fn take_user_moved(&mut self) -> bool {
+        std::mem::take(&mut self.user_moved)
     }
 
     /// The Session's state the pane draws with, each frame: the Resource's Text settings (the
@@ -241,6 +263,7 @@ impl ReadingPane {
         self.view.set_clock(now);
         let shown = self.view.shown_position();
         self.view.scroll_by(dy);
+        self.user_moved = true;
         if eased && !self.reduce_motion {
             self.view
                 .glide_from(shown, motion::SCROLL, motion::ease_in_out);
@@ -305,6 +328,7 @@ impl ReadingPane {
         let frac = ((f32::from(y - bounds.origin.y)) / height).clamp(0.0, 1.0);
         let (_, total) = self.view.position();
         self.view.scroll_to_position(f64::from(frac) * total);
+        self.user_moved = true;
     }
 }
 
@@ -312,8 +336,14 @@ impl Render for ReadingPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = hsla(self.palette.page);
         let pane = cx.entity();
+        // The pane is one document named by its Resource's title, as the egui pane publishes
+        // it (`a11y::publish`); its paragraphs are its blocks' nodes.
+        let title = SharedString::from(self.view.doc.manifest.title.clone());
         div()
             .id("reading-pane")
+            .role(Role::Document)
+            .aria_label(title)
+            .test_support()
             .track_focus(&self.focus)
             .size_full()
             .overflow_hidden()
@@ -335,8 +365,9 @@ impl Render for ReadingPane {
                     window.focus(&pane.focus, cx);
                     let b = pane.bounds;
                     let track = f32::from(b.origin.x + b.size.width) - SCROLLBAR;
-                    if f32::from(ev.position.x) >= track - space::XS {
-                        pane.dragging = true;
+                    let in_track = f32::from(ev.position.x) >= track - space::XS;
+                    pane.dragging = in_track;
+                    if in_track {
                         pane.drag_to(ev.position.y);
                     }
                     cx.notify();
@@ -349,6 +380,12 @@ impl Render for ReadingPane {
                 }
             }))
             .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|pane, _: &MouseUpEvent, _, _| pane.dragging = false),
+            )
+            // A drag let go outside the pane ends too, so the thumb does not stick to the
+            // pointer.
+            .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|pane, _: &MouseUpEvent, _, _| pane.dragging = false),
             )
@@ -429,6 +466,7 @@ impl Element for PaneElement {
             self.pane.update(cx, |pane, _| {
                 pane.bounds = bounds;
                 pane.height = height;
+                pane.drawn = true;
                 let now = pane.now();
                 pane.view.set_clock(now);
                 // The Reading column (#209), centred in wide panes, as the egui pane does.
