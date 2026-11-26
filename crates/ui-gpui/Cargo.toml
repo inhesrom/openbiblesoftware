@@ -13,6 +13,43 @@ obs-engine.workspace = true
 obs-fonts.workspace = true
 gpui-kit.workspace = true
 log.workspace = true
+serde_json.workspace = true
+
+[features]
+# The test driver's hook (#379): `Shell::override_chrome`, the rendering test's seeded colour
+# change. Only the crate's own tests turn it on (the dev-dependency on itself below).
+test-support = []
+
+[dev-dependencies]
+# GPUI's own test support, named directly at the versions gpui-kit pins, not GPUI Kit's
+# `test-support` feature: that one names its optional styled and GPUI Fast layers. GPUI Fast
+# is in Cargo.lock already (an optional dependency of gpui-base) but in no build; the feature
+# would add the styled layer's and GPUI Fast's platform crates and an HTTP client, and fail
+# `cargo xtask layers`.
+gpui-pre = { version = "=0.3.12", features = ["test-support"] }
+gpui-pre-platform = { version = "=0.3.12", features = ["test-support"] }
+gpui-base = { version = "=0.10.0", features = ["test-support"] }
+obs-ui-gpui = { path = ".", features = ["test-support"] }
+# The fixtures the egui tests use: the Starter subset, the BSB's Genesis 1, the fixed clock.
+obs-engine = { workspace = true, features = ["test-support"] }
+obs-store = { workspace = true, features = ["test-support"] }
+obs-model.workspace = true
+obs-formats.workspace = true
+obs-scripture.workspace = true
+# Frames as PNG goldens; the same `image` GPUI returns captures in.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Interaction tests run on GPUI's TestPlatform with `#[gpui_kit::test]`.
+[[test]]
+name = "interaction"
+path = "tests/interaction.rs"
+
+# Rendering runs on the main thread (the headless renderer needs it), so it has its own
+# harness, as GPUI Kit's own rendering tests do.
+[[test]]
+name = "rendering"
+path = "tests/rendering.rs"
+harness = false
 
 [lints]
 workspace = true

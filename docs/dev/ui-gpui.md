@@ -61,6 +61,71 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
 - **Clippy:** `cargo xtask clippy` lints the workspace, then `openbible` with `--features gpui`
   and with `--no-default-features --features gpui`.
 
+## Tests
+
+`cargo test -p obs-ui-gpui` runs the GPUI UI's headless tests (#379; ADR 0019 as amended by
+#374). They need no display: run them with `DISPLAY` and `WAYLAND_DISPLAY` unset.
+
+- **The driver** (`crates/ui-gpui/tests/support`):
+  - **A Session over the egui tests' fixtures:** the accessibility audit's Starter subset and
+    the BSB's Genesis 1, in a scratch Library with a User database, with jobs run inline and
+    the clock fixed at the gallery's time (`obs_store::clock`).
+  - **Commands:** `Shell::run(command, params)` runs engine commands, as the egui tests do.
+  - **The `Driver` trait on `Window`:** draws frames, finds elements by accessible label or
+    role, and sends pointer and keyboard input.
+  - **What it reads:** the elements come from the accessibility snapshots `gpui-base` records
+    under its `test-support` feature: the role, label, value, focus and bounds GPUI writes
+    into each AccessKit node.
+  - **Not GPUI Kit's test API:** its `test-support` feature names the kit's optional styled
+    and GPUI Fast layers. GPUI Fast is in `Cargo.lock` already, as an optional dependency of
+    `gpui-base`, but in no build. The feature would add the styled layer's and GPUI Fast's
+    platform crates and an HTTP client, and fail `cargo xtask layers`. So the crate's dev-dependencies name GPUI (`gpui-pre`,
+    `gpui-pre-platform`) and `gpui-base` directly, at the versions `gpui-kit` pins. Bump them
+    together with `gpui-kit`.
+  - **Not checkable yet:** the shape of the AccessKit tree. GPUI's test windows never turn
+    accessibility on, so only single nodes can be checked (#374).
+- **Interaction tests** (`tests/interaction.rs`): `#[gpui_kit::test]` on GPUI's
+  TestPlatform, on Linux, macOS and Windows alike.
+- **Rendering** (`tests/rendering.rs`): its own harness on the main thread, drawn by GPUI's
+  headless renderer.
+  - **Linux:** wgpu; on a computer with no GPU, Mesa's software Vulkan driver, lavapipe
+    (`mesa-vulkan-drivers`). Frames are compared with the PNG goldens in
+    `crates/ui-gpui/goldens/linux/`. A pixel matches when no channel is more than 2 levels
+    off, and a frame matches when at most 0.01 % of its pixels are off.
+  - **macOS:** Metal. There are no goldens, because Core Text draws text differently from
+    Linux. Each surface is drawn three times, and the captures must be identical and not
+    blank.
+  - **Windows:** skipped. GPUI has no headless renderer there.
+  - **Without a headless renderer** (Linux without Mesa's Vulkan drivers), the test says why
+    and passes. `OBS_GPUI_REQUIRE_RENDERER=1` makes that a failure, as CI should.
+  - **Blessing:** `UPDATE_GOLDEN=1 cargo test -p obs-ui-gpui --test rendering` writes goldens
+    that are missing or off. Review the diff. Without it, a missing golden fails.
+  - **Review copies:** frames, including `*-actual.png` for a mismatch or a missing golden,
+    are written to `ui-gpui-frames/` in `CARGO_TARGET_DIR`, or in the workspace's `target/`.
+  - **Test runners:** the harness lists itself as one test, `rendering`, so
+    `cargo nextest run` (and `cargo xtask ci`) runs it, and it honours a test-name filter,
+    `--exact` and `--skip` as `cargo test` does.
+  - **The seeded change:** a test-only override (`Shell::override_chrome`, under the crate's
+    `test-support` feature) changes the surface colour by 4 levels. The comparison must then
+    fail, which checks that the gallery catches a token change.
+- **Surfaces with goldens so far:** the scaffold's window (title bar and empty Workspace), in
+  Light and Dark.
+- **Fonts:** the Shell draws its text in the bundled Gentium Plus, so frames are the same on
+  every computer. #378 chooses the Interface font.
+
+**Only 2× for now.** gpui-pre 0.3.12's headless windows are fixed at 2×. 1× needs
+`HeadlessAppContext::simulate_window_scale_factor_change`: a 19-line patch, on the branch
+`prototype/374-gpui-headless` in `prototype/gpui-headless/patches/`, that forwards to the test
+window's existing scale change. A `[patch]` can only be set in the workspace's `Cargo.toml`, so
+it is not carried yet. Until it is merged upstream, it goes in as:
+
+```toml
+[patch.crates-io]
+gpui-pre = { path = "vendor/gpui-pre-0.3.12" }   # gpui-pre 0.3.12 plus the headless-scale patch
+```
+
+Then the rendering test can draw 1× frames too.
+
 ## Screen readers
 
 GPUI's AccessKit is on by default. The title bar's **Quit** button (labelled "Quit Open Bible

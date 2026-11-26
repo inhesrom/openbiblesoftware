@@ -12,16 +12,21 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::base::Button;
 use gpui_kit::{
-    App, AppContext, Bounds, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    Render, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, canvas, div, px, size,
+    AnyWindowHandle, App, AppContext, Bounds, Context, Entity, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, TitlebarOptions, Window, WindowAppearance,
+    WindowBounds, WindowOptions, canvas, div, px, size,
 };
-use obs_engine::Session;
 use obs_engine::launch::Launch;
+use obs_engine::{Session, Theme};
+use serde_json::Value;
 
 pub mod tokens;
 
 /// Window title until the product is named (the egui app's `APP_TITLE`).
 pub const APP_TITLE: &str = "Open Bible Software";
+
+/// The accessible name of the title bar's Quit button.
+pub const QUIT_LABEL: &str = "Quit Open Bible Software";
 
 /// How long a smoke run ([`Options::smoke`]) waits for the first frame before it fails.
 pub const SMOKE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -57,17 +62,94 @@ fn bundled_fonts() -> Vec<Cow<'static, [u8]>> {
         .collect()
 }
 
+/// Set up GPUI Kit and the bundled fonts in `cx`: once per app (or test context), before any
+/// window opens.
+pub fn install(cx: &mut App) {
+    gpui_kit::init(cx);
+    if let Err(e) = cx.text_system().add_fonts(bundled_fonts()) {
+        log::warn!("bundled fonts: {e}");
+    }
+}
+
 /// The main window's view: the Session and, for now, an empty Workspace.
-struct Shell {
-    /// The study state the UI draws. Unused until the Workspace is built (#385); held so it
-    /// lives, with its background jobs, as long as the window.
-    _session: Session,
+pub struct Shell {
+    /// The study state the UI draws. Only the theme is drawn until the Workspace is built
+    /// (#385); held so it lives, with its background jobs, as long as the window.
+    session: Session,
+    /// The Quit button was pressed (the app quits; the test platform's quit does nothing).
+    quit_requested: bool,
     /// Set when a frame has finished painting (a smoke run waits for it).
     painted: Rc<Cell<Option<Instant>>>,
+    /// Tests: colours drawn instead of the theme's (the gallery's seeded change, #379).
+    #[cfg(feature = "test-support")]
+    chrome_override: Option<tokens::Chrome>,
 }
 
 impl Shell {
-    fn title_bar(&self) -> impl IntoElement {
+    pub fn new(session: Session) -> Self {
+        Self {
+            session,
+            quit_requested: false,
+            painted: Rc::new(Cell::new(None)),
+            #[cfg(feature = "test-support")]
+            chrome_override: None,
+        }
+    }
+
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    pub fn session_mut(&mut self) -> &mut Session {
+        &mut self.session
+    }
+
+    /// Run a command, as the egui Shell's `run` does: its result, or `None` when it failed
+    /// (logged; the toast comes with the GPUI chrome, #378).
+    pub fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
+        match self.session.run(id, params) {
+            Ok(out) => Some(out),
+            Err(e) => {
+                log::warn!("{id}: {e}");
+                None
+            }
+        }
+    }
+
+    /// Whether the Quit button has been pressed.
+    pub fn quit_requested(&self) -> bool {
+        self.quit_requested
+    }
+
+    /// Tests: draw with `chrome` instead of the theme's colours (`None`: the theme's again).
+    #[cfg(feature = "test-support")]
+    pub fn override_chrome(&mut self, chrome: Option<tokens::Chrome>) {
+        self.chrome_override = chrome;
+    }
+
+    /// The colours of the theme the Session asks for. Follow system takes the window's
+    /// appearance; the High contrast and Custom themes draw as their base until #378.
+    fn chrome(&self, window: &Window) -> tokens::Chrome {
+        #[cfg(feature = "test-support")]
+        if let Some(chrome) = self.chrome_override {
+            return chrome;
+        }
+        let dark = match self.session.appearance.theme {
+            Theme::Dark | Theme::HighContrastDark => true,
+            Theme::Light | Theme::HighContrastLight | Theme::Custom => false,
+            Theme::System => matches!(
+                window.appearance(),
+                WindowAppearance::Dark | WindowAppearance::VibrantDark
+            ),
+        };
+        if dark {
+            tokens::dark()
+        } else {
+            tokens::light()
+        }
+    }
+
+    fn title_bar(&self, c: &tokens::Chrome, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .flex_row()
@@ -76,57 +158,65 @@ impl Shell {
             .h(px(tokens::TITLE_BAR_HEIGHT))
             .px(px(tokens::SPACE_L))
             .gap(px(tokens::SPACE_M))
-            .bg(tokens::surface())
+            .bg(c.surface)
             .border_b_1()
-            .border_color(tokens::rule())
+            .border_color(c.rule)
             .child(
                 div()
-                    .font_family("Gentium Plus")
                     .font_weight(FontWeight::BOLD)
                     .text_size(px(tokens::TEXT_WORDMARK))
-                    .text_color(tokens::ink())
+                    .text_color(c.ink)
                     .child("Open Bible"),
             )
             .child(div().flex_1())
             // The one control so far, so a screen reader has something to reach (#377).
             .child(
                 Button::new("quit")
-                    .accessibility_label(format!("Quit {APP_TITLE}"))
+                    .accessibility_label(QUIT_LABEL)
                     .px(px(tokens::SPACE_M))
                     .py(px(tokens::SPACE_S / 2.0))
                     .rounded(px(tokens::RADIUS_CONTROL))
                     .border_1()
-                    .border_color(tokens::rule())
-                    .text_color(tokens::ink())
-                    .hover(|s| s.bg(tokens::hover()))
-                    .on_click(|_, _, cx| cx.quit())
+                    .border_color(c.rule)
+                    .text_color(c.ink)
+                    .hover(|s| s.bg(c.hover))
+                    // The keyboard focus: the outline in ink instead of the rule's grey.
+                    .focus_visible(|s| s.border_color(c.ink))
+                    .on_click(cx.listener(|shell, _, _, cx| {
+                        shell.quit_requested = true;
+                        cx.quit();
+                    }))
                     .child("Quit"),
             )
     }
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = self.chrome(window);
         let painted = self.painted.clone();
         div()
             .size_full()
             .flex()
             .flex_col()
-            .bg(tokens::shell())
+            .bg(c.shell)
+            // The interface font is the bundled Gentium Plus until #378 chooses one, so the
+            // goldens draw the same on every computer (ADR 0019 rule 4).
+            .font_family("Gentium Plus")
             .text_size(px(tokens::TEXT_BODY))
-            .text_color(tokens::ink())
-            .child(self.title_bar())
+            .text_color(c.ink)
+            .child(self.title_bar(&c, cx))
             // The Workspace: its Panels and Tabs come with #385.
             .child(
                 div()
                     .flex_1()
                     .m(px(tokens::SPACE_S))
                     .p(px(tokens::SPACE_XL))
-                    .bg(tokens::surface())
+                    .bg(c.surface)
                     .border_1()
-                    .border_color(tokens::rule())
+                    .border_color(c.rule)
                     .rounded(px(tokens::RADIUS_CONTROL))
-                    .text_color(tokens::muted())
+                    .text_color(c.muted)
                     .child("The GPUI Workspace is not built yet."),
             )
             .child(
@@ -144,6 +234,43 @@ impl Render for Shell {
     }
 }
 
+/// The main window's options: `bounds` (the app's default size, centred, when `None`) and
+/// the app's title.
+pub fn main_window_options(bounds: Option<Bounds<gpui_kit::Pixels>>, cx: &App) -> WindowOptions {
+    let bounds = bounds.unwrap_or_else(|| {
+        Bounds::centered(
+            None,
+            size(px(tokens::WINDOW_WIDTH), px(tokens::WINDOW_HEIGHT)),
+            cx,
+        )
+    });
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: Some(TitlebarOptions {
+            title: Some(APP_TITLE.into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Open the main window over `session` with `options` ([`main_window_options`]); [`install`]
+/// must have run.
+pub fn open_main_window(
+    session: Session,
+    options: WindowOptions,
+    cx: &mut App,
+) -> gpui_kit::Result<(AnyWindowHandle, Entity<Shell>)> {
+    gpui_kit::open_window(options, cx, move |window, cx| {
+        cx.new(|cx| {
+            // Follow system draws in the window's appearance: redraw when it changes.
+            cx.observe_window_appearance(window, |_, _, cx| cx.notify())
+                .detach();
+            Shell::new(session)
+        })
+    })
+}
+
 /// Open the app window over `launch`'s Session and run until it closes (or, for a smoke run,
 /// until a frame has been drawn). `started` is when the process started, for the smoke run's
 /// first-frame time.
@@ -155,41 +282,22 @@ pub fn run(launch: Launch, options: Options, started: Instant) -> Outcome {
     let result = outcome.clone();
     let mut session = Some(launch.session);
     gpui_kit::application().run(move |cx: &mut App| {
-        gpui_kit::init(cx);
-        if let Err(e) = cx.text_system().add_fonts(bundled_fonts()) {
-            log::warn!("bundled fonts: {e}");
-        }
-        let painted: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
-        let shell_painted = painted.clone();
-        let bounds = Bounds::centered(
-            None,
-            size(px(tokens::WINDOW_WIDTH), px(tokens::WINDOW_HEIGHT)),
-            cx,
-        );
-        let options_for_window = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some(APP_TITLE.into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        install(cx);
         let Some(session) = session.take() else {
             return;
         };
-        let opened = gpui_kit::open_window(options_for_window, cx, move |_, cx| {
-            cx.new(|_| Shell {
-                _session: session,
-                painted: shell_painted,
-            })
-        });
-        if let Err(e) = opened {
-            result.set(Some(Outcome::SmokeFailed(format!(
-                "the window did not open: {e}"
-            ))));
-            cx.quit();
-            return;
-        }
+        let window_options = main_window_options(None, cx);
+        let shell = match open_main_window(session, window_options, cx) {
+            Ok((_, shell)) => shell,
+            Err(e) => {
+                result.set(Some(Outcome::SmokeFailed(format!(
+                    "the window did not open: {e}"
+                ))));
+                cx.quit();
+                return;
+            }
+        };
+        let painted = shell.read(cx).painted.clone();
         // Closing the last window quits the app.
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
