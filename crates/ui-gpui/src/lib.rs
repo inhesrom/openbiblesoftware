@@ -10,6 +10,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use gpui_kit::base::dock::DockArea;
+use gpui_kit::base::input::InputState;
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyWindowHandle, App, Bounds, Context, Entity, FontWeight, Render, TitlebarOptions, Window,
@@ -24,6 +26,7 @@ pub mod components;
 pub mod icons;
 pub mod theme;
 pub mod tokens;
+pub mod workspace;
 
 /// Window title until the product is named (the egui app's `APP_TITLE`).
 pub const APP_TITLE: &str = "Open Bible Software";
@@ -94,6 +97,22 @@ pub struct Shell {
     /// Tests: colours drawn instead of the theme's (the gallery's seeded change, #379).
     #[cfg(feature = "test-support")]
     chrome_override: Option<tokens::Chrome>,
+    /// The Workspace's dock (#385), made with the first frame (it needs the window).
+    dock: Option<Entity<DockArea>>,
+    /// Which dock group is which engine Panel, and which dock panel which engine Tab.
+    map: workspace::DockMap,
+    /// The Panels the engine was last told the dock shows.
+    shown: Vec<(obs_engine::PanelId, Vec<obs_engine::TabId>)>,
+    /// The latest message for the user (a toast), until the next one.
+    toast: Option<String>,
+    /// The + menu is open, for this dock group.
+    pub(crate) plus_menu: Option<gpui_kit::base::dock::NodeId>,
+    /// The Layout-name prompt: the Layout being renamed (none: saving a new one) and the box.
+    layout_prompt: Option<(Option<String>, Entity<InputState>)>,
+    /// Write the Last session as the Workspace changes. Off in the app unless
+    /// `OBS_GPUI_SAVE_SESSION=1`: while egui ships, the GPUI app reads the egui app's Last
+    /// session but does not overwrite it (docs/dev/ui-gpui.md).
+    save_session: bool,
 }
 
 impl Shell {
@@ -106,7 +125,34 @@ impl Shell {
             painted: Rc::new(Cell::new(None)),
             #[cfg(feature = "test-support")]
             chrome_override: None,
+            dock: None,
+            map: workspace::DockMap::default(),
+            shown: Vec::new(),
+            toast: None,
+            plus_menu: None,
+            layout_prompt: None,
+            save_session: std::env::var("OBS_GPUI_SAVE_SESSION").as_deref() == Ok("1"),
         }
+    }
+
+    /// Whether the Workspace writes the Last session as it changes (see the field).
+    pub fn set_save_session(&mut self, on: bool) {
+        self.save_session = on;
+    }
+
+    /// The latest message shown to the user (a toast).
+    pub fn toast(&self) -> Option<&str> {
+        self.toast.as_deref()
+    }
+
+    /// The Workspace's dock, once the first frame has made it.
+    pub fn dock(&self) -> Option<&Entity<DockArea>> {
+        self.dock.as_ref()
+    }
+
+    /// Which dock group is which engine Panel and which dock panel which engine Tab.
+    pub fn dock_map(&self) -> &workspace::DockMap {
+        &self.map
     }
 
     pub fn session(&self) -> &Session {
@@ -204,7 +250,13 @@ impl Render for Shell {
         let painted = self.painted.clone();
         let look = self.look(window, cx);
         let ch = look.chrome;
+        if self.catalogue.is_none() {
+            self.ensure_dock(window, cx);
+            self.apply_effects(window, cx);
+        }
+        let overlays = self.overlays(&look, window, cx);
         div()
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -218,20 +270,16 @@ impl Render for Shell {
                 Some(catalogue) => {
                     this.child(div().flex_1().min_h(px(0.0)).child(catalogue.clone()))
                 }
-                // The Workspace: its Panels and Tabs come with #385.
+                // The Workspace (#385): the engine's Panels and Tabs in the dock.
                 None => this.child(
-                    components::page(&look)
+                    div()
                         .flex_1()
-                        .m(px(look.pt(tokens::space::S)))
-                        .border_1()
-                        .border_color(tokens::rgba(ch.rule))
-                        .rounded(px(look.pt(tokens::radius::M)))
-                        .child(components::hint(
-                            "The GPUI Workspace is not built yet.",
-                            &look,
-                        )),
+                        .min_h(px(0.0))
+                        .p(px(look.pt(tokens::space::XS)))
+                        .children(self.dock.clone()),
                 ),
             })
+            .children(overlays)
             .child(
                 canvas(
                     |_, _, _| (),
@@ -341,6 +389,10 @@ pub fn run(launch: Launch, options: Options, started: Instant) -> Outcome {
                     return;
                 }
             };
+            // The Workspace comes back as it was: the Last session, else the default one.
+            if !catalogue {
+                shell.update(cx, |s, _| s.restore_at_launch());
+            }
             let painted = shell.read(cx).painted.clone();
             // Closing the last window quits the app.
             cx.on_window_closed(|cx, _| {

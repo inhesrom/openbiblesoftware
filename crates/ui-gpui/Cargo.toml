@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 obs-engine.workspace = true
 obs-fonts.workspace = true
+obs-model.workspace = true
+obs-scripture.workspace = true
 gpui-kit.workspace = true
 log.workspace = true
 serde_json.workspace = true
