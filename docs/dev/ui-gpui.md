@@ -193,6 +193,14 @@ may break the API; bump it on purpose, in its own pull request, as a UI change (
   pane ending.
   - GPUI's test windows never turn accessibility on, so each block records the node it writes
     (`reading::observed`, under `test-support`), and the tests read that.
+- **Selection, Find and context-menu tests** (`tests/selection.rs`, `tests/find.rs`,
+  `tests/context_menu.rs`, #381), on the TestPlatform through the pane's own pointer and
+  keyboard input (`tests/support/pane.rs`). Each names the egui test it ports: the egui
+  `find_tests.rs`, `context_menu_tests.rs`, the pane's part of `copy_export_tests.rs`, and the
+  selection and Word Info hover tests (`tests.rs`, `word_info_tests.rs`), in English, Greek and
+  Hebrew. The pane records what it painted with its text (the selection, the matches, the
+  underline: `reading::observed::overlays`). Word Info's dwell is driven by the TestPlatform's
+  clock (`advance_clock`).
 - **Fonts:** the Shell draws its chrome in the default Interface font (egui's Ubuntu Light,
   asked for by its Light weight, so an installed Ubuntu Regular is not drawn instead) and its
   wordmark in Gentium Plus. Both are bundled, so frames are the same on every computer.
@@ -295,8 +303,7 @@ reading core the egui app and the mobile app use. ADR 0004's #372 amendment deci
   `Role::Paragraph`, its text and its direction. Its Tagged words and references are synthetic
   `Role::Link` children, with bounds relative to the window in device pixels.
 - **Not yet:**
-  - marks and highlights (#382), selection, Find and Word Info hover (#381), footnotes, the
-    Note margin and the jump flash (#383);
+  - marks and highlights (#382), footnotes, the Note margin and the jump flash (#383);
   - faces loaded from the computer (#138): `obs-fonts` does not expose a loaded face's file
     yet, so their glyphs are not drawn;
   - the engine's `ShowUnit`, `NavigateText` and `RevealText` Effects are not applied to the
@@ -311,6 +318,62 @@ reading core the egui app and the mobile app use. ADR 0004's #372 amendment deci
     Resource read it twice;
   - the Interface size does not scale the reading text: only the Text size and the
     Resource's own text size do.
+
+### Selection, copy, Find, Word Info hover and the context menu (#381)
+
+What the egui pane's `handle_selection`, the Find bar, Word Info's dwell and the right-click
+menu do, on the same reading core:
+- **Selection** (`reading.rs`): `obs-reading`'s `Selection` in document coordinates, so it
+  survives scrolling and virtualization. A drag selects (across blocks; past the pane's top or
+  bottom edge it scrolls), a double-click selects the word, a triple-click the Verse, a click
+  clears it. Positions are hit-tested through `obs-layout`'s laid lines
+  (`ReadingView::pos_at`), so right-to-left Hebrew selects the glyphs under the pointer. The
+  selection is painted under the glyphs in the Page tone's selection colour. A press is a
+  click until it moves 6 points (`CLICK_SLOP`, egui's).
+- **Copy:** Ctrl+C (Cmd+C) puts the selection on the clipboard with its reference and the
+  Resource's abbreviation (`obs-reading`'s `copy_text`).
+- **Find** (`find.rs`): `tab.find` (Ctrl+F, or the shortcut it is bound to) opens the Tab's
+  Find bar under its header through the engine's `Find` Effect, with the selection when it is
+  short and on one line; `tab.find_next` and `tab.find_previous` step it (`FindStep`). As in the
+  egui app: every match in the Resource is found on a worker by `obs-search`'s `Finder` (Ignore
+  diacritics on by default, so Greek typed without accents and Hebrew without points match),
+  the count reads "3 of 12", Enter and Shift+Enter (or Previous and Next) step, scrolling a
+  match out of view to the top, Esc closes the bar and clears the matches, Match case, Whole
+  word and Ignore diacritics narrow it, and Search all Resources hands the text to Search.
+  Matches are painted over the clusters (letters only, never a verse number), the current one
+  in the search-hit colour with an outline.
+- **Word Info** (`word_info.rs`): the Tagged word under the pointer is underlined at once; once
+  the pointer has rested on it 150 ms (`HOVER_DWELL`, timed on GPUI's executor clock) it is
+  shown in the engine's Word Info, which keeps it when the pointer leaves (sticky). A click
+  pins it (`WordInfo::pin`); Esc unpins (`word_info.unpin`). A click on a Strong's link outside
+  a Bible opens its Word Study. The Word Info Tab that draws it comes with #390.
+- **Reference previews** (`references.rs`): the pointer on a Scripture reference shows the ★
+  Bible's text of its Standard targets (`cross_references::preferred_preview_cached`), laid
+  out by our pipeline and painted with `paint_glyph` (`reading::SnippetElement`), as ADR 0004
+  asks of hover popups.
+- **The right-click menu** (`context_menu.rs`, #142): the egui menu's two columns. The left
+  lists the targets (the selection, or the word right-clicked, which becomes it; the Verse; a
+  Tagged word's Lemma, Strong's number and Morphology; a Scripture reference's first target);
+  hovering or clicking one chooses it. The right lists its actions, run as engine commands
+  (`word_study.open`, `lexicon.open`, `search.run`, `dictionary.lookup`, `word_study.choose`,
+  `guide.passage_guide`, `guide.exegetical_guide`, `tool.cross_references`,
+  `tool.text_comparison`, `tool.word_info`), with Ctrl/Cmd for a new Tab: Copy, Copy with
+  reference, Copy of a Morphology, and **Copy verses with formatting**, which copies the Verses
+  the selection reaches through the engine's `copy_verses` (#154) with the Copy verses options
+  in use, as plain text. Shift+F10 opens it from the keyboard; Esc or a click outside closes
+  it; with nothing to act on it does not open.
+- **Not yet:**
+  - the menu's Highlight styles, Note… and Add Note on verse come with Highlights and Notes
+    (#382); the selection toolbar with them;
+  - the Copy verses window (Edit → Copy verses…, `ShowCopyVerses`) and rich-text (HTML)
+    copies: the system rich clipboard's trait is still in `obs-ui-egui`;
+  - a drag that carries a reference or the selection out of the pane (#216); the Menu key
+    (GPUI names no such key); Alt+Enter in the Find bar (gpui-base's field reports only
+    Enter, Shift+Enter and the secondary Enter);
+  - the Find bar of a Text Comparison (#391);
+  - a reference's preview is read on the UI thread, once per reference hovered (bounded by
+    `PREVIEW_VERSES`); the egui app reads it on a worker. The pointer on a reference shows its
+    preview at once, without a dwell, as in the egui app.
 
 `OBS_GPUI_READ` opens a Resource in a Resource Tab at launch:
 

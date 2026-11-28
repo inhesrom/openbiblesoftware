@@ -8,6 +8,8 @@
 
 #![allow(dead_code)] // Each test binary uses part of it.
 
+pub mod pane;
+
 use std::path::{Path, PathBuf};
 
 use obs_engine::{JobMode, Library, Session};

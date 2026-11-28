@@ -1132,6 +1132,12 @@ impl Element for PaneElement {
                 }
             }
             let o = &pp.overlay;
+            #[cfg(feature = "test-support")]
+            observed::record_overlay(observed::Overlay {
+                found: o.found.clone(),
+                selection: o.selection.clone(),
+                underline: o.underline.clone(),
+            });
             // Find matches (#175) under the selection: the current one in the search-hit
             // colour with an outline, the others in the paler find-match colour.
             for (r, current) in &o.found {
@@ -1532,12 +1538,33 @@ pub mod observed {
         pub glyphs: usize,
     }
 
+    /// What a pane painted with its text (#381), in window points.
+    #[derive(Debug, Clone, Default)]
+    pub struct Overlay {
+        /// Each Find match's rectangles, and whether it is the current match.
+        pub found: Vec<(Bounds<Pixels>, bool)>,
+        pub selection: Vec<Bounds<Pixels>>,
+        /// The hovered Tagged word's underline.
+        pub underline: Vec<Bounds<Pixels>>,
+    }
+
     thread_local! {
         static FRAME: RefCell<Vec<Paragraph>> = const { RefCell::new(Vec::new()) };
+        static OVERLAYS: RefCell<Vec<Overlay>> = const { RefCell::new(Vec::new()) };
     }
 
     pub(super) fn begin() {
         FRAME.with(|f| f.borrow_mut().clear());
+        OVERLAYS.with(|f| f.borrow_mut().clear());
+    }
+
+    pub(super) fn record_overlay(o: Overlay) {
+        OVERLAYS.with(|f| f.borrow_mut().push(o));
+    }
+
+    /// What the last frame's reading panes painted with their text, one per pane.
+    pub fn overlays() -> Vec<Overlay> {
+        OVERLAYS.with(|f| f.borrow().clone())
     }
 
     pub(super) fn record(p: Paragraph) {
