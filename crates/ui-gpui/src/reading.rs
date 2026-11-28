@@ -428,17 +428,12 @@ impl ReadingPane {
     }
 
     /// A right-click at `p`: the menu acts on the selection under it, else on the word there
-    /// (which becomes the selection), with the Verse and Tagged word there.
+    /// (which becomes the selection), with the Verse and Tagged word there. As in the egui
+    /// pane, the position is the text nearest the pointer (`pos_at`), so a click below the
+    /// text acts on its last Verse.
     pub fn context_click(&mut self, p: Point<Pixels>) {
         self.hover(p);
-        let (x, y) = self.text_point(p);
-        let pointer_at = self.view.hit_in_unit_at(x, y).map(|(unit, pos)| DocPos {
-            unit,
-            byte: match pos {
-                UnitPos::Text(b) => b,
-                UnitPos::Object { anchor, .. } => anchor,
-            },
-        });
+        let pointer_at = self.pos_at(p);
         if let Some(at) = pointer_at {
             select_for_menu(&mut self.view, at);
         }

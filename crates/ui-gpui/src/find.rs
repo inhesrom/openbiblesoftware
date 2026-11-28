@@ -265,7 +265,11 @@ impl FindBar {
 
 /// What Ctrl+F puts in the bar from the selection: its text when it is short and on one line.
 pub fn selection_text(view: &ReadingView) -> Option<String> {
-    let sel = view.selection.filter(|s| !s.is_empty())?;
+    // A double-clicked word is a selection too: its anchor and head are one point, widened
+    // to the word.
+    let sel = view
+        .selection
+        .filter(|s| !s.is_empty() || s.granularity != obs_reading::Granularity::Grapheme)?;
     let text = obs_reading::selected_text(&view.doc, &sel);
     let text = text.trim().to_string();
     (!text.is_empty() && !text.contains('\n') && text.chars().count() <= SELECTION_LIMIT)

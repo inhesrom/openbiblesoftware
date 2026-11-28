@@ -7,7 +7,7 @@
 
 mod support;
 
-use gpui_kit::{TestAppContext, point, px};
+use gpui_kit::{AppContext as _, TestAppContext, point, px};
 use obs_engine::{Guide, TabKind, Tool};
 use obs_model::Key;
 use obs_scripture::{Book, Verse};
@@ -118,8 +118,10 @@ fn right_click_loved_in_john_3_16_kjv_opens_word_study_on_g25_in_one_click(
         Some(Key::StrongsNumber("G25".parse().unwrap()))
     );
 
-    // Strong's: Search Bible for G25 searches this Bible.
+    // Strong's: Search Bible for G25 searches this Bible. The Word Study Panel narrowed the
+    // pane, so the word is found again.
     refocus(cx, &o);
+    let loved = pane::word_spot(cx, &o, "loved", 0);
     pane::right_click(cx, &o, loved);
     hover(cx, &o, "Strong's number: G25");
     pane::click_label(cx, &o, "Search Bible for G25");
@@ -129,6 +131,7 @@ fn right_click_loved_in_john_3_16_kjv_opens_word_study_on_g25_in_one_click(
 
     // Open in preferred Lexicon: the Lexicon at G25.
     refocus(cx, &o);
+    let loved = pane::word_spot(cx, &o, "loved", 0);
     pane::right_click(cx, &o, loved);
     pane::click_label(cx, &o, "Open in preferred Lexicon");
     assert_eq!(focused_kind(cx, &o), TabKind::Resource("lexicon".into()));
@@ -181,6 +184,7 @@ fn right_click_in_a_greek_nt_lists_lemma_strongs_and_morphology(cx: &mut TestApp
 
     // Morphology: Pin in Word Info pins the word there.
     refocus(cx, &o);
+    let word = pane::word_spot(cx, &o, "ἠγάπησεν", 0);
     pane::right_click(cx, &o, word);
     hover(cx, &o, &format!("Morphology: {morphology}"));
     assert!(pane::shows(cx, &o, "Copy"), "{:?}", pane::labels(cx, &o));
@@ -199,7 +203,7 @@ fn right_click_in_a_greek_nt_lists_lemma_strongs_and_morphology(cx: &mut TestApp
 #[gpui_kit::test]
 fn the_verse_target_opens_passage_keyed_tools_at_the_verse(cx: &mut TestAppContext) {
     let o = open_at_john_3_16(cx, "menu-verse", "kjv");
-    let loved = pane::word_spot(cx, &o, "loved", 0);
+    let mut loved = pane::word_spot(cx, &o, "loved", 0);
     for (action, kind) in [
         ("Passage Guide", TabKind::Guide(Guide::PassageGuide)),
         ("Exegetical Guide", TabKind::Guide(Guide::ExegeticalGuide)),
@@ -217,6 +221,7 @@ fn the_verse_target_opens_passage_keyed_tools_at_the_verse(cx: &mut TestAppConte
         });
         assert_eq!(at, Some(Verse::new(Book::John, 3, 16)), "{action}");
         refocus(cx, &o);
+        loved = pane::word_spot(cx, &o, "loved", 0);
     }
     pane::close(cx, o);
 }
@@ -265,14 +270,16 @@ fn the_verse_target_copies_with_reference_and_the_selection_copies_its_verses(
 }
 
 /// Ports `context_menu_tests.rs::a_right_click_with_nothing_to_act_on_never_shows_the_last_menu`
-/// for a reading pane: a right-click on blank space below the text opens no menu, and not the
-/// last one.
+/// for a reading pane: a right-click on blank space below the text never shows the last
+/// menu's selection; as in the egui pane it acts on the text nearest the pointer, the last
+/// Verse.
 #[gpui_kit::test]
-fn a_right_click_with_nothing_to_act_on_never_shows_the_last_menu(cx: &mut TestAppContext) {
+fn a_right_click_below_the_text_never_shows_the_last_menu(cx: &mut TestAppContext) {
     let o = open_at_john_3_16(cx, "menu-blank", "kjv");
     let loved = pane::word_spot(cx, &o, "loved", 0);
     pane::right_click(cx, &o, loved);
     assert!(menu_open(cx, &o));
+    assert!(pane::shows(cx, &o, "Selection: “loved”"));
     pane::press(cx, &o, "escape");
     assert!(!menu_open(cx, &o));
     let bounds = o.pane.read_with(cx, |p, _| p.bounds());
@@ -281,8 +288,17 @@ fn a_right_click_with_nothing_to_act_on_never_shows_the_last_menu(cx: &mut TestA
         bounds.origin.y + bounds.size.height - px(20.0),
     );
     pane::right_click(cx, &o, blank);
-    assert!(!menu_open(cx, &o), "{:?}", pane::labels(cx, &o));
-    assert!(!pane::shows(cx, &o, "Copy with reference"));
+    assert!(
+        !pane::shows(cx, &o, "Selection: “loved”"),
+        "{:?}",
+        pane::labels(cx, &o)
+    );
+    assert!(!pane::shows(cx, &o, "Strong's number: G25"));
+    assert!(
+        pane::shows(cx, &o, "Verse: John 3:17"),
+        "{:?}",
+        pane::labels(cx, &o)
+    );
     pane::close(cx, o);
 }
 

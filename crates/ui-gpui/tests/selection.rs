@@ -37,6 +37,9 @@ fn selection_rects() -> Vec<Bounds<Pixels>> {
 #[gpui_kit::test]
 fn a_drag_across_blocks_selects_and_ctrl_c_copies_the_exact_source(cx: &mut TestAppContext) {
     let o = pane::open(cx, "drag-select", &[], "bsb", "Gen 1:1");
+    // Up to the chapter's heading, a block of its own above Genesis 1:1.
+    o.pane.update(cx, |p, _| p.view_mut().scroll_by(-200.0));
+    pane::settle(cx, &o);
     let from = pane::word_spot(cx, &o, "Creation", 0);
     let to = pane::word_spot(cx, &o, "light", 0);
     pane::drag(cx, &o, from, to);
@@ -74,7 +77,8 @@ fn a_drag_across_blocks_selects_and_ctrl_c_copies_the_exact_source(cx: &mut Test
         "{label}"
     );
     // A click clears it.
-    pane::click(cx, &o, pane::word_spot(cx, &o, "earth", 0));
+    let earth = pane::word_spot(cx, &o, "earth", 0);
+    pane::click(cx, &o, earth);
     assert!(o.pane.read_with(cx, |p, _| p.selection()).is_none());
     pane::close(cx, o);
 }
