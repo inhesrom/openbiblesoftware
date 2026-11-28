@@ -8,7 +8,17 @@
 //! pane, scrolling by wheel, trackpad and keyboard at the Scroll speed (#293), keyboard
 //! scrolling and jumps easing unless motion is reduced (#225), the scroll bar, and one
 //! AccessKit paragraph node per laid block with its Tagged words and references as link
-//! children (#19). Marks and highlights (#382) and selection (#381) come later.
+//! children (#19). Marks and highlights come with #382.
+//!
+//! Selection, copy, Find, the Tagged word under the pointer and the right-click (#381), as the
+//! egui pane's `handle_selection` and its overlays: a drag selects, a double-click selects a
+//! word and a triple-click a Verse, in `obs-reading`'s document coordinates
+//! ([`Selection`]), hit-tested through `obs-layout`'s laid lines ([`ReadingView::pos_at`]), so
+//! a selection survives scrolling and works the same in right-to-left Hebrew. The selection
+//! and the Find bar's matches ([`crate::find`]) are painted under the glyphs in the Page
+//! tone's colours; the Tagged word under the pointer is underlined. The Shell takes what the
+//! pane reports (the hovered and clicked word, the right-click) for Word Info's dwell and the
+//! context menu ([`crate::context_menu`]).
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -18,20 +28,27 @@ use std::time::Instant;
 use gpui_kit::base::TestSupportExt;
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    A11ySubtreeBuilder, AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, Element,
-    ElementId, FocusHandle, FontId, Global, GlobalElementId, GlyphId, Hsla, InspectorElementId,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
-    Role, ScrollDelta, ScrollEvent, SharedString, Style, Window, accesskit, div, fill, font, point,
-    px, relative, size,
+    A11ySubtreeBuilder, AnyElement, App, AvailableSpace, Bounds, ClipboardItem, ContentMask,
+    Context, Element, ElementId, FocusHandle, FontId, Global, GlobalElementId, GlyphId, Hsla,
+    InspectorElementId, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Point, Role, ScrollDelta, ScrollEvent, SharedString, Style, Window,
+    accesskit, div, fill, font, point, px, relative, size,
 };
 use obs_engine::Session;
 use obs_fonts::FaceId;
-use obs_layout::{ColorRole, LaidBlock, TextSettings};
+use obs_layout::{ColorRole, LaidBlock, TextSettings, UnitPos};
 use obs_model::SpanKind;
 use obs_reading::reading_tokens::{motion, space};
+use obs_reading::selection::text_range_rects;
 use obs_reading::view::MARGIN;
-use obs_reading::{FrameStats, ReadingDoc, ReadingView, SYNC_BUDGET, TonePalette};
+use obs_reading::{
+    DocPos, FrameStats, Granularity, ReadingDoc, ReadingView, SYNC_BUDGET, Selection, TonePalette,
+    range_rects, selection_rects,
+};
 use obs_scripture::Verse;
+
+use crate::find::FindBar;
+use crate::tokens::{mark, stroke};
 
 /// How far an arrow key scrolls at a Scroll speed of 1×, in points (the egui pane's
 /// `ARROW_STEP`).
@@ -50,6 +67,50 @@ pub const SCROLLBAR: f32 = 10.0;
 
 /// The thumb's least height, so it can be grabbed in a long Resource.
 const THUMB_MIN: f32 = 24.0;
+
+/// How far the pointer moves with the button down before a press is a drag, not a click
+/// (egui's `max_click_dist`).
+pub const CLICK_SLOP: f32 = 6.0;
+
+/// How fast a selection drag past the pane's top or bottom edge scrolls: this share of the
+/// distance past it, per pointer move (the egui pane's).
+const DRAG_SCROLL: f32 = 0.3;
+
+/// A Tagged word in a pane: its unit and bytes (the egui pane's `WordHit`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WordHit {
+    pub unit: usize,
+    pub range: Range<usize>,
+}
+
+impl WordHit {
+    /// Its first and last positions, as a document range.
+    pub fn span(&self) -> (DocPos, DocPos) {
+        (
+            DocPos {
+                unit: self.unit,
+                byte: self.range.start,
+            },
+            DocPos {
+                unit: self.unit,
+                byte: self.range.end,
+            },
+        )
+    }
+}
+
+/// The right-click menu asked for on a pane (a right-click, or Shift+F10): what it opens on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuRequest {
+    /// Where it opens, in window points.
+    pub at: Point<Pixels>,
+    /// The text under the pointer, when it was on the text.
+    pub pointer_at: Option<DocPos>,
+    /// The Tagged word under the pointer.
+    pub word: Option<WordHit>,
+    /// The Scripture reference under the pointer: unit and span indexes.
+    pub reference: Option<(usize, usize)>,
+}
 
 /// The bundled faces `obs-fonts` shapes with, each resolved once to the GPUI font of the same
 /// file ([`crate::bundled_fonts`] registers the files): `paint_glyph` then draws the glyph ids
@@ -142,6 +203,22 @@ pub struct ReadingPane {
     bounds: Bounds<Pixels>,
     /// What the last frame cost.
     last_frame: Option<FrameStats>,
+    /// A left press on the text that has not come up: where it went down, and whether it has
+    /// moved past [`CLICK_SLOP`] (a drag selecting) since.
+    pressed: Option<(Point<Pixels>, bool)>,
+    /// The pointer over the pane, in window points.
+    pointer: Option<Point<Pixels>>,
+    /// The Tagged word under the pointer (underlined; Word Info follows it after its dwell).
+    hovered_word: Option<WordHit>,
+    /// The Scripture reference under the pointer: unit and span indexes.
+    hovered_reference: Option<(usize, usize)>,
+    /// The Tagged word clicked since the Shell last asked (Word Info pins it), and whether
+    /// Ctrl or Cmd was held.
+    clicked_word: Option<(WordHit, bool)>,
+    /// The right-click menu asked for since the Shell last asked.
+    menu_request: Option<MenuRequest>,
+    /// The Tab's Find bar, while it is open (#175).
+    find: Option<FindBar>,
 }
 
 impl ReadingPane {
@@ -163,7 +240,254 @@ impl ReadingPane {
             user_moved: false,
             bounds: Bounds::default(),
             last_frame: None,
+            pressed: None,
+            pointer: None,
+            hovered_word: None,
+            hovered_reference: None,
+            clicked_word: None,
+            menu_request: None,
+            find: None,
         }
+    }
+
+    /// The selection, if any.
+    pub fn selection(&self) -> Option<Selection> {
+        self.view.selection
+    }
+
+    /// The Tagged word under the pointer.
+    pub fn hovered_word(&self) -> Option<&WordHit> {
+        self.hovered_word.as_ref()
+    }
+
+    /// The Scripture reference under the pointer: unit and span indexes.
+    pub fn hovered_reference(&self) -> Option<(usize, usize)> {
+        self.hovered_reference
+    }
+
+    /// Where the pointer is over the pane, in window points.
+    pub fn pointer(&self) -> Option<Point<Pixels>> {
+        self.pointer
+    }
+
+    /// The Tagged word clicked since this was last asked, and whether Ctrl or Cmd was held.
+    pub fn take_clicked_word(&mut self) -> Option<(WordHit, bool)> {
+        self.clicked_word.take()
+    }
+
+    /// The right-click menu asked for since this was last asked.
+    pub fn take_menu_request(&mut self) -> Option<MenuRequest> {
+        self.menu_request.take()
+    }
+
+    /// The Find bar, while it is open.
+    pub fn find(&self) -> Option<&FindBar> {
+        self.find.as_ref()
+    }
+
+    pub fn find_mut(&mut self) -> Option<&mut FindBar> {
+        self.find.as_mut()
+    }
+
+    /// Open the Find bar (`tab.find`, Ctrl+F) with `text`, else the selection if it is short and
+    /// on one line, else what it had; the keyboard goes into its field.
+    pub fn open_find(&mut self, text: Option<String>) {
+        let selection = crate::find::selection_text(&self.view);
+        let bar = self.find.get_or_insert_with(FindBar::default);
+        if let Some(text) = text.or(selection) {
+            bar.text = text;
+        }
+        bar.focus = true;
+    }
+
+    /// Step the Find bar to its next match, or its previous one.
+    pub fn step_find(&mut self, forward: bool) {
+        if let Some(bar) = self.find.as_mut() {
+            bar.step = Some(forward);
+        }
+    }
+
+    /// Close the Find bar; its matches go.
+    pub fn close_find(&mut self) {
+        self.find = None;
+    }
+
+    /// A window point in the text's coordinates: from the text's left edge and the viewport
+    /// top.
+    fn text_point(&self, p: Point<Pixels>) -> (f32, f32) {
+        let [ox, oy] = self.view.text_origin;
+        (f32::from(p.x) - ox, f32::from(p.y) - oy)
+    }
+
+    /// The document position at window point `p`, its height clamped into the pane (a drag
+    /// above or below it selects to the text at its edge).
+    fn pos_at(&mut self, p: Point<Pixels>) -> Option<DocPos> {
+        let (x, y) = self.text_point(p);
+        let height = f32::from(self.bounds.size.height);
+        self.view.pos_at(x, y.clamp(0.0, (height - 1.0).max(0.0)))
+    }
+
+    /// The Tagged word at window point `p`, when its block is laid out.
+    fn word_at(&self, p: Point<Pixels>) -> Option<WordHit> {
+        let (x, y) = self.text_point(p);
+        let (unit, pos) = self.view.hit_in_unit_at(x, y)?;
+        let UnitPos::Text(byte) = pos else {
+            return None;
+        };
+        let (range, _) = self.view.doc.tagged_word_at(unit, byte)?;
+        Some(WordHit { unit, range })
+    }
+
+    /// The left button went down on the text, the `count`th click in a row: one starts a
+    /// selection there, two select the word, three the Verse (the egui pane's
+    /// `handle_selection`).
+    pub fn press(&mut self, p: Point<Pixels>, count: usize) {
+        let Some(at) = self.pos_at(p) else {
+            return;
+        };
+        if count >= 2 {
+            self.pressed = None;
+            self.view.selection = Some(Selection {
+                anchor: at,
+                head: at,
+                granularity: if count >= 3 {
+                    Granularity::Verse
+                } else {
+                    Granularity::Word
+                },
+            });
+            return;
+        }
+        self.pressed = Some((p, false));
+    }
+
+    /// The pointer moved to `p` with the left button down: past [`CLICK_SLOP`] the press is a
+    /// drag, and the selection runs from where it went down to here. Past the pane's top or
+    /// bottom edge the text scrolls, in proportion to the distance.
+    pub fn drag(&mut self, p: Point<Pixels>) {
+        let Some((from, moved)) = self.pressed else {
+            return;
+        };
+        if !moved {
+            let (dx, dy) = (f32::from(p.x - from.x), f32::from(p.y - from.y));
+            if dx.hypot(dy) < CLICK_SLOP {
+                return;
+            }
+            self.pressed = Some((from, true));
+            self.view.selection = self.pos_at(from).map(Selection::caret);
+        }
+        let b = self.bounds;
+        let (top, bottom) = (b.origin.y, b.origin.y + b.size.height);
+        let past = if p.y < top {
+            f32::from(p.y - top)
+        } else if p.y > bottom {
+            f32::from(p.y - bottom)
+        } else {
+            0.0
+        };
+        if past != 0.0 {
+            self.view.scroll_by(past * DRAG_SCROLL);
+            self.user_moved = true;
+        }
+        if let (Some(head), Some(sel)) = (self.pos_at(p), self.view.selection.as_mut()) {
+            sel.head = head;
+        }
+    }
+
+    /// The left button came up at `p`, with Ctrl or Cmd held or not (`command`). A press that
+    /// never moved is a click: it clears the selection, and on a Tagged word it is that word's
+    /// click (Word Info pins it).
+    pub fn release(&mut self, p: Point<Pixels>, command: bool) {
+        let Some((_, moved)) = self.pressed.take() else {
+            return;
+        };
+        if !moved {
+            self.view.selection = None;
+            self.clicked_word = self.word_at(p).map(|w| (w, command));
+        }
+    }
+
+    /// The pointer is at `p` over the pane: the Tagged word and the Scripture reference under
+    /// it, from the layout already in view (hover never lays a block out).
+    pub fn hover(&mut self, p: Point<Pixels>) {
+        self.pointer = Some(p);
+        if !self.bounds.contains(&p) {
+            self.leave();
+            return;
+        }
+        self.hovered_word = self.word_at(p);
+        let (x, y) = self.text_point(p);
+        self.hovered_reference = self.view.reference_at(x, y);
+    }
+
+    /// The pointer left the pane.
+    pub fn leave(&mut self) {
+        self.pointer = None;
+        self.hovered_word = None;
+        self.hovered_reference = None;
+    }
+
+    /// A right-click at `p`: the menu acts on the selection under it, else on the word there
+    /// (which becomes the selection), with the Verse and Tagged word there.
+    pub fn context_click(&mut self, p: Point<Pixels>) {
+        self.hover(p);
+        let (x, y) = self.text_point(p);
+        let pointer_at = self.view.hit_in_unit_at(x, y).map(|(unit, pos)| DocPos {
+            unit,
+            byte: match pos {
+                UnitPos::Text(b) => b,
+                UnitPos::Object { anchor, .. } => anchor,
+            },
+        });
+        if let Some(at) = pointer_at {
+            select_for_menu(&mut self.view, at);
+        }
+        self.menu_request = Some(MenuRequest {
+            at: p,
+            pointer_at,
+            word: self.hovered_word.clone(),
+            reference: self.hovered_reference,
+        });
+    }
+
+    /// Shift+F10: the menu from the keyboard, at the word under the pointer, else on the
+    /// selection; with neither, on the Verse at the top of the view, selected so it shows what
+    /// the menu is for (the egui Shell's `reading_menu`).
+    pub fn keyboard_menu(&mut self) {
+        if let Some(p) = self.pointer
+            && self.word_at(p).is_some()
+        {
+            self.context_click(p);
+            return;
+        }
+        if !self
+            .view
+            .selection
+            .is_some_and(|s| has_text(&self.view, &s))
+        {
+            let doc = Arc::clone(&self.view.doc);
+            if let Some(verse) = self.view.current_location() {
+                self.view.selection = verse_selection(&doc, verse);
+            }
+        }
+        let b = self.bounds;
+        let at = point(b.origin.x + px(space::XXXL), b.origin.y + px(space::XXXL));
+        self.menu_request = Some(MenuRequest {
+            at,
+            pointer_at: None,
+            word: None,
+            reference: None,
+        });
+    }
+
+    /// What Copy puts on the clipboard: the selection with its reference and the Resource's
+    /// abbreviation (`obs-reading`'s `copy_text`); `None` with nothing selected.
+    pub fn copy_text(&self) -> Option<String> {
+        let sel = self
+            .view
+            .selection
+            .filter(|s| !s.is_empty() || s.granularity != Granularity::Grapheme)?;
+        Some(self.view.copy_text(&sel))
     }
 
     pub fn resource(&self) -> &str {
@@ -332,6 +656,142 @@ impl ReadingPane {
     }
 }
 
+impl ReadingPane {
+    /// The Find matches, the selection and the hovered word's underline in the blocks laid
+    /// out in a viewport `height` tall, in window points; `origin` is the text's left edge
+    /// and the viewport top.
+    fn overlay(&self, [ox, oy]: [f32; 2], height: f32) -> Overlay {
+        let to_window = |[x0, y0, x1, y1]: [f32; 4]| Bounds {
+            origin: point(px(ox + x0), px(oy + y0)),
+            size: size(px((x1 - x0).max(0.0)), px((y1 - y0).max(0.0))),
+        };
+        let p = &self.palette;
+        let mut out = Overlay {
+            colors: OverlayColors {
+                find_match: hsla(p.find_match),
+                search_hit: hsla(p.search_hit),
+                find_current: hsla(p.find_current),
+                selection: hsla(p.selection),
+                underline: hsla(p.underline),
+            },
+            ..Overlay::default()
+        };
+        let text_size = self.view.settings().size;
+        if let Some(bar) = &self.find {
+            for (k, rects) in found_rects(&self.view, bar, height) {
+                let current = bar.current == Some(k);
+                for r in rects {
+                    out.found
+                        .push((to_window(text_band(r, text_size)), current));
+                }
+            }
+        }
+        if let Some(sel) = self.view.selection {
+            out.selection = selection_rects(&self.view, &sel, height)
+                .into_iter()
+                .map(to_window)
+                .collect();
+        }
+        if let Some(w) = &self.hovered_word {
+            // A hairline just above the line's bottom, as the egui pane draws it.
+            for [x0, _, x1, y1] in range_rects(&self.view, &[w.span()], height)
+                .into_iter()
+                .flatten()
+            {
+                let y = y1 - mark::LINE_MIN;
+                out.underline.push(to_window([x0, y, x1, y + stroke::HAIR]));
+            }
+        }
+        out
+    }
+}
+
+/// The Find matches (#175) in the blocks laid out in a viewport `height` tall, by index, with
+/// their rectangles (letters only: never a verse number before them). Only the matches
+/// reaching into those blocks are looked at, however many the Resource has (the egui pane's
+/// `found_rects`).
+fn found_rects(view: &ReadingView, bar: &FindBar, height: f32) -> Vec<(usize, Vec<[f32; 4]>)> {
+    if bar.matches().is_empty() {
+        return Vec::new();
+    }
+    let mut shown: Vec<usize> = Vec::new();
+    for (index, _, _) in view.laid_in_view(height) {
+        let Some(block) = view.doc.blocks.get(index) else {
+            continue;
+        };
+        shown.extend(bar.within(block.unit, block.source.range.clone()));
+    }
+    shown.sort_unstable();
+    shown.dedup();
+    let matches = bar.matches();
+    let ranges: Vec<(DocPos, DocPos)> = shown
+        .iter()
+        .filter_map(|&k| matches.get(k).map(|m| (m.start(), m.end())))
+        .collect();
+    shown
+        .into_iter()
+        .zip(text_range_rects(view, &ranges, height))
+        .collect()
+}
+
+/// A match's band: [`mark::BAND_EMS`] tall round the line's middle, not the line spacing
+/// around it (the egui pane's `text_band`).
+fn text_band([x0, y0, x1, y1]: [f32; 4], size: f32) -> [f32; 4] {
+    let inset = ((y1 - y0 - size * mark::BAND_EMS) / 2.0).max(0.0);
+    [x0, y0 + inset, x1, y1 - inset]
+}
+
+/// The right-click menu acts on the selection under `at`, else on the word there (which
+/// becomes the selection; none when `at` is not on a word), as the egui pane's
+/// `select_for_menu`.
+pub fn select_for_menu(view: &mut ReadingView, at: DocPos) {
+    if view
+        .selection
+        .is_some_and(|s| has_text(view, &s) && s.contains(&view.doc, at))
+    {
+        return;
+    }
+    let word = Selection {
+        anchor: at,
+        head: at,
+        granularity: Granularity::Word,
+    };
+    view.selection = has_text(view, &word).then_some(word);
+}
+
+/// Whether a selection covers any text other than white space (stopping at the first such
+/// character), as the egui pane's `has_text`.
+pub fn has_text(view: &ReadingView, sel: &Selection) -> bool {
+    let (a, b) = sel.range(&view.doc);
+    a < b
+        && (a.unit..=b.unit).any(|u| {
+            let Some(text) = view.doc.units.get(u).map(|u| u.text.as_str()) else {
+                return false;
+            };
+            let start = if u == a.unit { a.byte } else { 0 };
+            let end = if u == b.unit { b.byte } else { text.len() };
+            text.get(start.min(end)..end.min(text.len()))
+                .is_some_and(|t| t.chars().any(|c| !c.is_whitespace()))
+        })
+}
+
+/// A whole Verse of a Bible as a selection.
+pub fn verse_selection(doc: &ReadingDoc, verse: Verse) -> Option<Selection> {
+    let (unit, byte) = doc.verse_position(verse)?;
+    let range = doc.verse_range_at(unit, byte)?;
+    Some(Selection {
+        anchor: DocPos {
+            unit,
+            byte: range.start,
+        },
+        head: DocPos {
+            unit,
+            byte: range.end,
+        },
+        granularity: Granularity::Grapheme,
+    })
+}
+
 impl Render for ReadingPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = hsla(self.palette.page);
@@ -349,7 +809,23 @@ impl Render for ReadingPane {
             .overflow_hidden()
             .bg(page)
             .on_key_down(cx.listener(|pane, ev: &KeyDownEvent, _, cx| {
-                if pane.key(ev.keystroke.key.as_str()) {
+                let ks = &ev.keystroke;
+                let command = ks.modifiers.control || ks.modifiers.platform;
+                if command && ks.key == "c" {
+                    // Copy: the selection with its reference.
+                    if let Some(text) = pane.copy_text() {
+                        cx.write_to_clipboard(ClipboardItem::new_string(text));
+                        cx.stop_propagation();
+                    }
+                    return;
+                }
+                if ks.key == "f10" && ks.modifiers.shift {
+                    pane.keyboard_menu();
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
+                if !command && pane.key(ks.key.as_str()) {
                     cx.stop_propagation();
                     cx.notify();
                 }
@@ -369,25 +845,58 @@ impl Render for ReadingPane {
                     pane.dragging = in_track;
                     if in_track {
                         pane.drag_to(ev.position.y);
+                    } else {
+                        pane.press(ev.position, ev.click_count);
                     }
                     cx.notify();
                 }),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|pane, ev: &MouseDownEvent, window, cx| {
+                    window.focus(&pane.focus, cx);
+                    pane.context_click(ev.position);
+                    cx.notify();
+                }),
+            )
             .on_mouse_move(cx.listener(|pane, ev: &MouseMoveEvent, _, cx| {
-                if pane.dragging && ev.pressed_button == Some(MouseButton::Left) {
+                let left = ev.pressed_button == Some(MouseButton::Left);
+                if pane.dragging && left {
                     pane.drag_to(ev.position.y);
+                } else if left {
+                    pane.drag(ev.position);
+                }
+                let before = (pane.hovered_word.clone(), pane.hovered_reference);
+                pane.hover(ev.position);
+                if left || before != (pane.hovered_word.clone(), pane.hovered_reference) {
+                    cx.notify();
+                }
+            }))
+            .on_hover(cx.listener(|pane, hovered: &bool, _, cx| {
+                if !*hovered {
+                    pane.leave();
                     cx.notify();
                 }
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|pane, _: &MouseUpEvent, _, _| pane.dragging = false),
+                cx.listener(|pane, ev: &MouseUpEvent, _, cx| {
+                    pane.dragging = false;
+                    let m = ev.modifiers;
+                    pane.release(ev.position, m.control || m.platform);
+                    cx.notify();
+                }),
             )
             // A drag let go outside the pane ends too, so the thumb does not stick to the
-            // pointer.
+            // pointer and the selection stops following it.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|pane, _: &MouseUpEvent, _, _| pane.dragging = false),
+                cx.listener(|pane, _: &MouseUpEvent, _, cx| {
+                    pane.dragging = false;
+                    if pane.pressed.take().is_some() {
+                        cx.notify();
+                    }
+                }),
             )
             .child(PaneElement { pane })
     }
@@ -406,6 +915,27 @@ struct PanePrepaint {
     thumb: Option<Bounds<Pixels>>,
     placeholder_color: Option<Hsla>,
     thumb_color: Option<Hsla>,
+    overlay: Overlay,
+}
+
+/// What a pane paints with its text, in window points: the Find bar's matches and the
+/// selection under the glyphs, the hovered Tagged word's underline over them.
+#[derive(Default, Clone)]
+pub(crate) struct Overlay {
+    /// Each match's rectangles, and whether it is the current match.
+    pub found: Vec<(Bounds<Pixels>, bool)>,
+    pub selection: Vec<Bounds<Pixels>>,
+    pub underline: Vec<Bounds<Pixels>>,
+    pub colors: OverlayColors,
+}
+
+#[derive(Default, Clone, Copy)]
+pub(crate) struct OverlayColors {
+    pub find_match: Hsla,
+    pub search_hit: Hsla,
+    pub find_current: Hsla,
+    pub selection: Hsla,
+    pub underline: Hsla,
 }
 
 impl IntoElement for PaneElement {
@@ -462,7 +992,7 @@ impl Element for PaneElement {
         let width = f32::from(bounds.size.width);
         let height = f32::from(bounds.size.height);
         let fonts = cx.try_global::<ReadingFonts>().cloned().unwrap_or_default();
-        let (doc, palette, left, measure, blocks, thumb, animating) =
+        let (doc, palette, left, measure, blocks, thumb, animating, overlay) =
             self.pane.update(cx, |pane, _| {
                 pane.bounds = bounds;
                 pane.height = height;
@@ -490,6 +1020,15 @@ impl Element for PaneElement {
                     f32::from(bounds.origin.x) + width,
                     f32::from(bounds.origin.y) + height,
                 ];
+                // The Find bar finds (on its worker) and steps before the frame, so a match it
+                // scrolls to is drawn in this frame.
+                let mut finding = false;
+                if let Some(bar) = pane.find.as_mut() {
+                    if bar.update(&mut pane.view, height) {
+                        pane.user_moved = true;
+                    }
+                    finding = bar.is_finding();
+                }
                 let frame = pane.view.frame(height, Some(SYNC_BUDGET));
                 pane.last_frame = Some(frame.stats);
                 let blocks: Vec<DrawBlock> = frame
@@ -503,7 +1042,12 @@ impl Element for PaneElement {
                     })
                     .collect();
                 let thumb = pane.thumb(height, width).map(|(r, _)| r);
-                let animating = pane.view.is_gliding() || pane.view.has_pending();
+                let animating = pane.view.is_gliding() || pane.view.has_pending() || finding;
+                let origin = [
+                    f32::from(bounds.origin.x) + left,
+                    f32::from(bounds.origin.y),
+                ];
+                let overlay = pane.overlay(origin, height);
                 (
                     Arc::clone(&pane.view.doc),
                     pane.palette,
@@ -512,6 +1056,7 @@ impl Element for PaneElement {
                     blocks,
                     thumb,
                     animating,
+                    overlay,
                 )
             });
         let fonts = Arc::new(fonts);
@@ -519,6 +1064,7 @@ impl Element for PaneElement {
         let mut out = PanePrepaint {
             placeholder_color: Some(hsla(palette.ink).opacity(0.06)),
             thumb_color: Some(hsla(palette.ink).opacity(0.25)),
+            overlay,
             ..PanePrepaint::default()
         };
         for b in blocks {
@@ -585,8 +1131,33 @@ impl Element for PaneElement {
                     window.paint_quad(fill(*b, color));
                 }
             }
+            let o = &pp.overlay;
+            // Find matches (#175) under the selection: the current one in the search-hit
+            // colour with an outline, the others in the paler find-match colour.
+            for (r, current) in &o.found {
+                if *current {
+                    let w = px(stroke::MEDIUM);
+                    let outer = r.dilate(w);
+                    window.paint_quad(
+                        fill(outer, o.colors.search_hit)
+                            .corner_radii(px(crate::tokens::radius::XS))
+                            .border_widths(w)
+                            .border_color(o.colors.find_current),
+                    );
+                } else {
+                    window.paint_quad(
+                        fill(*r, o.colors.find_match).corner_radii(px(crate::tokens::radius::XS)),
+                    );
+                }
+            }
+            for r in &o.selection {
+                window.paint_quad(fill(*r, o.colors.selection));
+            }
             for el in &mut pp.paras {
                 el.paint(window, cx);
+            }
+            for r in &o.underline {
+                window.paint_quad(fill(*r, o.colors.underline));
             }
             if let (Some(thumb), Some(color)) = (pp.thumb, pp.thumb_color) {
                 window.paint_quad(fill(thumb, color).corner_radii(px(SCROLLBAR / 2.0)));
@@ -722,33 +1293,14 @@ impl Element for ParaElement {
         window: &mut Window,
         _cx: &mut App,
     ) {
-        let (top, bottom) = self.visible;
-        let ox = f32::from(bounds.origin.x);
-        let oy = f32::from(bounds.origin.y);
-        let mut painted = 0usize;
-        for (line, item, x, y, glyph) in self.laid.glyphs() {
-            let size = item.style.size;
-            // A line's ink can reach past its box (marks, descenders): a text size of slack.
-            if line.bottom + size < top || line.top - size > bottom {
-                continue;
-            }
-            let Some(font_id) = self.fonts.get(item.style.face) else {
-                continue;
-            };
-            let color = hsla(self.palette.color(item.style.role));
-            if window
-                .paint_glyph(
-                    point(px(ox + x), px(oy + y)),
-                    font_id,
-                    GlyphId(glyph),
-                    px(size),
-                    color,
-                )
-                .is_ok()
-            {
-                painted += 1;
-            }
-        }
+        let painted = paint_laid(
+            &self.laid,
+            bounds.origin,
+            self.visible,
+            &self.fonts,
+            &self.palette,
+            window,
+        );
         #[cfg(feature = "test-support")]
         observed::record(observed::Paragraph {
             role: Role::Paragraph,
@@ -791,6 +1343,143 @@ impl Element for ParaElement {
             let id = builder.synthetic_node_id(link.start);
             builder.push_child(id, node);
         }
+    }
+}
+
+/// Paint `laid`'s glyphs with its top left at `origin`, the lines reaching into `visible`
+/// (top, bottom, in block points) only. Returns how many were painted.
+fn paint_laid(
+    laid: &LaidBlock,
+    origin: Point<Pixels>,
+    (top, bottom): (f32, f32),
+    fonts: &ReadingFonts,
+    palette: &TonePalette,
+    window: &mut Window,
+) -> usize {
+    let ox = f32::from(origin.x);
+    let oy = f32::from(origin.y);
+    let mut painted = 0usize;
+    for (line, item, x, y, glyph) in laid.glyphs() {
+        let size = item.style.size;
+        // A line's ink can reach past its box (marks, descenders): a text size of slack.
+        if line.bottom + size < top || line.top - size > bottom {
+            continue;
+        }
+        let Some(font_id) = fonts.get(item.style.face) else {
+            continue;
+        };
+        let color = hsla(palette.color(item.style.role));
+        if window
+            .paint_glyph(
+                point(px(ox + x), px(oy + y)),
+                font_id,
+                GlyphId(glyph),
+                px(size),
+                color,
+            )
+            .is_ok()
+        {
+            painted += 1;
+        }
+    }
+    painted
+}
+
+/// Resource text outside a reading pane (a reference's preview): one paragraph laid out by our
+/// pipeline (ADR 0004: hover popups too) and painted with `paint_glyph`, `width` points wide.
+pub struct SnippetElement {
+    laid: Arc<LaidBlock>,
+    fonts: Arc<ReadingFonts>,
+    palette: Arc<TonePalette>,
+}
+
+impl SnippetElement {
+    /// `text` laid out now, in `role`'s colour, `width` points wide.
+    pub fn new(
+        text: &str,
+        rtl: bool,
+        width: f32,
+        settings: &TextSettings,
+        palette: TonePalette,
+        cx: &App,
+    ) -> Self {
+        let para = obs_layout::snippet_paragraph(text, ColorRole::Ink, rtl, settings);
+        let laid = obs_reading::lay_out(&para, width);
+        Self {
+            laid: Arc::new(laid),
+            fonts: Arc::new(cx.try_global::<ReadingFonts>().cloned().unwrap_or_default()),
+            palette: Arc::new(palette),
+        }
+    }
+
+    /// The text it lays out.
+    pub fn text(&self) -> &str {
+        &self.laid.text
+    }
+}
+
+impl IntoElement for SnippetElement {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for SnippetElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        let mut style = Style::default();
+        style.size.width = px(self.laid.width).into();
+        style.size.height = px(self.laid.height).into();
+        (window.request_layout(style, [], cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _rl: &mut (),
+        _window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _rl: &mut (),
+        _pp: &mut (),
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        let visible = (0.0, self.laid.height);
+        paint_laid(
+            &self.laid,
+            bounds.origin,
+            visible,
+            &self.fonts,
+            &self.palette,
+            window,
+        );
     }
 }
 

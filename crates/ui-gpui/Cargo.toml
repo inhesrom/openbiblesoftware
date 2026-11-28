@@ -16,6 +16,8 @@ obs-reading.workspace = true
 obs-layout.workspace = true
 obs-model.workspace = true
 obs-scripture.workspace = true
+# Find in Resource (#381): the Search normalizer's Finder, as the egui Find bar uses.
+obs-search.workspace = true
 gpui-kit.workspace = true
 log.workspace = true
 serde_json.workspace = true

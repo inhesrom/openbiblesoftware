@@ -56,6 +56,14 @@ pub mod stroke {
     pub const HEAVY: f32 = 3.0;
 }
 
+/// The marks drawn over Resource text (the egui app's `tokens::mark`, the parts #381 uses).
+pub mod mark {
+    /// A Find match's band: this many ems tall round the line's middle.
+    pub const BAND_EMS: f32 = 1.4;
+    /// How far an underline sits above its line's bottom at the least, in points.
+    pub const LINE_MIN: f32 = 1.5;
+}
+
 /// Opacity factors for washes and tints.
 pub mod alpha {
     pub const WASH: f32 = 0.12;
@@ -86,6 +94,9 @@ pub mod size {
     pub const TOAST_RISE: f32 = super::space::XXXL + super::space::XL;
     pub const DIALOG_WIDTH: f32 = 480.0;
     pub const MENU_COLUMN: f32 = 160.0;
+    /// A short label column (the Find bar's count, the right-click menu's targets).
+    pub const LABEL_COLUMN: f32 = 72.0;
+    pub const LABEL_COLUMN_WIDE: f32 = 120.0;
     pub const PAGE_MAX: f32 = 720.0;
 }
 

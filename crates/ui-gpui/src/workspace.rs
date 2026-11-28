@@ -359,6 +359,26 @@ pub enum ResourcePane {
     Failed { error: String, details: bool },
 }
 
+/// A Scripture reference under the pointer: its Tab, its document, its unit and span indexes,
+/// and where the pointer is.
+type HoveredReference = (
+    TabId,
+    Arc<ReadingDoc>,
+    (usize, usize),
+    gpui_kit::Point<gpui_kit::Pixels>,
+);
+
+/// What one pane's pointer did since the last frame, for the Shell to act on.
+struct PanePointer {
+    tab: TabId,
+    pane: Entity<ReadingPane>,
+    doc: Arc<ReadingDoc>,
+    hovered: Option<reading::WordHit>,
+    clicked: Option<(reading::WordHit, bool)>,
+    menu: Option<reading::MenuRequest>,
+    reference: Option<((usize, usize), gpui_kit::Point<gpui_kit::Pixels>)>,
+}
+
 /// The content of a Tab under its header strip: the hook the reading pane (#380) and the
 /// Tools (#389–#397) plug into, one `match` arm each. A Tool shows a placeholder naming it
 /// until its ticket.
@@ -554,6 +574,22 @@ impl HeaderState {
     }
 }
 
+/// Whether `keystroke` is the engine shortcut `shortcut` ("Ctrl+F", "Ctrl+Shift+P"): Ctrl is
+/// Cmd on macOS, and either is taken for it, as the egui app reads shortcuts.
+pub fn shortcut_matches(shortcut: &str, keystroke: &gpui_kit::Keystroke) -> bool {
+    let mut parts: Vec<String> = shortcut.split('+').map(str::to_lowercase).collect();
+    let Some(key) = parts.pop() else {
+        return false;
+    };
+    let m = keystroke.modifiers;
+    let has = |name: &str| parts.iter().any(|p| p == name);
+    let command = has("ctrl") || has("cmd");
+    keystroke.key.eq_ignore_ascii_case(&key)
+        && command == (m.control || m.platform)
+        && has("shift") == m.shift
+        && has("alt") == m.alt
+}
+
 /// One engine Tab in the dock: its header strip and its content.
 pub struct TabView {
     shell: WeakEntity<Shell>,
@@ -563,6 +599,8 @@ pub struct TabView {
     reference: Entity<InputState>,
     /// The ⋯ menu is open.
     menu_open: bool,
+    /// The Find bar's field (#381), made when the bar first opens.
+    find_field: Option<Entity<InputState>>,
 }
 
 impl TabView {
@@ -594,7 +632,220 @@ impl TabView {
             focus: cx.focus_handle(),
             reference,
             menu_open: false,
+            find_field: None,
         }
+    }
+
+    /// The Find bar's row under the header (#175, the egui Shell's `find_row`), while the
+    /// pane's bar is open: the field, the count, Previous and Next, Close, the options and
+    /// Search all Resources. Enter and Shift+Enter in the field step; Esc closes the bar.
+    fn find_row(
+        &mut self,
+        pane: &Entity<ReadingPane>,
+        look: &Look,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let (focus, text, status, options) = pane
+            .read(cx)
+            .find()
+            .map(|b| (b.focus, b.text.clone(), b.status(), b.options))?;
+        let field = match &self.find_field {
+            Some(f) => f.clone(),
+            None => {
+                let state = cx.new(|cx| InputState::new(window, cx));
+                let weak = pane.downgrade();
+                cx.subscribe_in(&state, window, move |_, state, event, _, cx| {
+                    let text = state.read(cx).value().to_string();
+                    let _ = weak.update(cx, |p, cx| {
+                        match event {
+                            InputEvent::Change => {
+                                if let Some(bar) = p.find_mut() {
+                                    bar.text = text;
+                                }
+                            }
+                            InputEvent::PressEnter { shift, .. } => p.step_find(!shift),
+                            _ => return,
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+                self.find_field = Some(state.clone());
+                state
+            }
+        };
+        if focus {
+            pane.update(cx, |p, _| {
+                if let Some(bar) = p.find_mut() {
+                    bar.focus = false;
+                }
+            });
+            field.update(cx, |s, cx| {
+                if s.value().as_ref() != text {
+                    s.set_value(text.clone(), window, cx);
+                }
+                s.focus(window, cx);
+                s.select_all(window, cx);
+            });
+        }
+        let ch = look.chrome;
+        let any = matches!(status, crate::find::FindStatus::Found { total, .. } if total > 0);
+        let step = |forward: bool, pane: &Entity<ReadingPane>| {
+            let pane = pane.downgrade();
+            move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
+                let _ = pane.update(cx, |p, cx| {
+                    p.step_find(forward);
+                    cx.notify();
+                });
+            }
+        };
+        let option =
+            |id: &'static str, label: &'static str, on: bool, pane: &Entity<ReadingPane>| {
+                let pane = pane.downgrade();
+                let ch = look.chrome;
+                components::button(id, label, look)
+                    .selected(on)
+                    .when(on, |b| b.bg(rgba(ch.selection)))
+                    .on_click(move |_, _, cx| {
+                        let _ = pane.update(cx, |p, cx| {
+                            if let Some(o) = p.find_mut().map(|b| &mut b.options) {
+                                match id {
+                                    "find-case" => o.match_case = !o.match_case,
+                                    "find-word" => o.whole_word = !o.whole_word,
+                                    _ => o.ignore_diacritics = !o.ignore_diacritics,
+                                }
+                            }
+                            cx.notify();
+                        });
+                    })
+            };
+        let closing = pane.downgrade();
+        let shell = self.shell.clone();
+        let tab = self.tab;
+        let typed = text.trim().to_string();
+        Some(
+            div()
+                .id(("find-row", self.tab.0))
+                .flex()
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap(px(look.pt(space::XS)))
+                .px(px(look.pt(space::S)))
+                .py(px(look.pt(space::XS)))
+                .bg(rgba(ch.surface))
+                .border_b_1()
+                .border_color(rgba(ch.rule))
+                .capture_key_down(
+                    cx.listener(|this, ev: &gpui_kit::KeyDownEvent, window, cx| {
+                        if ev.keystroke.key == "escape" {
+                            this.close_find(window, cx);
+                            cx.stop_propagation();
+                        }
+                    }),
+                )
+                .child(components::text_field(
+                    ("find-field", self.tab.0),
+                    &field,
+                    crate::find::FIND_HINT,
+                    look,
+                    window,
+                    cx,
+                ))
+                .child(
+                    div()
+                        .id(("find-status", self.tab.0))
+                        .role(Role::Status)
+                        .aria_label(SharedString::from(crate::find::status_text(status)))
+                        .test_support()
+                        .min_w(px(look.pt(size::LABEL_COLUMN)))
+                        .text_color(rgba(ch.muted))
+                        .text_size(px(look.pt(text::SMALL)))
+                        .child(crate::find::status_text(status)),
+                )
+                .child(
+                    components::icon_button(
+                        "find-previous",
+                        Icon::ChevronUp,
+                        "Previous match",
+                        look,
+                    )
+                    .disabled(!any)
+                    .on_click(step(false, pane)),
+                )
+                .child(
+                    components::icon_button("find-next", Icon::ChevronDown, "Next match", look)
+                        .disabled(!any)
+                        .on_click(step(true, pane)),
+                )
+                .child(
+                    components::icon_button("find-close", Icon::Close, "Close", look).on_click(
+                        move |_, _, cx| {
+                            let _ = closing.update(cx, |p, cx| {
+                                p.close_find();
+                                cx.notify();
+                            });
+                        },
+                    ),
+                )
+                .child(option("find-case", "Aa", options.match_case, pane))
+                .child(option("find-word", "Whole word", options.whole_word, pane))
+                .child(option(
+                    "find-diacritics",
+                    "Ignore diacritics",
+                    options.ignore_diacritics,
+                    pane,
+                ))
+                .child(
+                    components::button("find-search-all", "Search all Resources", look)
+                        .disabled(typed.is_empty())
+                        .on_click(move |_, _, cx| {
+                            let text = typed.clone();
+                            if let Some(shell) = shell.upgrade() {
+                                shell.update(cx, |s, cx| s.search_all(cx, tab, &text));
+                            }
+                        }),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// Close the Find bar and give the keyboard back to the pane.
+    fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(shell) = self.shell.upgrade() else {
+            return;
+        };
+        if let Some(pane) = shell.read(cx).pane(self.tab).cloned() {
+            pane.update(cx, |p, cx| {
+                p.close_find();
+                cx.notify();
+            });
+            let focus = pane.read(cx).focus_handle().clone();
+            window.focus(&focus, cx);
+        }
+    }
+
+    /// A key in the Tab: its Find shortcut (`tab.find`, Ctrl+F unless rebound) opens the Find
+    /// bar through the engine; Esc unpins Word Info (`word_info.unpin`) as in the egui app.
+    fn tab_key(&mut self, ev: &gpui_kit::KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let Some(shell) = self.shell.upgrade() else {
+            return false;
+        };
+        let session = shell.read(cx).session();
+        let ks = &ev.keystroke;
+        if session
+            .shortcut("tab.find")
+            .is_some_and(|k| shortcut_matches(k, ks))
+        {
+            self.run(cx, "tab.find", json!({ "tab": self.tab.0 }));
+            return true;
+        }
+        if ks.key == "escape" && session.word_info.pinned {
+            self.run(cx, "word_info.unpin", json!({}));
+            return true;
+        }
+        false
     }
 
     fn run(&self, cx: &mut App, id: &'static str, params: serde_json::Value) {
@@ -787,6 +1038,8 @@ impl Render for TabView {
             return div().into_any_element();
         };
         let header = self.header(state, &look, window, cx);
+        let pane = shell.read(cx).pane(self.tab).cloned();
+        let find_row = pane.and_then(|p| self.find_row(&p, &look, window, cx));
         let content = tab_content(shell.read(cx), &self.shell, self.tab, &look, cx);
         div()
             .id(("tab-view", self.tab.0))
@@ -795,7 +1048,13 @@ impl Render for TabView {
             .size_full()
             .flex()
             .flex_col()
+            .on_key_down(cx.listener(|this, ev: &gpui_kit::KeyDownEvent, _, cx| {
+                if this.tab_key(ev, cx) {
+                    cx.stop_propagation();
+                }
+            }))
             .child(header)
+            .children(find_row)
             .child(content)
             .children(self.more_menu(&look, cx))
             .into_any_element()
@@ -1098,6 +1357,26 @@ impl Shell {
                         self.layout_prompt = Some((rename, state));
                     }
                     Effect::Message(m) => self.toast = Some(m),
+                    // Find in Resource (#175, #381): the pane's Find bar opens or steps.
+                    Effect::Find { tab, text } => {
+                        if let Some(pane) = self.pane(tab).cloned() {
+                            pane.update(cx, |p, cx| {
+                                p.open_find(text);
+                                cx.notify();
+                            });
+                        }
+                    }
+                    Effect::FindStep { tab, forward } => {
+                        if let Some(pane) = self.pane(tab).cloned() {
+                            pane.update(cx, |p, cx| {
+                                p.step_find(forward);
+                                cx.notify();
+                            });
+                        }
+                    }
+                    Effect::CopyText(text) => {
+                        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+                    }
                     // Floating windows come with #388: a Tab floated stays in the main
                     // window, docked by the engine at its right, and the dock follows.
                     Effect::Float { window: w, .. } => {
@@ -1323,6 +1602,7 @@ impl Shell {
     pub(crate) fn sync_panes(&mut self, look: &Look, cx: &mut Context<Self>) {
         let palette = reading::palette_for(&self.session, look);
         let reduce = cx.reduce_motion();
+        let mut pointer = Vec::new();
         for (tab, pane) in &self.panes {
             let ResourcePane::Reading(pane) = pane else {
                 continue;
@@ -1330,6 +1610,15 @@ impl Shell {
             let session = &self.session;
             let (at, entry) = pane.update(cx, |p, _| {
                 p.sync(session, palette, reduce);
+                pointer.push(PanePointer {
+                    tab: *tab,
+                    pane: pane.clone(),
+                    doc: Arc::clone(&p.view().doc),
+                    hovered: p.hovered_word().cloned(),
+                    clicked: p.take_clicked_word(),
+                    menu: p.take_menu_request(),
+                    reference: p.hovered_reference().zip(p.pointer()),
+                });
                 let drawn = p.take_drawn();
                 let moved = p.take_user_moved();
                 let view = p.view_mut();
@@ -1355,6 +1644,86 @@ impl Shell {
                 t.entry_history.scrolled_to(key);
             }
         }
+        // What the pointer did in each pane (#381): Word Info's dwell and pin, the right-click
+        // menu, the reference preview.
+        let mut previewing = None;
+        for p in pointer {
+            self.word_hovered(p.tab, &p.doc, p.hovered, p.clicked, cx);
+            if let Some(req) = p.menu {
+                self.open_context_menu(p.tab, &p.pane, req, cx);
+            }
+            if let Some((span, at)) = p.reference {
+                previewing = Some((p.tab, p.doc, span, at));
+            }
+        }
+        self.preview_reference(previewing);
+    }
+
+    /// The preview of the reference under the pointer: read once per reference hovered, and
+    /// gone when the pointer leaves it.
+    fn preview_reference(&mut self, hovered: Option<HoveredReference>) {
+        let Some((tab, doc, span, at)) = hovered else {
+            self.reference_preview = None;
+            return;
+        };
+        if let Some(p) = self.reference_preview.as_mut()
+            && p.tab == tab
+            && p.span == span
+        {
+            p.at = at;
+            return;
+        }
+        self.reference_preview = Some(crate::references::ReferencePreview::read(
+            tab,
+            &doc,
+            span,
+            at,
+            &self.session.library,
+            &mut self.preview_cache,
+        ));
+    }
+
+    /// The preview of the reference under the pointer, if any.
+    pub fn reference_preview(&self) -> Option<&crate::references::ReferencePreview> {
+        self.reference_preview.as_ref()
+    }
+
+    /// Hand the Find text to the Search Tool as a phrase (the egui Find bar's `search_all`):
+    /// over every Bible from a Bible Tab, else over every Commentary, Lexicon and Dictionary.
+    pub(crate) fn search_all(&mut self, cx: &mut Context<Self>, tab: TabId, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let phrase: String = text.chars().filter(|c| *c != '"').collect();
+        let bible = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+            Some(TabKind::Resource(id)) => self
+                .session
+                .library
+                .get(id)
+                .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible),
+            _ => true,
+        };
+        let params = if bible {
+            let bibles: Vec<String> = self
+                .session
+                .library
+                .of_type(ResourceType::Bible)
+                .map(|e| e.manifest.resource_id.clone())
+                .collect();
+            json!({
+                "text": format!("\"{phrase}\""),
+                "mode": "bible",
+                "bibles": bibles.join(","),
+                "scope": "",
+            })
+        } else {
+            json!({
+                "text": format!("\"{phrase}\""),
+                "mode": "library",
+                "resources": "commentary,lexicon,dictionary",
+            })
+        };
+        self.run_in(cx, "search.run", &params);
     }
 
     /// The reading pane of Resource Tab `tab`, once read.
@@ -1596,6 +1965,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let mut out = Vec::new();
+        out.extend(self.reference_preview_popover(look, cx));
+        out.extend(self.context_menu_overlay(look, window, cx));
         if let Some(node) = self.plus_menu {
             let panel = self.map.groups.get(&node).map(|p| p.0);
             let mut menu = components::menu("Open in this Panel", look)

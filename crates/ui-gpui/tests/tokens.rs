@@ -150,6 +150,18 @@ fn measurements_equal_the_egui_ones() {
             e::size::MENU_COLUMN,
         ),
         ("size::PAGE_MAX", g::size::PAGE_MAX, e::size::PAGE_MAX),
+        (
+            "size::LABEL_COLUMN",
+            g::size::LABEL_COLUMN,
+            e::size::LABEL_COLUMN,
+        ),
+        (
+            "size::LABEL_COLUMN_WIDE",
+            g::size::LABEL_COLUMN_WIDE,
+            e::size::LABEL_COLUMN_WIDE,
+        ),
+        ("mark::BAND_EMS", g::mark::BAND_EMS, e::mark::BAND_EMS),
+        ("mark::LINE_MIN", g::mark::LINE_MIN, e::mark::LINE_MIN),
     ];
     for (name, ours, theirs) in pairs {
         assert_eq!(ours, theirs, "{name}");

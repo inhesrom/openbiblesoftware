@@ -23,10 +23,14 @@ use serde_json::Value;
 
 pub mod catalogue;
 pub mod components;
+pub mod context_menu;
+pub mod find;
 pub mod icons;
 pub mod reading;
+pub mod references;
 pub mod theme;
 pub mod tokens;
+pub mod word_info;
 pub mod workspace;
 
 /// Window title until the product is named (the egui app's `APP_TITLE`).
@@ -117,6 +121,14 @@ pub struct Shell {
     /// `OBS_GPUI_SAVE_SESSION=1`: while egui ships, the GPUI app reads the egui app's Last
     /// session but does not overwrite it (docs/dev/ui-gpui.md).
     save_session: bool,
+    /// The Tagged word the pointer rests on, for Word Info's dwell (#381).
+    dwell: Option<word_info::Dwell>,
+    /// The right-click menu, while it is open (#381).
+    context_menu: Option<context_menu::ContextMenu>,
+    /// The preview of the Scripture reference under the pointer (#381).
+    reference_preview: Option<references::ReferencePreview>,
+    /// The ★ Bible's Verse map and books, kept between previews.
+    preview_cache: obs_engine::cross_references::BiblePreviewCache,
 }
 
 impl Shell {
@@ -137,6 +149,10 @@ impl Shell {
             plus_menu: None,
             layout_prompt: None,
             save_session: std::env::var("OBS_GPUI_SAVE_SESSION").as_deref() == Ok("1"),
+            dwell: None,
+            context_menu: None,
+            reference_preview: None,
+            preview_cache: Default::default(),
         }
     }
 

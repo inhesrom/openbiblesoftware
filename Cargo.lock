@@ -5280,6 +5280,7 @@ dependencies = [
  "obs-model",
  "obs-reading",
  "obs-scripture",
+ "obs-search",
  "obs-store",
  "obs-ui-egui",
  "obs-ui-gpui",
